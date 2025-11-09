@@ -1,15 +1,36 @@
 {% extends "base.html" %}
 {% block title %}AugmentedQuill — Prototype{% endblock %}
 {% block content %}
-  <section class="aq-panel" x-data="{ mode: 'home' }">
-    <div class="aq-toolbar">
-      <button id="refresh" class="aq-btn">Refresh</button>
-    </div>
-    <div class="aq-content">
-      <div class="aq-card" hx-get="/health/fragment" hx-trigger="load, click from:#refresh" hx-target="#health" hx-swap="outerHTML">
-        <div id="health">Loading…</div>
+  <div class="aq-shell" x-data="shellView()" x-init="load()">
+    <aside class="aq-sidebar">
+      <div class="aq-sidebar-top">
+        <h3 class="aq-sidebar-title">Chapters</h3>
+        <ul class="aq-chapters">
+          <template x-if="!(chapters && chapters.length)">
+            <li class="aq-empty">No chapters configured</li>
+          </template>
+          <template x-for="ch in chapters" :key="ch">
+            <li><button class="aq-link" disabled title="Not implemented yet" x-text="ch"></button></li>
+          </template>
+        </ul>
       </div>
-      <p class="aq-tip">This is a rudimentary UI. Click Refresh to ping the server and update the status below via HTMX.</p>
-    </div>
-  </section>
+      <div class="aq-sidebar-bottom">
+        <button class="aq-btn aq-btn-primary" hx-get="/settings" hx-target="#main" hx-swap="innerHTML">Settings</button>
+      </div>
+    </aside>
+
+    <section id="main" class="aq-mainpane">
+      <div class="aq-panel">
+        <div class="aq-toolbar">
+          <button id="refresh" class="aq-btn" @click="load()">Refresh</button>
+        </div>
+        <div class="aq-content">
+          <div class="aq-card">
+            <div id="health">Status: <strong x-text="status"></strong> <template x-if="server_time">• Server time: <span x-text="server_time"></span></template></div>
+          </div>
+          <p class="aq-tip">This is a rudimentary UI. Use the Settings button in the sidebar to configure machine and story settings.</p>
+        </div>
+      </div>
+    </section>
+  </div>
 {% endblock %}

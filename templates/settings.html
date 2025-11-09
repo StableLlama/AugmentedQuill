@@ -1,0 +1,149 @@
+<section class="aq-panel" x-data="modelsEditor()" x-init="init()">
+  <div class="aq-toolbar">
+    <h2 style="margin:0">Settings</h2>
+  </div>
+  <div class="aq-content">
+    <template x-if="saved_msg">
+      <div class="aq-card" role="status" x-text="saved_msg"></div>
+    </template>
+    <template x-if="error_msg">
+      <div class="aq-card" role="alert" style="border-color:#b91c1c;color:#fecaca;background:#450a0a;" x-text="error_msg"></div>
+    </template>
+
+    <div class="aq-form">
+      <div class="aq-form-grid">
+        <fieldset class="aq-card">
+          <legend>Project directory</legend>
+          <div class="aq-field-group">
+            <label class="aq-field" style="grid-column: span 2;">
+              <span>Path to project folder (story.json + chapters/)</span>
+              <input type="text" x-model="project_dir" placeholder="/path/to/my/story" />
+            </label>
+          </div>
+          <div class="aq-toolbar" style="justify-content: space-between; align-items: flex-start;">
+            <div>
+              <button type="button" class="aq-btn" @click="selectProject()">Use / Create here</button>
+            </div>
+            <div style="text-align:right;">
+              <div style="font-size:0.9rem; color:#94a3b8; margin-bottom:0.25rem;">Recent projects</div>
+              <template x-if="!(recent_projects && recent_projects.length)">
+                <div class="aq-tip">No recent projects yet</div>
+              </template>
+              <template x-for="p in recent_projects" :key="p">
+                <div><button type="button" class="aq-btn" style="padding:0.25rem 0.5rem;" @click="useRecent(p)" x-text="p"></button></div>
+              </template>
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset class="aq-card">
+          <legend>Project (story) settings</legend>
+          <label class="aq-field">
+            <span>Project title</span>
+            <input type="text" x-model="project_title" />
+          </label>
+          <label class="aq-field">
+            <span>Format</span>
+            <select x-model="format">
+              <option value="markdown">Markdown</option>
+              <option value="raw">Raw text</option>
+            </select>
+          </label>
+          <label class="aq-field">
+            <span>Chapters (one per line)</span>
+            <textarea rows="6" x-model="chapters_text"></textarea>
+          </label>
+          <div class="aq-field-group">
+            <label class="aq-field">
+              <span>LLM Temperature</span>
+              <input type="text" x-model.number="llm_temperature" />
+            </label>
+            <label class="aq-field">
+              <span>Max tokens</span>
+              <input type="text" x-model.number="llm_max_tokens" />
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset class="aq-card">
+          <legend>Machine settings (OpenAI API compatible models)</legend>
+
+          <template x-for="(m, idx) in models" :key="m.name + '_' + idx">
+            <div class="aq-card" style="margin:0 0 0.5rem 0; padding:0.75rem;">
+              <div class="aq-field-group">
+                <label class="aq-field">
+                  <span>Name</span>
+                  <input type="text" x-model="m.name" placeholder="prod-openai" />
+                </label>
+                <label class="aq-field">
+                  <span>Base URL</span>
+                  <input type="text" x-model="m.base_url" placeholder="https://api.openai.com/v1" @input.debounce.500ms="loadRemoteModels(idx)" />
+                </label>
+              </div>
+              <div class="aq-field-group">
+                <label class="aq-field">
+                  <span>API key</span>
+                  <input type="password" x-model="m.api_key" placeholder="OPENAI_API_KEY" @input.debounce.500ms="loadRemoteModels(idx)" />
+                </label>
+                <label class="aq-field">
+                  <span>Timeout (s)</span>
+                  <input type="text" x-model="m.timeout_s" placeholder="60" />
+                </label>
+              </div>
+              <div class="aq-field">
+                <div style="display:flex; align-items:center; gap:0.5rem;">
+                  <button type="button" class="aq-btn" @click="loadRemoteModels(idx)">Load models</button>
+                  <span x-show="m.endpoint_ok===true">✅ Endpoint OK</span>
+                  <span x-show="m.endpoint_ok===false">❌ Endpoint error</span>
+                </div>
+              </div>
+              <div class="aq-field">
+                <label class="aq-field">
+                  <span>Select remote model</span>
+                  <select x-model="m.remote_model">
+                    <option value="">-- choose --</option>
+                    <option x-show="m.remote_model && !(m.remote_models && m.remote_models.includes(m.remote_model))" :value="m.remote_model" x-text="m.remote_model + ' (current)' "></option>
+                    <template x-for="rm in (m.remote_models || [])" :key="rm">
+                      <option :value="rm" x-text="rm"></option>
+                    </template>
+                  </select>
+                </label>
+                <div>
+                  <span x-show="m.remote_model && m.remote_models && m.remote_models.includes(m.remote_model)">✅ Model available</span>
+                  <span x-show="m.remote_model && m.remote_models && !m.remote_models.includes(m.remote_model)">⚠️ Model not offered</span>
+                </div>
+              </div>
+              <div class="aq-toolbar" style="justify-content: space-between;">
+                <label style="display:flex; align-items:center; gap:0.4rem;">
+                  <input type="radio" name="openai_selected_name" :value="m.name" x-model="selected_name" />
+                  <span>Use this model</span>
+                </label>
+                <button type="button" class="aq-btn" @click="remove(idx)">Remove</button>
+              </div>
+            </div>
+          </template>
+
+          <div class="aq-card" x-show="hasNameIssues()" style="background:#450a0a;border-color:#b91c1c;color:#fecaca;">
+            <strong>Model name issues:</strong>
+            <ul style="margin:0.5rem 0 0 1rem;">
+              <li x-show="hasEmptyName()">Each model must have a non-empty name.</li>
+              <template x-for="dn in duplicateNamesList()" :key="dn">
+                <li>Duplicate name: <code x-text="dn"></code></li>
+              </template>
+            </ul>
+          </div>
+
+          <div class="aq-toolbar">
+            <button type="button" class="aq-btn" @click="add()">Add model</button>
+          </div>
+        </fieldset>
+      </div>
+
+      <div class="aq-toolbar">
+        <button type="button" class="aq-btn aq-btn-primary" :disabled="hasNameIssues()" :title="hasNameIssues() ? 'Resolve model name issues before saving' : ''" @click="save()">Save</button>
+        <button type="button" class="aq-btn" hx-get="/" hx-select="#main" hx-target="#main" hx-swap="innerHTML">Close</button>
+      </div>
+    </div>
+  </div>
+</section>
+

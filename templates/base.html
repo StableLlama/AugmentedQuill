@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="/static/style.css" />
   <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
   <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+  <script src="/static/js/app.js" defer></script>
 </head>
 <body>
   <header class="aq-header">
@@ -16,7 +17,7 @@
     {% block content %}{% endblock %}
   </main>
   <footer class="aq-footer">
-    <small>Prototype UI • {{ year }}</small>
+    <small>Prototype UI • <span id="aq-year"></span></small>
   </footer>
 </body>
 </html>

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="JunieProjectTechnologies">
+    <option name="explicitlyDisabledTechs">
+      <set>
+        <option value="junie.jvm" />
+      </set>
+    </option>
+    <option name="explicitlyEnabledTechs">
+      <set>
+        <option value="junie.js" />
+        <option value="junie.python" />
+      </set>
+    </option>
+  </component>
+</project>
