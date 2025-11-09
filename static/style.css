@@ -78,3 +78,39 @@ body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu
 .aq-edit-wrap { display: grid; gap: 0.4rem; }
 .aq-edit-actions { display:flex; gap:0.4rem; }
 .aq-btn-sm { padding: 0.2rem 0.45rem; font-size: 0.85rem; }
+
+
+/* Toast UI Editor dark theme adjustments */
+.aq-tui-wrap .toastui-editor-defaultUI {
+  background: #0b1223;
+  color: var(--fg);
+  border: 1px solid #334155;
+  border-radius: 6px;
+}
+.aq-tui-wrap .toastui-editor-contents,
+.aq-tui-wrap .toastui-editor-contents p {
+  color: var(--fg);
+}
+.aq-tui-wrap .toastui-editor-contents h1,
+.aq-tui-wrap .toastui-editor-contents h2,
+.aq-tui-wrap .toastui-editor-contents h3,
+.aq-tui-wrap .toastui-editor-contents h4,
+.aq-tui-wrap .toastui-editor-contents h5,
+.aq-tui-wrap .toastui-editor-contents h6 {
+  color: var(--fg);
+}
+.aq-tui-wrap .ProseMirror {
+  background: #0b1223;
+  color: var(--fg);
+  min-height: 200px;
+}
+.aq-tui-wrap .toastui-editor-toolbar {
+  display: none; /* we use our own toolbar */
+}
+.aq-tui-wrap .toastui-editor-md-container,
+.aq-tui-wrap .toastui-editor-mode-switch {
+  display: none; /* hide markdown panel and mode switch to enforce WYSIWYG */
+}
+.aq-tui-wrap .toastui-editor-ww-container {
+  border-radius: 6px;
+}
