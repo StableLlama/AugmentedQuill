@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime
 from pathlib import Path
 from typing import Optional, List, Tuple
 import re
@@ -50,7 +49,7 @@ def healthcheck() -> dict:
 # JSON REST APIs to serve dynamic data to the frontend (no server-side injection in HTML)
 @app.get("/api/health")
 async def api_health() -> dict:
-    return {"status": "ok", "server_time": datetime.now().isoformat()}
+    return {"status": "ok"}
 
 
 @app.get("/api/story")
@@ -69,13 +68,6 @@ async def api_machine() -> dict:
     return machine or {}
 
 
-@app.get("/health/fragment", response_class=HTMLResponse)
-async def health_fragment() -> HTMLResponse:
-    # Simple dynamic HTML snippet to demonstrate HTMX interaction
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    return HTMLResponse(
-        f'<div id="health">Status: <strong>ok</strong> • Server time: {now}</div>'
-    )
 
 
 @app.get("/settings", response_class=HTMLResponse)
@@ -148,13 +140,11 @@ async def settings_post(
 
     # Validate unique, non-empty names if multi-model payload provided
     def _render_with_error(error_msg: str) -> HTMLResponse:
-        year = datetime.now().year
         # Preserve init fields as provided; backend validation error means nothing was saved
         return templates.TemplateResponse(
             "settings.html",
             {
                 "request": request,
-                "year": year,
                 "machine": {"openai": {}},
                 "story": story_cfg,
                 "saved": False,
@@ -226,7 +216,6 @@ async def settings_post(
     machine_path.write_text(json.dumps(machine_cfg, indent=2), encoding="utf-8")
 
     # Re-render form with a success message and provide init fields so Alpine preserves state
-    year = datetime.now().year
     # Prepare init fields similar to GET so the client-side component initializes with saved values
     openai_cfg = machine_cfg.get("openai", {}) if isinstance(machine_cfg, dict) else {}
     import json
@@ -241,7 +230,6 @@ async def settings_post(
         "settings.html",
         {
             "request": request,
-            "year": year,
             "machine": machine_cfg,
             "story": story_cfg,
             "saved": True,
@@ -614,6 +602,33 @@ async def api_create_chapter(request: Request) -> JSONResponse:
         "ok": True,
         "chapter": {"id": next_idx, "title": title or filename, "filename": filename}
     })
+
+
+@app.put("/api/chapters/{chap_id}/content")
+async def api_update_chapter_content(request: Request, chap_id: int = FastAPIPath(..., ge=0)) -> JSONResponse:
+    """Persist chapter content to its file.
+    Body: {"content": str}
+    """
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+    if not isinstance(payload, dict) or "content" not in payload:
+        return JSONResponse(status_code=400, content={"ok": False, "detail": "content is required"})
+    new_content = str(payload.get("content", ""))
+
+    files = _scan_chapter_files()
+    match = next(((idx, p, i) for i, (idx, p) in enumerate(files) if idx == chap_id), None)
+    if not match:
+        raise HTTPException(status_code=404, detail="Chapter not found")
+    _, path, _ = match
+
+    try:
+        path.write_text(new_content, encoding="utf-8")
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"ok": False, "detail": f"Failed to write chapter: {e}"})
+
+    return JSONResponse(status_code=200, content={"ok": True})
 
 
 # --- Proxy endpoint for OpenAI model listing (fallback when CORS blocks browser) ---

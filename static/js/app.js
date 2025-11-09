@@ -251,29 +251,47 @@
       chapters: [], // [{id,title,filename}]
       activeId: null,
       content: '',
-      status: 'unknown',
-      server_time: '',
+      // rendering mode: 'raw' | 'markdown'
+      renderMode: 'raw',
+      // dirty tracking for editor content
+      dirty: false,
+      _originalContent: '',
       // inline title editing state
       editingId: null,
       editingTitle: '',
       init() {
         // Listen for project change notifications
         document.addEventListener('aq:project-selected', () => { this.refreshChapters(); });
+        // Ctrl/Cmd+S to save
+        window.addEventListener('keydown', (e) => {
+          if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
+            e.preventDefault();
+            if (this.dirty) this.saveContent();
+          }
+        });
+        // Warn on navigation if dirty
+        window.addEventListener('beforeunload', (e) => {
+          if (this.dirty) { e.preventDefault(); e.returnValue = ''; }
+        });
         this.load();
       },
       async load() {
         try {
+          // Load story to set initial rendering preference
+          try {
+            const s = await fetch('/api/story');
+            if (s.ok) {
+              const sj = await s.json();
+              const fmt = (sj && sj.format) ? String(sj.format).toLowerCase() : 'markdown';
+              this.renderMode = (fmt === 'markdown') ? 'markdown' : 'raw';
+            }
+          } catch(_) { /* default stays */ }
           await this.refreshChapters();
           if (!(this.chapters && this.chapters.length)) {
             await this.ensureProjectSelected();
           }
-          // Load health info
-          const h = await fetch('/api/health');
-          const hj = await h.json();
-          this.status = hj.status || 'unknown';
-          this.server_time = hj.server_time || '';
         } catch(_) {
-          this.status='error';
+          /* no-op */
         }
       },
       async ensureProjectSelected() {
@@ -313,8 +331,141 @@
           this.chapters = [];
         }
       },
+      displayHtml() {
+        const text = String(this.content || '');
+        if (this.renderMode === 'markdown') {
+          return this.mdToHtml(text);
+        } else {
+          return '<pre style="white-space:pre-wrap; margin:0;">' + this.escapeHtml(text) + '</pre>';
+        }
+      },
+      escapeHtml(s) {
+        return String(s)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+      },
+      mdToHtml(src) {
+        try {
+          if (window.markdownit) {
+            // Use markdown-it with sensible defaults, HTML disabled for safety
+            if (!this._md) {
+              this._md = window.markdownit({ html: false, linkify: true, typographer: true });
+            }
+            return this._md.render(String(src || ''));
+          }
+        } catch(_) { /* fall back */ }
+        // Fallback minimal renderer
+        const lines = String(src || '').split(/\r?\n/);
+        let html = '';
+        let inCode = false;
+        let codeBuf = [];
+        const flushCode = () => {
+          if (codeBuf.length) {
+            const code = this.escapeHtml(codeBuf.join('\n'));
+            html += '<pre><code>' + code + '</code></pre>';
+            codeBuf = [];
+          }
+        };
+        const paraBuf = [];
+        const flushPara = () => {
+          if (paraBuf.length) {
+            const text = this.escapeHtml(paraBuf.join(' '));
+            html += '<p>' + text + '</p>';
+            paraBuf.length = 0;
+          }
+        };
+        for (let i=0; i<lines.length; i++) {
+          const line = lines[i];
+          if (line.trim().startsWith('```')) {
+            if (inCode) { inCode = false; flushCode(); }
+            else { flushPara(); inCode = true; codeBuf = []; }
+            continue;
+          }
+          if (inCode) { codeBuf.push(line); continue; }
+          if (!line.trim()) { flushPara(); continue; }
+          if (line.startsWith('### ')) { flushPara(); html += '<h3>' + this.escapeHtml(line.slice(4)) + '</h3>'; }
+          else if (line.startsWith('## ')) { flushPara(); html += '<h2>' + this.escapeHtml(line.slice(3)) + '</h2>'; }
+          else if (line.startsWith('# ')) { flushPara(); html += '<h1>' + this.escapeHtml(line.slice(2)) + '</h1>'; }
+          else { paraBuf.push(line); }
+        }
+        if (inCode) { flushCode(); }
+        flushPara();
+        return html || '<p></p>';
+      },
+      onChanged() {
+        this.dirty = (String(this.content || '') !== String(this._originalContent || ''));
+      },
+      _confirmDiscardIfDirty() {
+        if (!this.dirty) return true;
+        return confirm('You have unsaved changes. Discard them?');
+      },
+      _replaceSelection(before, after) {
+        const ta = this.$refs && this.$refs.editor;
+        if (!ta) return;
+        const start = ta.selectionStart || 0;
+        const end = ta.selectionEnd || 0;
+        const v = this.content || '';
+        const selected = v.slice(start, end);
+        const newText = v.slice(0, start) + before + selected + after + v.slice(end);
+        this.content = newText;
+        queueMicrotask(() => { ta.focus(); const pos = start + before.length + selected.length + after.length; ta.setSelectionRange(pos, pos); });
+        this.onChanged();
+      },
+      wrapSelection(before, after) { this._replaceSelection(before, after); },
+      insertHeading() {
+        const ta = this.$refs && this.$refs.editor; if (!ta) return;
+        const v = this.content || '';
+        const startLineStart = v.lastIndexOf('\n', (ta.selectionStart||0) - 1) + 1;
+        const newText = v.slice(0, startLineStart) + '# ' + v.slice(startLineStart);
+        this.content = newText; this.onChanged();
+      },
+      insertLink() {
+        const ta = this.$refs && this.$refs.editor; if (!ta) return;
+        const start = ta.selectionStart || 0; const end = ta.selectionEnd || 0;
+        const v = this.content || '';
+        const selected = v.slice(start, end) || 'text';
+        const url = prompt('Enter URL', 'https://'); if (url === null) return;
+        const before = '[' + selected + '](' + (url || '') + ')';
+        const newText = v.slice(0, start) + before + v.slice(end);
+        this.content = newText; this.onChanged();
+      },
+      togglePrefix(prefix) {
+        const ta = this.$refs && this.$refs.editor; if (!ta) return;
+        const v = this.content || '';
+        const start = ta.selectionStart || 0; const end = ta.selectionEnd || 0;
+        const lines = v.split(/\r?\n/);
+        // determine lines affected
+        let idx=0, pos=0; const startLineIdx = (()=>{ for(let i=0;i<lines.length;i++){const l=lines[i]; if (pos + l.length >= start) { return i; } pos += l.length+1; } return lines.length-1;})()
+        ;
+        pos = 0; const endLineIdx = (()=>{ for(let i=0;i<lines.length;i++){const l=lines[i]; if (pos + l.length >= end) { return i; } pos += l.length+1; } return lines.length-1;})()
+        ;
+        for (let i=startLineIdx; i<=endLineIdx; i++) {
+          if (lines[i].startsWith(prefix)) lines[i] = lines[i].slice(prefix.length);
+          else lines[i] = prefix + lines[i];
+        }
+        this.content = lines.join('\n'); this.onChanged();
+      },
+      toggleList(prefix) { this.togglePrefix(prefix || '- '); },
+      async saveContent() {
+        if (this.activeId == null) return;
+        try {
+          const resp = await fetch(`/api/chapters/${this.activeId}/content`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: String(this.content||'') }) });
+          const data = await resp.json().catch(()=>({}));
+          if (!resp.ok || data.ok !== true) throw new Error((data && (data.detail||data.error)) || ('HTTP '+resp.status));
+          this._originalContent = String(this.content||'');
+          this.dirty = false;
+        } catch(e) {
+          alert('Failed to save: ' + (e && e.message ? e.message : e));
+        }
+      },
       async openChapter(id) {
         if (id == null) return;
+        if (this.activeId !== null && id !== this.activeId) {
+          if (!this._confirmDiscardIfDirty()) return;
+        }
         // Leaving edit mode when switching chapters
         this.editingId = null; this.editingTitle = '';
         try {
@@ -323,8 +474,12 @@
           const data = await resp.json();
           this.activeId = data.id;
           this.content = data.content || '';
+          this._originalContent = String(this.content || '');
+          this.dirty = false;
         } catch(e) {
           this.content = 'Error loading chapter: ' + (e && e.message ? e.message : e);
+          this._originalContent = this.content;
+          this.dirty = false;
         }
       },
       startEdit(ch) {

@@ -37,21 +37,36 @@
 
     <section id="main" class="aq-mainpane">
       <div class="aq-panel">
-        <div class="aq-toolbar">
-          <button id="refresh" class="aq-btn" @click="load()">Refresh</button>
+        <div class="aq-toolbar" style="gap:0.5rem; align-items:center;">
+          <button id="save" class="aq-btn aq-btn-primary" :disabled="!dirty" @click="saveContent()">Save</button>
+          <span x-show="dirty" style="font-size:0.9rem; color:#fbbf24; margin-left:0.5rem;">Unsaved changes</span>
+          <div style="margin-left:auto; display:flex; gap:0.5rem; align-items:center;">
+            <span style="font-size:0.9rem; color:#94a3b8;">Render:</span>
+            <button class="aq-btn" :class="{ 'aq-btn-primary': renderMode==='raw' }" @click="renderMode='raw'">Raw</button>
+            <button class="aq-btn" :class="{ 'aq-btn-primary': renderMode==='markdown' }" @click="renderMode='markdown'">Markdown</button>
+          </div>
         </div>
         <div class="aq-content">
           <div class="aq-card">
-            <div id="health">Status: <strong x-text="status"></strong> <template x-if="server_time">• Server time: <span x-text="server_time"></span></template></div>
-          </div>
-          <div class="aq-card" style="white-space: pre-wrap;">
             <template x-if="activeId === null">
               <div class="aq-empty">Select a chapter to view its content.</div>
             </template>
             <template x-if="activeId !== null">
               <div>
                 <div style="font-weight:600; margin-bottom:0.5rem;">Chapter <span x-text="activeId"></span></div>
-                <div x-text="content"></div>
+                <div x-show="renderMode==='markdown'" class="aq-toolbar" style="gap:0.25rem; flex-wrap:wrap;">
+                  <button class="aq-btn aq-btn-sm" title="Bold" @click="wrapSelection('**','**')"><strong>B</strong></button>
+                  <button class="aq-btn aq-btn-sm" title="Italic" @click="wrapSelection('*','*')"><em>I</em></button>
+                  <button class="aq-btn aq-btn-sm" title="Heading" @click="insertHeading()">H1</button>
+                  <button class="aq-btn aq-btn-sm" title="Link" @click="insertLink()">Link</button>
+                  <button class="aq-btn aq-btn-sm" title="Code" @click="wrapSelection('`','`')">Code</button>
+                  <button class="aq-btn aq-btn-sm" title="Bullet list" @click="toggleList('- ')">• List</button>
+                  <button class="aq-btn aq-btn-sm" title="Quote" @click="togglePrefix('> ')">❝ Quote</button>
+                </div>
+                <textarea x-ref="editor" x-model="content" @input="onChanged()" rows="16" style="width:100%; resize:vertical; background:#0b1223; color:var(--fg); border:1px solid #334155; border-radius:6px; padding:0.75rem;"></textarea>
+                <div class="aq-preview" x-show="renderMode==='markdown'" style="margin-top:0.75rem; padding:0.75rem; border:1px dashed #334155; border-radius:6px;">
+                  <div x-html="mdToHtml(content)"></div>
+                </div>
               </div>
             </template>
           </div>
