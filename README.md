@@ -1,4 +1,7 @@
 # AugmentedQuill
+
+<img src="static/images/logo_2048.png" alt="Augmented Quill - Your Words, Amplified" width="1024">
+
 Web GUI for LLM assisted prose writing
 
 The project is using Python with FastAPI on the backend and HTMX with Alpine.js
