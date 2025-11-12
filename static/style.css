@@ -7,7 +7,7 @@ body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu
 .aq-main { padding: 1rem; max-width: 1200px; margin: 0 auto; }
 
 /* Shell layout with left sidebar */
-.aq-shell { display: grid; grid-template-columns: 260px 1fr; gap: 1rem; align-items: start; }
+.aq-shell { display: grid; grid-template-columns: 260px 1fr 340px; gap: 1rem; align-items: start; }
 .aq-sidebar { display: grid; grid-template-rows: 1fr auto; height: calc(100vh - 140px); position: sticky; top: 1rem; background: #0b1223; border: 1px solid #1f2937; border-radius: 8px; padding: 0.75rem; }
 .aq-sidebar-title { margin: 0 0 0.5rem 0; font-size: 0.95rem; color: var(--muted); }
 .aq-chapters { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.25rem; }
@@ -57,6 +57,7 @@ body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu
 /* Forms */
 .aq-form { display: grid; gap: 1rem; }
 .aq-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+@media (max-width: 1200px) { .aq-shell { grid-template-columns: 220px 1fr; } .aq-rightbar { display:none; } }
 @media (max-width: 900px) { .aq-shell { grid-template-columns: 1fr; } .aq-form-grid { grid-template-columns: 1fr; } .aq-sidebar { position: static; height: auto; } }
 .aq-field { display: grid; gap: 0.25rem; margin: 0.5rem 0; }
 .aq-field input, .aq-field select, .aq-field textarea { width: 100%; padding: 0.5rem 0.6rem; border-radius: 6px; border: 1px solid #334155; background: #0b1223; color: var(--fg); }
@@ -125,3 +126,42 @@ textarea[data-ref="rawEditor"] {
 .aq-tui-wrap .toastui-editor-ww-container {
   border-radius: 6px;
 }
+
+/* Right chat sidebar */
+.aq-rightbar {
+  display: grid;
+  grid-template-rows: 1fr;
+  height: calc(100vh - 140px);
+  position: sticky;
+  top: 1rem;
+  background: #0b1223;
+  border: 1px solid #1f2937;
+  border-radius: 8px;
+  padding: 0.75rem;
+}
+.aq-rightbar-top { display: grid; grid-template-rows: auto 1fr auto; gap: 0.5rem; }
+.aq-chat {
+  overflow: auto;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  padding: 0.5rem;
+  background: #0b1223;
+}
+.aq-chat-input { margin-top: 0.5rem; }
+.aq-chat-input-row { display:flex; gap:0.5rem; align-items:flex-start; }
+.aq-chat-input-row textarea { flex: 1; min-height: 72px; resize: vertical; background:#0b1223; color:var(--fg); border:1px solid #334155; border-radius:6px; padding:0.5rem; }
+.aq-role-select { position: relative; }
+.aq-role-select > .aq-btn { white-space: nowrap; }
+.aq-role-menu { position:absolute; top: calc(100% + 4px); left: 0; background:#0b1223; border:1px solid #334155; border-radius:6px; padding:0.25rem; display:flex; flex-direction:column; z-index: 20; }
+.aq-role-menu button { background: transparent; border: none; color: var(--fg); text-align: left; padding: 0.25rem 0.5rem; border-radius: 4px; cursor: pointer; }
+.aq-role-menu button:hover { background: #111827; }
+
+/* Chat bubbles */
+.aq-bubble { border: 1px solid #334155; border-radius: 8px; padding: 0.5rem; margin-bottom: 0.5rem; background:#0b1223; }
+.aq-bubble.user { border-color: #2563eb; }
+.aq-bubble.assistant { border-color: #22d3ee; }
+.aq-bubble.system { border-color: #10b981; }
+.aq-bubble-head { font-size: 0.8rem; color: #94a3b8; margin-bottom: 0.25rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.aq-bubble-body { white-space: pre-wrap; outline: none; }
+.aq-bubble-body:focus { box-shadow: 0 0 0 2px rgba(34,211,238,0.35); border-radius: 4px; }
+.aq-bubble-actions { display:flex; gap:0.4rem; justify-content:flex-end; margin-top: 0.25rem; }

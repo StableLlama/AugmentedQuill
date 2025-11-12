@@ -52,5 +52,41 @@
         </div>
       </div>
     </section>
+
+    <!-- Right sidebar: Chat -->
+    <aside class="aq-rightbar">
+      <div class="aq-rightbar-top" data-component="chat-view">
+        <h3 class="aq-sidebar-title">Chat</h3>
+        <div class="aq-field" style="margin-top:0.25rem;">
+          <label>
+            <span style="display:block; font-size:0.85rem; color:#94a3b8; margin-bottom:0.25rem;">Model</span>
+            <select data-ref="modelSelect"></select>
+          </label>
+        </div>
+        <div class="aq-chat" data-ref="chatList">
+          <div class="aq-empty">No messages</div>
+        </div>
+        <div class="aq-chat-input">
+          <div class="aq-field" style="margin:0;">
+            <div class="aq-chat-input-row">
+              <div class="aq-role-select">
+                <button class="aq-btn aq-btn-sm" data-ref="roleButton" aria-haspopup="listbox" aria-expanded="false">user ▾</button>
+                <div class="aq-role-menu" data-ref="roleMenu" hidden>
+                  <button type="button" data-role="system">system</button>
+                  <button type="button" data-role="assistant">assistant</button>
+                  <button type="button" data-role="user">user</button>
+                </div>
+              </div>
+              <textarea rows="3" placeholder="Type a message..." data-ref="input"></textarea>
+            </div>
+          </div>
+          <div class="aq-toolbar" style="justify-content: flex-end; margin-top:0.5rem;">
+            <button class="aq-btn" data-ref="deleteLast">Delete last</button>
+            <button class="aq-btn aq-btn-primary" data-ref="send">Send</button>
+            <button class="aq-btn" data-ref="regenerate">Regenerate</button>
+          </div>
+        </div>
+      </div>
+    </aside>
   </div>
 {% endblock %}

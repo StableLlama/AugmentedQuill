@@ -4,6 +4,7 @@
 import { ModelsEditor } from './settings.js';
 import { ShellView } from './editor.js';
 import { registry } from './component.js';
+import { ChatView } from './chat.js';
 
 // ========================================
 // Application State
@@ -12,6 +13,7 @@ import { registry } from './component.js';
 window.app = {
   shellView: null,
   modelsEditor: null,
+  chatView: null,
   registry
 };
 
@@ -37,6 +39,14 @@ function initComponents() {
     window.app.modelsEditor = new ModelsEditor(settingsElement);
     registry.register('modelsEditor', window.app.modelsEditor);
     window.app.modelsEditor.init();
+  }
+
+  // Initialize chat view if element exists
+  const chatElement = document.querySelector('[data-component="chat-view"]');
+  if (chatElement && !window.app.chatView) {
+    window.app.chatView = new ChatView(chatElement);
+    registry.register('chatView', window.app.chatView);
+    window.app.chatView.init();
   }
 }
 
@@ -75,7 +85,7 @@ document.addEventListener('htmx:beforeSwap', function (e) {
     const target = e.detail?.target || e.target;
     if (target) {
       // Clean up any components in the target
-      ['shellView', 'modelsEditor'].forEach(name => {
+      ['shellView', 'modelsEditor', 'chatView'].forEach(name => {
         const component = window.app[name];
         if (component && target.contains(component.el)) {
           component.destroy();

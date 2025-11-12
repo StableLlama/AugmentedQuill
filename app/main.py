@@ -304,6 +304,7 @@ if __name__ == "__main__":
 from fastapi.responses import JSONResponse
 import httpx  # HTTP client for server-side fetch fallback
 import json as _json
+from typing import Any, Dict
 
 
 @app.post("/api/settings")
@@ -668,3 +669,133 @@ async def proxy_list_models(request: Request) -> JSONResponse:
             return JSONResponse(status_code=200, content=content)
     except httpx.HTTPError as e:
         raise HTTPException(status_code=502, detail=f"Upstream request failed: {e}")
+
+
+# --- Chat API (OpenAI-compatible) ---
+@app.post("/api/chat")
+async def api_chat(request: Request) -> JSONResponse:
+    """Chat with the configured OpenAI-compatible model.
+
+    Body JSON:
+      {
+        "model_name": "name-of-configured-entry" | null,
+        "messages": [{"role": "system|user|assistant", "content": str}, ...],
+        // optional overrides (otherwise pulled from config/machine.json)
+        "base_url": str,
+        "api_key": str,
+        "model": str,
+        "timeout_s": int
+      }
+
+    Returns: { ok: true, message: {role:"assistant", content: str}, usage?: {...} }
+    """
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    def _coerce_messages(val: Any) -> list[dict]:
+        arr = val if isinstance(val, list) else []
+        out: list[dict] = []
+        for m in arr:
+            if not isinstance(m, dict):
+                continue
+            role = str(m.get("role", "")).strip() or "user"
+            content = m.get("content")
+            if content is None:
+                continue
+            out.append({"role": role, "content": str(content)})
+        return out
+
+    req_messages = _coerce_messages((payload or {}).get("messages"))
+    if not req_messages:
+        return JSONResponse(status_code=400, content={"ok": False, "detail": "messages array is required"})
+
+    # Load machine config and pick selected model
+    machine = load_machine_config(CONFIG_DIR / "machine.json") or {}
+    openai_cfg: Dict[str, Any] = machine.get("openai") or {}
+    selected_name = (payload or {}).get("model_name") or openai_cfg.get("selected")
+
+    base_url = (payload or {}).get("base_url")
+    api_key = (payload or {}).get("api_key")
+    model_id = (payload or {}).get("model")
+    timeout_s = (payload or {}).get("timeout_s")
+
+    # If models list exists and a name is provided or selected, use it
+    models = openai_cfg.get("models") if isinstance(openai_cfg, dict) else None
+    if isinstance(models, list) and models:
+        chosen = None
+        if selected_name:
+            for m in models:
+                if isinstance(m, dict) and (m.get("name") == selected_name):
+                    chosen = m
+                    break
+        if chosen is None:
+            chosen = models[0]
+        base_url = base_url or chosen.get("base_url")
+        api_key = api_key or chosen.get("api_key")
+        model_id = model_id or chosen.get("model")
+        timeout_s = timeout_s or chosen.get("timeout_s", 60)
+    else:
+        # Legacy single config
+        base_url = base_url or openai_cfg.get("base_url")
+        api_key = api_key or openai_cfg.get("api_key")
+        model_id = model_id or openai_cfg.get("model")
+        timeout_s = timeout_s or openai_cfg.get("timeout_s", 60)
+
+    if not base_url or not model_id:
+        return JSONResponse(status_code=400, content={"ok": False, "detail": "Missing base_url or model in configuration"})
+
+    url = str(base_url).rstrip("/") + "/chat/completions"
+    headers: Dict[str, str] = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    # Pull llm preferences for sensible defaults
+    story = load_story_config((get_active_project_dir() or CONFIG_DIR) / "story.json") or {}
+    prefs = (story.get("llm_prefs") or {}) if isinstance(story, dict) else {}
+    temperature = float(prefs.get("temperature", 0.7)) if isinstance(prefs.get("temperature", 0.7), (int, float, str)) else 0.7
+    try:
+        temperature = float(temperature)
+    except Exception:
+        temperature = 0.7
+    max_tokens = prefs.get("max_tokens", None)
+
+    body: Dict[str, Any] = {
+        "model": model_id,
+        "messages": req_messages,
+        "temperature": temperature,
+    }
+    if isinstance(max_tokens, int):
+        body["max_tokens"] = max_tokens
+
+    try:
+        timeout_obj = httpx.Timeout(float(timeout_s or 60))
+    except Exception:
+        timeout_obj = httpx.Timeout(60.0)
+
+    try:
+        async with httpx.AsyncClient(timeout=timeout_obj) as client:
+            resp = await client.post(url, headers=headers, json=body)
+            # Try to parse JSON regardless of status
+            data = None
+            try:
+                data = resp.json()
+            except Exception:
+                data = {"raw": resp.text}
+            if resp.status_code >= 400:
+                return JSONResponse(status_code=resp.status_code, content={"ok": False, "detail": data})
+
+            # OpenAI-style response
+            choices = (data or {}).get("choices") or []
+            content = ""
+            role = "assistant"
+            if choices:
+                msg = choices[0].get("message") if isinstance(choices[0], dict) else None
+                if isinstance(msg, dict):
+                    role = msg.get("role", role) or role
+                    content = msg.get("content", "") or ""
+            usage = (data or {}).get("usage")
+            return JSONResponse(status_code=200, content={"ok": True, "message": {"role": role, "content": content}, "usage": usage})
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"Chat request failed: {e}")
