@@ -104,12 +104,11 @@ body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu
   color: var(--fg);
   min-height: 200px;
 }
-.aq-tui-wrap .toastui-editor-toolbar {
-  display: none; /* we use our own toolbar */
-}
-.aq-tui-wrap .toastui-editor-md-container,
-.aq-tui-wrap .toastui-editor-mode-switch {
-  display: none; /* hide markdown panel and mode switch to enforce WYSIWYG */
+/* Hide Toast UI's internal switches/tabs; app controls mode itself */
+.aq-tui-wrap .toastui-editor-mode-switch,
+.aq-tui-wrap .toastui-editor-tabs,
+.aq-tui-wrap .toastui-editor-tab-container {
+  display: none;
 }
 .aq-tui-wrap .toastui-editor-ww-container {
   border-radius: 6px;

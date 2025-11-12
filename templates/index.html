@@ -43,7 +43,8 @@
           <div style="margin-left:auto; display:flex; gap:0.5rem; align-items:center;">
             <span style="font-size:0.9rem; color:#94a3b8;">Editor:</span>
             <button class="aq-btn" :class="{ 'aq-btn-primary': renderMode==='raw' }" @click="switchRender('raw')">Raw</button>
-            <button class="aq-btn" :class="{ 'aq-btn-primary': renderMode==='markdown' }" @click="switchRender('markdown')">WYSIWYG</button>
+            <button class="aq-btn" :class="{ 'aq-btn-primary': renderMode==='markdown' }" @click="switchRender('markdown')">Markdown</button>
+            <button class="aq-btn" :class="{ 'aq-btn-primary': renderMode==='wysiwyg' }" @click="switchRender('wysiwyg')">WYSIWYG</button>
           </div>
         </div>
         <div class="aq-content">
@@ -63,7 +64,7 @@
                   <button class="aq-btn aq-btn-sm" title="Bullet list" @click="toggleList('- ')">• List</button>
                   <button class="aq-btn aq-btn-sm" title="Quote" @click="togglePrefix('> ')">❝ Quote</button>
                 </div>
-                <textarea x-ref="rawEditor" x-model="content" @input="onChanged()" rows="16" style="width:100%; resize:vertical; background:#0b1223; color:var(--fg); border:1px solid #334155; border-radius:6px; padding:0.75rem;"></textarea>
+                <textarea x-show="renderMode === 'raw'" x-ref="rawEditor" x-model="content" @input="onChanged()" rows="16" style="width:100%; resize:vertical; background:#0b1223; color:var(--fg); border:1px solid #334155; border-radius:6px; padding:0.75rem;"></textarea>
               </div>
             </template>
           </div>
