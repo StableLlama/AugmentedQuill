@@ -12,6 +12,7 @@ export class ShellView extends Component {
       content: '',
       renderMode: 'raw',
       contentWidth: 33, // em units
+      fontSize: 1, // rem units
       dirty: false,
       _originalContent: '',
       editingId: null,
@@ -46,6 +47,7 @@ export class ShellView extends Component {
       this.renderRawEditorToolbar();
     });
     this.watch('contentWidth', () => this.renderContentWidth());
+    this.watch('fontSize', () => this.renderFontSize());
 
     // Listen for project changes from settings page
     document.addEventListener('aq:project-selected', () => {
@@ -77,6 +79,7 @@ export class ShellView extends Component {
     this.renderMainView();
     this.renderRawEditorToolbar();
     this.renderContentWidth();
+    this.renderFontSize();
   }
 
   /**
@@ -180,6 +183,23 @@ export class ShellView extends Component {
           this.contentWidth = Math.min(maxWidth, this.contentWidth + step);
         } else if (direction === 'decrease') {
           this.contentWidth = Math.max(minWidth, this.contentWidth - step);
+        }
+      });
+    });
+
+    // Font size buttons
+    const fontSizeButtons = document.querySelectorAll('[data-action="change-font-size"]');
+    fontSizeButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const direction = btn.dataset.direction;
+        const step = 0.1; // rem
+        const minSize = 0.7; // rem
+        const maxSize = 2.0; // rem
+
+        if (direction === 'increase') {
+          this.fontSize = Math.min(maxSize, this.fontSize + step);
+        } else if (direction === 'decrease') {
+          this.fontSize = Math.max(minSize, this.fontSize - step);
         }
       });
     });
@@ -305,6 +325,16 @@ export class ShellView extends Component {
    */
   renderContentWidth() {
     this.el.style.gridTemplateColumns = `1fr ${this.contentWidth + 2}em 1fr`;
+  }
+
+  /**
+   * Render editor font size
+   */
+  renderFontSize() {
+    const cardEl = this.el.querySelector('.aq-card');
+    if (cardEl) {
+      cardEl.style.fontSize = `${this.fontSize}rem`;
+    }
   }
 
   /**

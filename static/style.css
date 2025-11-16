@@ -76,6 +76,7 @@ textarea[data-ref="rawEditor"] {
   border-radius: 6px;
   padding: 0.75rem;
   width: 100%;
+  font-size: inherit;
 }
 
 /* Inline editing in chapters list */
@@ -100,6 +101,7 @@ textarea[data-ref="rawEditor"] {
 .aq-tui-wrap .toastui-editor-contents,
 .aq-tui-wrap .toastui-editor-contents p {
   color: var(--fg);
+  font-size: inherit;
 }
 .aq-tui-wrap .toastui-editor-contents h1,
 .aq-tui-wrap .toastui-editor-contents h2,
@@ -113,6 +115,7 @@ textarea[data-ref="rawEditor"] {
   background: var(--bg);
   color: var(--fg);
   min-height: 200px;
+  font-size: inherit;
 }
 /* Hide Toast UI's internal switches/tabs; app controls mode itself */
 .aq-tui-wrap .toastui-editor-mode-switch,
