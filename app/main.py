@@ -672,6 +672,30 @@ async def proxy_list_models(request: Request) -> JSONResponse:
 
 
 # --- Chat API (OpenAI-compatible) ---
+@app.get("/api/chat")
+async def api_get_chat() -> dict:
+    """Return initial state for chat view: models and current selection."""
+    machine = load_machine_config(CONFIG_DIR / "machine.json") or {}
+    openai_cfg = (machine.get("openai") or {}) if isinstance(machine, dict) else {}
+    models_list = openai_cfg.get("models") if isinstance(openai_cfg, dict) else []
+
+    model_names = []
+    if isinstance(models_list, list):
+        model_names = [
+            m.get("name") for m in models_list if isinstance(m, dict) and m.get("name")
+        ]
+
+    selected = openai_cfg.get("selected", "") if isinstance(openai_cfg, dict) else ""
+    if not selected and model_names:
+        selected = model_names[0]
+
+    return {
+        "models": model_names,
+        "current_model": selected,
+        "messages": [],  # History is client-managed; this is a placeholder.
+    }
+
+
 @app.post("/api/chat")
 async def api_chat(request: Request) -> JSONResponse:
     """Chat with the configured OpenAI-compatible model.
@@ -732,16 +756,10 @@ async def api_chat(request: Request) -> JSONResponse:
                     break
         if chosen is None:
             chosen = models[0]
-        base_url = base_url or chosen.get("base_url")
-        api_key = api_key or chosen.get("api_key")
-        model_id = model_id or chosen.get("model")
-        timeout_s = timeout_s or chosen.get("timeout_s", 60)
-    else:
-        # Legacy single config
-        base_url = base_url or openai_cfg.get("base_url")
-        api_key = api_key or openai_cfg.get("api_key")
-        model_id = model_id or openai_cfg.get("model")
-        timeout_s = timeout_s or openai_cfg.get("timeout_s", 60)
+        base_url = chosen.get("base_url") or base_url
+        api_key = chosen.get("api_key") or api_key
+        model_id = chosen.get("model") or model_id
+        timeout_s = chosen.get("timeout_s", 60) or timeout_s
 
     if not base_url or not model_id:
         return JSONResponse(status_code=400, content={"ok": False, "detail": "Missing base_url or model in configuration"})

@@ -59,14 +59,11 @@
         <div class="aq-chat-input">
           <div class="aq-field" style="margin:0;">
             <div class="aq-chat-input-row">
-              <div class="aq-role-select">
-                <button class="aq-btn aq-btn-sm" data-ref="roleButton" aria-haspopup="listbox" aria-expanded="false">user ▾</button>
-                <div class="aq-role-menu" data-ref="roleMenu" hidden>
-                  <button type="button" data-role="system">system</button>
-                  <button type="button" data-role="assistant">assistant</button>
-                  <button type="button" data-role="user">user</button>
-                </div>
-              </div>
+              <select class="aq-role-select" data-ref="roleSelect">
+                <option value="user" selected>user</option>
+                <option value="system">system</option>
+                <option value="assistant">assistant</option>
+              </select>
               <textarea rows="3" placeholder="Type a message..." data-ref="input"></textarea>
             </div>
           </div>

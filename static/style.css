@@ -150,11 +150,18 @@ textarea[data-ref="rawEditor"] {
 .aq-chat-input { margin-top: 0.5rem; }
 .aq-chat-input-row { display:flex; gap:0.5rem; align-items:flex-start; }
 .aq-chat-input-row textarea { flex: 1; min-height: 72px; resize: vertical; background:var(--bg); color:var(--fg); border:1px solid var(--border); border-radius:6px; padding:0.5rem; }
-.aq-role-select { position: relative; }
-.aq-role-select > .aq-btn { white-space: nowrap; }
-.aq-role-menu { position:absolute; top: calc(100% + 4px); left: 0; background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:0.25rem; display:flex; flex-direction:column; z-index: 20; }
-.aq-role-menu button { background: transparent; border: none; color: var(--fg); text-align: left; padding: 0.25rem 0.5rem; border-radius: 4px; cursor: pointer; }
-.aq-role-menu button:hover { background: var(--card); }
+select.aq-role-select {
+  width: 8em;
+  padding: 0.5rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--fg);
+  cursor: pointer;
+}
+select.aq-role-select:hover {
+  border-color: var(--accent);
+}
 
 /* Chat bubbles */
 .aq-bubble { border: 1px solid var(--border); border-radius: 8px; padding: 0.5rem; margin-bottom: 0.5rem; background:var(--bg); }

@@ -18,6 +18,10 @@ export class ShellView extends Component {
       editingId: null,
       editingTitle: '',
       _suspendInput: false,
+      chatMessages: [],
+      chatModels: [],
+      chatCurrentModel: '',
+      chatSending: false,
     };
 
     super(element, initialState);
@@ -48,6 +52,10 @@ export class ShellView extends Component {
     });
     this.watch('contentWidth', () => this.renderContentWidth());
     this.watch('fontSize', () => this.renderFontSize());
+    this.watch('chatMessages', () => this.renderChatMessages());
+    this.watch('chatSending', () => this.renderChatSending());
+    this.watch('chatModels', () => this.renderChatModels());
+
 
     // Listen for project changes from settings page
     document.addEventListener('aq:project-selected', () => {
@@ -243,6 +251,21 @@ export class ShellView extends Component {
         }
       });
     }
+
+    // Chat listeners
+    const sendBtn = this.el.querySelector('[data-ref="send"]');
+    if (sendBtn) {
+      sendBtn.addEventListener('click', () => this.sendChatMessage());
+    }
+    const chatInput = this.el.querySelector('[data-ref="input"]');
+    if (chatInput) {
+      chatInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          this.sendChatMessage();
+        }
+      });
+    }
   }
 
   /**
@@ -362,6 +385,7 @@ export class ShellView extends Component {
 
       // Load chapter list
       await this.refreshChapters();
+      await this.loadChat();
 
       // Auto-select first project if none selected
       if (!this.chapters.length) {
@@ -445,6 +469,117 @@ export class ShellView extends Component {
       this.chapters = [];
     }
   }
+
+  // ========================================
+  // Chat
+  // ========================================
+  async loadChat() {
+    try {
+      const data = await API.loadChat();
+      this.chatModels = data.models || [];
+      this.chatCurrentModel = data.current_model || '';
+      this.chatMessages = data.messages || [];
+    } catch (e) {
+      console.error('Failed to load chat state', e);
+      this.chatMessages = [{ role: 'assistant', content: `Failed to load chat state: ${e.message}` }];
+    }
+  }
+
+  renderChatModels() {
+    const select = this.$refs.modelSelect;
+    if (!select) return;
+    select.innerHTML = (this.chatModels || []).map(m =>
+      `<option value="${m}" ${m === this.chatCurrentModel ? 'selected' : ''}>${m}</option>`
+    ).join('');
+  }
+
+  renderChatMessages() {
+    const list = this.$refs.chatList;
+    if (!list) return;
+
+    if (!this.chatMessages || this.chatMessages.length === 0) {
+      list.innerHTML = '<div class="aq-empty">No messages</div>';
+      return;
+    }
+
+    list.innerHTML = this.chatMessages.map(msg => `
+      <div class="aq-bubble ${msg.role}">
+        <div class="aq-bubble-head">${this.escapeHtml(msg.role)}</div>
+        <div class="aq-bubble-body" contenteditable="true">${this.escapeHtml(msg.content)}</div>
+      </div>
+    `).join('');
+    list.scrollTop = list.scrollHeight;
+  }
+
+  renderChatSending() {
+    if (this.$refs.send) {
+      this.$refs.send.disabled = this.chatSending;
+    }
+    if (this.$refs.regenerate) {
+      this.$refs.regenerate.disabled = this.chatSending;
+    }
+  }
+
+  async sendChatMessage() {
+    if (this.chatSending) return;
+
+    const input = this.$refs.input;
+    const roleSelect = this.$refs.roleSelect;
+    if (!input || !roleSelect) return;
+
+    const content = input.value.trim();
+    if (!content) return;
+
+    const role = roleSelect.value;
+    const newMessage = { role, content };
+
+    this.chatMessages = [...this.chatMessages, newMessage];
+    input.value = '';
+    input.focus();
+
+    if (role === 'user') {
+      this.chatSending = true;
+      try {
+        const response = await fetchJSON('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: this.chatMessages,
+            model: this.$refs.modelSelect.value
+          })
+        });
+
+        if (response.message) {
+          this.chatMessages = [...this.chatMessages, response.message];
+        }
+      } catch (e) {
+        let errorMessage = 'An unknown error occurred';
+        if (e) {
+          if (typeof e.message === 'string') {
+            errorMessage = e.message;
+          } else if (typeof e.message === 'object' && e.message !== null) {
+            try {
+              errorMessage = JSON.stringify(e.message);
+            } catch (jsonError) {
+              errorMessage = String(e.message);
+            }
+          } else if (typeof e === 'object' && e !== null) {
+            try {
+              errorMessage = JSON.stringify(e);
+            } catch (jsonError) {
+              errorMessage = String(e);
+            }
+          } else {
+            errorMessage = String(e);
+          }
+        }
+        this.chatMessages = [...this.chatMessages, { role: 'assistant', content: `Error: ${errorMessage}` }];
+      } finally {
+        this.chatSending = false;
+      }
+    }
+  }
+
 
   // Integrated editor helpers
   getRawEl() {

@@ -8,7 +8,7 @@ export async function fetchJSON(url, options = {}) {
   const response = await fetch(url, options);
   const data = await response.json();
   if (!response.ok || data.ok === false) {
-    throw new Error(data.detail || data.error || `HTTP ${response.status}`);
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`, {cause: data.detail || data.error});
   }
   return data;
 }
@@ -29,5 +29,6 @@ export async function getJSONOrEmpty(url) {
 // Lightweight API wrappers used across components
 export const API = {
   loadStory: () => getJSONOrEmpty('/api/story'),
-  loadProjects: () => getJSONOrEmpty('/api/projects')
+  loadProjects: () => getJSONOrEmpty('/api/projects'),
+  loadChat: () => getJSONOrEmpty('/api/chat'),
 };
