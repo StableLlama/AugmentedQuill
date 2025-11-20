@@ -15,6 +15,7 @@ export class ShellView extends Component {
       fontSize: 1, // rem units
       dirty: false,
       _originalContent: '',
+      _originalSummaryContent: '', // Added for summary dirty tracking
       editingId: null,
       editingTitle: '',
       _suspendInput: false,
@@ -29,6 +30,7 @@ export class ShellView extends Component {
     // Non-reactive properties
     this._tui = null;
     this._tuiEl = null;
+    this._debouncedSaveSummary = this._debounce(this._saveSummary.bind(this), 1000); // Debounce by 1 second
   }
 
   /**
@@ -114,10 +116,21 @@ export class ShellView extends Component {
             return;
           }
         }
+        const toggleSummaryBtn = e.target.closest('[data-action="toggle-summary"]');
+        if (toggleSummaryBtn) {
+            const chapterItem = toggleSummaryBtn.closest('[data-chapter-id]');
+            if (chapterItem) {
+                const id = parseInt(chapterItem.getAttribute('data-chapter-id'), 10);
+                if (!isNaN(id)) {
+                    this.toggleSummary(id);
+                }
+            }
+            return;
+        }
 
         const chapterItem = e.target.closest('[data-chapter-id]');
-        // Do not trigger openChapter if we are clicking inside an editing area
-        if (chapterItem && !chapterItem.querySelector('.chapter-edit-container')) {
+        // Do not trigger openChapter if we are clicking inside an editing area (title or summary)
+        if (chapterItem && !chapterItem.querySelector('.chapter-edit-container') && !e.target.matches('[data-ref="summaryInput"]')) {
           const id = parseInt(chapterItem.getAttribute('data-chapter-id'), 10);
           if (!isNaN(id)) {
             this.openChapter(id);
@@ -152,8 +165,12 @@ export class ShellView extends Component {
       });
 
       chapterList.addEventListener('input', (e) => {
-        if (this.editingId === null || !e.target.matches('[data-ref="titleInput"]')) return;
-        this.editingTitle = e.target.value;
+        if (e.target.matches('[data-ref="titleInput"]')) {
+          if (this.editingId === null) return;
+          this.editingTitle = e.target.value;
+        } else if (e.target.matches('[data-ref="summaryInput"]')) {
+          this._debouncedSaveSummary(e);
+        }
       });
     }
 
@@ -284,24 +301,41 @@ export class ShellView extends Component {
     if (!list) return;
 
     list.innerHTML = this.chapters.map(chapter => `
-      <li class="chapter-item ${chapter.id === this.activeId ? 'active' : ''}"
+      <li class="chapter-item ${chapter.id === this.activeId ? 'active' : ''} ${chapter.expanded ? 'expanded' : ''}"
           data-chapter-id="${chapter.id}">
-        ${chapter.id === this.editingId
-      ? `
-          <div class="chapter-edit-container">
-            <input type="text"
-                   value="${this.escapeHtml(this.editingTitle)}"
-                   data-ref="titleInput"
-                   class="chapter-title-input">
-            <div class="chapter-edit-buttons">
-              <button data-action="save-title" class="aq-btn aq-btn-sm aq-btn-primary">Save</button>
-              <button data-action="cancel-edit" class="aq-btn aq-btn-sm">Cancel</button>
+        <div class="chapter-header">
+            <button class="aq-btn aq-btn-sm aq-btn-icon" data-action="toggle-summary" title="Toggle Summary">
+                ${chapter.expanded ? '▼' : '▶'}
+            </button>
+            ${chapter.id === this.editingId
+                ? `
+                <div class="chapter-edit-container">
+                    <input type="text"
+                           value="${this.escapeHtml(this.editingTitle)}"
+                           data-ref="titleInput"
+                           class="chapter-title-input">
+                    <div class="chapter-edit-buttons">
+                        <button data-action="save-title" class="aq-btn aq-btn-sm aq-btn-primary">Save</button>
+                        <button data-action="cancel-edit" class="aq-btn aq-btn-sm">Cancel</button>
+                    </div>
+                </div>
+                `
+                : `
+                <span class="chapter-title" data-action="edit-title">${this.escapeHtml(chapter.title || 'Untitled')}</span>
+                `
+            }
+        </div>
+        ${chapter.expanded ? `
+            <div class="chapter-summary-section">
+                <div class="summary-edit-container">
+                    <textarea data-chapter-id="${chapter.id}"
+                              data-ref="summaryInput"
+                              class="chapter-summary-input"
+                              rows="3"
+                              placeholder="Enter summary...">${this.escapeHtml(chapter.summary || '')}</textarea>
+                </div>
             </div>
-          </div>
-        `
-      : `
-          <span class="chapter-title" data-action="edit-title">${this.escapeHtml(chapter.title || 'Untitled')}</span>
-        `}
+        ` : ''}
       </li>
     `).join('');
 
@@ -461,7 +495,7 @@ export class ShellView extends Component {
     try {
       const response = await fetch('/api/chapters');
       const data = await response.json();
-      this.chapters = Array.isArray(data.chapters) ? data.chapters : [];
+      this.chapters = Array.isArray(data.chapters) ? data.chapters.map(c => ({...c, expanded: false})) : [];
 
       // Maintain selection if chapter still exists, otherwise select first
       const hasActiveChapter = this.chapters.some(c => c.id === this.activeId);
@@ -963,6 +997,8 @@ export class ShellView extends Component {
       this.activeId = data.id;
       this.content = data.content || '';
       this._originalContent = this.content;
+      this.chapters = this.chapters.map(c => c.id === id ? { ...c, summary: data.summary || '', expanded: false } : c); // Update chapter in list with summary
+      this._originalSummaryContent = data.summary || ''; // Store original summary for dirty tracking
       this.dirty = false;
 
       queueMicrotask(() => {
@@ -1010,6 +1046,51 @@ export class ShellView extends Component {
   cancelEdit() {
     this.editingId = null;
     this.editingTitle = '';
+  }
+
+  toggleSummary(id) {
+    this.chapters = this.chapters.map(c =>
+      c.id === id ? { ...c, expanded: !c.expanded } : c
+    );
+  }
+
+  /**
+   * Debounce utility function
+   */
+  _debounce(func, delay) {
+    let timeout;
+    return function(...args) {
+      const context = this;
+      clearTimeout(timeout);
+      timeout = setTimeout(() => func.apply(context, args), delay);
+    };
+  }
+
+  async _saveSummary(event) {
+    const textarea = event.target;
+    if (!textarea || !textarea.matches('[data-ref="summaryInput"]')) return;
+
+    const id = parseInt(textarea.getAttribute('data-chapter-id'), 10);
+    const summary = textarea.value.trim();
+
+    if (isNaN(id) || id === null) return;
+
+    try {
+      const data = await fetchJSON(`/api/chapters/${id}/summary`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ summary })
+      });
+
+      this.chapters = this.chapters.map(c =>
+        c.id === id ? { ...c, summary: data.chapter.summary } : c
+      );
+      this._originalSummaryContent = summary; // Update original content after save
+    } catch (e) {
+      console.error(`Failed to save summary for chapter ${id}: ${e.message || e}`);
+      alert(`Failed to save summary: ${e.message || e}`);
+      // Optionally, revert the textarea to _originalSummaryContent or show an error state
+    }
   }
 
   async createChapter() {

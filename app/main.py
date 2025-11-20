@@ -102,7 +102,31 @@ async def settings_post(
 ) -> HTMLResponse:
     """Persist settings from form submission and re-render the form with a notice."""
     # Parse chapters from textarea (one per line, ignore empties)
-    chapters_list = [line.strip() for line in chapters.splitlines() if line.strip()]
+    # The form only provides titles, so summaries will be empty initially for new entries
+    # or will retain existing if updating.
+    new_chapter_titles = [line.strip() for line in chapters.splitlines() if line.strip()]
+
+    # Load existing story config to merge summaries
+    active = get_active_project_dir()
+    existing_story = load_story_config((active / "story.json") if active else (CONFIG_DIR / "story.json")) or {}
+    existing_chapters_data = [_normalize_chapter_entry(c) for c in existing_story.get("chapters", [])]
+
+    # Create new chapters list, merging existing summaries where titles match
+    merged_chapters_data: List[Dict[str, str]] = []
+    for i, title in enumerate(new_chapter_titles):
+        # Try to find a matching title in existing chapters
+        # For simplicity, if titles are identical, use the existing summary.
+        # Otherwise, create a new entry with an empty summary.
+        found_match = False
+        for old_chap in existing_chapters_data:
+            if old_chap.get("title") == title:
+                merged_chapters_data.append(old_chap)
+                found_match = True
+                break
+        if not found_match:
+            # If no match, or if it's a brand new title, add with empty summary
+            merged_chapters_data.append({"title": title, "summary": ""})
+
 
     # Build story config
     try:
@@ -117,7 +141,7 @@ async def settings_post(
     story_cfg = {
         "project_title": project_title or "Untitled Project",
         "format": format or "markdown",
-        "chapters": chapters_list,
+        "chapters": merged_chapters_data, # Use the merged data
         "llm_prefs": {
             "temperature": temperature,
             "max_tokens": max_tokens,
@@ -231,7 +255,10 @@ async def settings_post(
         {
             "request": request,
             "machine": machine_cfg,
-            "story": story_cfg,
+            "story": {
+                **story_cfg,
+                "chapters": [c.get("title", "") for c in story_cfg.get("chapters", []) if isinstance(c, dict)] # Convert back to list of titles for the form
+            },
             "saved": True,
             # Init fields for Alpine models editor
             "openai_models_json": models_json,
@@ -323,10 +350,13 @@ async def api_settings_post(request: Request) -> JSONResponse:
 
     # Basic validation and normalization similar to HTML form handler
     try:
+        # Normalize incoming chapters data to the {"title": "...", "summary": "..."} format
+        normalized_chapters = [_normalize_chapter_entry(c) for c in (story.get("chapters") or [])]
+
         story_cfg = {
             "project_title": (story.get("project_title") or "Untitled Project"),
             "format": (story.get("format") or "markdown"),
-            "chapters": [s for s in (story.get("chapters") or []) if isinstance(s, str) and s.strip()],
+            "chapters": normalized_chapters,
             "llm_prefs": {
                 "temperature": float(story.get("llm_prefs", {}).get("temperature", 0.7)),
                 "max_tokens": int(story.get("llm_prefs", {}).get("max_tokens", 2048)),
@@ -475,13 +505,18 @@ def _load_chapter_titles(count: int) -> List[str]:
 @app.get("/api/chapters")
 async def api_chapters() -> dict:
     files = _scan_chapter_files()
-    titles = _load_chapter_titles(len(files))
+    active = get_active_project_dir()
+    story = load_story_config((active / "story.json") if active else (CONFIG_DIR / "story.json")) or {}
+    chapters_data = [_normalize_chapter_entry(c) for c in story.get("chapters", [])]
+
     result = []
     for i, (idx, p) in enumerate(files):
-        # Prefer configured title; fall back to filename when missing/blank
-        raw_title = titles[i] if i < len(titles) else ""
-        title = (raw_title or "").strip() or p.name
-        result.append({"id": idx, "title": title, "filename": p.name})
+        # Get chapter details from story_config, falling back to filename
+        chap_entry = chapters_data[i] if i < len(chapters_data) else {"title": "", "summary": ""}
+        title = (chap_entry.get("title") or "").strip() or p.name
+        summary = (chap_entry.get("summary") or "").strip()
+
+        result.append({"id": idx, "title": title, "filename": p.name, "summary": summary})
     return {"chapters": result}
 
 
@@ -493,14 +528,20 @@ async def api_chapter_content(chap_id: int = FastAPIPath(..., ge=0)) -> dict:
     if not match:
         raise HTTPException(status_code=404, detail="Chapter not found")
     idx, path, pos = match
-    titles = _load_chapter_titles(len(files))
-    raw_title = titles[pos] if pos < len(titles) else ""
-    title = (raw_title or "").strip() or path.name
+
+    active = get_active_project_dir()
+    story = load_story_config((active / "story.json") if active else (CONFIG_DIR / "story.json")) or {}
+    chapters_data = [_normalize_chapter_entry(c) for c in story.get("chapters", [])]
+
+    chap_entry = chapters_data[pos] if pos < len(chapters_data) else {"title": "", "summary": ""}
+    title = (chap_entry.get("title") or "").strip() or path.name
+    summary = (chap_entry.get("summary") or "").strip()
+
     try:
         content = path.read_text(encoding="utf-8")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read chapter: {e}")
-    return {"id": idx, "title": title, "filename": path.name, "content": content}
+    return {"id": idx, "title": title, "filename": path.name, "content": content, "summary": summary}
 
 
 @app.put("/api/chapters/{chap_id}/title")
@@ -528,26 +569,34 @@ async def api_update_chapter_title(request: Request, chap_id: int = FastAPIPath(
 
     story_path = active / "story.json"
     story = load_story_config(story_path) or {}
-    titles = story.get("chapters") or []
-    # ensure list length up to current count
+    chapters_data = story.get("chapters") or []
+
+    # Ensure chapters_data is a list of dicts, and pad if necessary
     count = len(files)
-    if not isinstance(titles, list):
-        titles = []
-    if len(titles) < count:
-        titles = [str(t) if isinstance(t, (str, int, float)) else "" for t in titles]
-        titles.extend([""] * (count - len(titles)))
-    # set new title at position
-    titles[pos] = new_title_str
-    story["chapters"] = titles
+    chapters_data = [_normalize_chapter_entry(c) for c in chapters_data]
+    if len(chapters_data) < count:
+        chapters_data.extend([{"title": "", "summary": ""}] * (count - len(chapters_data)))
+
+    # Update title at position
+    if pos < len(chapters_data):
+        chapters_data[pos]["title"] = new_title_str
+    else:
+        # This case should ideally not happen if padding is correct
+        chapters_data.append({"title": new_title_str, "summary": ""})
+
+
+    story["chapters"] = chapters_data
     try:
         story_path.write_text(_json.dumps(story, indent=2), encoding="utf-8")
     except Exception as e:
         return JSONResponse(status_code=500, content={"ok": False, "detail": f"Failed to write story.json: {e}"})
 
     # Respond with updated descriptor
+    # Get the summary for response
+    summary_for_response = chapters_data[pos].get("summary") or ""
     return JSONResponse(status_code=200, content={
         "ok": True,
-        "chapter": {"id": files[pos][0], "title": new_title_str or path.name, "filename": path.name}
+        "chapter": {"id": files[pos][0], "title": new_title_str or path.name, "filename": path.name, "summary": summary_for_response}
     })
 
 
@@ -580,20 +629,22 @@ async def api_create_chapter(request: Request) -> JSONResponse:
     except Exception as e:
         return JSONResponse(status_code=500, content={"ok": False, "detail": f"Failed to write chapter file: {e}"})
 
-    # Update story.json titles array (append as last)
+    # Update story.json chapters array (append as last)
     story_path = active / "story.json"
     story = load_story_config(story_path) or {}
-    titles = story.get("chapters") or []
-    if not isinstance(titles, list):
-        titles = []
-    # Ensure titles length aligns with existing files count after creation (count becomes len(files)+1)
-    count_after = len(files) + 1
-    titles = [str(t) if isinstance(t, (str, int, float)) else "" for t in titles]
-    if len(titles) < count_after - 1:
-        titles.extend([""] * (count_after - 1 - len(titles)))
-    # Append provided title (may be empty string)
-    titles.append(title)
-    story["chapters"] = titles
+    chapters_data = story.get("chapters") or []
+
+    chapters_data = [_normalize_chapter_entry(c) for c in chapters_data]
+
+    # Ensure chapters_data length aligns with existing files count before new chapter
+    count_before = len(files)
+    if len(chapters_data) < count_before:
+        chapters_data.extend([{"title": "", "summary": ""}] * (count_before - len(chapters_data)))
+
+    # Append new chapter entry with title and empty summary
+    chapters_data.append({"title": title, "summary": ""})
+    story["chapters"] = chapters_data
+
     try:
         story_path.write_text(_json.dumps(story, indent=2), encoding="utf-8")
     except Exception as e:
@@ -601,8 +652,20 @@ async def api_create_chapter(request: Request) -> JSONResponse:
 
     return JSONResponse(status_code=200, content={
         "ok": True,
-        "chapter": {"id": next_idx, "title": title or filename, "filename": filename}
+        "chapter": {"id": next_idx, "title": title or filename, "filename": filename, "summary": ""}
     })
+
+
+def _normalize_chapter_entry(entry: Any) -> Dict[str, str]:
+    """Ensures a chapter entry is a dict with 'title' and 'summary'."""
+    if isinstance(entry, dict):
+        return {
+            "title": str(entry.get("title", "")).strip(),
+            "summary": str(entry.get("summary", "")).strip(),
+        }
+    elif isinstance(entry, (str, int, float)):
+        return {"title": str(entry).strip(), "summary": ""}
+    return {"title": "", "summary": ""}
 
 
 @app.put("/api/chapters/{chap_id}/content")
@@ -630,6 +693,59 @@ async def api_update_chapter_content(request: Request, chap_id: int = FastAPIPat
         return JSONResponse(status_code=500, content={"ok": False, "detail": f"Failed to write chapter: {e}"})
 
     return JSONResponse(status_code=200, content={"ok": True})
+
+@app.put("/api/chapters/{chap_id}/summary")
+async def api_update_chapter_summary(request: Request, chap_id: int = FastAPIPath(..., ge=0)) -> JSONResponse:
+    """Update the summary of a chapter in the active project's story.json.
+    """
+    active = get_active_project_dir()
+    if not active:
+        return JSONResponse(status_code=400, content={"ok": False, "detail": "No active project"})
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+    new_summary = (payload or {}).get("summary")
+    if new_summary is None:
+        return JSONResponse(status_code=400, content={"ok": False, "detail": "summary is required"})
+    new_summary_str = str(new_summary).strip()
+
+    files = _scan_chapter_files()
+    match = next(((idx, p, i) for i, (idx, p) in enumerate(files) if idx == chap_id), None)
+    if not match:
+        raise HTTPException(status_code=404, detail="Chapter not found")
+    _, path, pos = match
+
+    story_path = active / "story.json"
+    story = load_story_config(story_path) or {}
+    chapters_data = story.get("chapters") or []
+
+    # Ensure chapters_data is a list of dicts, and pad if necessary
+    chapters_data = [_normalize_chapter_entry(c) for c in chapters_data]
+    if len(chapters_data) < len(files):
+        chapters_data.extend([{"title": "", "summary": ""}] * (len(files) - len(chapters_data)))
+
+    # Update summary at position
+    if pos < len(chapters_data):
+        chapters_data[pos]["summary"] = new_summary_str
+    else:
+        # This case should ideally not happen if padding is correct
+        chapters_data.append({"title": path.name, "summary": new_summary_str})
+
+    story["chapters"] = chapters_data
+    try:
+        story_path.write_text(_json.dumps(story, indent=2), encoding="utf-8")
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"ok": False, "detail": f"Failed to write story.json: {e}"})
+
+    # Respond with updated descriptor
+    # Get the title for response
+    title_for_response = chapters_data[pos].get("title") or path.name
+    return JSONResponse(status_code=200, content={
+        "ok": True,
+        "chapter": {"id": files[pos][0], "title": title_for_response, "filename": path.name, "summary": new_summary_str}
+    })
+
 
 
 # --- Proxy endpoint for OpenAI model listing (fallback when CORS blocks browser) ---
