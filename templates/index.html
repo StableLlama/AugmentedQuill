@@ -13,7 +13,7 @@
         </div>
       </div>
       <div class="aq-sidebar-bottom">
-        <button class="aq-btn aq-btn-primary" hx-get="/settings" hx-target="#main" hx-swap="innerHTML">Settings</button>
+        <!-- Settings moved to header modal opener; duplicate removed -->
       </div>
     </aside>
 
@@ -26,6 +26,32 @@
             </div>
             <div data-view="chapter" style="display:none;">
               <div style="font-weight:600; margin-bottom:0.5rem;">Chapter <span data-active-id></span></div>
+              <!-- Scoped editor toolbar -->
+              <div class="aq-editor-toolbar aq-toolbar" style="gap:0.5rem; flex-wrap:wrap; margin-bottom:0.5rem; align-items:center;">
+                <div role="tablist" aria-label="Editor mode" class="aq-toolbar" style="gap:0.25rem;">
+                  <button role="tab" class="aq-seg" data-mode="raw" aria-selected="true">Raw</button>
+                  <button role="tab" class="aq-seg" data-mode="markdown" aria-selected="false">Markdown</button>
+                  <button role="tab" class="aq-seg" data-mode="wysiwyg" aria-selected="false">WYSIWYG</button>
+                </div>
+                <div class="aq-flex-spacer" style="flex:1 1 auto;"></div>
+                <div class="aq-size-controls aq-toolbar" style="gap:0.25rem;">
+                  <button class="aq-btn" data-action="change-width" data-direction="decrease" aria-label="Narrower">− Width</button>
+                  <button class="aq-btn" data-action="change-width" data-direction="increase" aria-label="Wider">+ Width</button>
+                  <button class="aq-btn" data-action="change-font-size" data-direction="decrease" aria-label="Smaller">A−</button>
+                  <button class="aq-btn" data-action="change-font-size" data-direction="increase" aria-label="Bigger">A+</button>
+                </div>
+                <!-- LLM Story controls (visible in all modes) -->
+                <div class="aq-llm-group aq-toolbar" style="gap:0.35rem; margin-left: auto;">
+                  <label style="display:inline-flex; align-items:center; gap:0.35rem;">
+                    <span style="font-size:0.85rem; color:var(--muted);">Story model</span>
+                    <select data-ref="storyModelSelect" class="aq-select aq-select-sm"></select>
+                  </label>
+                  <button class="aq-btn aq-btn-sm" data-action="story-write-summary" title="Write or update summary">✎ Summary</button>
+                  <button class="aq-btn aq-btn-sm" data-action="story-write-chapter" title="Write chapter from summary">📝 Write</button>
+                  <button class="aq-btn aq-btn-sm" data-action="story-continue-chapter" title="Continue chapter to match summary">⏭ Continue</button>
+                  <button class="aq-btn aq-btn-sm" data-action="story-cancel" title="Cancel running LLM action" style="display:none;">■ Stop</button>
+                </div>
+              </div>
               <div data-raw-toolbar class="aq-toolbar" style="gap:0.25rem; flex-wrap:wrap; margin-bottom:0.5rem;">
                 <button class="aq-btn aq-btn-sm" title="Bold" data-action="wrap-selection" data-before="**" data-after="**"><strong>B</strong></button>
                 <button class="aq-btn aq-btn-sm" title="Italic" data-action="wrap-selection" data-before="*" data-after="*"><em>I</em></button>
@@ -34,20 +60,11 @@
                 <button class="aq-btn aq-btn-sm" title="Code" data-action="wrap-selection" data-before="`" data-after="`">Code</button>
                 <button class="aq-btn aq-btn-sm" title="Bullet list" data-action="toggle-list" data-prefix="- ">• List</button>
                 <button class="aq-btn aq-btn-sm" title="Quote" data-action="toggle-prefix" data-prefix="> ">❝ Quote</button>
-                <span class="aq-sep" style="margin:0 0.25rem; opacity:0.5;">|</span>
-                <label style="display:inline-flex; align-items:center; gap:0.35rem;">
-                  <span style="font-size:0.85rem; color:var(--muted);">Story model</span>
-                  <select data-ref="storyModelSelect" class="aq-select aq-select-sm"></select>
-                </label>
-                <button class="aq-btn aq-btn-sm" data-action="story-write-summary" title="Write or update summary">✎ Summary</button>
-                <button class="aq-btn aq-btn-sm" data-action="story-write-chapter" title="Write chapter from summary">📝 Write</button>
-                <button class="aq-btn aq-btn-sm" data-action="story-continue-chapter" title="Continue chapter to match summary">⏭ Continue</button>
-                <button class="aq-btn aq-btn-sm" data-action="story-cancel" title="Cancel running LLM action" style="display:none;">■ Stop</button>
               </div>
               <textarea data-ref="rawEditor"></textarea>
             </div>
           </div>
-          <p class="aq-tip">This is a rudimentary UI. Use the Settings button in the sidebar to configure machine and story settings.</p>
+          <p class="aq-tip">This is a rudimentary UI. Use the Settings button in the header to configure machine and story settings.</p>
         </div>
       </div>
     </section>
@@ -73,7 +90,7 @@
                 <option value="system">system</option>
                 <option value="assistant">assistant</option>
               </select>
-              <textarea rows="3" placeholder="Type a message..." data-ref="input"></textarea>
+              <textarea rows="3" placeholder="Type a message… (Enter to send, Shift+Enter for newline)" data-ref="input"></textarea>
             </div>
           </div>
           <div class="aq-toolbar" style="justify-content: flex-end; margin-top:0.5rem;">

@@ -57,6 +57,7 @@ export class ShellView extends Component {
     this.watch('dirty', () => this.renderDirtyState());
     this.watch('content', () => this.renderContent());
     this.watch('renderMode', () => {
+      try { localStorage.setItem('aq:renderMode', this.renderMode); } catch (_) {}
       this.renderModeButtons();
       this.renderRawEditorToolbar();
     });
@@ -94,6 +95,14 @@ export class ShellView extends Component {
 
     // Setup event listeners for UI elements
     this._setupEventListeners();
+
+    // Load saved render mode preference first
+    try {
+      const savedMode = localStorage.getItem('aq:renderMode');
+      if (savedMode === 'raw' || savedMode === 'markdown' || savedMode === 'wysiwyg') {
+        this.renderMode = savedMode;
+      }
+    } catch (_) {}
 
     this.load();
     this.renderMainView();
@@ -214,7 +223,7 @@ export class ShellView extends Component {
       }, true);
     }
 
-    // Save button
+    // Save button (global header)
     const saveBtn = document.querySelector('[data-action="save"]');
     if (saveBtn) {
       saveBtn.addEventListener('click', () => this.saveContent());
@@ -226,17 +235,14 @@ export class ShellView extends Component {
       createBtn.addEventListener('click', () => this.createChapter());
     }
 
-    // Render mode buttons
-    const rawBtn = document.querySelector('[data-mode="raw"]');
-    const markdownBtn = document.querySelector('[data-mode="markdown"]');
-    const wysiwygBtn = document.querySelector('[data-mode="wysiwyg"]');
+    // Render mode buttons (scoped to editor toolbar in main pane)
+    ['raw','markdown','wysiwyg'].forEach(mode => {
+      const btn = this.el.querySelector(`[data-mode="${mode}"]`);
+      if (btn) btn.addEventListener('click', () => this.switchRender(mode));
+    });
 
-    if (rawBtn) rawBtn.addEventListener('click', () => this.switchRender('raw'));
-    if (markdownBtn) markdownBtn.addEventListener('click', () => this.switchRender('markdown'));
-    if (wysiwygBtn) wysiwygBtn.addEventListener('click', () => this.switchRender('wysiwyg'));
-
-    // Width mode buttons
-    const widthButtons = document.querySelectorAll('[data-action="change-width"]');
+    // Width mode buttons (scoped)
+    const widthButtons = this.el.querySelectorAll('[data-action="change-width"]');
     widthButtons.forEach(btn => {
       btn.addEventListener('click', () => {
         const direction = btn.dataset.direction;
@@ -252,8 +258,8 @@ export class ShellView extends Component {
       });
     });
 
-    // Font size buttons
-    const fontSizeButtons = document.querySelectorAll('[data-action="change-font-size"]');
+    // Font size buttons (scoped)
+    const fontSizeButtons = this.el.querySelectorAll('[data-action="change-font-size"]');
     fontSizeButtons.forEach(btn => {
       btn.addEventListener('click', () => {
         const direction = btn.dataset.direction;
@@ -428,9 +434,11 @@ export class ShellView extends Component {
    */
   renderModeButtons() {
     ['raw', 'markdown', 'wysiwyg'].forEach(mode => {
-      const btn = document.querySelector(`[data-mode="${mode}"]`);
+      const btn = this.el.querySelector(`[data-mode="${mode}"]`);
       if (btn) {
-        btn.classList.toggle('active', this.renderMode === mode);
+        const active = this.renderMode === mode;
+        btn.classList.toggle('active', active);
+        btn.setAttribute('aria-selected', active ? 'true' : 'false');
       }
     });
   }
@@ -1120,8 +1128,9 @@ export class ShellView extends Component {
       this.content = cleanContent;
       this._originalContent = this.content;
       this.dirty = false;
+      this._toast('Saved', 'success');
     } catch (e) {
-      alert(`Failed to save: ${e.message || e}`);
+      this._toast(`Failed to save: ${e.message || e}`, 'error');
     }
   }
 
@@ -1306,6 +1315,9 @@ export class ShellView extends Component {
     if (dirtyIndicator) {
       dirtyIndicator.style.display = this.dirty ? 'inline' : 'none';
     }
+    try {
+      document.body?.setAttribute('data-dirty', this.dirty ? 'true' : 'false');
+    } catch (_) {}
     this.renderSaveButton();
   }
 
@@ -1332,6 +1344,31 @@ export class ShellView extends Component {
     if (cancelBtn) {
       cancelBtn.style.display = busy ? 'inline-block' : 'none';
     }
+  }
+
+  // =============================
+  // Toasts
+  // =============================
+  _ensureToastHost() {
+    let host = document.querySelector('.aq-toasts');
+    if (!host) {
+      host = document.createElement('div');
+      host.className = 'aq-toasts';
+      document.body.appendChild(host);
+    }
+    return host;
+  }
+
+  _toast(message, variant = 'info', timeoutMs = 2500) {
+    const host = this._ensureToastHost();
+    const el = document.createElement('div');
+    el.className = `aq-toast ${variant}`;
+    el.textContent = message;
+    host.appendChild(el);
+    window.setTimeout(() => {
+      try { el.remove(); } catch (_) {}
+      if (!host.childElementCount) host.remove();
+    }, timeoutMs);
   }
 
   cancelStoryAction() {

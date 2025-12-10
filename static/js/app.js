@@ -73,6 +73,13 @@ document.addEventListener('htmx:afterSwap', function (e) {
     if (target) {
       // Re-scan for new components in swapped content
       initComponents();
+
+      // If we swapped content into the modal, show it
+      const modal = document.getElementById('aq-modal');
+      if (modal && target.id === 'modal-content') {
+        modal.removeAttribute('hidden');
+        modal.classList.add('is-open');
+      }
     }
   } catch (err) {
     console.error('Failed to reinitialize components after HTMX swap:', err);
@@ -98,3 +105,54 @@ document.addEventListener('htmx:beforeSwap', function (e) {
     console.error('Failed to clean up components before HTMX swap:', err);
   }
 });
+
+// ========================================
+// Modal Controls (Settings)
+// ========================================
+
+function closeModal() {
+  const modal = document.getElementById('aq-modal');
+  const panel = document.getElementById('modal-content');
+  if (!modal || !panel) return;
+  try {
+    // Destroy components inside the modal content
+    ['modelsEditor'].forEach(name => {
+      const component = window.app[name];
+      if (component && panel.contains(component.el)) {
+        component.destroy();
+        window.app[name] = null;
+        registry.components.delete(name);
+      }
+    });
+  } catch (err) {
+    console.warn('Modal cleanup failed:', err);
+  }
+  panel.innerHTML = '';
+  modal.setAttribute('hidden', '');
+  modal.classList.remove('is-open');
+}
+
+// Close on backdrop click and explicit close buttons
+document.addEventListener('click', function (e) {
+  const modal = document.getElementById('aq-modal');
+  if (!modal || modal.hasAttribute('hidden')) return;
+  const target = e.target;
+  if (target.matches('.aq-modal-backdrop') || target.matches('[data-action="modal-close"]')) {
+    e.preventDefault();
+    closeModal();
+  }
+});
+
+// Close on Escape
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') {
+    const modal = document.getElementById('aq-modal');
+    if (modal && !modal.hasAttribute('hidden')) {
+      e.preventDefault();
+      closeModal();
+    }
+  }
+});
+
+// Expose for debugging if needed
+window.aqCloseModal = closeModal;

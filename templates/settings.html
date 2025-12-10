@@ -78,9 +78,13 @@
         </fieldset>
       </div>
 
-      <div class="aq-toolbar">
-        <button type="button" class="aq-btn aq-btn-primary" data-action="save">Save</button>
-        <button type="button" class="aq-btn" hx-get="/" hx-select="#main" hx-target="#main" hx-swap="innerHTML">Close</button>
+      <div class="aq-toolbar" style="justify-content: space-between;">
+        <div>
+          <button type="button" class="aq-btn aq-btn-primary" data-action="save">Save</button>
+        </div>
+        <div>
+          <button type="button" class="aq-btn" data-action="modal-close">Close</button>
+        </div>
       </div>
     </div>
   </div>

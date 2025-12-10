@@ -23,19 +23,10 @@
       <h1 style="margin:0; font-size: 1.5rem;">AugmentedQuill</h1>
     </a>
     <div class="aq-toolbar" style="gap:0.5rem; align-items:center;">
-      <button id="save" class="aq-btn aq-btn-primary" data-action="save">Save</button>
-      <span data-dirty-indicator style="font-size:0.9rem; color:var(--accent); margin-left:0.5rem; display:none;">Unsaved changes</span>
+      <button id="save" class="aq-btn aq-btn-primary" data-action="save" aria-live="polite">Save</button>
+      <span class="aq-dirty-badge" data-dirty-indicator aria-hidden="true">● Unsaved</span>
       <div style="margin-left:auto; display:flex; gap:0.5rem; align-items:center;">
-        <span style="font-size:0.9rem; color:var(--muted);">Width:</span>
-        <button class="aq-btn" data-action="change-width" data-direction="decrease">Narrower</button>
-        <button class="aq-btn" data-action="change-width" data-direction="increase">Wider</button>
-        <span style="font-size:0.9rem; color:var(--muted); margin-left: 0.5rem;">Size:</span>
-        <button class="aq-btn" data-action="change-font-size" data-direction="decrease">Smaller</button>
-        <button class="aq-btn" data-action="change-font-size" data-direction="increase">Bigger</button>
-        <span style="font-size:0.9rem; color:var(--muted); margin-left: 0.5rem;">Editor:</span>
-        <button class="aq-btn" data-mode="raw">Raw</button>
-        <button class="aq-btn" data-mode="markdown">Markdown</button>
-        <button class="aq-btn" data-mode="wysiwyg">WYSIWYG</button>
+        <button class="aq-btn" hx-get="/settings" hx-target="#modal-content" hx-swap="innerHTML" data-action="open-settings" aria-controls="aq-modal" aria-label="Open settings">Settings</button>
       </div>
     </div>
   </header>
@@ -45,5 +36,12 @@
   <footer class="aq-footer">
     <small>Prototype UI • <span id="aq-year"></span></small>
   </footer>
+  <!-- Modal Root -->
+  <div id="aq-modal" class="aq-modal" hidden>
+    <div class="aq-modal-backdrop" data-action="modal-close" aria-hidden="true"></div>
+    <div id="modal-content" class="aq-modal-panel" role="dialog" aria-modal="true" aria-label="Dialog">
+      <!-- HTMX will inject modal content here -->
+    </div>
+  </div>
 </body>
 </html>

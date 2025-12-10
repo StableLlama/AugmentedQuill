@@ -76,6 +76,17 @@ export class ChatView extends Component {
     if (regenBtn) regenBtn.addEventListener('click', () => this.regenerate());
     const delBtn = this.$refs.deleteLast;
     if (delBtn) delBtn.addEventListener('click', () => this.deleteLast());
+
+    // Enter to send (Shift+Enter for newline)
+    const ta = this.$refs.input;
+    if (ta) {
+      ta.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          this.send();
+        }
+      });
+    }
   }
 
   renderModelSelect() {
@@ -118,12 +129,17 @@ export class ChatView extends Component {
       header.textContent = m.role;
       const content = document.createElement('div');
       content.className = 'aq-bubble-body';
-      content.contentEditable = 'true';
-      content.spellcheck = true;
-      content.innerText = m.content || '';
-      content.addEventListener('input', () => {
-        m.content = content.innerText;
-      });
+      // Render assistant messages as basic markdown, others as plain text
+      if (m.role === 'assistant') {
+        content.innerHTML = this._mdToHtml(m.content || '');
+      } else {
+        content.contentEditable = 'true';
+        content.spellcheck = true;
+        content.innerText = m.content || '';
+        content.addEventListener('input', () => {
+          m.content = content.innerText;
+        });
+      }
 
       const actions = document.createElement('div');
       actions.className = 'aq-bubble-actions';
@@ -148,6 +164,46 @@ export class ChatView extends Component {
       list.appendChild(wrap);
     });
     list.scrollTop = list.scrollHeight;
+  }
+
+  _escapeHtml(s) {
+    const d = document.createElement('div');
+    d.textContent = s == null ? '' : String(s);
+    return d.innerHTML;
+  }
+
+  // very small markdown subset: code blocks, inline code, bold, italic, links, lists, headings, blockquotes
+  _mdToHtml(src) {
+    let html = this._escapeHtml(src);
+    // code blocks ```
+    html = html.replace(/```([\s\S]*?)```/g, (m, code) => `<pre><code>${code}</code></pre>`);
+    // inline code
+    html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+    // bold and italic (order matters)
+    html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+    // links [text](url)
+    html = html.replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+    // blockquotes
+    html = html.replace(/(^|\n)>\s?(.*)(?=\n|$)/g, '$1<blockquote>$2</blockquote>');
+    // simple headings # .. ######
+    html = html.replace(/(^|\n)######\s?([^\n]+)/g, '$1<h6>$2</h6>')
+               .replace(/(^|\n)#####\s?([^\n]+)/g, '$1<h5>$2</h5>')
+               .replace(/(^|\n)####\s?([^\n]+)/g, '$1<h4>$2</h4>')
+               .replace(/(^|\n)###\s?([^\n]+)/g, '$1<h3>$2</h3>')
+               .replace(/(^|\n)##\s?([^\n]+)/g, '$1<h2>$2</h2>')
+               .replace(/(^|\n)#\s?([^\n]+)/g, '$1<h1>$2</h1>');
+    // unordered lists
+    html = html.replace(/(?:^|\n)(-\s.+(?:\n-\s.+)*)/g, (m) => {
+      const items = m.trim().split(/\n/).map(li => li.replace(/^-\s+/, '')).map(t => `<li>${t}</li>`).join('');
+      return `\n<ul>${items}</ul>`;
+    });
+    // paragraphs: convert double newlines to <p>
+    html = html.replace(/\n{2,}/g, '</p><p>');
+    html = `<p>${html}</p>`;
+    // tidy multiple paragraphs
+    html = html.replace(/<p><\/p>/g, '');
+    return html;
   }
 
   async send() {
