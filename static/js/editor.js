@@ -71,9 +71,29 @@ export class ShellView extends Component {
 
 
     // Listen for project changes from settings page
-    document.addEventListener('aq:project-selected', () => {
-      this.refreshChapters();
-    });
+    this._onProjectSelected = () => { this.refreshChapters(); };
+    document.addEventListener('aq:project-selected', this._onProjectSelected);
+
+    // Global updates when story or machine settings change (from chat tools or settings modal)
+    this._onStoryUpdated = (e) => {
+      // Refresh chapters and reopen active if it was changed
+      const detail = (e && e.detail) || {};
+      const changed = Array.isArray(detail.changedChapters) ? detail.changedChapters : [];
+      const reopen = this.activeId != null && changed.includes(this.activeId);
+      Promise.resolve(this.refreshChapters()).then(() => {
+        if (reopen && this.activeId != null) {
+          this.openChapter(this.activeId);
+        }
+      });
+    };
+    document.addEventListener('aq:story-updated', this._onStoryUpdated);
+
+    this._onMachineUpdated = () => {
+      // Reload chat/story models and chapters to reflect new configuration
+      Promise.resolve(this.loadChat());
+      Promise.resolve(this.refreshChapters());
+    };
+    document.addEventListener('aq:machine-updated', this._onMachineUpdated);
 
     // Keyboard shortcut: Ctrl/Cmd+S to save
     window.addEventListener('keydown', (e) => {
@@ -109,6 +129,15 @@ export class ShellView extends Component {
     this.renderRawEditorToolbar();
     this.renderContentWidth();
     this.renderFontSize();
+  }
+
+  destroy() {
+    try {
+      if (this._onProjectSelected) document.removeEventListener('aq:project-selected', this._onProjectSelected);
+      if (this._onStoryUpdated) document.removeEventListener('aq:story-updated', this._onStoryUpdated);
+      if (this._onMachineUpdated) document.removeEventListener('aq:machine-updated', this._onMachineUpdated);
+    } catch (_) {}
+    super.destroy();
   }
 
   /**

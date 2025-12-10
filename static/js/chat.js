@@ -314,7 +314,9 @@ export class ChatView extends Component {
           model_name: this.selectedName || null,
           messages: chatMessages,
           tools,
-          tool_choice: 'auto'
+          tool_choice: 'auto',
+          // Provide the active chapter id so server-side tools can default to it
+          active_chapter_id: (window.app?.shellView?.activeId ?? null)
         };
         return await fetchJSON('/api/chat', {
           method: 'POST',
@@ -332,11 +334,57 @@ export class ChatView extends Component {
           messages: this.messages.map(m => ({ role: m.role, content: m.content, tool_call_id: m.tool_call_id, name: m.name })).concat([{ role: 'assistant', content: assistantMsg.content || '', tool_calls: toolCalls }]),
           active_chapter_id: (window.app?.shellView?.activeId ?? null)
         };
-        return await fetchJSON('/api/chat/tools', {
+        const result = await fetchJSON('/api/chat/tools', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body)
         });
+        // If story changed, proactively refresh the editor UI
+        try {
+          const muts = result?.mutations || {};
+          if (muts.story_changed) {
+            // Derive changed chapter ids from tool calls and tool results
+            const changed = new Set();
+            // From tool calls (arguments)
+            for (const tc of toolCalls) {
+              const fn = tc?.function || {};
+              const name = fn?.name || '';
+              if (!name) continue;
+              if (name === 'write_summary' || name === 'write_chapter' || name === 'continue_chapter') {
+                try {
+                  const args = fn.arguments ? (typeof fn.arguments === 'string' ? JSON.parse(fn.arguments || '{}') : (fn.arguments || {})) : {};
+                  if (typeof args.chap_id === 'number') changed.add(args.chap_id);
+                } catch (_) {}
+              }
+            }
+            // From tool results (appended_messages)
+            const appended = result?.appended_messages || [];
+            for (const tm of appended) {
+              if (!tm || tm.role !== 'tool') continue;
+              if (tm.name === 'write_summary' || tm.name === 'write_chapter') {
+                try {
+                  const payload = tm.content ? JSON.parse(tm.content) : {};
+                  const cid = payload?.chapter?.id;
+                  if (typeof cid === 'number') changed.add(cid);
+                } catch (_) {}
+              }
+            }
+            // Notify editor and refresh
+            const ids = Array.from(changed);
+            if (window.app?.shellView) {
+              try {
+                // Refresh chapter list; reopen active if affected
+                await window.app.shellView.refreshChapters();
+                if (ids.includes(window.app.shellView.activeId)) {
+                  await window.app.shellView.openChapter(window.app.shellView.activeId);
+                }
+              } catch (_) {}
+            }
+            // Broadcast a global event so any component can react
+            try { document.dispatchEvent(new CustomEvent('aq:story-updated', { detail: { changedChapters: ids } })); } catch (_) {}
+          }
+        } catch (_) {}
+        return result;
       };
 
       // First LLM call
@@ -345,6 +393,22 @@ export class ChatView extends Component {
         const assistantMsg = resp.message;
         // Append assistant message (even if content empty, as it may contain tool_calls)
         this.messages = [...this.messages, { role: assistantMsg.role || 'assistant', content: assistantMsg.content || '', tool_calls: assistantMsg.tool_calls }];
+
+        // If server executed tools internally, it will return mutations. Apply them now.
+        try {
+          const muts = resp.mutations || {};
+          if (muts && muts.story_changed) {
+            if (window.app?.shellView) {
+              try {
+                await window.app.shellView.refreshChapters();
+                if (window.app.shellView.activeId != null) {
+                  await window.app.shellView.openChapter(window.app.shellView.activeId);
+                }
+              } catch (_) {}
+            }
+            try { document.dispatchEvent(new CustomEvent('aq:story-updated', { detail: { changedChapters: [] } })); } catch (_) {}
+          }
+        } catch (_) {}
 
         // If there are tools to run, execute them and iterate one more time
         if (Array.isArray(assistantMsg.tool_calls)) {
@@ -361,6 +425,21 @@ export class ChatView extends Component {
               if (resp && resp.ok && resp.message) {
                 const msg2 = resp.message;
                 this.messages = [...this.messages, { role: msg2.role || 'assistant', content: msg2.content || '' }];
+                // Apply any server-side mutations from the second call as well
+                try {
+                  const muts2 = resp.mutations || {};
+                  if (muts2 && muts2.story_changed) {
+                    if (window.app?.shellView) {
+                      try {
+                        await window.app.shellView.refreshChapters();
+                        if (window.app.shellView.activeId != null) {
+                          await window.app.shellView.openChapter(window.app.shellView.activeId);
+                        }
+                      } catch (_) {}
+                    }
+                    try { document.dispatchEvent(new CustomEvent('aq:story-updated', { detail: { changedChapters: [] } })); } catch (_) {}
+                  }
+                } catch (_) {}
               }
             }
           }

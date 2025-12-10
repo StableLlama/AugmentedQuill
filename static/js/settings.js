@@ -672,7 +672,13 @@ export class ModelsEditor extends Component {
       return;
     }
     // Create by selecting (backend creates if doesn't exist)
-    return this.selectByName(name);
+    const res = await this.selectByName(name);
+    try {
+      // Broadcast that both story and machine context may have changed
+      document.dispatchEvent(new CustomEvent('aq:story-updated', { detail: { reason: 'create-project', changedChapters: [] } }));
+      document.dispatchEvent(new CustomEvent('aq:machine-updated', { detail: { reason: 'create-project' } }));
+    } catch (_) {}
+    return res;
   }
 
   /**
@@ -723,6 +729,10 @@ export class ModelsEditor extends Component {
         }
 
         this.saved_msg = data.message || 'Project deleted.';
+        try {
+          document.dispatchEvent(new CustomEvent('aq:story-updated', { detail: { reason: 'delete-project', changedChapters: [] } }));
+          document.dispatchEvent(new CustomEvent('aq:machine-updated', { detail: { reason: 'delete-project' } }));
+        } catch (_) {}
       } catch (e) {
         this.error_msg = `Failed to delete project: ${e.message || e}`;
       }
@@ -776,6 +786,11 @@ export class ModelsEditor extends Component {
 
         this.saved_msg = 'Settings saved successfully.';
         this._setBaseline();
+        // Notify app to refresh views immediately
+        try {
+          document.dispatchEvent(new CustomEvent('aq:story-updated', { detail: { reason: 'settings-save', changedChapters: [] } }));
+          document.dispatchEvent(new CustomEvent('aq:machine-updated', { detail: { reason: 'settings-save' } }));
+        } catch (_) {}
       } catch (e) {
         this.error_msg = `Failed to save: ${e.message || e}`;
       }
