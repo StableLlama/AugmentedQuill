@@ -114,14 +114,16 @@ export class ChatView extends Component {
     const list = this.$refs.chatList;
     if (!list) return;
     list.innerHTML = '';
-    if (!this.messages.length) {
+    // Filter out tool messages from rendering to keep UI clean
+    const renderable = this.messages.filter(m => m.role !== 'tool');
+    if (!renderable.length) {
       const empty = document.createElement('div');
       empty.className = 'aq-empty';
       empty.textContent = 'No messages';
       list.appendChild(empty);
       return;
     }
-    this.messages.forEach((m, idx) => {
+    renderable.forEach((m, idx) => {
       const wrap = document.createElement('div');
       wrap.className = `aq-bubble ${m.role}` + (idx === this.messages.length - 1 ? ' last' : '');
       const header = document.createElement('div');
@@ -238,17 +240,131 @@ export class ChatView extends Component {
     if (this.sending) return;
     this.sending = true;
     try {
-      const body = {
-        model_name: this.selectedName || null,
-        messages: this.messages.map(m => ({ role: m.role, content: m.content }))
+      // Define OpenAI-style tool schemas
+      const tools = [
+        {
+          type: 'function',
+          function: {
+            name: 'get_project_overview',
+            description: 'Get the project title and a list of chapters with id, filename, title, and summary.',
+            parameters: { type: 'object', properties: {}, additionalProperties: false }
+          }
+        },
+        {
+          type: 'function',
+          function: {
+            name: 'get_chapter_content',
+            description: 'Get a slice of chapter content by id with start and max_chars bounds.',
+            parameters: {
+              type: 'object',
+              properties: {
+                chap_id: { type: 'integer', description: 'Chapter numeric id (defaults to active chapter if omitted).' },
+                start: { type: 'integer', default: 0 },
+                max_chars: { type: 'integer', default: 2000 }
+              },
+              additionalProperties: false
+            }
+          }
+        },
+        {
+          type: 'function',
+          function: {
+            name: 'write_summary',
+            description: 'Generate or update the summary for a chapter.',
+            parameters: {
+              type: 'object',
+              properties: {
+                chap_id: { type: 'integer' },
+                mode: { type: 'string', enum: ['update', 'discard'], description: 'Discard existing and write new, or update.' }
+              },
+              required: ['chap_id'],
+              additionalProperties: false
+            }
+          }
+        },
+        {
+          type: 'function',
+          function: {
+            name: 'write_chapter',
+            description: 'Write the full chapter content from its summary for the given chap_id.',
+            parameters: { type: 'object', properties: { chap_id: { type: 'integer' } }, required: ['chap_id'], additionalProperties: false }
+          }
+        },
+        {
+          type: 'function',
+          function: {
+            name: 'continue_chapter',
+            description: 'Continue the chapter content from its current text, guided by the summary.',
+            parameters: { type: 'object', properties: { chap_id: { type: 'integer' } }, required: ['chap_id'], additionalProperties: false }
+          }
+        }
+      ];
+
+      // Helper to call /api/chat
+      const callChat = async () => {
+        const sysPreamble = {
+          role: 'system',
+          content: 'You can use tools to access the project context. Use get_project_overview to list chapters and their summaries. Use get_chapter_content to fetch chapter text by id. When the user asks about chapters or content, call these tools and then answer based on the returned data.'
+        };
+        const hasSystem = this.messages.some(m => m.role === 'system');
+        const chatMessages = (hasSystem ? [] : [sysPreamble]).concat(
+          this.messages.map(m => ({ role: m.role, content: m.content, tool_call_id: m.tool_call_id, name: m.name, tool_calls: m.tool_calls }))
+        );
+        const body = {
+          model_name: this.selectedName || null,
+          messages: chatMessages,
+          tools,
+          tool_choice: 'auto'
+        };
+        return await fetchJSON('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
       };
-      const resp = await fetchJSON('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      });
+
+      // Helper to execute tools server-side
+      const runTools = async (assistantMsg) => {
+        const toolCalls = Array.isArray(assistantMsg?.tool_calls) ? assistantMsg.tool_calls : [];
+        if (!toolCalls.length) return { appended_messages: [], mutations: {} };
+        const body = {
+          model_name: this.selectedName || null,
+          messages: this.messages.map(m => ({ role: m.role, content: m.content, tool_call_id: m.tool_call_id, name: m.name })).concat([{ role: 'assistant', content: assistantMsg.content || '', tool_calls: toolCalls }]),
+          active_chapter_id: (window.app?.shellView?.activeId ?? null)
+        };
+        return await fetchJSON('/api/chat/tools', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+      };
+
+      // First LLM call
+      let resp = await callChat();
       if (resp && resp.ok && resp.message) {
-        this.messages = [...this.messages, { role: resp.message.role || 'assistant', content: resp.message.content || '' }];
+        const assistantMsg = resp.message;
+        // Append assistant message (even if content empty, as it may contain tool_calls)
+        this.messages = [...this.messages, { role: assistantMsg.role || 'assistant', content: assistantMsg.content || '', tool_calls: assistantMsg.tool_calls }];
+
+        // If there are tools to run, execute them and iterate one more time
+        if (Array.isArray(assistantMsg.tool_calls)) {
+          if (assistantMsg.tool_calls.length) {
+            const toolResult = await runTools(assistantMsg);
+            const appended = toolResult?.appended_messages || [];
+            if (appended.length) {
+              // Append tool messages to transcript (not rendered visually)
+              appended.forEach(tm => {
+                this.messages = [...this.messages, { role: 'tool', content: tm.content || '', name: tm.name || '', tool_call_id: tm.tool_call_id }];
+              });
+              // Second LLM call with tool outputs
+              resp = await callChat();
+              if (resp && resp.ok && resp.message) {
+                const msg2 = resp.message;
+                this.messages = [...this.messages, { role: msg2.role || 'assistant', content: msg2.content || '' }];
+              }
+            }
+          }
+        }
         this.renderMessages();
       }
     } catch (e) {

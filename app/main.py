@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import os
+from dataclasses import asdict
 from pathlib import Path
 from typing import Optional, List, Tuple
 import re
@@ -835,6 +837,7 @@ async def _openai_chat_complete(
     api_key: str | None,
     model_id: str,
     timeout_s: int,
+    extra_body: dict | None = None,
 ) -> dict:
     # Pull llm prefs
     story = load_story_config((get_active_project_dir() or CONFIG_DIR) / "story.json") or {}
@@ -854,18 +857,46 @@ async def _openai_chat_complete(
     body: Dict[str, Any] = {"model": model_id, "messages": messages, "temperature": temperature}
     if isinstance(max_tokens, int):
         body["max_tokens"] = max_tokens
+    if extra_body:
+        # Shallow merge of extra fields (e.g., tools, tool_choice)
+        for k, v in extra_body.items():
+            body[k] = v
 
     try:
         timeout_obj = httpx.Timeout(float(timeout_s or 60))
     except Exception:
         timeout_obj = httpx.Timeout(60.0)
 
+    def _llm_debug_enabled() -> bool:
+        env = os.getenv("AUGQ_DEBUG_LLM", "").strip()
+        if env and env not in ("0", "false", "False"):
+            return True
+        try:
+            machine_cfg = load_machine_config(CONFIG_DIR / "machine.json") or {}
+            openai_cfg = (machine_cfg.get("openai") or {}) if isinstance(machine_cfg, dict) else {}
+            return bool(openai_cfg.get("debug_llm"))
+        except Exception:
+            return False
+
     async with httpx.AsyncClient(timeout=timeout_obj) as client:
+        if _llm_debug_enabled():
+            try:
+                print("AUGQ DEBUG LLM → POST", url)
+                print("Headers:", headers)
+                print("Body:", _json.dumps(body, indent=2))
+            except Exception:
+                pass
         resp = await client.post(url, headers=headers, json=body)
         try:
             data = resp.json()
         except Exception:
             data = {"raw": resp.text}
+        if _llm_debug_enabled():
+            try:
+                print("AUGQ DEBUG LLM ← Status:", resp.status_code)
+                print("Response Text:", resp.text)
+            except Exception:
+                pass
         if resp.status_code >= 400:
             raise HTTPException(status_code=resp.status_code, detail=data)
         return data
@@ -877,6 +908,170 @@ def _chapter_by_id_or_404(chap_id: int) -> tuple[Path, int, int]:
     if not match:
         raise HTTPException(status_code=404, detail="Chapter not found")
     return match  # (idx, path, pos)
+
+
+# ============================
+# Project knowledge helpers
+# ============================
+def _project_overview() -> dict:
+    """Return project title and a list of chapters with id, filename, title, summary."""
+    active = get_active_project_dir()
+    story = load_story_config((active / "story.json") if active else (CONFIG_DIR / "story.json")) or {}
+    chapters_meta = [_normalize_chapter_entry(c) for c in (story.get("chapters") or [])]
+    files = _scan_chapter_files()
+    out: list[dict] = []
+    for idx, path in files:
+        # Position in story.json may be different than numeric filename; map by ordering
+        # We use enumeration order from _scan_chapter_files as position
+        pos = next((i for i, (cid, _) in enumerate(files) if cid == idx), None)
+        title = None
+        summary = ""
+        if isinstance(pos, int) and pos < len(chapters_meta):
+            title = chapters_meta[pos].get("title")
+            summary = chapters_meta[pos].get("summary") or ""
+        # Fallback for bogus title values
+        if not title or str(title).strip() in ("[object Object]", "object Object"):
+            title = path.name
+        out.append({
+            "id": idx,
+            "filename": path.name,
+            "title": title,
+            "summary": summary,
+        })
+    return {
+        "project_title": story.get("project_title") or (active.name if active else ""),
+        "chapters": out,
+    }
+
+
+def _chapter_content_slice(chap_id: int, start: int = 0, max_chars: int = 8000) -> dict:
+    """Return a safe slice of chapter content with metadata."""
+    if start < 0:
+        start = 0
+    if max_chars <= 0:
+        max_chars = 1
+    _, path, _pos = _chapter_by_id_or_404(chap_id)
+    text = path.read_text(encoding="utf-8")
+    total = len(text)
+    end = min(total, start + max_chars)
+    return {"id": chap_id, "start": start, "end": end, "total": total, "content": text[start:end]}
+
+
+# ============================
+# Story action helpers (reused by endpoints and chat tools)
+# ============================
+async def _story_generate_summary_helper(*, chap_id: int, mode: str = "") -> dict:
+    if not isinstance(chap_id, int):
+        raise HTTPException(status_code=400, detail="chap_id is required")
+
+    _, path, pos = _chapter_by_id_or_404(chap_id)
+    try:
+        chapter_text = path.read_text(encoding="utf-8")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read chapter: {e}")
+
+    active = get_active_project_dir()
+    if not active:
+        raise HTTPException(status_code=400, detail="No active project")
+    story_path = active / "story.json"
+    story = load_story_config(story_path) or {}
+    chapters_data = [_normalize_chapter_entry(c) for c in story.get("chapters", [])]
+    if pos >= len(chapters_data):
+        chapters_data.extend([{"title": "", "summary": ""}] * (pos - len(chapters_data) + 1))
+    current_summary = chapters_data[pos].get("summary", "")
+
+    base_url, api_key, model_id, timeout_s = _resolve_openai_credentials({})
+
+    sys_msg = {
+        "role": "system",
+        "content": (
+            "You are an expert story editor. Write a concise summary capturing plot, characters, tone, and open threads."
+        ),
+    }
+    mode_l = (mode or "").lower()
+    if mode_l == "discard" or not current_summary:
+        user_prompt = f"Chapter text:\n\n{chapter_text}\n\nTask: Write a new summary (5-10 sentences)."
+    else:
+        user_prompt = (
+            "Existing summary:\n\n" + current_summary +
+            "\n\nChapter text:\n\n" + chapter_text +
+            "\n\nTask: Update the summary to accurately reflect the chapter, keeping style and brevity."
+        )
+    messages = [sys_msg, {"role": "user", "content": user_prompt}]
+
+    data = await _openai_chat_complete(messages=messages, base_url=base_url, api_key=api_key, model_id=model_id, timeout_s=timeout_s)
+    choices = (data or {}).get("choices") or []
+    new_summary = ""
+    if choices:
+        msg = choices[0].get("message") if isinstance(choices[0], dict) else None
+        if isinstance(msg, dict):
+            new_summary = msg.get("content", "") or ""
+
+    chapters_data[pos]["summary"] = new_summary
+    story["chapters"] = chapters_data
+    story_path.write_text(_json.dumps(story, indent=2), encoding="utf-8")
+    title_for_response = chapters_data[pos].get("title") or path.name
+    return {"ok": True, "summary": new_summary, "chapter": {"id": chap_id, "title": title_for_response, "filename": path.name, "summary": new_summary}}
+
+
+async def _story_write_helper(*, chap_id: int) -> dict:
+    if not isinstance(chap_id, int):
+        raise HTTPException(status_code=400, detail="chap_id is required")
+    idx, path, pos = _chapter_by_id_or_404(chap_id)
+    active = get_active_project_dir()
+    if not active:
+        raise HTTPException(status_code=400, detail="No active project")
+    story = load_story_config(active / "story.json") or {}
+    chapters_data = [_normalize_chapter_entry(c) for c in story.get("chapters", [])]
+    if pos >= len(chapters_data):
+        chapters_data.extend([{"title": "", "summary": ""}] * (pos - len(chapters_data) + 1))
+    summary = chapters_data[pos].get("summary", "")
+
+    base_url, api_key, model_id, timeout_s = _resolve_openai_credentials({})
+    sys_msg = {"role": "system", "content": "You are a skilled novelist. Write compelling, coherent prose in the voice and style of the project."}
+    user_prompt = ("Project title: " + (story.get("project_title") or "") +
+                   "\n\nChapter summary:\n" + summary +
+                   "\n\nTask: Write the full chapter as markdown. Keep consistency with previous chapters if implied.")
+    data = await _openai_chat_complete(messages=[sys_msg, {"role": "user", "content": user_prompt}], base_url=base_url, api_key=api_key, model_id=model_id, timeout_s=timeout_s)
+    choices = (data or {}).get("choices") or []
+    content = ""
+    if choices:
+        msg = choices[0].get("message") if isinstance(choices[0], dict) else None
+        if isinstance(msg, dict):
+            content = msg.get("content", "") or ""
+    path.write_text(content, encoding="utf-8")
+    return {"ok": True, "content": content, "chapter": {"id": idx, "filename": path.name}}
+
+
+async def _story_continue_helper(*, chap_id: int) -> dict:
+    if not isinstance(chap_id, int):
+        raise HTTPException(status_code=400, detail="chap_id is required")
+    idx, path, pos = _chapter_by_id_or_404(chap_id)
+    active = get_active_project_dir()
+    if not active:
+        raise HTTPException(status_code=400, detail="No active project")
+    story = load_story_config(active / "story.json") or {}
+    chapters_data = [_normalize_chapter_entry(c) for c in story.get("chapters", [])]
+    if pos >= len(chapters_data):
+        chapters_data.extend([{"title": "", "summary": ""}] * (pos - len(chapters_data) + 1))
+    summary = chapters_data[pos].get("summary", "")
+    current = path.read_text(encoding="utf-8") if path.exists() else ""
+
+    base_url, api_key, model_id, timeout_s = _resolve_openai_credentials({})
+    sys_msg = {"role": "system", "content": "You are a helpful writing assistant. Continue the chapter, matching tone, characters, and style."}
+    user_prompt = ("Chapter summary:\n" + summary +
+                   "\n\nExisting chapter text (may be partial):\n" + current +
+                   "\n\nTask: Continue the chapter. Avoid repeating text; ensure transitions are smooth.")
+    data = await _openai_chat_complete(messages=[sys_msg, {"role": "user", "content": user_prompt}], base_url=base_url, api_key=api_key, model_id=model_id, timeout_s=timeout_s)
+    choices = (data or {}).get("choices") or []
+    add = ""
+    if choices:
+        msg = choices[0].get("message") if isinstance(choices[0], dict) else None
+        if isinstance(msg, dict):
+            add = msg.get("content", "") or ""
+    new_content = (current + ("\n\n" if current and not current.endswith("\n\n") else "") + add).strip("\n") + "\n"
+    path.write_text(new_content, encoding="utf-8")
+    return {"ok": True, "appended": add, "chapter": {"id": idx, "filename": path.name}}
 
 
 @app.post("/api/story/summary")
@@ -1186,20 +1381,36 @@ async def api_chat(request: Request) -> JSONResponse:
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON body")
 
-    def _coerce_messages(val: Any) -> list[dict]:
+    def _normalize_chat_messages(val: Any) -> list[dict]:
+        """Preserve OpenAI message fields including tool calls.
+
+        Keeps: role, content (may be None), name, tool_call_id, tool_calls.
+        """
         arr = val if isinstance(val, list) else []
         out: list[dict] = []
         for m in arr:
             if not isinstance(m, dict):
                 continue
-            role = str(m.get("role", "")).strip() or "user"
-            content = m.get("content")
-            if content is None:
-                continue
-            out.append({"role": role, "content": str(content)})
+            role = str(m.get("role", "")).strip().lower() or "user"
+            msg: dict = {"role": role}
+            # content can be None (e.g., assistant with tool_calls)
+            if "content" in m:
+                c = m.get("content")
+                msg["content"] = (None if c is None else str(c))
+            # pass-through optional tool fields
+            name = m.get("name")
+            if isinstance(name, str) and name:
+                msg["name"] = name
+            tcid = m.get("tool_call_id")
+            if isinstance(tcid, str) and tcid:
+                msg["tool_call_id"] = tcid
+            tcs = m.get("tool_calls")
+            if isinstance(tcs, list) and tcs:
+                msg["tool_calls"] = tcs
+            out.append(msg)
         return out
 
-    req_messages = _coerce_messages((payload or {}).get("messages"))
+    req_messages = _normalize_chat_messages((payload or {}).get("messages"))
     if not req_messages:
         return JSONResponse(status_code=400, content={"ok": False, "detail": "messages array is required"})
 
@@ -1254,37 +1465,341 @@ async def api_chat(request: Request) -> JSONResponse:
     }
     if isinstance(max_tokens, int):
         body["max_tokens"] = max_tokens
+    # Pass through OpenAI tool-calling fields if provided
+    # Always include the available tools for the model to use.
+    body["tools"] = STORY_TOOLS
+    tool_choice = (payload or {}).get("tool_choice")
+    if tool_choice:
+        body["tool_choice"] = tool_choice
+    else:
+        body["tool_choice"] = "auto"
+
+    # Backward-compat with legacy function calling (OpenAI functions API)
+    # Some providers only recognize `functions` and `function_call`.
+    # If tools of type function are provided, mirror them into `functions`.
+    try:
+        current_tools = body.get("tools")
+        if isinstance(current_tools, list) and current_tools:
+            functions: list[dict] = []
+            for t in current_tools:
+                if isinstance(t, dict) and t.get("type") == "function":
+                    fn = t.get("function") or {}
+                    name = fn.get("name")
+                    if isinstance(name, str) and name:
+                        # Keep only legacy-compatible fields
+                        fdef = {
+                            "name": name,
+                        }
+                        desc = fn.get("description")
+                        if isinstance(desc, str) and desc:
+                            fdef["description"] = desc
+                        params = fn.get("parameters")
+                        if isinstance(params, dict):
+                            fdef["parameters"] = params
+                        functions.append(fdef)
+            if functions:
+                body["functions"] = functions
+                # Map tool_choice to function_call where meaningful
+                fc = None
+                current_tool_choice = body.get("tool_choice")
+                if isinstance(current_tool_choice, str):
+                    if current_tool_choice in ("auto", "none"):
+                        fc = current_tool_choice
+                elif isinstance(current_tool_choice, dict):
+                    # {"type":"function","function":{"name":"..."}}
+                    if current_tool_choice.get("type") == "function":
+                        fn2 = (current_tool_choice.get("function") or {})
+                        name2 = fn2.get("name")
+                        if isinstance(name2, str) and name2:
+                            fc = {"name": name2}
+                if fc is None:
+                    # default to auto if tools provided
+                    fc = "auto"
+                body["function_call"] = fc
+    except Exception:
+        # If anything goes wrong, we silently ignore and proceed with modern tools fields
+        pass
 
     try:
         timeout_obj = httpx.Timeout(float(timeout_s or 60))
     except Exception:
         timeout_obj = httpx.Timeout(60.0)
 
+    def _llm_debug_enabled() -> bool:
+        env = os.getenv("AUGQ_DEBUG_LLM", "").strip()
+        if env and env not in ("0", "false", "False"):
+            return True
+        try:
+            machine_cfg = load_machine_config(CONFIG_DIR / "machine.json") or {}
+            openai_cfg = (machine_cfg.get("openai") or {}) if isinstance(machine_cfg, dict) else {}
+            return bool(openai_cfg.get("debug_llm"))
+        except Exception:
+            return False
+
     try:
         async with httpx.AsyncClient(timeout=timeout_obj) as client:
-            resp = await client.post(url, headers=headers, json=body)
-            # Try to parse JSON regardless of status
-            data = None
-            try:
-                data = resp.json()
-            except Exception:
-                data = {"raw": resp.text}
-            if resp.status_code >= 400:
-                return JSONResponse(status_code=resp.status_code, content={"ok": False, "detail": data})
+            mutations = {"story_changed": False}
+            # Limit tool call loops to prevent infinite cycles
+            for _ in range(5):
+                if _llm_debug_enabled():
+                    try:
+                        print("AUGQ DEBUG LLM → POST", url)
+                        print("Headers:", headers)
+                        print("Body:", _json.dumps(body, indent=2))
+                    except Exception:
+                        pass
+                resp = await client.post(url, headers=headers, json=body)
+                # Try to parse JSON regardless of status
+                data = None
+                try:
+                    data = resp.json()
+                except Exception:
+                    data = {"raw": resp.text}
 
-            # OpenAI-style response
-            choices = (data or {}).get("choices") or []
-            content = ""
-            role = "assistant"
-            if choices:
-                msg = choices[0].get("message") if isinstance(choices[0], dict) else None
-                if isinstance(msg, dict):
-                    role = msg.get("role", role) or role
-                    content = msg.get("content", "") or ""
-            usage = (data or {}).get("usage")
-            return JSONResponse(status_code=200, content={"ok": True, "message": {"role": role, "content": content}, "usage": usage})
+                if _llm_debug_enabled():
+                    try:
+                        print("AUGQ DEBUG LLM ← Status:", resp.status_code)
+                        print("Response Text:", resp.text)
+                    except Exception:
+                        pass
+                if resp.status_code >= 400:
+                    return JSONResponse(status_code=resp.status_code, content={"ok": False, "detail": data})
+
+                choices = (data or {}).get("choices") or []
+                if not choices:
+                    return JSONResponse(status_code=500, content={"ok": False, "detail": "LLM returned no choices"})
+
+                message = choices[0].get("message")
+                if not isinstance(message, dict):
+                    return JSONResponse(status_code=500, content={"ok": False, "detail": "Invalid message format from LLM"})
+
+                # Append assistant's response to messages
+                req_messages.append(message)
+                body["messages"] = req_messages
+
+                # Decide if we need to call tools
+                tool_calls = message.get("tool_calls")
+                # Also handle legacy function_call
+                if not tool_calls and isinstance(message.get("function_call"), dict):
+                    fn_call = message["function_call"]
+                    if isinstance(fn_call.get("name"), str):
+                        name = fn_call.get("name")
+                        args = fn_call.get("arguments", "{}")
+                        if not isinstance(args, str):
+                            try:
+                                args = _json.dumps(args or "{}")
+                            except Exception:
+                                args = "{}"
+                        tool_calls = [{"id": f"call_{name}", "type": "function", "function": {"name": name, "arguments": args}}]
+
+                if not tool_calls or not isinstance(tool_calls, list):
+                    # No tool calls, we are done. Return the last message.
+                    usage = (data or {}).get("usage")
+                    # Clean up response message for client
+                    final_msg = {"role": "assistant", "content": message.get("content", "") or ""}
+                    return JSONResponse(status_code=200, content={"ok": True, "message": final_msg, "usage": usage, "mutations": mutations})
+
+                # We have tool calls, execute them
+                tool_messages = []
+                for call in tool_calls:
+                    if not (isinstance(call, dict) and call.get("type") == "function"): continue
+                    call_id = str(call.get("id") or "")
+                    func = call.get("function") or {}
+                    name = (func.get("name") if isinstance(func, dict) else "") or ""
+                    args_raw = (func.get("arguments") if isinstance(func, dict) else "") or "{}"
+                    try:
+                        args_obj = _json.loads(args_raw) if isinstance(args_raw, str) else (args_raw or {})
+                    except Exception:
+                        args_obj = {}
+                    if not name or not call_id: continue
+
+                    tool_result_msg = await _exec_chat_tool(name, args_obj, call_id, payload, mutations)
+                    tool_messages.append(tool_result_msg)
+
+                req_messages.extend(tool_messages)
+                body["messages"] = req_messages
+
+            # If loop finishes (e.g. too many tool calls), return an error
+            return JSONResponse(status_code=500, content={"ok": False, "detail": "Exceeded maximum tool call attempts"})
     except httpx.HTTPError as e:
         raise HTTPException(status_code=502, detail=f"Chat request failed: {e}")
+
+
+# ==================================
+# Chat with Tools (function-calling)
+# ==================================
+
+STORY_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "get_project_overview",
+            "description": "Get project title and a list of all chapters with their IDs, filenames, titles, and summaries.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_chapter_content",
+            "description": "Get a slice of a chapter's content. If 'chap_id' is omitted, the application will attempt to use the currently active chapter.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "chap_id": {"type": "integer", "description": "The ID of the chapter to read."},
+                    "start": {"type": "integer", "description": "The starting character index. Default 0."},
+                    "max_chars": {"type": "integer", "description": "Max characters to read. Default 8000, max 8000."},
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "write_summary",
+            "description": "Generate and save a new summary for a chapter, or update its existing summary. This is a destructive action.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "chap_id": {"type": "integer", "description": "The ID of the chapter to summarize."},
+                    "mode": {
+                        "type": "string",
+                        "description": "If 'discard', generate a new summary from scratch. If 'update' or empty, refine the existing one.",
+                        "enum": ["discard", "update"],
+                    },
+                },
+                "required": ["chap_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "write_chapter",
+            "description": "Write the entire content of a chapter from its summary. This overwrites any existing content.",
+            "parameters": {
+                "type": "object",
+                "properties": {"chap_id": {"type": "integer", "description": "The ID of the chapter to write."}},
+                "required": ["chap_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "continue_chapter",
+            "description": "Append new content to a chapter, continuing from where it left off. This does not modify existing text.",
+            "parameters": {
+                "type": "object",
+                "properties": {"chap_id": {"type": "integer", "description": "The ID of the chapter to continue."}},
+                "required": ["chap_id"],
+            },
+        },
+    },
+]
+
+
+async def _exec_chat_tool(name: str, args_obj: dict, call_id: str, payload: dict, mutations: dict) -> dict:
+    """Helper to execute a single tool call."""
+    try:
+        if name == "get_project_overview":
+            data = _project_overview()
+            return {"role": "tool", "tool_call_id": call_id, "name": name, "content": _json.dumps(data)}
+        if name == "get_chapter_content":
+            chap_id = args_obj.get("chap_id")
+            if chap_id is None:
+                ac = payload.get("active_chapter_id")
+                if isinstance(ac, int):
+                    chap_id = ac
+            if not isinstance(chap_id, int):
+                return {"role": "tool", "tool_call_id": call_id, "name": name, "content": _json.dumps({"error": "chap_id is required"})}
+            start = int(args_obj.get("start", 0) or 0)
+            max_chars = int(args_obj.get("max_chars", 8000) or 8000)
+            max_chars = max(1, min(8000, max_chars))
+            data = _chapter_content_slice(chap_id, start=start, max_chars=max_chars)
+            return {"role": "tool", "tool_call_id": call_id, "name": name, "content": _json.dumps(data)}
+        if name == "write_summary":
+            chap_id = args_obj.get("chap_id")
+            if not isinstance(chap_id, int):
+                return {"role": "tool", "tool_call_id": call_id, "name": name, "content": _json.dumps({"error": "chap_id is required"})}
+            mode = str(args_obj.get("mode", "")).lower()
+            data = await _story_generate_summary_helper(chap_id=chap_id, mode=mode)
+            mutations["story_changed"] = True
+            return {"role": "tool", "tool_call_id": call_id, "name": name, "content": _json.dumps(data)}
+        if name == "write_chapter":
+            chap_id = args_obj.get("chap_id")
+            if not isinstance(chap_id, int):
+                return {"role": "tool", "tool_call_id": call_id, "name": name, "content": _json.dumps({"error": "chap_id is required"})}
+            data = await _story_write_helper(chap_id=chap_id)
+            mutations["story_changed"] = True
+            return {"role": "tool", "tool_call_id": call_id, "name": name, "content": _json.dumps(data)}
+        if name == "continue_chapter":
+            chap_id = args_obj.get("chap_id")
+            if not isinstance(chap_id, int):
+                return {"role": "tool", "tool_call_id": call_id, "name": name, "content": _json.dumps({"error": "chap_id is required"})}
+            data = await _story_continue_helper(chap_id=chap_id)
+            mutations["story_changed"] = True
+            return {"role": "tool", "tool_call_id": call_id, "name": name, "content": _json.dumps(data)}
+        return {"role": "tool", "tool_call_id": call_id, "name": name, "content": _json.dumps({"error": f"Unknown tool: {name}"})}
+    except HTTPException as e:
+        return {"role": "tool", "tool_call_id": call_id, "name": name, "content": _json.dumps({"error": f"Tool failed: {e.detail}"})}
+    except Exception as e:
+        return {"role": "tool", "tool_call_id": call_id, "name": name, "content": _json.dumps({"error": f"Tool failed with unexpected error: {e}"})}
+
+
+@app.post("/api/chat/tools")
+async def api_chat_tools(request: Request) -> JSONResponse:
+    """Execute OpenAI-style tool calls and return tool messages.
+
+    The endpoint does not call the upstream LLM; it only executes provided tool_calls
+    from the last assistant message and returns corresponding {role:"tool"} messages.
+
+    Body JSON:
+      {
+        "model_name": str | null,
+        "messages": [
+          {"role":"user|assistant|system|tool", "content": str, "tool_calls"?: [{"id":str, "type":"function", "function": {"name": str, "arguments": str}}], "tool_call_id"?: str, "name"?: str}
+        ],
+        "active_chapter_id"?: int
+      }
+    """
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    messages = payload.get("messages") or []
+    if not isinstance(messages, list):
+        return JSONResponse(status_code=400, content={"ok": False, "detail": "messages must be an array"})
+
+    last = messages[-1] if messages else None
+    tool_calls: list = []
+    if isinstance(last, dict):
+        t = last.get("tool_calls")
+        if isinstance(t, list):
+            tool_calls = t
+
+    appended: list[dict] = []
+    mutations = {"story_changed": False}
+
+    for call in tool_calls:
+        if not isinstance(call, dict):
+            continue
+        call_id = str(call.get("id") or "")
+        func = call.get("function") or {}
+        name = (func.get("name") if isinstance(func, dict) else None) or ""
+        args_raw = (func.get("arguments") if isinstance(func, dict) else None) or "{}"
+        try:
+            args_obj = _json.loads(args_raw) if isinstance(args_raw, str) else (args_raw or {})
+        except Exception:
+            args_obj = {}
+        if not name or not call_id:
+            continue
+        msg = await _exec_chat_tool(name, args_obj, call_id, payload, mutations)
+        appended.append(msg)
+
+    return JSONResponse(status_code=200, content={"ok": True, "appended_messages": appended, "mutations": mutations})
 
 
 # ==============================
