@@ -454,6 +454,9 @@ export class ShellView extends Component {
       // Load story settings to determine render mode preference
       await this._loadRenderMode();
 
+      // Load story models
+      await this.loadChat();
+
       // Initialize Toast UI if starting in Markdown or WYSIWYG
       if (this.renderMode !== RENDER_MODES.RAW) {
         const mode = this.renderMode;
@@ -491,6 +494,37 @@ export class ShellView extends Component {
       }
     } catch (e) {
       console.error('Failed to load render mode:', e);
+    }
+  }
+
+  /**
+   * Load story models from machine configuration
+   */
+  async loadChat() {
+    try {
+      const machine = await fetchJSON('/api/machine');
+      const openai = (machine && machine.openai) || {};
+      const modelsList = Array.isArray(openai.models) ? openai.models : [];
+      const modelNames = modelsList.map(m => m.name).filter(Boolean);
+      
+      // If no named models, check for legacy single model
+      if (!modelNames.length) {
+        const legacyModel = openai.model;
+        if (legacyModel) {
+          modelNames.push('default');
+        }
+      }
+      
+      this.storyModels = modelNames;
+      const selected = openai.selected || '';
+      if (selected && modelNames.includes(selected)) {
+        this.storyCurrentModel = selected;
+      } else if (!this.storyCurrentModel && modelNames.length) {
+        this.storyCurrentModel = modelNames[0];
+      }
+    } catch (e) {
+      console.error('Failed to load story models:', e);
+      this.storyModels = [];
     }
   }
 
