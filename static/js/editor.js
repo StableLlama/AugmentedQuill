@@ -1,6 +1,6 @@
 import { fetchJSON, API } from './utils.js';
 import { Component } from './component.js';
-import { RENDER_MODES, EVENTS, DEFAULTS } from './editorConstants.js';
+import { RENDER_MODES, EVENTS, DEFAULTS, UI_STRINGS } from './editorConstants.js';
 import { ChapterRenderer } from './chapterRenderer.js';
 import { ContentEditor } from './contentEditor.js';
 import { StoryActions } from './storyActions.js';

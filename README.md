@@ -4,7 +4,7 @@
 
 Web GUI for LLM assisted prose writing
 
-The project is using Python with FastAPI on the backend and HTMX with Alpine.js
+The project is using Python with FastAPI on the backend and HTMX
 on the frontend. The LLMs are accessed via the OpenAI API.
 
 The project features a simple user interface for writing prose like novels.
@@ -22,6 +22,36 @@ view the text as it is (raw) or as a formatted markdown text.
 
 There is also an option to switch the main window to a simple chat with the
 currently selected LLM.
+
+## Architecture
+
+The application follows a modular FastAPI architecture:
+
+- **Backend**: FastAPI with modular routers for different API endpoints
+- **Frontend**: HTMX for interactive web interface
+- **Configuration**: JSON-based config files with environment variable support
+- **LLM Integration**: OpenAI API with support for multiple endpoints
+
+### Code Structure
+
+```
+app/
+├── main.py              # FastAPI app initialization and server startup
+├── api/                 # API routers
+│   ├── settings.py      # Settings management endpoints
+│   ├── projects.py      # Project management endpoints
+│   ├── chapters.py      # Chapter CRUD operations
+│   ├── story.py         # Story generation and streaming
+│   └── chat.py          # Chat API with tools
+├── helpers/             # Shared utility functions
+│   ├── chapter_helpers.py
+│   ├── project_helpers.py
+│   └── story_helpers.py
+├── llm_shims.py         # LLM operation wrappers
+├── config.py            # Configuration loading
+├── projects.py          # Project management
+└── llm.py               # LLM client implementation
+```
 
 
 ## Quickstart

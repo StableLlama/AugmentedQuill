@@ -55,7 +55,7 @@ Build and Configuration
 3) Local App Execution (expected)
 - Once the FastAPI app module is added (e.g., app/main.py exposing app = FastAPI(...)) run via:
   - uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
-- Frontend (HTMX + Alpine.js) typically resides in templates/ + static/ or a single HTML with HTMX endpoints. Ensure CORS if you split origins.
+- Frontend (HTMX) typically resides in templates/ + static/ or a single HTML with HTMX endpoints. Ensure CORS if you split origins.
 
 Testing
 Strategy
@@ -132,7 +132,7 @@ Debugging Tips
 - FastAPI:
   - Enable --reload and log_level=debug while developing.
   - Surface detailed validation errors (Pydantic) by validating inputs on boundaries.
-- Frontend (HTMX/Alpine):
+- Frontend (HTMX):
   - Verify HTMX requests in the Network tab; partials should render server-side and swap properly.
   - Use hx-boost/hx-swap strategically; return minimal HTML fragments for performance.
 - Rate limits and errors:
