@@ -8,6 +8,9 @@ from typing import Dict, List, Tuple
 import shutil
 import os
 
+from app.config import load_story_config
+from app.helpers.chapter_helpers import _scan_chapter_files, _normalize_chapter_entry
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 CONFIG_DIR = BASE_DIR / "config"
 PROJECTS_ROOT = BASE_DIR / "projects"
@@ -192,8 +195,55 @@ def list_projects() -> List[Dict[str, str | bool]]:
     return items
 
 
+def write_chapter_content(chap_id: int, content: str) -> None:
+    """Write content to a chapter by its ID."""
+    files = _scan_chapter_files()
+    match = next(((idx, p, i) for i, (idx, p) in enumerate(files) if idx == chap_id), None)
+    if not match:
+        raise ValueError(f"Chapter {chap_id} not found")
+    _, path, _ = match
+    path.write_text(content, encoding="utf-8")
+
+
+def write_chapter_summary(chap_id: int, summary: str) -> None:
+    """Write summary to a chapter by its ID."""
+    active = get_active_project_dir()
+    if not active:
+        raise ValueError("No active project")
+
+    new_summary = summary.strip()
+
+    # Locate chapter by id
+    files = _scan_chapter_files()
+    match = next(((idx, p, i) for i, (idx, p) in enumerate(files) if idx == chap_id), None)
+    if not match:
+        raise ValueError(f"Chapter {chap_id} not found")
+    _, path, pos = match
+
+    # Load and normalize story.json
+    story_path = active / "story.json"
+    story = load_story_config(story_path) or {}
+    chapters_data = story.get("chapters") or []
+    chapters_data = [_normalize_chapter_entry(c) for c in chapters_data]
+
+    # Ensure alignment with number of files
+    count = len(files)
+    if len(chapters_data) < count:
+        chapters_data.extend([{"title": "", "summary": ""}] * (count - len(chapters_data)))
+
+    # Update summary at position
+    if pos < len(chapters_data):
+        chapters_data[pos]["summary"] = new_summary
+    else:
+        chapters_data.append({"title": "", "summary": new_summary})
+
+    story["chapters"] = chapters_data
+    story_path.write_text(json.dumps(story, indent=2), encoding="utf-8")
+
+
 def select_project(name: str) -> Tuple[bool, str]:
-    """Select or create a project by name under the projects root.
+    """
+    Select or create a project by name under the projects root.
 
     Rules:
     - `name` must be a simple directory name (no path separators, not absolute).
@@ -226,3 +276,43 @@ def select_project(name: str) -> Tuple[bool, str]:
             return True, "Project created"
         return False, "Selected path is not a valid project directory"
     return False, "Selected path is not a directory"
+
+
+def create_new_chapter(title: str = "") -> int:
+    """Create a new chapter file and update story.json.
+
+    Returns the chapter ID of the newly created chapter.
+    """
+    active = get_active_project_dir()
+    if not active:
+        raise ValueError("No active project")
+
+    from app.helpers.chapter_helpers import _scan_chapter_files, _normalize_chapter_entry
+
+    # Determine next index and path
+    files = _scan_chapter_files()
+    next_idx = (files[-1][0] + 1) if files else 1
+    filename = f"{next_idx:04d}.txt"
+    chapters_dir = active / "chapters"
+    chapters_dir.mkdir(parents=True, exist_ok=True)
+    path = chapters_dir / filename
+    path.write_text("", encoding="utf-8")  # Create empty file
+
+    # Update story.json chapters array (append as last)
+    story_path = active / "story.json"
+    story = load_story_config(story_path) or {}
+    chapters_data = story.get("chapters") or []
+    chapters_data = [_normalize_chapter_entry(c) for c in chapters_data]
+
+    # Ensure chapters_data length aligns with existing files count before new chapter
+    count_before = len(files)
+    if len(chapters_data) < count_before:
+        chapters_data.extend([{"title": "", "summary": ""}] * (count_before - len(chapters_data)))
+
+    # Append new chapter entry with title and empty summary
+    chapters_data.append({"title": title, "summary": ""})
+    story["chapters"] = chapters_data
+
+    story_path.write_text(json.dumps(story, indent=2), encoding="utf-8")
+
+    return next_idx

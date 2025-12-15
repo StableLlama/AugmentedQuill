@@ -4,7 +4,7 @@ from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import JSONResponse
 
 from app.config import load_machine_config, load_story_config
-from app.projects import get_active_project_dir
+from app.projects import get_active_project_dir, write_chapter_content, write_chapter_summary
 from app.helpers.project_helpers import _project_overview, _chapter_content_slice
 from app.helpers.story_helpers import _story_generate_summary_helper, _story_write_helper, _story_continue_helper
 from app.helpers.chapter_helpers import _chapter_by_id_or_404
@@ -180,6 +180,36 @@ STORY_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "write_chapter_content",
+            "description": "Set the content of a chapter.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "chap_id": {"type": "integer", "description": "Chapter numeric id."},
+                    "content": {"type": "string", "description": "New content for the chapter."}
+                },
+                "required": ["chap_id", "content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "write_chapter_summary",
+            "description": "Set the summary of a chapter.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "chap_id": {"type": "integer", "description": "Chapter numeric id."},
+                    "summary": {"type": "string", "description": "New summary for the chapter."}
+                },
+                "required": ["chap_id", "summary"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "sync_summary",
             "description": "Generate and save a new summary for a chapter, or update its existing summary based on the content of the chapter. This is a destructive action.",
             "parameters": {
@@ -211,6 +241,77 @@ STORY_TOOLS = [
                     },
                 },
                 "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "write_story_summary",
+            "description": "Set the overall story summary.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "summary": {"type": "string", "description": "The new story summary."}
+                },
+                "required": ["summary"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_new_chapter",
+            "description": "Create a new chapter with an optional title.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "The title for the new chapter."}
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_chapter_heading",
+            "description": "Get the heading (title) of a specific chapter.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "chap_id": {"type": "integer", "description": "The ID of the chapter."}
+                },
+                "required": ["chap_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "write_chapter_heading",
+            "description": "Set the heading (title) of a specific chapter.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "chap_id": {"type": "integer", "description": "The ID of the chapter."},
+                    "heading": {"type": "string", "description": "The new heading for the chapter."}
+                },
+                "required": ["chap_id", "heading"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_chapter_summary",
+            "description": "Get the summary of a specific chapter.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "chap_id": {"type": "integer", "description": "The ID of the chapter."}
+                },
+                "required": ["chap_id"],
             },
         },
     },
@@ -294,6 +395,32 @@ async def _exec_chat_tool(name: str, args_obj: dict, call_id: str, payload: dict
             max_chars = max(1, min(8000, max_chars))
             data = _chapter_content_slice(chap_id, start=start, max_chars=max_chars)
             return {"role": "tool", "tool_call_id": call_id, "name": name, "content": _json.dumps(data)}
+        if name == "write_chapter_content":
+            chap_id = args_obj.get("chap_id")
+            content = args_obj.get("content")
+            if not isinstance(chap_id, int):
+                return {"role": "tool", "tool_call_id": call_id, "name": name, "content": _json.dumps({"error": "chap_id is required"})}
+            if not isinstance(content, str):
+                return {"role": "tool", "tool_call_id": call_id, "name": name, "content": _json.dumps({"error": "content is required"})}
+            try:
+                write_chapter_content(chap_id, content)
+                mutations["story_changed"] = True
+                return {"role": "tool", "tool_call_id": call_id, "name": name, "content": _json.dumps({"message": f"Content written to chapter {chap_id} successfully"})}
+            except ValueError as e:
+                return {"role": "tool", "tool_call_id": call_id, "name": name, "content": _json.dumps({"error": str(e)})}
+        if name == "write_chapter_summary":
+            chap_id = args_obj.get("chap_id")
+            summary = args_obj.get("summary")
+            if not isinstance(chap_id, int):
+                return {"role": "tool", "tool_call_id": call_id, "name": name, "content": _json.dumps({"error": "chap_id is required"})}
+            if not isinstance(summary, str):
+                return {"role": "tool", "tool_call_id": call_id, "name": name, "content": _json.dumps({"error": "summary is required"})}
+            try:
+                write_chapter_summary(chap_id, summary)
+                mutations["story_changed"] = True
+                return {"role": "tool", "tool_call_id": call_id, "name": name, "content": _json.dumps({"message": f"Summary written to chapter {chap_id} successfully"})}
+            except ValueError as e:
+                return {"role": "tool", "tool_call_id": call_id, "name": name, "content": _json.dumps({"error": str(e)})}
         if name == "sync_summary":
             chap_id = args_obj.get("chap_id")
             if not isinstance(chap_id, int):
@@ -323,6 +450,75 @@ async def _exec_chat_tool(name: str, args_obj: dict, call_id: str, payload: dict
             data = await _story_generate_story_summary_helper(mode=mode)
             mutations["story_changed"] = True
             return {"role": "tool", "tool_call_id": call_id, "name": name, "content": _json.dumps(data)}
+        if name == "write_story_summary":
+            summary = str(args_obj.get("summary", "")).strip()
+            active = get_active_project_dir()
+            if not active:
+                return {"role": "tool", "tool_call_id": call_id, "name": name, "content": _json.dumps({"error": "No active project"})}
+            story_path = active / "story.json"
+            story = load_story_config(story_path) or {}
+            story["story_summary"] = summary
+            with open(story_path, "w", encoding="utf-8") as f:
+                _json.dump(story, f, indent=2, ensure_ascii=False)
+            mutations["story_changed"] = True
+            return {"role": "tool", "tool_call_id": call_id, "name": name, "content": _json.dumps({"summary": summary, "message": "Story summary updated successfully"})}
+        if name == "create_new_chapter":
+            title = str(args_obj.get("title", "")).strip()
+            active = get_active_project_dir()
+            if not active:
+                return {"role": "tool", "tool_call_id": call_id, "name": name, "content": _json.dumps({"error": "No active project"})}
+            from app.projects import create_new_chapter
+            try:
+                chap_id = create_new_chapter(title)
+                mutations["story_changed"] = True
+                return {"role": "tool", "tool_call_id": call_id, "name": name, "content": _json.dumps({"chap_id": chap_id, "title": title, "message": f"New chapter {chap_id} created successfully"})}
+            except Exception as e:
+                return {"role": "tool", "tool_call_id": call_id, "name": name, "content": _json.dumps({"error": str(e)})}
+        if name == "get_chapter_heading":
+            chap_id = args_obj.get("chap_id")
+            if not isinstance(chap_id, int):
+                return {"role": "tool", "tool_call_id": call_id, "name": name, "content": _json.dumps({"error": "chap_id is required"})}
+            active = get_active_project_dir()
+            story = load_story_config((active / "story.json") if active else None) or {}
+            chapters = story.get("chapters", [])
+            if chap_id < len(chapters) and isinstance(chapters[chap_id], dict):
+                heading = chapters[chap_id].get("title", "")
+            else:
+                heading = ""
+            return {"role": "tool", "tool_call_id": call_id, "name": name, "content": _json.dumps({"heading": heading})}
+        if name == "write_chapter_heading":
+            chap_id = args_obj.get("chap_id")
+            heading = str(args_obj.get("heading", "")).strip()
+            if not isinstance(chap_id, int):
+                return {"role": "tool", "tool_call_id": call_id, "name": name, "content": _json.dumps({"error": "chap_id is required"})}
+            active = get_active_project_dir()
+            if not active:
+                return {"role": "tool", "tool_call_id": call_id, "name": name, "content": _json.dumps({"error": "No active project"})}
+            story_path = active / "story.json"
+            story = load_story_config(story_path) or {}
+            chapters = story.get("chapters", [])
+            if chap_id >= len(chapters):
+                chapters.extend([{}] * (chap_id - len(chapters) + 1))
+            if not isinstance(chapters[chap_id], dict):
+                chapters[chap_id] = {}
+            chapters[chap_id]["title"] = heading
+            story["chapters"] = chapters
+            with open(story_path, "w", encoding="utf-8") as f:
+                _json.dump(story, f, indent=2, ensure_ascii=False)
+            mutations["story_changed"] = True
+            return {"role": "tool", "tool_call_id": call_id, "name": name, "content": _json.dumps({"heading": heading, "message": f"Heading for chapter {chap_id} updated successfully"})}
+        if name == "get_chapter_summary":
+            chap_id = args_obj.get("chap_id")
+            if not isinstance(chap_id, int):
+                return {"role": "tool", "tool_call_id": call_id, "name": name, "content": _json.dumps({"error": "chap_id is required"})}
+            active = get_active_project_dir()
+            story = load_story_config((active / "story.json") if active else None) or {}
+            chapters = story.get("chapters", [])
+            if chap_id < len(chapters) and isinstance(chapters[chap_id], dict):
+                summary = chapters[chap_id].get("summary", "")
+            else:
+                summary = ""
+            return {"role": "tool", "tool_call_id": call_id, "name": name, "content": _json.dumps({"summary": summary})}
         return {"role": "tool", "tool_call_id": call_id, "name": name, "content": _json.dumps({"error": f"Unknown tool: {name}"})}
     except HTTPException as e:
         return {"role": "tool", "tool_call_id": call_id, "name": name, "content": _json.dumps({"error": f"Tool failed: {e.detail}"})}
@@ -542,7 +738,7 @@ async def api_chat(request: Request) -> JSONResponse:
         async with httpx.AsyncClient(timeout=httpx.Timeout(float(timeout_s or 60))) as client:
             mutations = {"story_changed": False}
             # Limit tool call loops to prevent infinite cycles
-            for _ in range(5):
+            for _ in range(10):
                 if _llm_debug_enabled():
                     try:
                         print("AUGQ DEBUG LLM → POST", url)

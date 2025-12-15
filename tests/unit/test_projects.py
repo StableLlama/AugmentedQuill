@@ -12,6 +12,8 @@ from app.projects import (
     delete_project,
     load_registry,
     get_registry_path,
+    write_chapter_content,
+    write_chapter_summary,
 )
 
 
@@ -96,3 +98,43 @@ class ProjectsTest(TestCase):
         self.assertLessEqual(len(reg["recent"]), 5)
         # Ensure latest is first
         self.assertEqual(reg["recent"][0], expected_current)
+
+    def test_write_chapter_content(self):
+        # Create a test project with a chapter
+        project_name = "test_write_content"
+        ok, _ = select_project(project_name)
+        self.assertTrue(ok)
+        project_dir = self.projects_root / project_name
+        chapters_dir = project_dir / "chapters"
+        chapters_dir.mkdir(parents=True, exist_ok=True)
+        chapter_file = chapters_dir / "0001.txt"
+        chapter_file.write_text("Original content", encoding="utf-8")
+        
+        # Write new content
+        new_content = "New chapter content"
+        write_chapter_content(1, new_content)
+        
+        # Check the file was updated
+        self.assertEqual(chapter_file.read_text(encoding="utf-8"), new_content)
+
+    def test_write_chapter_summary(self):
+        # Create a test project with story.json
+        project_name = "test_write_summary"
+        ok, _ = select_project(project_name)
+        self.assertTrue(ok)
+        project_dir = self.projects_root / project_name
+        story_file = project_dir / "story.json"
+        initial_story = {"chapters": [{"title": "Chapter 1", "summary": "Old summary"}]}
+        story_file.write_text(json.dumps(initial_story, indent=2), encoding="utf-8")
+        chapters_dir = project_dir / "chapters"
+        chapters_dir.mkdir(parents=True, exist_ok=True)
+        chapter_file = chapters_dir / "0001.txt"
+        chapter_file.write_text("Content", encoding="utf-8")
+        
+        # Write new summary
+        new_summary = "New chapter summary"
+        write_chapter_summary(1, new_summary)
+        
+        # Check the story.json was updated
+        updated_story = json.loads(story_file.read_text(encoding="utf-8"))
+        self.assertEqual(updated_story["chapters"][0]["summary"], new_summary)

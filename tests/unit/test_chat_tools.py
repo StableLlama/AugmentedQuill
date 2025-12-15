@@ -1,3 +1,4 @@
+import json
 import os
 import tempfile
 from pathlib import Path
@@ -81,3 +82,77 @@ class ChatToolsTest(TestCase):
         t2 = app[1]
         self.assertEqual(t2.get("name"), "get_chapter_content")
         self.assertIn("\"id\": 1", t2.get("content", ""))
+
+    def test_tools_execute_write_functions(self):
+        self._bootstrap_project()
+
+        # Test write_chapter_content
+        body_content = {
+            "model_name": None,
+            "messages": [
+                {"role": "user", "content": "Write new content to chapter 1"},
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_write_content",
+                            "type": "function",
+                            "function": {"name": "write_chapter_content", "arguments": "{\"chap_id\":1,\"content\":\"Updated content\"}"},
+                        },
+                    ],
+                },
+            ],
+            "active_chapter_id": 1,
+        }
+
+        r = self.client.post("/api/chat/tools", json=body_content)
+        self.assertEqual(r.status_code, 200, r.text)
+        data = r.json()
+        self.assertTrue(data.get("ok"))
+        app = data.get("appended_messages") or []
+        self.assertEqual(len(app), 1)
+        t = app[0]
+        self.assertEqual(t.get("role"), "tool")
+        self.assertEqual(t.get("name"), "write_chapter_content")
+        self.assertIn("successfully", t.get("content", ""))
+
+        # Verify content was written
+        chapter_file = self.projects_root / "demo" / "chapters" / "0001.txt"
+        self.assertEqual(chapter_file.read_text(encoding="utf-8"), "Updated content")
+
+        # Test write_chapter_summary
+        body_summary = {
+            "model_name": None,
+            "messages": [
+                {"role": "user", "content": "Write new summary to chapter 1"},
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_write_summary",
+                            "type": "function",
+                            "function": {"name": "write_chapter_summary", "arguments": "{\"chap_id\":1,\"summary\":\"Updated summary\"}"},
+                        },
+                    ],
+                },
+            ],
+            "active_chapter_id": 1,
+        }
+
+        r2 = self.client.post("/api/chat/tools", json=body_summary)
+        self.assertEqual(r2.status_code, 200, r2.text)
+        data2 = r2.json()
+        self.assertTrue(data2.get("ok"))
+        app2 = data2.get("appended_messages") or []
+        self.assertEqual(len(app2), 1)
+        t2 = app2[0]
+        self.assertEqual(t2.get("role"), "tool")
+        self.assertEqual(t2.get("name"), "write_chapter_summary")
+        self.assertIn("successfully", t2.get("content", ""))
+
+        # Verify summary was written
+        story_file = self.projects_root / "demo" / "story.json"
+        story = json.loads(story_file.read_text(encoding="utf-8"))
+        self.assertEqual(story["chapters"][0]["summary"], "Updated summary")
