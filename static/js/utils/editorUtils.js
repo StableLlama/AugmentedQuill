@@ -1,4 +1,4 @@
-import { DEFAULTS, UI_STRINGS } from '../constants/editorConstants.js';
+import { DEFAULTS } from '../constants/editorConstants.js';
 
 /**
  * Debounce utility function.
@@ -46,7 +46,9 @@ export function toast(message, variant = 'info', timeoutMs = DEFAULTS.TOAST_TIME
   el.textContent = message;
   host.appendChild(el);
   window.setTimeout(() => {
-    try { el.remove(); } catch (_) {}
+    try { el.remove(); } catch (_) {
+      // Ignore remove errors
+    }
     if (!host.childElementCount) host.remove();
   }, timeoutMs);
 }

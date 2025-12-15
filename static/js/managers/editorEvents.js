@@ -157,7 +157,9 @@ export class EditorEvents {
                       const len = input.value.length;
                       const pos = caretPos == null ? len : Math.min(caretPos, len);
                       input.setSelectionRange(pos, pos);
-                    } catch (_) {}
+                    } catch (_) {
+                      // Ignore selection errors
+                    }
                   }
                 }, 0);
               }

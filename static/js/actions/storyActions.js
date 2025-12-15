@@ -1,5 +1,5 @@
 import { fetchJSON } from '../utils/utils.js';
-import { STORY_ACTIONS, UI_STRINGS } from '../constants/editorConstants.js';
+import { UI_STRINGS } from '../constants/editorConstants.js';
 import { toast } from '../utils/editorUtils.js';
 
 export class StoryActions {
@@ -44,88 +44,15 @@ export class StoryActions {
    */
   cancelStoryAction() {
     if (this.shellView._storyAbortController) {
-      try { this.shellView._storyAbortController.abort(); } catch (_) {}
-    }
-  }
-
-  /**
-   * Handles writing a summary for the active chapter.
-   */
-  async handleWriteSummary() {
-    if (this.shellView.activeId == null) return;
-    const chapter = (this.shellView.chapters || []).find(c => c.id === this.shellView.activeId) || {};
-    const hasExisting = !!(chapter.summary && chapter.summary.trim());
-    let mode = 'discard';
-    if (hasExisting) {
-      const answer = confirm('Summary already exists. OK = discard and write new; Cancel = update existing.');
-      mode = answer ? 'discard' : 'update';
-    }
-    // Try streaming endpoint first
-    try {
-      const textarea = this.shellView.el.querySelector(`[data-chapter-id="${this.shellView.activeId}"][data-ref="summaryInput"]`);
-      let accum = '';
-      await this._streamFetch('/api/story/summary/stream', { chap_id: this.shellView.activeId, mode, model_name: this.shellView.storyCurrentModel }, (chunk) => {
-        accum += chunk;
-        if (textarea) textarea.value = accum;
-      });
-      // On completion, update chapters state but do not persist here (server didn't persist). Caller can save manually or rely on debounce.
-      this.shellView.chapters = this.shellView.chapters.map(c => c.id === this.shellView.activeId ? { ...c, summary: (textarea ? textarea.value : accum) } : c);
-    } catch (err) {
-      if (err && err.code === 404) {
-        // Fallback to non-streaming
-        try {
-          const data = await fetchJSON('/api/story/summary', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ chap_id: this.shellView.activeId, mode, model_name: this.shellView.storyCurrentModel })
-          });
-          const updated = (this.shellView.chapters || []).map(c => c.id === this.shellView.activeId ? { ...c, summary: data.summary || '' } : c);
-          this.shellView.chapters = updated;
-          const textarea = this.shellView.el.querySelector(`[data-chapter-id="${this.shellView.activeId}"][data-ref="summaryInput"]`);
-          if (textarea) textarea.value = data.summary || '';
-        } catch (e) {
-          toast(`Failed to write summary: ${e.message || e}`, 'error');
-        }
-      } else if (!(err && err.name === 'AbortError')) {
-        toast(`Summary request failed: ${err.message || err}`, 'error');
+      try { this.shellView._storyAbortController.abort(); } catch (_) {
+        // Ignore abort errors
       }
     }
   }
 
-  /**
-   * Handles writing content for the active chapter.
-   */
-  async handleWriteChapter() {
-    if (this.shellView.activeId == null) return;
-    try {
-      let accum = '';
-      await this._streamFetch('/api/story/write/stream', { chap_id: this.shellView.activeId, model_name: this.shellView.storyCurrentModel }, (chunk) => {
-        accum += chunk;
-        this.shellView.content = accum;
-      });
-      // On completion, leave content in editor; user can Save.
-      this.shellView._originalContent = this.shellView.content;
-      this.shellView.dirty = false;
-      this.shellView.chapterRenderer.renderSaveButton();
-    } catch (err) {
-      if (err && err.code === 404) {
-        // Fallback to non-streaming
-        try {
-          const data = await fetchJSON('/api/story/write', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ chap_id: this.shellView.activeId, model_name: this.shellView.storyCurrentModel })
-          });
-          this.shellView.content = data.content || '';
-          this.shellView._originalContent = this.shellView.content;
-          this.shellView.dirty = false;
-          this.shellView.chapterRenderer.renderSaveButton();
-        } catch (e) {
-          toast(`Failed to write chapter: ${e.message || e}`, 'error');
-        }
-      } else if (!(err && err.name === 'AbortError')) {
-        toast(`Write request failed: ${err.message || err}`, 'error');
-      }
-    }
-  }
+
+
+
 
   /**
    * Handles writing story summary.
@@ -320,7 +247,7 @@ export class StoryActions {
       }
       const reader = resp.body.getReader();
       const decoder = new TextDecoder();
-      while (true) {
+      for (;;) {
         const { value, done } = await reader.read();
         if (done) break;
         const chunk = decoder.decode(value, { stream: true });

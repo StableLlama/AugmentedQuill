@@ -1,5 +1,3 @@
-import { UI_STRINGS } from '../constants/constants.js';
-
 export class RoleSelector {
   /**
    * Handles role selection for chat messages.

@@ -1,6 +1,3 @@
-import { fetchJSON } from '../utils/utils.js';
-import { UI_STRINGS } from '../constants/editorConstants.js';
-
 export class FlowMode {
   /**
    * Manages Flow mode for AI-assisted writing.
@@ -124,7 +121,7 @@ export class FlowMode {
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
-      while (true) {
+      for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
         buffer += decoder.decode(value, { stream: true });

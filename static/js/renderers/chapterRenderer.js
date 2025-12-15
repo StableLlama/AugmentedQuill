@@ -110,7 +110,9 @@ export class ChapterRenderer {
     }
     try {
       document.body?.setAttribute('data-dirty', this.shellView.dirty ? 'true' : 'false');
-    } catch (_) {}
+    } catch (_) {
+      // Ignore DOM errors
+    }
     this.renderSaveButton();
   }
 
