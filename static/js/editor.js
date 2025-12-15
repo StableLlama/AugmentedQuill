@@ -1,11 +1,11 @@
-import { fetchJSON, API } from './utils.js';
-import { Component } from './component.js';
-import { RENDER_MODES, EVENTS, DEFAULTS, UI_STRINGS } from './editorConstants.js';
-import { ChapterRenderer } from './chapterRenderer.js';
-import { ContentEditor } from './contentEditor.js';
-import { StoryActions } from './storyActions.js';
-import { FlowMode } from './flowMode.js';
-import { debounce, toast } from './editorUtils.js';
+import { fetchJSON, API } from './utils/utils.js';
+import { Component } from './components/component.js';
+import { RENDER_MODES, EVENTS, DEFAULTS, UI_STRINGS } from './constants/editorConstants.js';
+import { ChapterRenderer } from './renderers/chapterRenderer.js';
+import { ContentEditor } from './renderers/contentEditor.js';
+import { StoryActions } from './actions/storyActions.js';
+import { FlowMode } from './modes/flowMode.js';
+import { debounce, toast } from './utils/editorUtils.js';
 
 /**
  * Chapter Editor Component
@@ -694,79 +694,6 @@ export class ShellView extends Component {
     }
   }
 
-  async handleWriteSummary() {
-    if (this.activeId == null) return;
-    const chapter = (this.chapters || []).find(c => c.id === this.activeId) || {};
-    const hasExisting = !!(chapter.summary && chapter.summary.trim());
-    let mode = 'discard';
-    if (hasExisting) {
-      const answer = confirm('Summary already exists. OK = discard and write new; Cancel = update existing.');
-      mode = answer ? 'discard' : 'update';
-    }
-    // Try streaming endpoint first
-    try {
-      const textarea = this.el.querySelector(`[data-chapter-id="${this.activeId}"][data-ref="summaryInput"]`);
-      let accum = '';
-      await this._streamFetch('/api/story/summary/stream', { chap_id: this.activeId, mode, model_name: this.storyCurrentModel }, (chunk) => {
-        accum += chunk;
-        if (textarea) textarea.value = accum;
-      });
-      // On completion, update chapters state but do not persist here (server didn’t persist). Caller can save manually or rely on debounce.
-      this.chapters = this.chapters.map(c => c.id === this.activeId ? { ...c, summary: (textarea ? textarea.value : accum) } : c);
-    } catch (err) {
-      if (err && err.code === 404) {
-        // Fallback to non-streaming
-        try {
-          const data = await fetchJSON('/api/story/summary', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ chap_id: this.activeId, mode, model_name: this.storyCurrentModel })
-          });
-          const updated = (this.chapters || []).map(c => c.id === this.activeId ? { ...c, summary: data.summary || '' } : c);
-          this.chapters = updated;
-          const textarea = this.el.querySelector(`[data-chapter-id="${this.activeId}"][data-ref="summaryInput"]`);
-          if (textarea) textarea.value = data.summary || '';
-        } catch (e) {
-          toast(`Failed to write summary: ${e.message || e}`, 'error');
-        }
-      } else if (!(err && err.name === 'AbortError')) {
-        toast(`Summary request failed: ${err.message || err}`, 'error');
-      }
-    }
-  }
-
-  async handleWriteChapter() {
-    if (this.activeId == null) return;
-    try {
-      let accum = '';
-      await this._streamFetch('/api/story/write/stream', { chap_id: this.activeId, model_name: this.storyCurrentModel }, (chunk) => {
-        accum += chunk;
-        this.content = accum;
-      });
-      // On completion, leave content in editor; user can Save.
-      this._originalContent = this.content;
-      this.dirty = false;
-      this.chapterRenderer.renderSaveButton();
-    } catch (err) {
-      if (err && err.code === 404) {
-        // Fallback to non-streaming
-        try {
-          const data = await fetchJSON('/api/story/write', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ chap_id: this.activeId, model_name: this.storyCurrentModel })
-          });
-          this.content = data.content || '';
-          this._originalContent = this.content;
-          this.dirty = false;
-          this.chapterRenderer.renderSaveButton();
-        } catch (e) {
-          toast(`Failed to write chapter: ${e.message || e}`, 'error');
-        }
-      } else if (!(err && err.name === 'AbortError')) {
-        toast(`Write request failed: ${err.message || err}`, 'error');
-      }
-    }
-  }
-
   async handleContinueChapter() {
     if (this.activeId == null) return;
     try {
@@ -912,6 +839,9 @@ export class ShellView extends Component {
   // Content Management
   // ========================================
 
+  /**
+   * Saves the current chapter content to the server
+   */
   async saveContent() {
     if (this.activeId == null) return;
 
@@ -933,6 +863,10 @@ export class ShellView extends Component {
     }
   }
 
+  /**
+   * Opens a chapter for editing, loading its content and updating the UI
+   * @param {number} id - The chapter ID to open
+   */
   async openChapter(id) {
     if (id == null) return;
 
@@ -1095,6 +1029,9 @@ export class ShellView extends Component {
     }
   }
 
+  /**
+   * Creates a new chapter and opens it for editing
+   */
   async createChapter() {
     try {
       const data = await fetchJSON('/api/chapters', {

@@ -1,5 +1,5 @@
-import { fetchJSON, API } from './utils.js';
-import { Component } from './component.js';
+import { fetchJSON, API } from './utils/utils.js';
+import { Component } from './components/component.js';
 
 /**
  * Settings Page Component

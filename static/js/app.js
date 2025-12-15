@@ -5,7 +5,7 @@
 
 import { ModelsEditor } from './settings.js';
 import { ShellView } from './editor.js';
-import { registry } from './component.js';
+import { registry } from './components/component.js';
 import { ChatView } from './chat.js';
 
 // ========================================

@@ -1,4 +1,4 @@
-import { RENDER_MODES, UI_STRINGS } from './editorConstants.js';
+import { RENDER_MODES, UI_STRINGS } from '../constants/editorConstants.js';
 
 export class ContentEditor {
   /**

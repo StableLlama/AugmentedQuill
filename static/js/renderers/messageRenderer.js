@@ -1,5 +1,5 @@
-import { ROLES, UI_STRINGS } from './constants.js';
-import { MarkdownRenderer } from './markdown.js';
+import { ROLES, UI_STRINGS } from '../constants/constants.js';
+import { MarkdownRenderer } from '../markdown.js';
 
 export class MessageRenderer {
   /**

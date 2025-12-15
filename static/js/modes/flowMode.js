@@ -1,5 +1,5 @@
-import { fetchJSON } from './utils.js';
-import { UI_STRINGS } from './constants/editorConstants.js';
+import { fetchJSON } from '../utils/utils.js';
+import { UI_STRINGS } from '../constants/editorConstants.js';
 
 export class FlowMode {
   /**

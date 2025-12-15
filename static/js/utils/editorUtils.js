@@ -1,4 +1,4 @@
-import { DEFAULTS, UI_STRINGS } from './editorConstants.js';
+import { DEFAULTS, UI_STRINGS } from '../constants/editorConstants.js';
 
 /**
  * Debounce utility function.

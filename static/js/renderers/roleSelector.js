@@ -1,4 +1,4 @@
-import { UI_STRINGS } from './constants.js';
+import { UI_STRINGS } from '../constants/constants.js';
 
 export class RoleSelector {
   /**

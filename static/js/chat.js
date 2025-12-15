@@ -1,12 +1,12 @@
-import { fetchJSON, getJSONOrEmpty, API } from './utils.js';
-import { Component } from './component.js';
-import { ROLES, EVENTS, UI_STRINGS } from './constants.js';
+import { fetchJSON, getJSONOrEmpty, API } from './utils/utils.js';
+import { Component } from './components/component.js';
+import { ROLES, EVENTS, UI_STRINGS } from './constants/constants.js';
 import { MarkdownRenderer } from './markdown.js';
 import { TOOLS } from './tools.js';
-import { ModelSelector } from './modelSelector.js';
-import { MessageRenderer } from './messageRenderer.js';
-import { RoleSelector } from './roleSelector.js';
-import { toast } from './editorUtils.js';
+import { ModelSelector } from './renderers/modelSelector.js';
+import { MessageRenderer } from './renderers/messageRenderer.js';
+import { RoleSelector } from './renderers/roleSelector.js';
+import { toast } from './utils/editorUtils.js';
 
 /**
  * ChatView component for handling chat interactions, model selection, and message rendering.

@@ -1,4 +1,4 @@
-import { UI_STRINGS } from './editorConstants.js';
+import { UI_STRINGS } from '../constants/editorConstants.js';
 
 export class ChapterRenderer {
   /**
