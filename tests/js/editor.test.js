@@ -27,6 +27,14 @@ jest.mock('../../static/js/components/component.js', () => {
       });
       this.watch = jest.fn();
       this.destroy = jest.fn();
+      this._defineReactive = jest.fn((key, value) => {
+        this._state[key] = value;
+        Object.defineProperty(this, key, {
+          get: () => this._state[key],
+          set: (val) => { this._state[key] = val; },
+          enumerable: true
+        });
+      });
     })
   };
 });
@@ -34,6 +42,11 @@ jest.mock('../../static/js/renderers/chapterRenderer.js');
 jest.mock('../../static/js/renderers/contentEditor.js');
 jest.mock('../../static/js/actions/storyActions.js');
 jest.mock('../../static/js/modes/flowMode.js');
+jest.mock('../../static/js/managers/chapterManager.js');
+jest.mock('../../static/js/managers/editorEvents.js');
+jest.mock('../../static/js/managers/contentOperations.js');
+jest.mock('../../static/js/managers/renderingManager.js');
+jest.mock('../../static/js/managers/stateManager.js');
 jest.mock('../../static/js/utils/editorUtils.js', () => ({
   debounce: jest.fn((fn) => fn),
   toast: jest.fn()

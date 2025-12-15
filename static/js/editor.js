@@ -5,6 +5,11 @@ import { ChapterRenderer } from './renderers/chapterRenderer.js';
 import { ContentEditor } from './renderers/contentEditor.js';
 import { StoryActions } from './actions/storyActions.js';
 import { FlowMode } from './modes/flowMode.js';
+import { ChapterManager } from './managers/chapterManager.js';
+import { EditorEvents } from './managers/editorEvents.js';
+import { ContentOperations } from './managers/contentOperations.js';
+import { RenderingManager } from './managers/renderingManager.js';
+import { StateManager } from './managers/stateManager.js';
 import { debounce, toast } from './utils/editorUtils.js';
 
 /**
@@ -67,6 +72,13 @@ export class ShellView extends Component {
     this.contentEditor = new ContentEditor(this);
     this.storyActions = new StoryActions(this);
     this.flowMode = new FlowMode(this);
+
+    // Managers
+    this.chapterManager = new ChapterManager(this);
+    this.editorEvents = new EditorEvents(this);
+    this.contentOperations = new ContentOperations(this);
+    this.renderingManager = new RenderingManager(this);
+    this.stateManager = new StateManager(this);
   }
 
   /**
@@ -118,7 +130,7 @@ export class ShellView extends Component {
       const reopen = this.activeId != null && changed.includes(this.activeId);
       Promise.resolve(this.refreshChapters()).then(() => {
         if (reopen && this.activeId != null) {
-          this.openChapter(this.activeId);
+          this.chapterManager.openChapter(this.activeId);
         }
       });
     };
@@ -136,7 +148,7 @@ export class ShellView extends Component {
       if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
         e.preventDefault();
         if (this.dirty) {
-          this.saveContent();
+          this.chapterManager.saveContent();
         }
       }
     });
@@ -246,7 +258,7 @@ export class ShellView extends Component {
             if (clickedTitleInput || clickedSummaryInput) {
               if (this.activeId !== id) {
                 const caretPos = e.target.selectionStart ?? null;
-                await this.openChapter(id);
+                await this.chapterManager.openChapter(id);
                 // After render, re-focus the title input of the now-active item and restore caret to end
                 queueMicrotask(() => {
                   const input = this.el.querySelector(`[data-chapter-id="${id}"] [data-ref="titleInput"]`);
@@ -263,7 +275,7 @@ export class ShellView extends Component {
               return;
             }
             // Clicked elsewhere in the item: open normally
-            this.openChapter(id);
+            this.chapterManager.openChapter(id);
           }
         }
       });
@@ -344,7 +356,7 @@ export class ShellView extends Component {
     // Save button (global header)
     const saveBtn = document.querySelector('[data-action="save"]');
     if (saveBtn) {
-      saveBtn.addEventListener('click', () => this.saveContent());
+      saveBtn.addEventListener('click', () => this.chapterManager.saveContent());
     }
 
     // Create chapter button
@@ -403,19 +415,19 @@ export class ShellView extends Component {
         const action = button.dataset.action;
         switch (action) {
           case 'wrap-selection':
-            this.wrapSelection(button.dataset.before || '', button.dataset.after || '');
+            this.contentOperations.wrapSelection(button.dataset.before || '', button.dataset.after || '');
             break;
           case 'insert-heading':
-            this.insertHeading();
+            this.contentOperations.insertHeading();
             break;
           case 'insert-link':
-            this.insertLink();
+            this.contentOperations.insertLink();
             break;
           case 'toggle-list':
-            this.toggleList(button.dataset.prefix);
+            this.contentOperations.toggleList(button.dataset.prefix);
             break;
           case 'toggle-prefix':
-            this.togglePrefix(button.dataset.prefix);
+            this.contentOperations.togglePrefix(button.dataset.prefix);
             break;
         }
       });
@@ -525,7 +537,7 @@ export class ShellView extends Component {
       // Initialize Toast UI if starting in Markdown or WYSIWYG
       if (this.renderMode !== RENDER_MODES.RAW) {
         const mode = this.renderMode;
-        queueMicrotask(() => this.contentEditor._initTUI(mode));
+        queueMicrotask(() => this.renderingManager._initTUI(mode));
       }
 
       // Load chapter list
@@ -641,7 +653,7 @@ export class ShellView extends Component {
       const hasActiveChapter = this.chapters.some(c => c.id === this.activeId);
 
       if (!hasActiveChapter && this.chapters.length) {
-        await this.openChapter(this.chapters[0].id);
+        await this.chapterManager.openChapter(this.chapters[0].id);
       } else if (!this.chapters.length) {
         this.activeId = null;
         this.content = '';
@@ -758,83 +770,6 @@ export class ShellView extends Component {
     this.onChanged();
   }
 
-  wrapSelection(before, after) {
-    this._replaceSelection(before, after);
-  }
-
-  insertHeading() {
-    const textarea = this.getRawEl();
-    if (!textarea) return;
-
-    const caretPos = textarea.selectionStart || 0;
-    const lineStart = this.content.lastIndexOf('\n', caretPos - 1) + 1;
-
-    this.content =
-      this.content.slice(0, lineStart) +
-      '# ' +
-      this.content.slice(lineStart);
-
-    this.onChanged();
-  }
-
-  insertLink() {
-    const textarea = this.getRawEl();
-    if (!textarea) return;
-
-    const start = textarea.selectionStart || 0;
-    const end = textarea.selectionEnd || 0;
-    const selected = this.content.slice(start, end) || 'text';
-
-    const url = prompt('Enter URL', 'https://');
-    if (url === null) return; // User cancelled
-
-    const linkMarkdown = `[${selected}](${url || ''})`;
-    this.content =
-      this.content.slice(0, start) +
-      linkMarkdown +
-      this.content.slice(end);
-
-    this.onChanged();
-  }
-
-  togglePrefix(prefix) {
-    const textarea = this.getRawEl();
-    if (!textarea) return;
-
-    const start = textarea.selectionStart || 0;
-    const end = textarea.selectionEnd || 0;
-    const lines = this.content.split(/\r?\n/);
-
-    const startLineIdx = this._findLineIndex(lines, start);
-    const endLineIdx = this._findLineIndex(lines, end);
-
-    for (let i = startLineIdx; i <= endLineIdx; i++) {
-      if (lines[i].startsWith(prefix)) {
-        lines[i] = lines[i].slice(prefix.length);
-      } else {
-        lines[i] = prefix + lines[i];
-      }
-    }
-
-    this.content = lines.join('\n');
-    this.onChanged();
-  }
-
-  _findLineIndex(lines, offset) {
-    let position = 0;
-    for (let i = 0; i < lines.length; i++) {
-      if (position + lines[i].length >= offset) {
-        return i;
-      }
-      position += lines[i].length + 1; // +1 for newline
-    }
-    return lines.length - 1;
-  }
-
-  toggleList(prefix = '- ') {
-    this.togglePrefix(prefix);
-  }
-
   // ========================================
   // Content Management
   // ========================================
@@ -842,63 +777,10 @@ export class ShellView extends Component {
   /**
    * Saves the current chapter content to the server
    */
-  async saveContent() {
-    if (this.activeId == null) return;
-
-    try {
-      const cleanContent = this.content || '';
-
-      await fetchJSON(`/api/chapters/${this.activeId}/content`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: cleanContent })
-      });
-
-      this.content = cleanContent;
-      this._originalContent = this.content;
-      this.dirty = false;
-      toast(UI_STRINGS.SAVED, 'success');
-    } catch (e) {
-      toast(UI_STRINGS.FAILED_SAVE + (e.message || e), 'error');
-    }
-  }
-
   /**
    * Opens a chapter for editing, loading its content and updating the UI
    * @param {number} id - The chapter ID to open
    */
-  async openChapter(id) {
-    if (id == null) return;
-
-    if (this.activeId !== null && id !== this.activeId) {
-      if (!this._confirmDiscardIfDirty()) return;
-    }
-
-    this.editingId = null;
-    this.editingTitle = '';
-
-    try {
-      const data = await fetchJSON(`/api/chapters/${id}`);
-
-      this.activeId = data.id;
-      this.content = data.content || '';
-      this._originalContent = this.content;
-      this.chapters = this.chapters.map(c => c.id === id ? { ...c, summary: data.summary || '' } : c); // Update chapter in list with summary
-      this._originalSummaryContent = data.summary || ''; // Store original summary for dirty tracking
-      this.dirty = false;
-
-      queueMicrotask(() => {
-        if (this.renderMode !== RENDER_MODES.RAW) {
-          this.contentEditor._initTUI(this.renderMode, this.content);
-        }
-      });
-    } catch (e) {
-      this.content = UI_STRINGS.ERROR_LOADING + (e.message || e);
-      this._originalContent = this.content;
-      this.dirty = false;
-    }
-  }
-
   startEdit(chapter) {
     this.activeId = chapter.id;
     this.editingId = chapter.id;
@@ -1067,174 +949,6 @@ export class ShellView extends Component {
       return this._tuiEl;
     }
     return this.getRawEl();
-  }
-
-  /**
-   * Render markdown content into the WYSIWYG editor
-   */
-  async setEditorHtmlFromContent() {
-    if (this._tui) {
-      this._suspendInput = true;
-      try {
-        const contentValue = await Promise.resolve(this.content || '');
-        this._tui.setMarkdown(String(contentValue));
-      } finally {
-        this._suspendInput = false;
-      }
-      return;
-    }
-    const textarea = this.getRawEl();
-    if (!textarea) return;
-    // Raw textarea already reflects content binding
-  }
-
-  /**
-   * Capture the current Y position of the caret/editor for scroll adjustment
-   */
-  _captureAnchorY() {
-    const editor = this.getEditorEl();
-    if (!editor) return window.scrollY;
-
-    // In markdown mode, use selection position if available
-    if (this.renderMode === 'markdown') {
-      try {
-        const selection = window.getSelection();
-        if (selection?.rangeCount) {
-          const rect = selection.getRangeAt(0).getBoundingClientRect();
-          if (rect && rect.height >= 0) {
-            return rect.top;
-          }
-        }
-      } catch (_) {
-        // Fall through to editor position
-      }
-    }
-
-    return editor.getBoundingClientRect().top;
-  }
-
-  /**
-   * Adjust scroll position to maintain visual anchor after mode switch
-   */
-  _scrollAdjust(oldY) {
-    try {
-      const newY = this._captureAnchorY();
-      const delta = newY - oldY;
-
-      if (delta !== 0) {
-        window.scrollBy(0, delta);
-      }
-    } catch (_) {
-      // Scroll adjustment is non-critical
-    }
-  }
-
-  /**
-   * Switch between raw textarea, Toast Markdown, and Toast WYSIWYG
-   * Preserves caret/scroll position where possible
-   */
-  switchRender(mode) {
-    const m = String(mode || '').toLowerCase();
-    const normalized = (m === 'raw' || m === 'markdown' || m === 'wysiwyg') ? m : 'raw';
-    if (this.renderMode === normalized) return;
-
-    const oldScrollY = this._captureAnchorY();
-
-    if (normalized === 'raw') {
-      this._destroyTUI();
-    } else {
-      this._destroyTUI();
-      this._initTUI(normalized, this.content);
-    }
-
-    this.renderMode = normalized;
-    this._scrollAdjust(oldScrollY);
-  }
-
-  /**
-   * Initialize Toast UI Editor on top of the textarea
-   */
-  _initTUI(mode = 'wysiwyg', initialContent = null) {
-    try {
-      const textarea = this.getRawEl();
-      if (!textarea) return false;
-      if (!(window.toastui && window.toastui.Editor)) {
-        console.warn('Toast UI Editor not loaded; staying in raw mode');
-        return false;
-      }
-
-      textarea.style.display = 'none';
-
-      if (this._tui) {
-        this._tui.changeMode(mode);
-        this.setEditorHtmlFromContent();
-        return true;
-      }
-
-      const container = document.createElement('div');
-      container.className = 'aq-tui-wrap';
-      textarea.parentNode.insertBefore(container, textarea);
-      this._tuiEl = container;
-
-      const content = initialContent !== null ? initialContent : (this.content || '');
-
-      this._tui = new window.toastui.Editor({
-        el: container,
-        initialEditType: mode === 'wysiwyg' ? 'wysiwyg' : 'markdown',
-        previewStyle: 'tab',
-        height: '100%',
-        usageStatistics: false,
-        toolbarItems: [
-          ['heading', 'bold', 'italic', 'strike'],
-          ['hr', 'quote'],
-          ['ul', 'ol', 'task', 'indent', 'outdent'],
-          ['table', 'link'],
-          ['code', 'codeblock']
-        ],
-        hideModeSwitch: true,
-        initialValue: content
-      });
-
-      this._tui.on('change', () => {
-        if (this._suspendInput) return;
-        try {
-          this.content = this._tui.getMarkdown();
-          this.onChanged();
-        } catch (_) { /* no-op */ }
-      });
-
-      return true;
-    } catch (e) {
-      console.error('Failed to init Toast UI Editor:', e);
-      return false;
-    }
-  }
-
-  /**
-   * Destroy Toast UI instance and restore textarea
-   */
-  _destroyTUI() {
-    if (!this._tui) return;
-    try {
-      const textarea = this.getRawEl();
-      this._suspendInput = true;
-      try {
-        this.content = this._tui.getMarkdown();
-      } finally {
-        this._suspendInput = false;
-      }
-      this._tui.destroy();
-      this._tui = null;
-      if (this._tuiEl && this._tuiEl.parentNode) {
-        this._tuiEl.parentNode.removeChild(this._tuiEl);
-      }
-      this._tuiEl = null;
-      if (textarea) textarea.style.display = '';
-    } catch (e) {
-      console.error('Failed to destroy Toast UI Editor:', e);
-      this._tui = null;
-      this._tuiEl = null;
-    }
   }
 
   /**
