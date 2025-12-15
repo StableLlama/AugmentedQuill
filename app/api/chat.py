@@ -339,6 +339,18 @@ STORY_TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_chapter",
+            "description": "Delete a chapter by its ID. This removes the chapter file and updates the story metadata.",
+            "parameters": {
+                "type": "object",
+                "properties": {"chap_id": {"type": "integer", "description": "The ID of the chapter to delete."}},
+                "required": ["chap_id"],
+            },
+        },
+    },
 ]
 
 
@@ -519,6 +531,42 @@ async def _exec_chat_tool(name: str, args_obj: dict, call_id: str, payload: dict
             else:
                 summary = ""
             return {"role": "tool", "tool_call_id": call_id, "name": name, "content": _json.dumps({"summary": summary})}
+        if name == "delete_chapter":
+            chap_id = args_obj.get("chap_id")
+            if not isinstance(chap_id, int):
+                return {"role": "tool", "tool_call_id": call_id, "name": name, "content": _json.dumps({"error": "chap_id is required"})}
+            active = get_active_project_dir()
+            if not active:
+                return {"role": "tool", "tool_call_id": call_id, "name": name, "content": _json.dumps({"error": "No active project"})}
+            from app.helpers.chapter_helpers import _scan_chapter_files, _normalize_chapter_entry
+            files = _scan_chapter_files()
+            match = next(((idx, p, i) for i, (idx, p) in enumerate(files) if idx == chap_id), None)
+            if not match:
+                return {"role": "tool", "tool_call_id": call_id, "name": name, "content": _json.dumps({"error": "Chapter not found"})}
+            _, path, pos = match
+            # Delete the file
+            try:
+                path.unlink()
+            except Exception as e:
+                return {"role": "tool", "tool_call_id": call_id, "name": name, "content": _json.dumps({"error": f"Failed to delete chapter file: {e}"})}
+            # Update story.json
+            story_path = active / "story.json"
+            story = load_story_config(story_path) or {}
+            chapters_data = story.get("chapters") or []
+            chapters_data = [_normalize_chapter_entry(c) for c in chapters_data]
+            count = len(files)
+            if len(chapters_data) < count:
+                chapters_data.extend([{"title": "", "summary": ""}] * (count - len(chapters_data)))
+            if pos < len(chapters_data):
+                chapters_data.pop(pos)
+            story["chapters"] = chapters_data
+            try:
+                with open(story_path, "w", encoding="utf-8") as f:
+                    _json.dump(story, f, indent=2, ensure_ascii=False)
+            except Exception as e:
+                return {"role": "tool", "tool_call_id": call_id, "name": name, "content": _json.dumps({"error": f"Failed to update story.json: {e}"})}
+            mutations["story_changed"] = True
+            return {"role": "tool", "tool_call_id": call_id, "name": name, "content": _json.dumps({"message": f"Chapter {chap_id} deleted successfully"})}
         return {"role": "tool", "tool_call_id": call_id, "name": name, "content": _json.dumps({"error": f"Unknown tool: {name}"})}
     except HTTPException as e:
         return {"role": "tool", "tool_call_id": call_id, "name": name, "content": _json.dumps({"error": f"Tool failed: {e.detail}"})}
@@ -801,6 +849,19 @@ async def api_chat(request: Request) -> JSONResponse:
                             original_text = call.get("original_text", "")
                             if original_text:
                                 content = content.replace(original_text, "", 1)
+                        message["content"] = content.strip()
+                    else:
+                        # If no structured tool calls found, still clean up any tool call syntax
+                        import re
+                        content = re.sub(r'<tool_call>[^<]*</tool_call>', '', content, flags=re.IGNORECASE)
+                        content = re.sub(r'<function_call>[^<]*</function_call>', '', content, flags=re.IGNORECASE)
+                        content = re.sub(r'\[TOOL_CALL\][^\[]*\[/TOOL_CALL\]', '', content, flags=re.IGNORECASE)
+                        content = re.sub(r'^Tool:\s*\w+.*$', '', content, flags=re.MULTILINE | re.IGNORECASE)
+                        content = re.sub(r'^Function:\s*\w+.*$', '', content, flags=re.MULTILINE | re.IGNORECASE)
+                        # Remove incomplete tool call tags
+                        content = re.sub(r'<tool_call>[^<]*$', '', content, flags=re.IGNORECASE)
+                        content = re.sub(r'<function_call>[^<]*$', '', content, flags=re.IGNORECASE)
+                        content = re.sub(r'\[TOOL_CALL\][^\[]*$', '', content, flags=re.IGNORECASE)
                         message["content"] = content.strip()
 
                 if not tool_calls or not isinstance(tool_calls, list):

@@ -373,4 +373,29 @@ export class ChapterManager {
       toast(`Failed to save story tags: ${e.message || e}`, 'error');
     }
   }
+
+  /**
+   * Deletes a chapter.
+   */
+  async deleteChapter(chapterId) {
+    if (!confirm('Are you sure you want to delete this chapter? This action cannot be undone.')) return;
+
+    try {
+      await fetchJSON(`/api/chapters/${chapterId}`, {
+        method: 'DELETE'
+      });
+
+      // If the deleted chapter was active, clear it
+      if (this.shellView.activeId === chapterId) {
+        this.shellView.activeId = null;
+        this.shellView.content = '';
+        this.shellView.dirty = false;
+      }
+
+      await this.refreshChapters();
+      toast('Chapter deleted successfully', 'success');
+    } catch (e) {
+      toast(`Failed to delete chapter: ${e.message || e}`, 'error');
+    }
+  }
 }

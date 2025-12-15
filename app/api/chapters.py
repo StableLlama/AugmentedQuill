@@ -248,3 +248,48 @@ async def api_update_chapter_summary(request: Request, chap_id: int = FastAPIPat
         "ok": True,
         "chapter": {"id": files[pos][0], "title": title_for_response, "filename": path.name, "summary": new_summary},
     })
+
+
+@router.delete("/api/chapters/{chap_id}")
+async def api_delete_chapter(chap_id: int = FastAPIPath(..., ge=0)) -> JSONResponse:
+    """Delete a chapter file and update story.json.
+    Removes the file and shifts subsequent chapters' metadata.
+    """
+    active = get_active_project_dir()
+    if not active:
+        return JSONResponse(status_code=400, content={"ok": False, "detail": "No active project"})
+
+    files = _scan_chapter_files()
+    match = next(((idx, p, i) for i, (idx, p) in enumerate(files) if idx == chap_id), None)
+    if not match:
+        raise HTTPException(status_code=404, detail="Chapter not found")
+    _, path, pos = match
+
+    # Delete the file
+    try:
+        path.unlink()
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"ok": False, "detail": f"Failed to delete chapter file: {e}"})
+
+    # Update story.json: remove the entry at position
+    story_path = active / "story.json"
+    story = load_story_config(story_path) or {}
+    chapters_data = story.get("chapters") or []
+    chapters_data = [_normalize_chapter_entry(c) for c in chapters_data]
+
+    # Ensure alignment with number of files (before deletion)
+    count = len(files)
+    if len(chapters_data) < count:
+        chapters_data.extend([{"title": "", "summary": ""}] * (count - len(chapters_data)))
+
+    # Remove the entry at position
+    if pos < len(chapters_data):
+        chapters_data.pop(pos)
+
+    story["chapters"] = chapters_data
+    try:
+        story_path.write_text(_json.dumps(story, indent=2), encoding="utf-8")
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"ok": False, "detail": f"Failed to update story.json: {e}"})
+
+    return JSONResponse(status_code=200, content={"ok": True})

@@ -214,7 +214,7 @@ export class ChatView extends Component {
   async callChat(messages, tools) {
     const sysPreamble = {
       role: ROLES.SYSTEM,
-      content: 'You can use tools to access the project context. Use get_project_overview to list chapters and their summaries. Use get_chapter_content to fetch chapter text by id. When the user asks about chapters or content, call these tools and then answer based on the returned data.'
+      content: 'You can use tools to access the project context. Use get_project_overview to list chapters and their summaries. Use get_chapter_content to fetch chapter text by id. You can also create new chapters, write or continue chapters, and delete chapters using the available tools.'
     };
     const hasSystem = messages.some(m => m.role === ROLES.SYSTEM);
     const chatMessages = (hasSystem ? [] : [sysPreamble]).concat(

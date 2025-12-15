@@ -157,6 +157,7 @@ export class StoryActions {
       await this._streamFetch('/api/story/write/stream', { chap_id: this.shellView.activeId, model_name: this.shellView.storyCurrentModel }, (chunk) => {
         accum += chunk;
         this.shellView.content = accum;
+        this.shellView.contentEditor.scrollToBottom();
       });
       // On completion, leave content in editor; user can Save.
       this.shellView._originalContent = this.shellView.content;
@@ -196,6 +197,7 @@ export class StoryActions {
         accum += chunk;
         const sep = base && !base.endsWith('\n') ? '\n' : '';
         this.shellView.content = base + sep + accum;
+        this.shellView.contentEditor.scrollToBottom();
       });
       this.shellView._originalContent = this.shellView.content;
       this.shellView.dirty = false;

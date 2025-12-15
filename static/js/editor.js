@@ -176,6 +176,14 @@ export class ShellView extends Component {
       }
     });
 
+    // Cancel story generation on Esc
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && this.storyBusy) {
+        e.preventDefault();
+        this.storyActions.cancelStoryAction();
+      }
+    });
+
     // Warn user before navigating away with unsaved changes
     window.addEventListener('beforeunload', (e) => {
       if (this.dirty) {
@@ -242,6 +250,18 @@ export class ShellView extends Component {
             const id = parseInt(chapterItem.getAttribute('data-chapter-id'), 10);
             if (!isNaN(id)) {
               this.toggleSummary(id);
+            }
+          }
+          return;
+        }
+
+        const deleteChapterBtn = e.target.closest('[data-action="delete-chapter"]');
+        if (deleteChapterBtn) {
+          const chapterItem = deleteChapterBtn.closest('[data-chapter-id]');
+          if (chapterItem) {
+            const id = parseInt(chapterItem.getAttribute('data-chapter-id'), 10);
+            if (!isNaN(id)) {
+              this.chapterManager.deleteChapter(id);
             }
           }
           return;

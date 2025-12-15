@@ -64,6 +64,9 @@ export class ChapterRenderer {
                      data-ref="titleInput"
                      class="chapter-title-input">
             </div>
+            <button class="aq-btn aq-btn-sm aq-btn-icon" data-action="delete-chapter" data-chapter-id="${chapter.id}" title="Delete Chapter">
+                🗑️
+            </button>
         </div>
         ${chapter.expanded ? `
             <div class="chapter-summary-section">

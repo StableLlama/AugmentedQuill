@@ -204,5 +204,20 @@ export const TOOLS = [
       description: 'Continue the chapter content from its current text, guided by the summary.',
       parameters: { type: 'object', properties: { chap_id: { type: 'integer' } }, required: ['chap_id'], additionalProperties: false }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'delete_chapter',
+      description: 'Delete a chapter by its id.',
+      parameters: {
+        type: 'object',
+        properties: {
+          chap_id: { type: 'integer', description: 'Chapter numeric id.' }
+        },
+        required: ['chap_id'],
+        additionalProperties: false
+      }
+    }
   }
 ];

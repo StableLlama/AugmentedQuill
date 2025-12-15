@@ -36,13 +36,26 @@ export class MessageRenderer {
       header.textContent = m.role;
       const content = document.createElement('div');
       content.className = 'aq-bubble-body';
+      // Clean content of tool call syntax before rendering
+      let cleanContent = (m.content || '').trim();
+      // Remove various tool call formats (complete and incomplete)
+      cleanContent = cleanContent.replace(/<tool_call>[^<]*<\/tool_call>/gi, '');
+      cleanContent = cleanContent.replace(/<function_call>[^<]*<\/function_call>/gi, '');
+      cleanContent = cleanContent.replace(/\[TOOL_CALL\][^\[]*\[\/TOOL_CALL\]/gi, '');
+      cleanContent = cleanContent.replace(/^Tool:\s*\w+.*$/gm, '');
+      cleanContent = cleanContent.replace(/^Function:\s*\w+.*$/gm, '');
+      // Remove incomplete tool call tags
+      cleanContent = cleanContent.replace(/<tool_call>[^<]*$/gi, '');
+      cleanContent = cleanContent.replace(/<function_call>[^<]*$/gi, '');
+      cleanContent = cleanContent.replace(/\[TOOL_CALL\][^\[]*$/gi, '');
+      cleanContent = cleanContent.trim();
       // Render assistant messages as basic markdown, others as plain text
       if (m.role === ROLES.ASSISTANT) {
-        content.innerHTML = MarkdownRenderer.toHtml(m.content || '');
+        content.innerHTML = MarkdownRenderer.toHtml(cleanContent);
       } else {
         content.contentEditable = 'true';
         content.spellcheck = true;
-        content.innerText = m.content || '';
+        content.innerText = cleanContent;
         content.addEventListener('input', () => {
           m.content = content.innerText;
         });
