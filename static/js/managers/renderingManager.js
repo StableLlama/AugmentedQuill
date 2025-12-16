@@ -152,6 +152,14 @@ export class RenderingManager {
     // Show the container
     el.style.display = 'flex';
 
+    // Apply current content width so TUI matches raw editor width
+    try {
+      const widthCh = this.shellView.contentWidth || 80;
+      el.style.maxWidth = `${widthCh}ch`;
+      el.style.marginLeft = 'auto';
+      el.style.marginRight = 'auto';
+    } catch (_) {}
+
     this.shellView._tuiEl = el;
     this.shellView._tui = new window.toastui.Editor({
       el,
@@ -179,6 +187,56 @@ export class RenderingManager {
 
     // Hide the original textarea
     textarea.style.display = 'none';
+
+    // After TUI has rendered its DOM, apply appearance (width/font/brightness)
+    setTimeout(() => {
+      try {
+        const el = this.shellView._tuiEl;
+        if (!el) return;
+        const applyAppearanceToTui = () => {
+          const widthCh = this.shellView.contentWidth || 80;
+          el.style.maxWidth = `${widthCh}ch`;
+          el.style.marginLeft = 'auto';
+          el.style.marginRight = 'auto';
+
+          const fontPx = (this.shellView.fontSize && Number(this.shellView.fontSize)) ? `${this.shellView.fontSize}px` : null;
+          const brightness = null; // brightness handled via filter on outer container if needed
+
+          // Common Toast UI containers
+          const defaultUI = el.querySelector('.toastui-editor-defaultUI');
+          const mdPreview = el.querySelector('.toastui-editor-md-preview');
+          const wwContainer = el.querySelector('.toastui-editor-ww-container');
+          const editorContents = el.querySelector('.toastui-editor-contents');
+
+          [defaultUI, mdPreview, wwContainer, editorContents].forEach(node => {
+            if (!node) return;
+            if (fontPx) node.style.fontSize = fontPx;
+            node.style.maxWidth = '100%';
+            node.style.boxSizing = 'border-box';
+          });
+          // Move TUI's internal toolbar into the page-level top-row toolbar if present
+          try {
+            const defaultContainer = el.querySelector('.toastui-editor-defaultUI') || el;
+            let toolbar = defaultContainer.querySelector('[role="toolbar"]') || defaultContainer.querySelector('.toastui-editor-toolbar') || defaultContainer.querySelector('.tui-toolbar') || null;
+            if (!toolbar) {
+              const firstBtn = defaultContainer.querySelector('button');
+              if (firstBtn) {
+                let p = firstBtn.parentNode;
+                for (let i = 0; i < 5 && p; i++) {
+                  if (p.querySelectorAll && p.querySelectorAll('button').length > 2) { toolbar = p; break; }
+                  p = p.parentNode;
+                }
+              }
+            }
+            if (toolbar) {
+              // Do NOT move TUI's internal toolbar; hide it to use our own header toolbar instead
+              try { toolbar.style.display = 'none'; } catch (_) { /* ignore */ }
+            }
+          } catch (_) {}
+        };
+        applyAppearanceToTui();
+      } catch (e) { console.warn('Failed to apply TUI appearance:', e); }
+    }, 50);
   }
 
   /**

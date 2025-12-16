@@ -28,6 +28,42 @@ export class ModelsEditor extends Component {
     super(element, initialState);
   }
 
+  /**
+   * Show a named tab pane in the settings dialog
+   */
+  _showTab(name) {
+    if (!this.el) return;
+    const tabs = this.el.querySelectorAll('[data-tab]');
+    tabs.forEach(t => {
+      if (t.getAttribute('data-tab') === name) t.classList.remove('hidden');
+      else t.classList.add('hidden');
+    });
+  }
+
+  /**
+   * Switch tab and update sidebar button styles to reflect active tab
+   */
+  _switchTab(name) {
+    this._showTab(name);
+    if (!this.el) return;
+    const btnProjects = this.el.querySelector('[data-action="tab-projects"]');
+    const btnMachine = this.el.querySelector('[data-action="tab-machine"]');
+
+    const setActive = (btn, active) => {
+      if (!btn) return;
+      if (active) {
+        btn.classList.remove('text-stone-400', 'hover:text-stone-200', 'hover:bg-stone-900');
+        btn.classList.add('bg-stone-800', 'text-indigo-400', 'border', 'border-stone-700');
+      } else {
+        btn.classList.remove('bg-stone-800', 'text-indigo-400', 'border', 'border-stone-700');
+        btn.classList.add('text-stone-400', 'hover:text-stone-200', 'hover:bg-stone-900');
+      }
+    };
+
+    setActive(btnProjects, name === 'projects');
+    setActive(btnMachine, name === 'machine');
+  }
+
   init() {
     super.init();
 
@@ -139,22 +175,33 @@ export class ModelsEditor extends Component {
         });
 
         modelsList.addEventListener('click', (e) => {
-            const target = e.target.closest('[data-action]');
-            if (!target) return;
-
-            const modelCard = target.closest('[data-model-index]');
+          const actionEl = e.target.closest('[data-action]');
+          if (actionEl) {
+            const modelCard = actionEl.closest('[data-model-index]');
             if (!modelCard) return;
-
             const idx = parseInt(modelCard.dataset.modelIndex, 10);
-            const action = target.dataset.action;
+            const action = actionEl.dataset.action;
 
             if (action === 'remove-model') {
-                this.remove(idx);
+              this.remove(idx);
             } else if (action === 'load-remote-models') {
-                this.models[idx].endpoint_ok = undefined;
-                this.renderModels();
-                this.loadRemoteModels(idx).then(() => this.renderModels());
+              this.models[idx].endpoint_ok = undefined;
+              this.renderModels();
+              this.loadRemoteModels(idx).then(() => this.renderModels());
             }
+            return;
+          }
+
+          // If clicked on a model card (not on a button), select it for detailed config
+          const modelCard = e.target.closest('[data-model-index]');
+          if (modelCard) {
+            const idx = parseInt(modelCard.dataset.modelIndex, 10);
+            if (!isNaN(idx) && this.models[idx]) {
+              this.selected_name = this.models[idx].name;
+              this.renderModels();
+              this.renderProviderConfig();
+            }
+          }
         });
     }
 
@@ -163,6 +210,15 @@ export class ModelsEditor extends Component {
         this.selected_name = e.target.value;
       }
     });
+
+    // Tab buttons (projects / machine)
+    const tabProjects = this.el.querySelector('[data-action="tab-projects"]');
+    const tabMachine = this.el.querySelector('[data-action="tab-machine"]');
+    if (tabProjects) tabProjects.addEventListener('click', () => this._switchTab('projects'));
+    if (tabMachine) tabMachine.addEventListener('click', () => this._switchTab('machine'));
+
+    // Default to projects tab on open
+    this._switchTab('projects');
   }
 
   /**
@@ -239,103 +295,251 @@ export class ModelsEditor extends Component {
     const container = this.el?.querySelector('[data-models-list]');
     if (!container) return;
 
-    container.innerHTML = this.models.map((m, idx) => `
-      <div class="aq-card" style="margin:0 0 0.5rem 0; padding:0.75rem;" data-model-index="${idx}">
-        <div class="aq-field-group">
-          <label class="aq-field">
-            <span>Name</span>
-            <input type="text" data-model-field="name" value="${this.escapeHtml(m.name)}" placeholder="prod-openai" />
-          </label>
-          <label class="aq-field">
-            <span>Base URL</span>
-            <input type="text" data-model-field="base_url" value="${this.escapeHtml(m.base_url)}" placeholder="https://api.openai.com/v1" />
-          </label>
-        </div>
-        <div class="aq-field-group">
-          <label class="aq-field">
-            <span>API key</span>
-            <input type="text" data-model-field="api_key" value="${this.escapeHtml(m.api_key)}" placeholder="OPENAI_API_KEY" />
-          </label>
-          <label class="aq-field">
-            <span>Timeout (s)</span>
-            <input type="text" data-model-field="timeout_s" value="${m.timeout_s}" placeholder="60" />
-          </label>
-        </div>
-        <div class="aq-field">
-          <div style="display:flex; align-items:center; gap:0.5rem;">
-            <button type="button" class="aq-btn" data-action="load-remote-models">Load models</button>
-            <span data-endpoint-status>
-              ${m.endpoint_ok === true ? '✅ Endpoint OK' : ''}
-              ${m.endpoint_ok === false ? '❌ Endpoint error' : ''}
-            </span>
-          </div>
-        </div>
-        <div class="aq-field">
-          <label class="aq-field">
-            <span>Select remote model</span>
-            <select data-model-field="remote_model">
-              <option value="">-- choose --</option>
-              ${m.remote_model && !(m.remote_models?.includes(m.remote_model)) ? `<option value="${this.escapeHtml(m.remote_model)}" selected>${this.escapeHtml(m.remote_model)} (current)</option>` : ''}
-              ${(m.remote_models || []).map(rm => `<option value="${this.escapeHtml(rm)}" ${rm === m.remote_model ? 'selected' : ''}>${this.escapeHtml(rm)}</option>`).join('')}
-            </select>
-          </label>
-          <div>
-            <span data-model-status>
-              ${m.remote_model && m.remote_models && m.remote_models.includes(m.remote_model) ? '✅ Model available' : ''}
-              ${m.remote_model && m.remote_models && !m.remote_models.includes(m.remote_model) ? '⚠️ Model not offered' : ''}
-            </span>
-          </div>
-        </div>
-        <details style="margin-top: 1rem;">
-          <summary style="cursor: pointer; font-weight: bold; color: var(--accent);">Expert Settings: Prompt Overrides</summary>
-          <div style="margin-top: 0.5rem; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-secondary);">
-            <p style="font-size: 0.9rem; color: var(--muted); margin-bottom: 0.5rem;">
-              Override default prompts for this model. Leave empty to use defaults.
-            </p>
-            <div class="aq-field">
-              <label class="aq-field">
-                <span>Chat LLM System Message</span>
-                <textarea rows="4" data-model-field="prompt_overrides.chat_llm" placeholder="You are an AI writing assistant...">${this.escapeHtml((m.prompt_overrides || {}).chat_llm || '')}</textarea>
-              </label>
+    // Compact provider cards for left column; detailed config is rendered on the right
+    container.innerHTML = this.models.map((m, idx) => {
+      const isSelected = this.selected_name === m.name;
+      const shortBase = (m.base_url || m.baseUrl || '').replace(/^https?:\/\//, '').slice(0, 30);
+      const endpointOk = m.endpoint_ok === true;
+      const modelAvailable = m.remote_model && m.remote_models && m.remote_models.includes(m.remote_model);
+      // usage tags: prefer explicit uses/tags/purposes arrays
+      const uses = Array.isArray(m.uses) ? m.uses : (Array.isArray(m.tags) ? m.tags : (Array.isArray(m.purposes) ? m.purposes : []));
+      const tagHtml = (uses || []).map(u => {
+        const key = (''+u).toLowerCase();
+        if (key.includes('chat')) return '<span class="inline-block bg-indigo-700 text-xs text-white px-2 py-0.5 rounded mr-1">Chat</span>';
+        if (key.includes('story') || key.includes('write')) return '<span class="inline-block bg-amber-700 text-xs text-white px-2 py-0.5 rounded mr-1">Story writing</span>';
+        return `<span class="inline-block bg-stone-700 text-xs text-stone-200 px-2 py-0.5 rounded mr-1">${this.escapeHtml((''+u).replace(/\b\w/g, c=>c.toUpperCase()))}</span>`;
+      }).join('');
+
+      const statusTitle = `Endpoint: ${endpointOk ? 'OK' : 'Unknown'}\nModel: ${modelAvailable ? 'available' : 'not found'}`;
+      const modelLabel = this.escapeHtml(m.remote_model || m.model || '');
+
+      return (`
+        <div data-model-index="${idx}" class="p-3 rounded-lg cursor-pointer transition ${isSelected ? 'bg-indigo-900/20 border border-indigo-500/50' : 'bg-stone-800 border border-stone-700 hover:border-stone-600'}">
+          <div class="flex items-start justify-between">
+            <div>
+              <div class="text-sm font-medium text-stone-200">${this.escapeHtml(m.name || '(unnamed)')}</div>
+              <div class="text-xs text-stone-500 mt-1">${shortBase || 'N/A'}</div>
             </div>
-            <div class="aq-field">
-              <label class="aq-field">
-                <span>Story Writer System Message</span>
-                <textarea rows="2" data-model-field="prompt_overrides.story_writer" placeholder="You are a skilled novelist...">${this.escapeHtml((m.prompt_overrides || {}).story_writer || '')}</textarea>
-              </label>
-            </div>
-            <div class="aq-field">
-              <label class="aq-field">
-                <span>Story Continuer System Message</span>
-                <textarea rows="2" data-model-field="prompt_overrides.story_continuer" placeholder="You are a helpful writing assistant...">${this.escapeHtml((m.prompt_overrides || {}).story_continuer || '')}</textarea>
-              </label>
-            </div>
-            <div class="aq-field">
-              <label class="aq-field">
-                <span>Chapter Summarizer System Message</span>
-                <textarea rows="2" data-model-field="prompt_overrides.chapter_summarizer" placeholder="You are an expert story editor...">${this.escapeHtml((m.prompt_overrides || {}).chapter_summarizer || '')}</textarea>
-              </label>
-            </div>
-            <div class="aq-field">
-              <label class="aq-field">
-                <span>Story Summarizer System Message</span>
-                <textarea rows="2" data-model-field="prompt_overrides.story_summarizer" placeholder="You are an expert story editor...">${this.escapeHtml((m.prompt_overrides || {}).story_summarizer || '')}</textarea>
-              </label>
+            <div class="flex items-center space-x-2">
+              <div title="${this.escapeHtml(statusTitle)}">${endpointOk ? '<span class="w-3 h-3 rounded-full bg-green-500 inline-block"></span>' : '<span class="w-3 h-3 rounded-full bg-amber-400 inline-block"></span>'}</div>
             </div>
           </div>
-        </details>
-        <div class="aq-toolbar" style="justify-content: space-between;">
-          <label style="display:flex; align-items:center; gap:0.4rem;">
-            <input type="radio" name="openai_selected_name" value="${this.escapeHtml(m.name)}" ${this.selected_name === m.name ? 'checked' : ''} />
-            <span>Use this model</span>
-          </label>
-          <button type="button" class="aq-btn" data-action="remove-model">Remove</button>
+          <div class="mt-3">
+            <div class="text-xs text-stone-400 mb-2">Model: <span class="text-stone-200">${modelLabel}</span></div>
+            <div class="flex items-center">${tagHtml}</div>
+          </div>
         </div>
-      </div>
-    `).join('');
+      `);
+    }).join('');
 
     this.renderNameIssues();
     this.renderSaveButton();
+    // Also render provider config for the selected model (if any)
+    this.renderProviderConfig();
+  }
+
+  /**
+   * Render the right-hand provider configuration panel for the selected model
+   */
+  renderProviderConfig() {
+    if (!this.el) return;
+    const container = this.el.querySelector('#provider-config');
+    if (!container) return;
+    const sel = this.selected_name || (this.models[0] && this.models[0].name) || '';
+    const idx = this.models.findIndex(m => m.name === sel);
+    if (idx === -1) {
+      container.innerHTML = '<div class="h-full flex items-center justify-center text-stone-600">Select a provider to configure</div>';
+      return;
+    }
+    const m = this.models[idx];
+    const active = this.selected_name === m.name;
+    const endpointOk = m.endpoint_ok === true;
+    const modelAvailable = m.remote_model && Array.isArray(m.remote_models) && m.remote_models.includes(m.remote_model);
+
+    container.innerHTML = `
+      <div class="space-y-6 animate-in slide-in-from-right-4 duration-200">
+        <div class="flex justify-between items-start">
+          <div>
+            <h3 class="text-xl font-bold text-stone-200">${this.escapeHtml(m.name)}</h3>
+            <p class="text-xs text-stone-500 mt-1">ID: ${this.escapeHtml(m.id || m.name || '')}</p>
+          </div>
+          <div class="flex space-x-2 items-center">
+            <button id="set-active-provider" class="px-3 py-1 rounded bg-stone-800 text-stone-200">${active ? 'Active' : 'Set Active'}</button>
+            <button id="delete-provider" class="p-2 text-stone-600 hover:text-red-400 rounded"><i data-lucide="trash-2" style="width:16px;height:16px"></i></button>
+          </div>
+        </div>
+
+        <div class="space-y-4">
+          <div class="space-y-1">
+            <label class="text-xs font-medium text-stone-500 uppercase">Name</label>
+            <input id="prov-name" value="${this.escapeHtml(m.name)}" class="w-full bg-stone-950 border border-stone-700 rounded p-2 text-sm text-stone-200" />
+          </div>
+
+          <div class="space-y-1">
+            <label class="text-xs font-medium text-stone-500 uppercase">Base URL</label>
+            <input id="prov-base" value="${this.escapeHtml(m.base_url || m.baseUrl || '')}" class="w-full bg-stone-950 border border-stone-700 rounded p-2 text-sm text-stone-200" />
+          </div>
+
+          <div class="space-y-1">
+            <label class="text-xs font-medium text-stone-500 uppercase">API Key</label>
+            <input id="prov-key" value="${this.escapeHtml(m.api_key || m.apiKey || '')}" type="password" class="w-full bg-stone-950 border border-stone-700 rounded p-2 text-sm text-stone-200" />
+          </div>
+
+          <div class="flex items-center gap-4 text-sm text-stone-400">
+            <div>${endpointOk ? '<span class="inline-flex items-center gap-2 text-green-400"><span class="w-2 h-2 rounded-full bg-green-500 inline-block"></span>Endpoint OK</span>' : '<span class="inline-flex items-center gap-2 text-amber-400"><span class="w-2 h-2 rounded-full bg-stone-600 inline-block"></span>Endpoint Unknown</span>'}</div>
+            <div>${modelAvailable ? '<span class="text-green-400">Model available</span>' : '<span class="text-amber-400">Model not found</span>'}</div>
+          </div>
+
+          <div>
+            <label class="text-xs font-medium text-stone-500 uppercase">Model</label>
+            ${Array.isArray(m.remote_models) && m.remote_models.length ? `
+              <div class="flex gap-2">
+                <select id="prov-modelid" class="flex-1 bg-stone-950 border border-stone-700 rounded p-2 text-sm text-stone-200">
+                  ${m.remote_models.map(rm => `<option value="${this.escapeHtml(rm)}" ${rm === (m.remote_model || m.model || '') ? 'selected' : ''}>${this.escapeHtml(rm)}</option>`).join('')}
+                </select>
+                <button id="prov-load-models" class="px-3 py-1 bg-stone-800 text-stone-200 rounded">Load</button>
+              </div>
+            ` : `
+              <input id="prov-modelid" value="${this.escapeHtml(m.remote_model || m.model || '')}" class="w-full bg-stone-950 border border-stone-700 rounded p-2 text-sm text-stone-200" />
+            `}
+          </div>
+
+          <div class="space-y-1 mt-3">
+            <label class="text-xs font-medium text-stone-500 uppercase">Timeout (s)</label>
+            <input id="prov-timeout" type="number" value="${m.timeout_s || m.timeout || 60}" class="w-full bg-stone-950 border border-stone-700 rounded p-2 text-sm text-stone-200" />
+          </div>
+
+          <div class="pt-4 border-t border-stone-800">
+            <h4 class="text-sm font-semibold text-stone-300">Model Parameters</h4>
+            <div class="mt-3 space-y-3">
+              <div>
+                <label class="text-xs text-stone-500">Temperature: <span class="text-stone-300">${typeof m.temperature === 'number' ? m.temperature : (m.temperature || 0.7)}</span></label>
+                <input id="prov-temperature" type="range" min="0" max="1" step="0.01" value="${typeof m.temperature === 'number' ? m.temperature : (m.temperature || 0.7)}" class="w-full" />
+              </div>
+              <div>
+                <label class="text-xs text-stone-500">Top-p: <span class="text-stone-300">${typeof m.top_p === 'number' ? m.top_p : (m.top_p || 1.0)}</span></label>
+                <input id="prov-top-p" type="range" min="0" max="1" step="0.01" value="${typeof m.top_p === 'number' ? m.top_p : (m.top_p || 1.0)}" class="w-full" />
+              </div>
+              <div>
+                <label class="text-xs text-stone-500">Max tokens</label>
+                <input id="prov-max-tokens" type="number" min="1" value="${m.max_tokens || m.maxTokens || 2048}" class="w-full bg-stone-950 border border-stone-700 rounded p-2 text-sm text-stone-200" />
+              </div>
+            </div>
+
+            <div class="mt-3">
+              <button id="prov-toggle-expert" class="px-2 py-1 text-sm bg-stone-800 text-stone-200 rounded">Expert options</button>
+              <div id="prov-expert" class="mt-3 hidden">
+                <div class="space-y-3">
+                  <div>
+                    <label class="text-xs text-stone-500">System prompt override</label>
+                    <textarea id="prov-system-prompt" rows="4" class="w-full bg-stone-950 border border-stone-700 rounded p-2 text-sm text-stone-200">${this.escapeHtml(m.system_prompt || m.systemPrompt || '')}</textarea>
+                  </div>
+                  <div>
+                    <label class="text-xs text-stone-500">Continuation prompt</label>
+                    <textarea id="prov-continuation-prompt" rows="3" class="w-full bg-stone-950 border border-stone-700 rounded p-2 text-sm text-stone-200">${this.escapeHtml(m.continuation_prompt || m.continuationPrompt || '')}</textarea>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Wire interactions
+    const setActiveBtn = container.querySelector('#set-active-provider');
+    const deleteBtn = container.querySelector('#delete-provider');
+    const nameInp = container.querySelector('#prov-name');
+    const typeSel = container.querySelector('#prov-type');
+    const baseInp = container.querySelector('#prov-base');
+    const keyInp = container.querySelector('#prov-key');
+    // test button removed (not functional)
+    const modelIdInp = container.querySelector('#prov-modelid');
+    const timeoutInp = container.querySelector('#prov-timeout');
+    const loadModelsBtn = container.querySelector('#prov-load-models');
+    const toggleExpertBtn = container.querySelector('#prov-toggle-expert');
+    const expertDiv = container.querySelector('#prov-expert');
+
+    if (setActiveBtn) setActiveBtn.addEventListener('click', () => {
+      this.selected_name = m.name;
+      this.renderModels();
+      this.renderProviderConfig();
+    });
+    if (deleteBtn) deleteBtn.addEventListener('click', () => {
+      if (confirm(`Delete provider ${m.name}?`)) {
+        this.models.splice(idx,1);
+        this.selected_name = this.models[0]?.name || '';
+        this.renderModels();
+        this.renderProviderConfig();
+      }
+    });
+
+    const updateField = (field, val) => {
+      if (!this.models[idx]) return;
+      // normalize keys to match stored object
+      if (field === 'name') this.models[idx].name = val;
+      else if (field === 'provider') this.models[idx].provider = val;
+      else if (field === 'base_url') this.models[idx].base_url = val;
+      else if (field === 'api_key') this.models[idx].api_key = val;
+      else if (field === 'remote_model') this.models[idx].remote_model = val;
+      else if (field === 'timeout_s') this.models[idx].timeout_s = Number(val) || 60;
+      else if (field === 'temperature') this.models[idx].temperature = Number(val) || 0.0;
+      else if (field === 'top_p') this.models[idx].top_p = Number(val) || 1.0;
+      else if (field === 'max_tokens') this.models[idx].max_tokens = Number(val) || 0;
+      else if (field === 'system_prompt') this.models[idx].system_prompt = val;
+      else if (field === 'continuation_prompt') this.models[idx].continuation_prompt = val;
+      // Changing connection-related fields should reset endpoint check
+      if (['base_url','api_key','timeout_s'].includes(field)) {
+        this.models[idx].endpoint_ok = undefined;
+      }
+      this.renderModels();
+    };
+
+    if (nameInp) nameInp.addEventListener('input', (e)=> updateField('name', e.target.value));
+    if (typeSel) typeSel.addEventListener('change', (e)=> updateField('provider', e.target.value));
+    if (baseInp) baseInp.addEventListener('input', (e)=> updateField('base_url', e.target.value));
+    if (keyInp) keyInp.addEventListener('input', (e)=> updateField('api_key', e.target.value));
+    if (modelIdInp) {
+      modelIdInp.addEventListener('input', (e)=> updateField('remote_model', e.target.value));
+      modelIdInp.addEventListener('change', (e)=> updateField('remote_model', e.target.value));
+    }
+    if (timeoutInp) timeoutInp.addEventListener('input', (e)=> updateField('timeout_s', e.target.value));
+
+    // Advanced fields
+    const tempInp = container.querySelector('#prov-temperature');
+    const topPInp = container.querySelector('#prov-top-p');
+    const maxTokInp = container.querySelector('#prov-max-tokens');
+    const sysPrompt = container.querySelector('#prov-system-prompt');
+    const contPrompt = container.querySelector('#prov-continuation-prompt');
+
+    if (tempInp) tempInp.addEventListener('input', (e)=> {
+      const v = parseFloat(e.target.value);
+      updateField('temperature', v);
+      // update label nearby by re-rendering only provider config
+      this.renderProviderConfig();
+    });
+    if (topPInp) topPInp.addEventListener('input', (e)=> {
+      const v = parseFloat(e.target.value);
+      updateField('top_p', v);
+      this.renderProviderConfig();
+    });
+    if (maxTokInp) maxTokInp.addEventListener('input', (e)=> updateField('max_tokens', e.target.value));
+    if (sysPrompt) sysPrompt.addEventListener('input', (e)=> updateField('system_prompt', e.target.value));
+    if (contPrompt) contPrompt.addEventListener('input', (e)=> updateField('continuation_prompt', e.target.value));
+
+    // testBtn handler removed
+
+    if (loadModelsBtn) loadModelsBtn.addEventListener('click', async () => {
+      await this.loadRemoteModels(idx);
+      this.renderModels();
+      this.renderProviderConfig();
+    });
+
+    if (toggleExpertBtn) toggleExpertBtn.addEventListener('click', () => {
+      if (!expertDiv) return;
+      const hidden = expertDiv.classList.toggle('hidden');
+      toggleExpertBtn.textContent = hidden ? 'Expert options' : 'Hide expert options';
+    });
   }
 
   /**
@@ -359,16 +563,31 @@ export class ModelsEditor extends Component {
         listEl.innerHTML = `<div class="aq-tip">No projects found under the built-in projects folder.</div>`;
         return;
     }
-
-    listEl.innerHTML = this.available_projects.map(ap => `
-      <div style="display:flex; gap:0.5rem; align-items:center; justify-content:flex-end;">
-        <button type="button" class="aq-btn" style="padding:0.25rem 0.5rem;" onclick="window.app.modelsEditor.selectByName('${this.escapeHtml(ap.name).replace(/'/g, "\\'")}')">
-          <span>${this.escapeHtml(ap.name)}</span>
-          ${!ap.is_valid ? `<span style="color:#fbbf24;"> (init)</span>` : ''}
-        </button>
-        <button type="button" class="aq-btn" style="padding:0.25rem 0.5rem; background:#3b82f6;" onclick="window.app.modelsEditor.deleteProject('${this.escapeHtml(ap.name).replace(/'/g, "\\'")}')">Delete</button>
-      </div>
-    `).join('');
+    listEl.innerHTML = this.available_projects.map(ap => {
+      const isActive = ap.name === this.current_project;
+      const updated = ap.updatedAt || ap.updated_at || '';
+      const when = updated ? `Last edited: ${new Date(updated).toLocaleDateString()}` : '';
+      return (`
+        <div class="group flex items-center justify-between p-4 rounded-lg border transition-all ${isActive ? 'bg-indigo-900/20 border-indigo-500/50' : 'bg-stone-800 border-stone-700 hover:border-stone-600'}">
+          <div class="flex items-center space-x-4">
+            <div class="w-2 h-12 rounded-full ${isActive ? 'bg-indigo-500' : 'bg-stone-600'}"></div>
+            <div>
+              <div class="flex items-center space-x-2">
+                <h4 class="font-bold text-stone-200">${this.escapeHtml(ap.name)}</h4>
+                ${!ap.is_valid ? `<span class="text-xs text-yellow-400">(init)</span>` : ''}
+              </div>
+              <p class="text-xs text-stone-500 mt-1">${when}</p>
+            </div>
+          </div>
+          <div class="flex items-center space-x-3">
+            ${!isActive ? `<button type="button" class="px-3 py-1 bg-stone-700 text-stone-200 rounded text-sm" onclick="window.app.modelsEditor.selectByName('${this.escapeHtml(ap.name).replace(/'/g, "\\'")}')">Open</button>` : `<span class="text-xs font-medium text-indigo-400 bg-indigo-950/50 px-2 py-1 rounded">Active</span>`}
+            <button type="button" class="p-2 text-stone-600 hover:text-red-400 hover:bg-red-950/30 rounded transition-colors" onclick="window.app.modelsEditor.deleteProject('${this.escapeHtml(ap.name).replace(/'/g, "\\'")}')" title="Delete">
+              <i data-lucide="trash-2" style="width:14px;height:14px"></i>
+            </button>
+          </div>
+        </div>
+      `);
+    }).join('');
   }
 
   /**

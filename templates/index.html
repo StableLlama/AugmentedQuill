@@ -7,12 +7,7 @@
       <div class="bg-stone-900 border border-stone-700 rounded-lg shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden">
         <div class="flex justify-between items-center p-5 border-b border-stone-800">
           <h2 class="text-lg font-semibold text-stone-200">Settings</h2>
-          <button class="text-stone-500 hover:text-stone-300" data-action="close-settings">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" y1="6" x2="6" y2="18"/>
-              <line x1="6" y1="6" x2="18" y2="18"/>
-            </svg>
-          </button>
+          <button class="text-stone-500 hover:text-stone-300" data-action="close-settings"><i data-lucide="x" style="width:20px;height:20px"></i></button>
         </div>
         <div id="settings-content" class="p-5 overflow-y-auto max-h-[calc(90vh-120px)]">
           <!-- Settings content will be loaded here -->
@@ -25,12 +20,7 @@
   <div id="appearance-panel" class="fixed top-14 right-4 mt-2 w-80 bg-stone-900 border border-stone-700 rounded-lg shadow-2xl p-5 z-50 hidden">
     <div class="flex justify-between items-center mb-4 border-b border-stone-800 pb-2">
       <h3 class="text-xs font-semibold text-stone-400 uppercase tracking-wider">Page Appearance</h3>
-      <button class="text-stone-500 hover:text-stone-300" data-action="close-appearance">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <line x1="18" y1="6" x2="6" y2="18"/>
-          <line x1="6" y1="6" x2="18" y2="18"/>
-        </svg>
-      </button>
+      <button class="text-stone-500 hover:text-stone-300" data-action="close-appearance"><i data-lucide="x" style="width:14px;height:14px"></i></button>
     </div>
     <div class="space-y-5">
       <div class="space-y-2">
@@ -76,72 +66,55 @@
         <div class="space-y-4">
           <div>
             <label class="block text-xs font-semibold text-stone-400 uppercase tracking-wider mb-2">Title</label>
-            <input type="text" data-ref="storyTitleInput" class="w-full bg-stone-800 border border-stone-700 rounded px-3 py-2 text-stone-200 placeholder-stone-500 focus:outline-none focus:border-indigo-500" placeholder="Story title...">
+            <div class="story-title-view flex items-center justify-between gap-2">
+              <div data-ref="storyTitleDisplay" class="text-stone-200 text-base font-semibold cursor-text">Story title...</div>
+              <button data-action="edit-story-title" class="p-1 text-stone-400 hover:text-stone-200" title="Edit title"><i data-lucide="pen" style="width:14px;height:14px"></i></button>
+            </div>
+            <input type="text" data-ref="storyTitleInput" class="w-full bg-stone-800 border border-stone-700 rounded px-3 py-2 text-stone-200 placeholder-stone-500 focus:outline-none focus:border-indigo-500 hidden mt-2" placeholder="Story title...">
           </div>
           <div>
             <label class="block text-xs font-semibold text-stone-400 uppercase tracking-wider mb-2">Summary</label>
-            <textarea data-ref="storySummaryInput" class="w-full bg-stone-800 border border-stone-700 rounded px-3 py-2 text-stone-200 placeholder-stone-500 focus:outline-none focus:border-indigo-500 resize-none" rows="4" placeholder="Story summary..."></textarea>
+            <div class="story-summary-view">
+              <div data-ref="storySummaryDisplay" class="text-stone-400 text-sm line-clamp-2 cursor-text">Story summary...</div>
+              <div class="mt-2 flex justify-end">
+                <button data-action="edit-story-summary" class="p-1 text-stone-400 hover:text-stone-200" title="Edit summary"><i data-lucide="pen" style="width:14px;height:14px"></i></button>
+              </div>
+            </div>
+            <textarea data-ref="storySummaryInput" class="w-full bg-stone-800 border border-stone-700 rounded px-3 py-2 text-stone-200 placeholder-stone-500 focus:outline-none focus:border-indigo-500 resize-none hidden mt-2" rows="4" placeholder="Story summary..."></textarea>
           </div>
           <div>
             <label class="block text-xs font-semibold text-stone-400 uppercase tracking-wider mb-2">Tags</label>
-            <input type="text" data-ref="storyTagsInput" class="w-full bg-stone-800 border border-stone-700 rounded px-3 py-2 text-stone-200 placeholder-stone-500 focus:outline-none focus:border-indigo-500" placeholder="fantasy, mystery, romance">
+            <div class="story-tags-view flex items-center gap-2">
+              <div class="tag-chips" data-ref="tagChips"></div>
+              <button data-action="edit-story-tags" class="p-1 text-stone-400 hover:text-stone-200" title="Edit tags"><i data-lucide="pen" style="width:14px;height:14px"></i></button>
+            </div>
+            <input type="text" data-ref="storyTagsInput" class="w-full bg-stone-800 border border-stone-700 rounded px-3 py-2 text-stone-200 placeholder-stone-500 focus:outline-none focus:border-indigo-500 hidden mt-2" placeholder="fantasy, mystery, romance">
           </div>
         </div>
       </div>
 
       <!-- Chapter List -->
-      <div class="flex-1 overflow-y-auto">
-        <div class="p-4">
-          <div class="flex justify-between items-center mb-4">
-            <h3 class="text-sm font-semibold text-stone-300">Chapters</h3>
-            <button class="p-1 text-stone-400 hover:text-stone-200" data-action="create-chapter">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="12" y1="5" x2="12" y2="19"/>
-                <line x1="5" y1="12" x2="19" y2="12"/>
-              </svg>
-            </button>
+      <div class="flex-1 overflow-y-auto p-2">
+        <div class="p-4 flex justify-between items-center sticky top-0 z-10 bg-stone-900 border-b border-stone-800">
+          <h3 class="text-sm font-semibold text-stone-400 uppercase tracking-wider">Chapters</h3>
+            <button class="p-1 rounded-full hover:bg-stone-800 text-stone-500 hover:text-stone-300 transition-colors" data-action="create-chapter" title="New Chapter"><i data-lucide="plus" style="width:18px;height:18px"></i></button>
+        </div>
+        <div class="flex-1 overflow-y-auto p-2 space-y-2" data-chapter-list>
+          <div class="text-center py-10 text-stone-600">
+            <i data-lucide="book-open" class="mx-auto mb-2 opacity-50" style="width:32px;height:32px"></i>
+            <p class="text-sm">No chapters yet.</p>
           </div>
-          <ul class="space-y-2" data-chapter-list>
-            <li class="text-stone-500 text-sm">No chapters yet</li>
-          </ul>
         </div>
       </div>
     </div>
 
     <!-- Main Editor Area -->
     <div class="flex-1 flex flex-col relative bg-stone-950 overflow-hidden w-full">
-      <!-- Editor Toolbar (floating) -->
-      <div class="absolute top-4 left-1/2 transform -translate-x-1/2 z-20 flex space-x-2 opacity-0 hover:opacity-100 transition-opacity duration-300">
-        <button class="px-3 py-1 bg-stone-800 text-stone-300 rounded text-sm hover:bg-stone-700 flex items-center space-x-1" data-action="update-summary">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
-            <path d="M21 3v5h-5"/>
-            <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
-            <path d="M8 16H3v5"/>
-          </svg>
-          <span>Update Summary</span>
-        </button>
-        <button class="px-3 py-1 bg-indigo-600 text-white rounded text-sm hover:bg-indigo-700 flex items-center space-x-1" data-action="ai-extend">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72Z"/>
-            <path d="m14 7 3 3"/>
-            <path d="M5 6v4"/>
-            <path d="M19 14v4"/>
-            <path d="M10 2v2"/>
-            <path d="M7 8H3"/>
-            <path d="M21 16h-4"/>
-            <path d="M11 3H9"/>
-          </svg>
-          <span>AI Extend</span>
-        </button>
-      </div>
+      <!-- Editor Toolbar removed from main area; toolbar will be rendered in header center -->
 
       <div class="flex-1 overflow-hidden h-full flex flex-col">
         <div data-view="empty" class="flex flex-col items-center justify-center h-full text-stone-600">
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" class="mb-4 opacity-50">
-            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
-            <polyline points="14,2 14,8 20,8"/>
-          </svg>
+          <i data-lucide="file-text" style="width:48px;height:48px" class="mb-4 opacity-50"></i>
           <p>Select or create a chapter to start writing.</p>
         </div>
 
@@ -163,33 +136,40 @@
     </div>
 
     <!-- Chat Panel -->
-    <div id="chat-panel" class="fixed inset-y-0 right-0 top-14 w-full sm:w-96 flex-shrink-0 border-l border-stone-800 flex flex-col z-40 shadow-xl transition-all duration-300 ease-in-out md:relative md:top-auto md:z-20 md:h-full translate-x-0">
-      <div class="p-4 border-b border-stone-800">
-        <h3 class="text-sm font-semibold text-stone-300">AI Chat</h3>
-        <select data-ref="modelSelect" class="mt-2 w-full bg-stone-800 border border-stone-700 rounded px-3 py-2 text-stone-200 focus:outline-none focus:border-indigo-500">
-          <!-- Models will be populated by JS -->
-        </select>
-      </div>
-
-      <div class="flex-1 overflow-y-auto p-4 space-y-4" data-ref="chatList">
-        <div class="text-stone-500 text-sm text-center">No messages yet</div>
-      </div>
-
-      <div class="p-4 border-t border-stone-800">
-        <div class="flex space-x-2 mb-2">
-          <select class="bg-stone-800 border border-stone-700 rounded px-2 py-1 text-stone-200 text-sm focus:outline-none focus:border-indigo-500" data-ref="roleSelect">
-            <option value="user">User</option>
-            <option value="system">System</option>
-            <option value="assistant">Assistant</option>
-          </select>
+    <div id="chat-panel" data-component="chat-view" class="fixed inset-y-0 right-0 top-14 w-full sm:w-96 flex-shrink-0 border-l border-stone-800 flex flex-col z-40 shadow-xl transition-all duration-300 ease-in-out md:relative md:top-auto md:z-20 md:h-full translate-x-0">
+        <div class="p-4 border-b border-stone-800 bg-stone-900 flex items-center justify-between">
+          <div class="flex items-center space-x-2">
+            <i data-lucide="sparkles" class="text-indigo-400" style="width:18px;height:18px"></i>
+            <h3 class="font-semibold text-stone-200">Writing Partner</h3>
+          </div>
+          <button data-action="toggle-system-prompt" class="p-1.5 rounded hover:bg-stone-800 text-stone-500" title="Chat Settings"><i data-lucide="settings-2" style="width:16px;height:16px"></i></button>
         </div>
-        <textarea rows="3" placeholder="Type a message..." data-ref="chatInput" class="w-full bg-stone-800 border border-stone-700 rounded px-3 py-2 text-stone-200 placeholder-stone-500 focus:outline-none focus:border-indigo-500 resize-none"></textarea>
-        <div class="flex justify-end space-x-2 mt-2">
-          <button class="px-3 py-1 bg-stone-800 text-stone-300 rounded text-sm hover:bg-stone-700" data-ref="deleteLast">Delete</button>
-          <button class="px-3 py-1 bg-indigo-600 text-white rounded text-sm hover:bg-indigo-700" data-ref="send">Send</button>
-          <button class="px-3 py-1 bg-stone-800 text-stone-300 rounded text-sm hover:bg-stone-700" data-ref="regenerate">Regenerate</button>
+
+        <div data-ref="systemPanel" class="p-4 bg-stone-950 border-b border-stone-800 hidden">
+          <label class="block text-xs font-medium text-stone-500 uppercase tracking-wider mb-2">System Instruction</label>
+          <textarea data-ref="systemPrompt" class="w-full h-24 bg-stone-900 border border-stone-700 rounded-md p-3 text-sm text-stone-300 focus:ring-1 focus:ring-indigo-500 focus:outline-none resize-none" placeholder="Define the AI's persona and rules..."></textarea>
+          <div class="flex justify-end space-x-2 mt-3">
+            <button data-action="cancel-system" class="px-3 py-1 bg-stone-800 text-stone-300 rounded text-sm">Cancel</button>
+            <button data-action="save-system" class="px-3 py-1 bg-indigo-600 text-white rounded text-sm">Update Persona</button>
+          </div>
         </div>
-      </div>
+
+        <div class="flex-1 overflow-y-auto p-4 space-y-4 bg-stone-950/30" data-ref="chatList">
+          <div class="text-center text-stone-600 mt-10 p-4" data-ref="chatEmpty">
+            <i data-lucide="sparkles" class="mx-auto mb-3 opacity-50" style="width:40px;height:40px"></i>
+            <p class="text-sm">I'm your AI co-author. Ask me to write, edit, or brainstorm ideas for your story!</p>
+          </div>
+        </div>
+
+        <div class="p-4 bg-stone-900 border-t border-stone-800">
+          <div class="flex justify-center mb-3" data-ref="regenerateArea" style="display:none">
+            <button type="button" data-ref="regenerate" data-action="regenerate" class="px-3 py-1 bg-stone-800 text-stone-300 rounded text-sm hover:bg-stone-700 inline-flex items-center gap-2"><i data-lucide="refresh-cw" style="width:12px;height:12px" class="opacity-90"></i><span>Regenerate last response</span></button>
+          </div>
+          <div class="relative">
+            <textarea data-ref="input" rows="2" placeholder="Type your instruction..." class="w-full pl-4 pr-12 py-3 bg-stone-800 border-stone-700 border text-stone-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all text-sm placeholder-stone-500" ></textarea>
+              <button type="button" data-ref="send" class="absolute right-2 top-1/2 transform -translate-y-1/2 p-2 text-indigo-400 hover:bg-stone-700 rounded-full transition-colors"><i data-lucide="send" style="width:18px;height:18px"></i></button>
+          </div>
+        </div>
     </div>
   </div>
 {% endblock %}

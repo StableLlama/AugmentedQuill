@@ -18,6 +18,7 @@ export class MessageRenderer {
   render() {
     const list = this.chatView.$refs.chatList;
     if (!list) return;
+    
     list.innerHTML = '';
     // Filter out tool messages from rendering to keep UI clean
     const renderable = (this.chatView.messages || []).filter(m => m.role !== ROLES.TOOL);
@@ -29,73 +30,87 @@ export class MessageRenderer {
       return;
     }
     renderable.forEach((m, idx) => {
-      const wrap = document.createElement('div');
-      wrap.className = `aq-bubble ${m.role}` + (idx === this.chatView.messages.length - 1 ? ' last' : '');
-      const header = document.createElement('div');
-      header.className = 'aq-bubble-head';
-      header.textContent = m.role;
-      const content = document.createElement('div');
-      content.className = 'aq-bubble-body';
-      // Clean content of tool call syntax before rendering
-      let cleanContent = (m.content || '').trim();
-      // Only apply cleaning if content contains tool call syntax
-      const contentLower = cleanContent.toLowerCase();
-      const hasToolSyntax = contentLower.includes('<tool_call') || 
-                           contentLower.includes('<function_call') || 
-                           contentLower.includes('[tool_call') ||
-                           contentLower.startsWith('tool:') ||
-                           contentLower.startsWith('function:');
-      if (hasToolSyntax) {
-        // Replace tool call formats with readable messages
-        cleanContent = cleanContent.replace(/<tool_call>([^<]*)<\/tool_call>/gi, (match, toolName) => `Calling tool: ${toolName.replace(/_/g, ' ')}`);
-        cleanContent = cleanContent.replace(/<function_call>([^<]*)<\/function_call>/gi, (match, funcName) => `Calling function: ${funcName.replace(/_/g, ' ')}`);
-        cleanContent = cleanContent.replace(/<function=([^>]*)>([^<]*)<\/function>/gi, (match, funcName, args) => `Calling function ${funcName.replace(/_/g, ' ')}: ${args}`);
-        cleanContent = cleanContent.replace(/<tool_call[^>]*>/gi, '');
-        cleanContent = cleanContent.replace(/<\/tool_call>/gi, '');
-        cleanContent = cleanContent.replace(/<function_call[^>]*>/gi, '');
-        cleanContent = cleanContent.replace(/<\/function_call>/gi, '');
-        cleanContent = cleanContent.replace(/\[TOOL_CALL\]([^\[]*)\[\/TOOL_CALL\]/gi, (match, toolName) => `Calling tool: ${toolName.replace(/_/g, ' ')}`);
-        cleanContent = cleanContent.replace(/^Tool:\s*(\w+)(?:\(([^)]*)\))?/gm, (match, toolName) => `Calling tool: ${toolName.replace(/_/g, ' ')}`);
-        cleanContent = cleanContent.replace(/^Function:\s*(\w+)(?:\(([^)]*)\))?/gm, (match, funcName) => `Calling function: ${funcName.replace(/_/g, ' ')}`);
-        // Remove incomplete tool call tags
-        cleanContent = cleanContent.replace(/<tool_call[^>]*$/gi, '');
-        cleanContent = cleanContent.replace(/<function_call[^>]*$/gi, '');
-        cleanContent = cleanContent.replace(/\[TOOL_CALL\][^\[]*$/gi, '');
-      }
-      // Render assistant messages as basic markdown, others as plain text
-      if (m.role === ROLES.ASSISTANT) {
-        content.innerHTML = MarkdownRenderer.toHtml(cleanContent);
+      const isUser = m.role === ROLES.USER;
+      const container = document.createElement('div');
+      container.className = `group flex items-start space-x-3 ${isUser ? 'flex-row-reverse space-x-reverse' : 'flex-row'}`;
+
+      // Avatar
+      const avatar = document.createElement('div');
+      avatar.className = `flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center border border-stone-700 mt-1 ${isUser ? 'bg-indigo-900/50 text-indigo-300' : 'bg-emerald-900/50 text-emerald-400'}`;
+      avatar.innerHTML = isUser
+        ? '<i data-lucide="user"></i>'
+        : '<i data-lucide="bot"></i>';
+
+      // Message body wrapper
+      const bodyWrap = document.createElement('div');
+      bodyWrap.className = 'flex-1 max-w-[85%] relative';
+
+      // Editing mode
+      if (m._editing) {
+        const editPanel = document.createElement('div');
+        editPanel.className = 'bg-stone-800 border border-stone-600 rounded-lg p-3 shadow-lg';
+        const ta = document.createElement('textarea');
+        ta.className = 'w-full bg-stone-900 text-stone-200 text-sm p-2 rounded border border-stone-700 focus:outline-none min-h-[100px]';
+        ta.value = m._editBuffer || m.content || '';
+        ta.addEventListener('input', (e) => { m._editBuffer = e.target.value; });
+        editPanel.appendChild(ta);
+        const controls = document.createElement('div');
+        controls.className = 'flex justify-end space-x-2 mt-2';
+        const cancel = document.createElement('button');
+        cancel.className = 'p-1 text-stone-400 hover:text-stone-200';
+        cancel.setAttribute('data-action', 'cancel-edit');
+        cancel.setAttribute('data-msg-id', m._localId || m.id || '');
+        cancel.innerHTML = '<i data-lucide="x"></i>';
+        const save = document.createElement('button');
+        save.className = 'p-1 text-emerald-500 hover:text-emerald-400';
+        save.setAttribute('data-action', 'save-edit');
+        save.setAttribute('data-msg-id', m._localId || m.id || '');
+        save.innerHTML = '<i data-lucide="save"></i>';
+        controls.appendChild(cancel);
+        controls.appendChild(save);
+        editPanel.appendChild(controls);
+        bodyWrap.appendChild(editPanel);
       } else {
-        content.contentEditable = 'true';
-        content.spellcheck = true;
-        content.innerText = cleanContent;
-        content.addEventListener('input', () => {
-          m.content = content.innerText;
-        });
-      }
-
-      const actions = document.createElement('div');
-      actions.className = 'aq-bubble-actions';
-      if (idx === this.chatView.messages.length - 1) {
-        const del = document.createElement('button');
-        del.className = 'aq-btn aq-btn-sm';
-        del.textContent = UI_STRINGS.DELETE;
-        del.addEventListener('click', () => this.chatView.deleteLast());
-        actions.appendChild(del);
+        const bubble = document.createElement('div');
+        bubble.className = `rounded-lg p-3 text-sm leading-relaxed ${isUser ? 'bg-indigo-600 text-white' : 'bg-stone-800 border border-stone-700 text-stone-200 shadow-sm'}`;
         if (m.role === ROLES.ASSISTANT) {
-          const regen = document.createElement('button');
-          regen.className = 'aq-btn aq-btn-sm';
-          regen.textContent = UI_STRINGS.REGENERATE;
-          regen.addEventListener('click', () => this.chatView.regenerate());
-          actions.appendChild(regen);
+          bubble.innerHTML = MarkdownRenderer.toHtml(String(m.content || ''));
+        } else {
+          const p = document.createElement('p');
+          p.className = 'whitespace-pre-wrap';
+          p.textContent = m.content || '';
+          bubble.appendChild(p);
         }
+        bodyWrap.appendChild(bubble);
       }
 
-      wrap.appendChild(header);
-      wrap.appendChild(content);
-      if (actions.childElementCount) wrap.appendChild(actions);
-      list.appendChild(wrap);
+      // Hover actions (edit/delete)
+      if (!m._editing) {
+        const actions = document.createElement('div');
+        actions.className = `absolute top-0 ${isUser ? 'left-0 -translate-x-full pr-2' : 'right-0 translate-x-full pl-2'} opacity-0 group-hover:opacity-100 transition-opacity flex flex-col space-y-1`;
+        const edit = document.createElement('button');
+        edit.className = 'p-1 text-stone-500 hover:text-stone-300 bg-stone-900/50 rounded';
+        edit.setAttribute('title', 'Edit');
+        edit.setAttribute('data-action', 'edit-message');
+        edit.setAttribute('data-msg-id', m._localId || m.id || '');
+        edit.innerHTML = '<i data-lucide="pen"></i>';
+        const del = document.createElement('button');
+        del.className = 'p-1 text-stone-500 hover:text-red-400 bg-stone-900/50 rounded';
+        del.setAttribute('title', 'Delete');
+        del.setAttribute('data-action', 'delete-message');
+        del.setAttribute('data-msg-id', m._localId || m.id || '');
+        del.innerHTML = '<i data-lucide="trash-2"></i>';
+        actions.appendChild(edit);
+        actions.appendChild(del);
+        bodyWrap.appendChild(actions);
+      }
+
+      container.appendChild(avatar);
+      container.appendChild(bodyWrap);
+      list.appendChild(container);
+      try { if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons(); } catch (_) {}
     });
+    try { if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons(); } catch (_) {}
     list.scrollTop = list.scrollHeight;
   }
 }

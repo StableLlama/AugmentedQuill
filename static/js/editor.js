@@ -399,9 +399,10 @@ export class ShellView extends Component {
       createBtn.addEventListener('click', () => this.createChapter());
     }
 
-    // Render mode buttons (scoped to editor toolbar in main pane)
+    // Render mode buttons (prefer global header buttons, fallback to scoped buttons)
     [RENDER_MODES.RAW, RENDER_MODES.MARKDOWN, RENDER_MODES.WYSIWYG].forEach(mode => {
-      const btn = this.el.querySelector(`[data-mode="${mode}"]`);
+      const selector = `[data-mode="${mode}"]`;
+      const btn = document.querySelector(selector) || (this.el && this.el.querySelector ? this.el.querySelector(selector) : null);
       if (btn) btn.addEventListener('click', () => this.contentEditor.switchRender(mode));
     });
 
@@ -452,7 +453,7 @@ export class ShellView extends Component {
             this.contentOperations.wrapSelection(button.dataset.before || '', button.dataset.after || '');
             break;
           case 'insert-heading':
-            this.contentOperations.insertHeading();
+            this.contentOperations.insertHeading(parseInt(button.dataset.level, 10) || 1);
             break;
           case 'insert-link':
             this.contentOperations.insertLink();
@@ -466,6 +467,39 @@ export class ShellView extends Component {
         }
       });
     }
+
+    // Global header toolbar (buttons in header) — attach handlers so header toolbar works
+    const globalToolbar = document.querySelector('#editor-format-toolbar-global');
+    if (globalToolbar) {
+      globalToolbar.addEventListener('click', (e) => {
+        const button = e.target.closest('button[data-action]');
+        if (!button) return;
+        const action = button.dataset.action;
+        switch (action) {
+          case 'wrap-selection':
+            this.contentOperations.wrapSelection(button.dataset.before || '', button.dataset.after || '');
+            break;
+          case 'insert-heading':
+            this.contentOperations.insertHeading(parseInt(button.dataset.level, 10) || 1);
+            break;
+          case 'insert-link':
+            this.contentOperations.insertLink();
+            break;
+          case 'toggle-list':
+            this.contentOperations.toggleList(button.dataset.prefix);
+            break;
+          case 'toggle-prefix':
+            this.contentOperations.togglePrefix(button.dataset.prefix);
+            break;
+        }
+      });
+    }
+
+    // Header undo/redo (left side) — wire to ShellView undo/redo methods if present
+    const undoBtn = document.querySelector('[data-action="undo"]');
+    if (undoBtn) undoBtn.addEventListener('click', () => { try { this.undo(); } catch(_){} });
+    const redoBtn = document.querySelector('[data-action="redo"]');
+    if (redoBtn) redoBtn.addEventListener('click', () => { try { this.redo(); } catch(_){} });
 
     // Content textarea
     const textarea = this.el.querySelector('[data-ref="rawEditor"]');

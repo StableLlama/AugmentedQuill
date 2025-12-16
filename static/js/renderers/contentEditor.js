@@ -47,6 +47,19 @@ export class ContentEditor {
     const textarea = this.shellView.$refs.rawEditor;
     if (textarea) {
       textarea.style.maxWidth = `${this.shellView.contentWidth}ch`;
+      textarea.style.marginLeft = 'auto';
+      textarea.style.marginRight = 'auto';
+      textarea.parentNode && (textarea.parentNode.style.display = 'block');
+    }
+
+    // Apply width to Toast UI editor container if present
+    const tuiEl = this.shellView._tuiEl || (this.shellView.el && this.shellView.el.querySelector ? this.shellView.el.querySelector('[data-ref="tuiEditor"]') : null);
+    if (tuiEl) {
+      tuiEl.style.maxWidth = `${this.shellView.contentWidth}ch`;
+      tuiEl.style.marginLeft = 'auto';
+      tuiEl.style.marginRight = 'auto';
+      // Ensure inner editor uses full width
+      tuiEl.querySelector && tuiEl.querySelector('.toastui-editor-defaultUI') && (tuiEl.querySelector('.toastui-editor-defaultUI').style.width = '100%');
     }
   }
 
@@ -58,19 +71,50 @@ export class ContentEditor {
     if (textarea) {
       textarea.style.fontSize = `${this.shellView.fontSize}px`;
     }
+    // Also apply font size to TUI containers if present
+    const tuiEl = this.shellView._tuiEl || (this.shellView.el && this.shellView.el.querySelector ? this.shellView.el.querySelector('[data-ref="tuiEditor"]') : null);
+    if (tuiEl) {
+      try {
+        const fontPx = (this.shellView.fontSize && Number(this.shellView.fontSize)) ? `${this.shellView.fontSize}px` : null;
+        const selectors = [
+          '.toastui-editor-defaultUI',
+          '.toastui-editor-md-preview',
+          '.toastui-editor-ww-container',
+          '.toastui-editor-contents',
+          '.tui-editor-contents',
+          '.ProseMirror'
+        ];
+        selectors.forEach(sel => {
+          tuiEl.querySelectorAll(sel).forEach(n => {
+            if (!n) return;
+            if (fontPx) n.style.fontSize = fontPx;
+            // Ensure width uses parent max-width
+            n.style.maxWidth = '100%';
+            n.style.boxSizing = 'border-box';
+          });
+        });
+      } catch (e) { /* non-critical */ }
+    }
   }
 
   /**
    * Renders the raw editor toolbar visibility.
    */
   renderRawEditorToolbar() {
-    const toolbar = this.shellView.el.querySelector('[data-raw-toolbar]');
     const textarea = this.shellView.el.querySelector('[data-ref="rawEditor"]');
-    if (!toolbar || !textarea) return;
+    const localToolbars = Array.from(this.shellView.el.querySelectorAll('[data-raw-toolbar]'));
+    const globalToolbars = Array.from(document.querySelectorAll('header [data-raw-toolbar], [data-raw-toolbar].aq-global'));
+    if (!textarea) return;
 
-    const show = this.shellView.renderMode === RENDER_MODES.RAW;
-    toolbar.style.display = show ? 'flex' : 'none';
-    textarea.style.display = show ? 'block' : 'none';
+    // Show the unified header toolbar for all modes so the format buttons remain available
+    // regardless of Raw/Markdown/WYSIWYG mode. Individual actions will be handled by
+    // ContentOperations or TUI API depending on active mode.
+    localToolbars.forEach(toolbar => { toolbar.style.display = 'flex'; });
+    globalToolbars.forEach(toolbar => { toolbar.style.display = 'flex'; });
+
+    // Only toggle the raw textarea visibility according to mode
+    const showTextarea = this.shellView.renderMode === RENDER_MODES.RAW;
+    textarea.style.display = showTextarea ? 'block' : 'none';
   }
 
   /**

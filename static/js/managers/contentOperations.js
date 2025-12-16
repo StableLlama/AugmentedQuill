@@ -45,16 +45,19 @@ export class ContentOperations {
   /**
    * Insert heading at current line
    */
-  insertHeading() {
+  insertHeading(level = 1) {
     const textarea = this.shellView.getRawEl();
     if (!textarea) return;
+
+    const lvl = Math.max(1, Math.min(6, Number(level) || 1));
+    const hashes = '#'.repeat(lvl) + ' ';
 
     const caretPos = textarea.selectionStart || 0;
     const lineStart = this.shellView.content.lastIndexOf('\n', caretPos - 1) + 1;
 
     this.shellView.content =
       this.shellView.content.slice(0, lineStart) +
-      '# ' +
+      hashes +
       this.shellView.content.slice(lineStart);
 
     this.shellView.onChanged();

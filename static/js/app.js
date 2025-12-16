@@ -31,18 +31,32 @@ document.addEventListener('input', function (e) {
   if (target.id === 'brightness-slider') {
     const value = target.value;
     document.getElementById('brightness-value').textContent = value + '%';
-    // Apply brightness
+    // Apply combined brightness+contrast so one doesn't overwrite the other
+    const contrastEl = document.getElementById('contrast-slider');
+    const contrastVal = contrastEl ? contrastEl.value : 100;
+    const filterStr = `brightness(${value}%) contrast(${contrastVal}%)`;
     const textarea = document.querySelector('[data-ref="rawEditor"]');
     if (textarea) {
-      textarea.style.filter = `brightness(${value}%)`;
+      textarea.style.filter = filterStr;
     }
+    // Also apply to Toast UI editor containers
+    try {
+      document.querySelectorAll('[data-ref="tuiEditor"]').forEach(el => el.style.filter = filterStr);
+    } catch (_) {}
   } else if (target.id === 'contrast-slider') {
     const value = target.value;
     document.getElementById('contrast-value').textContent = value + '%';
+    // Apply combined brightness+contrast so one doesn't overwrite the other
+    const brightnessEl = document.getElementById('brightness-slider');
+    const brightnessVal = brightnessEl ? brightnessEl.value : 100;
+    const filterStr = `brightness(${brightnessVal}%) contrast(${value}%)`;
     const textarea = document.querySelector('[data-ref="rawEditor"]');
     if (textarea) {
-      textarea.style.filter = `contrast(${value}%)`;
+      textarea.style.filter = filterStr;
     }
+    try {
+      document.querySelectorAll('[data-ref="tuiEditor"]').forEach(el => el.style.filter = filterStr);
+    } catch (_) {}
   } else if (target.id === 'font-size-slider') {
     const value = target.value;
     document.getElementById('font-size-value').textContent = value + 'px';
@@ -50,6 +64,13 @@ document.addEventListener('input', function (e) {
     if (textarea) {
       textarea.style.fontSize = `${value}px`;
     }
+    // Propagate to shellView and TUI
+    try {
+      if (window.app && window.app.shellView) {
+        window.app.shellView.fontSize = Number(value) || window.app.shellView.fontSize;
+        try { window.app.shellView.contentEditor.renderFontSize(); } catch (_) {}
+      }
+    } catch (_) {}
   } else if (target.id === 'line-width-slider') {
     const value = target.value;
     document.getElementById('line-width-value').textContent = value + 'ch';
@@ -57,6 +78,13 @@ document.addEventListener('input', function (e) {
     if (textarea) {
       textarea.style.maxWidth = `${value}ch`;
     }
+    // Propagate to shellView and TUI
+    try {
+      if (window.app && window.app.shellView) {
+        window.app.shellView.contentWidth = Number(value) || window.app.shellView.contentWidth;
+        try { window.app.shellView.contentEditor.renderContentWidth(); } catch (_) {}
+      }
+    } catch (_) {}
   }
 });
 
@@ -86,8 +114,23 @@ document.addEventListener('click', function (e) {
     case 'close-settings':
       closeSettings();
       break;
+    case 'modal-close':
+      closeSettings();
+      break;
     case 'save':
-      if (window.app.shellView) window.app.shellView.save();
+      if (window.app.shellView && typeof window.app.shellView.save === 'function') {
+        window.app.shellView.save();
+      } else if (window.app.modelsEditor && typeof window.app.modelsEditor.save === 'function') {
+        // call models editor save and close settings when done
+        try {
+          const p = window.app.modelsEditor.save();
+          if (p && typeof p.then === 'function') {
+            p.then(() => closeSettings()).catch(e => console.warn('Failed to save settings:', e));
+          } else {
+            closeSettings();
+          }
+        } catch (e) { console.warn('Failed to call modelsEditor.save():', e); }
+      }
       break;
     case 'undo':
       if (window.app.shellView) window.app.shellView.undo();
@@ -95,23 +138,8 @@ document.addEventListener('click', function (e) {
     case 'redo':
       if (window.app.shellView) window.app.shellView.redo();
       break;
-    case 'create-chapter':
-      if (window.app.shellView) window.app.shellView.createChapter();
-      break;
     case 'update-summary':
       if (window.app.shellView) window.app.shellView.updateSummary();
-      break;
-    case 'select-chapter':
-      if (window.app.shellView) {
-        const chapterId = action.getAttribute('data-chapter-id');
-        window.app.shellView.chapterManager.openChapter(chapterId);
-      }
-      break;
-    case 'delete-chapter':
-      if (window.app.shellView) {
-        const chapterId = action.getAttribute('data-chapter-id');
-        window.app.shellView.chapterManager.deleteChapter(chapterId);
-      }
       break;
   }
 });
@@ -191,6 +219,74 @@ function closeSettings() {
   dialog.classList.add('hidden');
 }
 
+// Inline editing for story metadata (title, summary, tags)
+function startEditStoryField(field) {
+  const display = document.querySelector(`[data-ref="${field}Display"]`);
+  const input = document.querySelector(`[data-ref="${field}Input"]`);
+  if (!display || !input) return;
+  display.classList.add('hidden');
+  input.classList.remove('hidden');
+  input.value = display.textContent.trim() === 'Story title...' || display.textContent.trim() === 'Story summary...' ? '' : display.textContent.trim();
+  input.focus();
+  if (typeof input.select === 'function') input.select();
+
+  const saveFn = () => saveStoryField(field);
+  const keyFn = (ev) => {
+    if (ev.key === 'Enter' && field !== 'storySummary') {
+      ev.preventDefault();
+      input.removeEventListener('blur', saveFn);
+      input.removeEventListener('keydown', keyFn);
+      saveFn();
+    }
+  };
+  input.addEventListener('blur', saveFn, { once: true });
+  input.addEventListener('keydown', keyFn);
+}
+
+function saveStoryField(field) {
+  const display = document.querySelector(`[data-ref="${field}Display"]`);
+  const input = document.querySelector(`[data-ref="${field}Input"]`);
+  if (!display || !input) return;
+  const val = input.value.trim();
+  if (field === 'storyTags') {
+    renderTagChips(val);
+    display.textContent = '';
+  } else if (field === 'storyTitle') {
+    display.textContent = val || 'Untitled Story';
+  } else if (field === 'storySummary') {
+    display.textContent = val || 'A new adventure begins...';
+  }
+  input.classList.add('hidden');
+  display.classList.remove('hidden');
+}
+
+function renderTagChips(val) {
+  const container = document.querySelector('[data-ref="tagChips"]');
+  if (!container) return;
+  container.innerHTML = '';
+  const tags = val.split(',').map(t => t.trim()).filter(Boolean);
+  tags.forEach(t => {
+    const s = document.createElement('span');
+    s.className = 'tag-chip';
+    s.textContent = t;
+    container.appendChild(s);
+  });
+}
+
+// Wire click actions for the inline edit buttons
+document.addEventListener('click', function (e) {
+  const btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  const act = btn.getAttribute('data-action');
+  if (act === 'edit-story-title') {
+    startEditStoryField('storyTitle');
+  } else if (act === 'edit-story-summary') {
+    startEditStoryField('storySummary');
+  } else if (act === 'edit-story-tags') {
+    startEditStoryField('storyTags');
+  }
+});
+
 /**
  * Initialize all components on the page
  * Scans the DOM for component markers and instantiates corresponding classes.
@@ -239,6 +335,53 @@ document.addEventListener('DOMContentLoaded', function() {
   // Initialize all components
   initComponents();
 
+  // Initialize lucide icons if available (replace placeholders with SVGs)
+  try {
+    if (window.lucide) {
+      if (typeof lucide.createIcons === 'function') {
+        lucide.createIcons();
+      } else if (typeof lucide.replace === 'function') {
+        lucide.replace();
+      }
+    }
+  } catch (_) {}
+
+  // Apply initial appearance settings to editors (font size, brightness, line width)
+  try {
+    const applyAppearance = () => {
+      const fontSlider = document.getElementById('font-size-slider');
+      const lineWidth = document.getElementById('line-width-slider');
+      const brightness = document.getElementById('brightness-slider');
+      if (window.app && window.app.shellView) {
+        if (fontSlider) {
+          const v = Number(fontSlider.value) || null;
+          if (v != null) {
+            window.app.shellView.fontSize = v;
+            try { window.app.shellView.contentEditor.renderFontSize(); } catch (_) {}
+          }
+        }
+        if (lineWidth) {
+          const lw = Number(lineWidth.value) || null;
+          if (lw != null) {
+            window.app.shellView.contentWidth = lw;
+            try { window.app.shellView.contentEditor.renderContentWidth(); } catch (_) {}
+          }
+        }
+        // Apply combined brightness + contrast on initial load
+        const contrast = document.getElementById('contrast-slider');
+        const b = brightness ? (Number(brightness.value) || 100) : 100;
+        const c = contrast ? (Number(contrast.value) || 100) : 100;
+        const filterStrInit = `brightness(${b}%) contrast(${c}%)`;
+        try {
+          const textarea = document.querySelector('[data-ref="rawEditor"]');
+          if (textarea) textarea.style.filter = filterStrInit;
+          document.querySelectorAll('[data-ref="tuiEditor"]').forEach(el => el.style.filter = filterStrInit);
+        } catch (_) {}
+      }
+    };
+    applyAppearance();
+  } catch (e) { console.warn('Failed to apply initial appearance settings:', e); }
+
   // Update initial classes
   updateSidebarClass();
   updateChatClass();
@@ -265,6 +408,16 @@ document.addEventListener('htmx:afterSwap', function (e) {
   } catch (err) {
     console.error('Failed to reinitialize components after HTMX swap:', err);
   }
+});
+
+// Ensure Lucide renders icons after HTMX swaps as well
+document.addEventListener('htmx:afterSwap', function () {
+  try {
+    if (window.lucide) {
+      if (typeof lucide.createIcons === 'function') lucide.createIcons();
+      else if (typeof lucide.replace === 'function') lucide.replace();
+    }
+  } catch (_) {}
 });
 
 // Clean up components before content is swapped out

@@ -25,11 +25,50 @@ export class ChatView extends Component {
       messages: [],
       inputRole: ROLES.USER,
       sending: false,
+      systemPrompt: '',
     };
     super(element, initial);
     this.modelSelector = new ModelSelector(this);
     this.messageRenderer = new MessageRenderer(this);
     this.roleSelector = new RoleSelector(this);
+  }
+
+  // Start editing a message inline
+  startMessageEdit(id) {
+    // mark the message object with an _editing flag and store original
+    const idx = this.messages.findIndex((m) => String(m.id || '') === String(id) || String(m._localId || '') === String(id));
+    if (idx === -1) return;
+    const msg = this.messages[idx];
+    msg._editing = true;
+    msg._editBuffer = msg.content;
+    this.messageRenderer.render();
+  }
+
+  saveMessageEdit(id) {
+    const idx = this.messages.findIndex((m) => String(m.id || '') === String(id) || String(m._localId || '') === String(id));
+    if (idx === -1) return;
+    const msg = this.messages[idx];
+    msg._editing = false;
+    msg.content = msg._editBuffer || msg.content;
+    delete msg._editBuffer;
+    // Optionally persist edits to backend — not implemented, just keep locally
+    this.messageRenderer.render();
+  }
+
+  cancelMessageEdit(id) {
+    const idx = this.messages.findIndex((m) => String(m.id || '') === String(id) || String(m._localId || '') === String(id));
+    if (idx === -1) return;
+    const msg = this.messages[idx];
+    msg._editing = false;
+    delete msg._editBuffer;
+    this.messageRenderer.render();
+  }
+
+  deleteMessage(id) {
+    const idx = this.messages.findIndex((m) => String(m.id || '') === String(id) || String(m._localId || '') === String(id));
+    if (idx === -1) return;
+    this.messages.splice(idx, 1);
+    this.messageRenderer.render();
   }
 
   /**
@@ -105,16 +144,44 @@ export class ChatView extends Component {
       });
     }
 
+    // System prompt toggle and controls
+    const toggleBtn = this.el.querySelector('[data-action="toggle-system-prompt"]');
+    const systemPanel = this.$refs.systemPanel;
+    const systemTextarea = this.$refs.systemPrompt;
+    const saveSystem = this.el.querySelector('[data-action="save-system"]');
+    const cancelSystem = this.el.querySelector('[data-action="cancel-system"]');
+    if (toggleBtn && systemPanel) {
+      toggleBtn.addEventListener('click', () => {
+        const show = systemPanel.classList.toggle('hidden');
+        // if showing, populate textarea
+        if (!show && systemTextarea) systemTextarea.value = this.systemPrompt || '';
+      });
+    }
+    if (saveSystem && systemTextarea) {
+      saveSystem.addEventListener('click', () => {
+        this.systemPrompt = systemTextarea.value || '';
+        systemPanel.classList.add('hidden');
+        // Persisting system prompt isn't implemented server-side; keep local and include when sending
+      });
+    }
+    if (cancelSystem && systemPanel) {
+      cancelSystem.addEventListener('click', () => {
+        systemPanel.classList.add('hidden');
+      });
+    }
+
     // Role selector events
     this.roleSelector.bindEvents();
 
     // Send button
     const sendBtn = this.$refs.send;
-    if (sendBtn) sendBtn.addEventListener('click', () => this.send());
+    if (sendBtn) sendBtn.addEventListener('click', (e) => { e.preventDefault(); try { this.send(); } catch (err) { console.error('Chat send failed:', err); } });
 
-    // Regenerate button
+    // Regenerate button: delegated handler will handle clicks; we avoid adding a direct listener here
     const regenBtn = this.$refs.regenerate;
-    if (regenBtn) regenBtn.addEventListener('click', () => this.regenerate());
+    if (regenBtn && !regenBtn.__aq_bound) {
+      // do not attach here to avoid duplicate handling; render() will bind once if needed
+    }
 
     // Delete last button
     const delBtn = this.$refs.deleteLast;
@@ -130,6 +197,34 @@ export class ChatView extends Component {
         }
       });
     }
+
+    // Delegate per-message edit/delete actions
+    this.el.addEventListener('click', (ev) => {
+      const editBtn = ev.target.closest('[data-action="edit-message"]');
+      if (editBtn) {
+        const id = editBtn.getAttribute('data-msg-id');
+        if (id) this.startMessageEdit(id);
+        return;
+      }
+      const delBtn = ev.target.closest('[data-action="delete-message"]');
+      if (delBtn) {
+        const id = delBtn.getAttribute('data-msg-id');
+        if (id) this.deleteMessage(id);
+        return;
+      }
+      const saveBtn = ev.target.closest('[data-action="save-edit"]');
+      if (saveBtn) {
+        const id = saveBtn.getAttribute('data-msg-id');
+        if (id) this.saveMessageEdit(id);
+        return;
+      }
+      const cancelBtn = ev.target.closest('[data-action="cancel-edit"]');
+      if (cancelBtn) {
+        const id = cancelBtn.getAttribute('data-msg-id');
+        if (id) this.cancelMessageEdit(id);
+        return;
+      }
+    });
   }
 
   /**
@@ -150,6 +245,30 @@ export class ChatView extends Component {
     if (input) {
       input.disabled = this.sending;
     }
+
+    // Show regenerate area if last message is assistant
+    const regenArea = this.$refs.regenerateArea;
+    if (regenArea) {
+      // Show regenerate area if there is at least one assistant-like message
+      const msgs = this.messages || [];
+      const hasAssistant = msgs.some(m => m && (m.role === ROLES.ASSISTANT || String(m.role) === 'model'));
+      if (hasAssistant && !this.sending) {
+        regenArea.style.display = '';
+      } else {
+        regenArea.style.display = 'none';
+      }
+      // Ensure regenerate button has handler (in case refs were patched later)
+      const regenBtn = this.$refs.regenerate;
+      if (regenBtn && !regenBtn.__aq_bound) {
+        regenBtn.addEventListener('click', () => this.regenerate());
+        regenBtn.__aq_bound = true;
+      }
+    }
+    const empty = this.$refs.chatEmpty;
+    if (empty) {
+      const has = Array.isArray(this.messages) && this.messages.some(m => m.role !== ROLES.TOOL);
+      empty.style.display = has ? 'none' : '';
+    }
   }
 
   /**
@@ -161,7 +280,8 @@ export class ChatView extends Component {
     const content = (ta?.value || '').trim();
     if (!content) return;
     const role = this.inputRole || ROLES.USER;
-    this.messages = [...(this.messages || []), { role, content }];
+    const localId = `m_${Date.now()}_${Math.floor(Math.random()*1000)}`;
+    this.messages = [...(this.messages || []), { role, content, _localId: localId }];
     if (ta) ta.value = '';
     this.messageRenderer.render();
     // Emit chat-updated so others can react immediately (optional)
@@ -187,11 +307,18 @@ export class ChatView extends Component {
    * Regenerates the last assistant message.
    */
   async regenerate() {
-    // Regenerate last assistant bubble by removing it and re-querying
+    // Regenerate: find the last assistant-like message (accept 'assistant' or 'model'),
+    // remove it and any messages after it (including tool outputs), then re-query.
     if (!this.messages || !this.messages.length) return;
-    const last = this.messages[this.messages.length - 1];
-    if (last.role !== ROLES.ASSISTANT) return;
-    this.messages = this.messages.slice(0, -1);
+    // find last index of assistant-like message
+    let idx = -1;
+    for (let i = this.messages.length - 1; i >= 0; i--) {
+      const r = this.messages[i] && this.messages[i].role;
+      if (r === ROLES.ASSISTANT || String(r) === 'model') { idx = i; break; }
+    }
+    if (idx === -1) return;
+    // Trim messages up to the assistant message (remove assistant and anything after)
+    this.messages = this.messages.slice(0, idx);
     this.messageRenderer.render();
     await this._queryAssistant();
     try { document.dispatchEvent(new CustomEvent(EVENTS.CHAT_UPDATED, { detail: { messages: this.messages.slice() } })); } catch (e) { console.warn('Failed to dispatch chat updated event on regenerate:', e); }
@@ -321,6 +448,15 @@ export class ChatView extends Component {
     }
 
     return { ok: true, message: { role: ROLES.ASSISTANT, content: fullContent, tool_calls: toolCalls } };
+  }
+
+  /**
+   * Non-streaming compatibility wrapper used in some call sites.
+   * For now we reuse the streaming implementation and return its final result.
+   */
+  async callChat(messages, tools) {
+    const resp = await this.callChatStreaming(messages, tools, null);
+    return resp;
   }
 
   /**
@@ -462,25 +598,33 @@ export class ChatView extends Component {
   async _queryAssistant() {
     if (this.sending) return;
     this.sending = true;
+    
     try {
       const tools = this.getTools();
       // Add a placeholder assistant message
       const assistantMessage = { role: ROLES.ASSISTANT, content: '' };
+      assistantMessage._localId = `m_${Date.now()}_${Math.floor(Math.random()*1000)}`;
       this.messages = [...(this.messages || []), assistantMessage];
+      
       this.messageRenderer.render();
 
       let currentMessages = this.messages.slice(0, -1); // Messages up to the user input
+      if (this.systemPrompt && this.systemPrompt.trim()) {
+        currentMessages = [{ role: ROLES.SYSTEM, content: this.systemPrompt.trim() }, ...currentMessages];
+      }
       let hasToolCalls = true;
       let finalResponse = null;
 
       // Continue the conversation until no more tool calls
       while (hasToolCalls) {
         // Use streaming chat
+        
         const resp = await this.callChatStreaming(currentMessages, tools, (content) => {
           assistantMessage.content = content;
           this.messageRenderer.render();
         });
 
+        
         // Update the assistant message content
         assistantMessage.content = resp.message.content;
         this.messageRenderer.render();
@@ -490,15 +634,18 @@ export class ChatView extends Component {
 
         if (hasToolCalls) {
           // Run the tools
+          
           const toolResult = await this.runTools(resp.message);
           const appended = toolResult?.appended_messages || [];
           if (appended.length) {
             // Add tool messages to the conversation
             appended.forEach(tm => {
-              const toolMessage = { role: ROLES.TOOL, content: tm.content || '', name: tm.name || '', tool_call_id: tm.tool_call_id };
-              this.messages = [...(this.messages || []), toolMessage];
-              currentMessages = [...currentMessages, assistantMessage, ...appended]; // Include assistant message and tool results for next call
-            });
+                const toolMessage = { role: ROLES.TOOL, content: tm.content || '', name: tm.name || '', tool_call_id: tm.tool_call_id };
+                toolMessage._localId = `m_${Date.now()}_${Math.floor(Math.random()*1000)}`;
+                this.messages = [...(this.messages || []), toolMessage];
+                
+                currentMessages = [...currentMessages, assistantMessage, ...appended]; // Include assistant message and tool results for next call
+              });
             this.messageRenderer.render();
           } else {
             // No tool results, break the loop
@@ -507,7 +654,32 @@ export class ChatView extends Component {
         }
       }
 
+      // If the final streaming response produced no assistant content but tools appended
+      // created tool messages, request a final assistant turn to synthesize outputs.
+      try {
+        if (finalResponse && (!finalResponse.message || !String(finalResponse.message.content || '').trim())) {
+          const hasToolMsgs = Array.isArray(this.messages) && this.messages.some(m => m.role === ROLES.TOOL);
+          if (hasToolMsgs) {
+            
+            const follow = await this.callChat(this.messages, this.getTools());
+            
+            if (follow && follow.ok && follow.message) {
+              // Update the placeholder assistant message (it should be the last assistant placeholder)
+              const placeholderIndex = this.messages.findIndex(m => m._localId && String(m._localId).startsWith('m_') && m.role === ROLES.ASSISTANT && (!m.content || m.content === ''));
+              if (placeholderIndex !== -1) {
+                this.messages[placeholderIndex].content = follow.message.content || '';
+              } else {
+                this.messages = [...(this.messages || []), { role: follow.message.role || ROLES.ASSISTANT, content: follow.message.content || '' }];
+              }
+              finalResponse = follow;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('queryAssistant: follow-up assistant call failed', e);
+      }
       this.handleServerMutations(finalResponse);
+      
       this.messageRenderer.render();
       try { document.dispatchEvent(new CustomEvent(EVENTS.CHAT_UPDATED, { detail: { messages: this.messages.slice() } })); } catch (e) { console.warn('Failed to dispatch chat updated event after response:', e); }
     } catch (e) {

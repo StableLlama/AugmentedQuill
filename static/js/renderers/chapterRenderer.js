@@ -19,6 +19,10 @@ export class ChapterRenderer {
     if (titleInput) {
       titleInput.value = this.shellView.storyTitle || '';
     }
+    const titleDisplay = this.shellView.el?.querySelector('[data-ref="storyTitleDisplay"]');
+    if (titleDisplay) {
+      titleDisplay.textContent = this.shellView.storyTitle || 'Untitled Story';
+    }
   }
 
   /**
@@ -41,6 +45,10 @@ export class ChapterRenderer {
     if (toggleBtn) {
       toggleBtn.textContent = this.shellView.storySummaryExpanded ? '▼' : '▶';
     }
+    const summaryDisplay = this.shellView.el?.querySelector('[data-ref="storySummaryDisplay"]');
+    if (summaryDisplay) {
+      summaryDisplay.textContent = this.shellView.storySummary || '';
+    }
   }
 
   /**
@@ -51,6 +59,24 @@ export class ChapterRenderer {
     if (tagsInput) {
       tagsInput.value = this.shellView.storyTags || '';
     }
+    const chips = this.shellView.el?.querySelector('[data-ref="tagChips"]');
+    if (chips) {
+      chips.innerHTML = '';
+      const tags = (this.shellView.storyTags || '').split(',').map(t => t.trim()).filter(Boolean);
+      if (!tags.length) {
+        const placeholder = document.createElement('div');
+        placeholder.className = 'aq-empty';
+        placeholder.textContent = 'No tags';
+        chips.appendChild(placeholder);
+      } else {
+        tags.forEach(t => {
+          const el = document.createElement('span');
+          el.className = 'tag-chip';
+          el.textContent = t;
+          chips.appendChild(el);
+        });
+      }
+    }
   }
 
   /**
@@ -59,26 +85,31 @@ export class ChapterRenderer {
   renderChapterList() {
     const list = this.shellView.el?.querySelector('[data-chapter-list]');
     if (!list) return;
-
     if (this.shellView.chapters.length === 0) {
-      list.innerHTML = '<li class="text-stone-500 text-sm">No chapters yet</li>';
+      list.innerHTML = `
+        <div class="text-center py-10 text-stone-600">
+          <i data-lucide="file-text" class="mx-auto mb-2 opacity-50" style="width:32px;height:32px"></i>
+          <p class="text-sm">No chapters yet.</p>
+        </div>
+      `;
+      try { if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons(); } catch (_) {}
       return;
     }
 
-    list.innerHTML = this.shellView.chapters.map(chapter => `
-      <li class="flex items-center justify-between p-2 rounded hover:bg-stone-800 cursor-pointer ${chapter.id === this.shellView.activeId ? 'bg-stone-800' : ''}"
-          data-chapter-id="${chapter.id}" data-action="select-chapter">
-        <span class="text-stone-200 truncate">${this.escapeHtml(chapter.title || 'Untitled')}</span>
-        <button class="text-stone-400 hover:text-stone-200 p-1" data-action="delete-chapter" data-chapter-id="${chapter.id}" title="Delete Chapter">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="3,6 5,6 21,6"/>
-            <path d="M19,6v14a2,2 0 0,1-2,2H7a2,2 0 0,1-2-2V6m3,0V4a2,2 0 0,1,2-2h4a2,2 0 0,1,2,2v2"/>
-            <line x1="10" y1="11" x2="10" y2="17"/>
-            <line x1="14" y1="11" x2="14" y2="17"/>
-          </svg>
-        </button>
-      </li>
-    `).join('');
+    list.innerHTML = this.shellView.chapters.map(chapter => {
+      const active = chapter.id === this.shellView.activeId;
+      return `
+      <div class="group relative p-3 rounded-lg cursor-pointer transition-all border ${active ? 'bg-stone-800 border-indigo-500/50 shadow-sm' : 'bg-transparent border-transparent hover:bg-stone-800'}" data-chapter-id="${chapter.id}" data-action="select-chapter">
+        <div class="flex justify-between items-start">
+          <h3 class="font-medium text-sm mb-1 ${active ? 'text-indigo-400' : 'text-stone-300'}">${this.escapeHtml(chapter.title || 'Untitled Chapter')}</h3>
+          <button class="opacity-0 group-hover:opacity-100 p-1 text-stone-500 hover:text-red-400 transition-opacity" data-action="delete-chapter" data-chapter-id="${chapter.id}" title="Delete Chapter">
+            <i data-lucide="trash-2" style="width:14px;height:14px;vertical-align:middle"></i>
+          </button>
+        </div>
+        <p class="text-xs text-stone-500 line-clamp-2">${this.escapeHtml(chapter.summary || 'No summary available...')}</p>
+      </div>
+      `;
+    }).join('');
     // Refresh refs
     this.shellView._scanRefs();
   }

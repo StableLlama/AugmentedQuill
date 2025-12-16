@@ -321,7 +321,7 @@ export class EditorEvents {
             this.shellView.wrapSelection('`', '`');
             break;
           case 'heading':
-            this.shellView.insertHeading();
+            this.shellView.contentOperations.insertHeading(button.dataset.level || 1);
             break;
           case 'link':
             this.shellView.insertLink();

@@ -1,3 +1,55 @@
+.aq-header svg, .aq-header img, header svg, header img {
+  max-width: 2.25rem !important;
+  max-height: 2.25rem !important;
+  width: auto !important;
+  height: auto !important;
+}
+
+/* Cap icons inside the chat/right panel to avoid legacy large SVGs */
+#chat-panel svg, #chat-panel img, .aq-rightbar svg, .aq-rightbar img {
+  max-width: 2.25rem !important;
+  max-height: 2.25rem !important;
+  width: auto !important;
+  height: auto !important;
+}
+
+/* Ensure toolbar icons inside header center are properly sized */
+#editor-format-toolbar svg, #editor-format-toolbar i[data-lucide], #editor-center i[data-lucide], #editor-format-toolbar-global i[data-lucide] {
+  width: 1.25rem !important;
+  height: 1.25rem !important;
+}
+
+/* Make sure the center editor toolbar is visible and layered above content */
+#editor-center {
+  display: flex !important;
+  align-items: center;
+  gap: 0.75rem;
+  z-index: 45;
+}
+
+#editor-format-toolbar-global {
+  display: flex !important;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+#editor-format-toolbar-global button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0.5rem;
+  background: transparent;
+  border-radius: 6px;
+  color: var(--fg);
+}
+
+#editor-format-toolbar-global button:hover {
+  background: rgba(255,255,255,0.02);
+}
+
+/* Style for directly embedded local SVG icons */
+.lucide-img { display:inline-block; vertical-align:middle; width:1.25rem; height:1.25rem; margin-right:0.375rem; }
+.lucide-img svg { width:100%; height:100%; display:block; }
 /* Custom scrollbar for webkit */
 ::-webkit-scrollbar {
   width: 8px;
@@ -51,6 +103,184 @@ body { margin:0; font-family: 'Inter', system-ui, -apple-system, Segoe UI, Robot
 .aq-empty { color: var(--muted); font-size: 0.9rem; }
 .aq-sidebar-bottom { padding-top: 0.5rem; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; }
 
+/* Polished chapter card styles to match demo mockup */
+[data-chapter-list] .group {
+  display: block;
+  padding: 0.7rem 0.85rem;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  transition: background-color 140ms ease, box-shadow 140ms ease, transform 120ms ease;
+}
+[data-chapter-list] .group:hover {
+  background: rgba(255,255,255,0.02);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(2,6,23,0.6);
+}
+[data-chapter-list] .group .opacity-0 { opacity: 0; }
+[data-chapter-list] .group:hover .opacity-0,
+[data-chapter-list] .group .group-hover\\:opacity-100 { opacity: 1 !important; }
+[data-chapter-list] .group h3 {
+  margin: 0 0 0.15rem 0;
+  font-size: 0.95rem;
+  line-height: 1.15;
+  color: var(--fg);
+}
+[data-chapter-list] .group p { margin: 0; color: var(--muted); font-size: 0.78rem; }
+
+/* Active/selected chapter visual */
+[data-chapter-list] .group.bg-stone-800,
+[data-chapter-list] .group.active {
+  background: linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.00));
+  border-color: rgba(99,102,241,0.28);
+  box-shadow: 0 8px 24px rgba(2,6,23,0.55), inset 3px 0 0 rgba(99,102,241,0.18);
+}
+[data-chapter-list] .group.bg-stone-800 h3,
+[data-chapter-list] .group.active h3 { color: var(--accent); }
+
+/* delete button styles (small, subtle until hover) */
+[data-chapter-list] button[title="Delete Chapter"] {
+  border: none; background: transparent; padding: 4px; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; transition: color 120ms ease, background 120ms ease;
+}
+[data-chapter-list] button[title="Delete Chapter"]:hover { color: #fb7185; background: rgba(251,113,133,0.06); }
+
+/* clamp summary lines and make spacing match mock */
+[data-chapter-list] .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin-top: 0.35rem; }
+
+/* Story title & tags - polished */
+.aq-sidebar .story-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.aq-sidebar label[for="storyTitleInput"], .aq-sidebar label[for="storyTagsInput"] { color: var(--muted); font-size: 0.7rem; letter-spacing: 0.04em; text-transform: uppercase; }
+[data-ref="storyTitleInput"] {
+  font-size: 1.05rem;
+  font-weight: 600;
+  padding: 0.6rem 0.75rem;
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.00));
+  border: 1px solid rgba(255,255,255,0.03);
+  color: var(--fg);
+}
+[data-ref="storyTitleInput"]:focus { box-shadow: 0 6px 18px rgba(99,102,241,0.08); border-color: rgba(99,102,241,0.42); outline: none; }
+
+/* Tags input and chips */
+.tag-chips { display:flex; gap:0.4rem; flex-wrap:wrap; align-items:center; }
+.tag-chip { background: rgba(99,102,241,0.12); color: #c7d2fe; padding: 0.18rem 0.5rem; border-radius: 999px; font-size: 0.75rem; border: 1px solid rgba(99,102,241,0.12); }
+[data-ref="storyTagsInput"] {
+  padding: 0.45rem 0.6rem;
+  border-radius: 8px;
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.03);
+  color: var(--fg);
+}
+[data-ref="storyTagsInput"]::placeholder { color: #9ca3af; }
+
+/* Small helper under title for tag suggestions / meta */
+.story-meta-help { font-size: 0.75rem; color: var(--muted); margin-top: 0.25rem; }
+
+/* Story header styling to match mockup */
+[data-ref="storyTitleDisplay"] {
+  font-family: 'Merriweather', Georgia, serif;
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--fg);
+  line-height: 1.05;
+}
+[data-ref="storySummaryDisplay"] {
+  font-family: 'Merriweather', Georgia, serif;
+  font-style: italic;
+  color: var(--muted);
+  margin-top: 0.25rem;
+  font-size: 0.95rem;
+}
+
+/* Edit button icon sizing and placement */
+.aq-sidebar [data-action^="edit-story"] {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+}
+.aq-sidebar [data-action^="edit-story"] i[data-lucide] { width: 16px; height: 16px; }
+
+/* Ensure lucide placeholders render and size consistently */
+i[data-lucide] { display: inline-flex; align-items: center; justify-content: center; vertical-align: middle; }
+i[data-lucide] svg { display: block; width: 100%; height: 100%; max-width: 100%; max-height: 100%; }
+
+/* Default sizing for lucide icons: small, but overridable via inline style */
+i[data-lucide] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25em;
+  height: 1.25em;
+  max-width: 3rem;
+  max-height: 3rem;
+}
+
+/* Utility classes for larger icons when needed */
+.lucide-lg { width: 2rem !important; height: 2rem !important; }
+.lucide-xl { width: 3rem !important; height: 3rem !important; }
+
+/* Tag chips larger and more like mockup */
+.tag-chip { font-size: 0.85rem; padding: 0.28rem 0.6rem; color: #dfe7ff; border: 1px solid rgba(99,102,241,0.18); background: rgba(99,102,241,0.06); }
+
+/* Story input styling when editing inline */
+[data-ref="storyTitleInput"] { font-family: 'Merriweather', Georgia, serif; font-size: 1.25rem; font-weight: 700; }
+[data-ref="storySummaryInput"] { font-family: 'Merriweather', Georgia, serif; font-style: italic; font-size: 1rem; }
+[data-ref="storyTagsInput"] { font-size: 0.95rem; }
+
+/* Chat UI polish */
+.aq-rightbar { background: linear-gradient(180deg, rgba(6,7,12,0.98), rgba(6,7,12,0.95)); border: 1px solid rgba(255,255,255,0.03); }
+.aq-rightbar .p-4 { padding: 1rem; }
+.aq-rightbar h3 { margin:0; font-size:0.95rem; color: var(--fg); }
+.aq-rightbar select[data-ref="modelSelect"] { background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.03); color: var(--fg); padding: 0.45rem 0.6rem; border-radius: 8px; }
+
+.aq-chat { background: transparent; padding: 0.75rem; }
+.aq-empty { color: var(--muted); }
+
+.aq-bubble { max-width: 78%; padding: 0.6rem 0.75rem; border-radius: 12px; margin-bottom: 0.6rem; box-shadow: 0 6px 18px rgba(2,6,23,0.5); }
+.aq-bubble .aq-bubble-head { font-size: 0.7rem; color: var(--muted); margin-bottom: 0.35rem; }
+.aq-bubble .aq-bubble-body { font-size: 0.92rem; color: var(--fg); }
+
+.aq-bubble.assistant { background: linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.00)); border: 1px solid rgba(82,82,91,0.08); align-self: flex-start; }
+.aq-bubble.user { background: linear-gradient(180deg, rgba(99,102,241,0.14), rgba(99,102,241,0.08)); border: 1px solid rgba(99,102,241,0.22); color: #eef2ff; align-self: flex-end; }
+
+.aq-bubble.actions { display:flex; gap:0.4rem; justify-content:flex-end; }
+.aq-bubble .aq-bubble-actions button { background: transparent; border: 1px solid rgba(255,255,255,0.03); padding: 0.35rem 0.5rem; border-radius: 6px; font-size: 0.8rem; }
+
+/* Chat input area */
+.aq-chat-input-row { gap: 0.5rem; align-items: flex-end; }
+.aq-chat-input-row textarea { border-radius: 10px; padding: 0.6rem; min-height: 72px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.03); }
+.aq-chat .send-row { display:flex; gap:0.5rem; justify-content:flex-end; margin-top:0.5rem; }
+.aq-chat .send-row button { padding: 0.5rem 0.8rem; border-radius: 8px; }
+
+/* Ensure send icon sizing and hit target */
+#chat-panel [data-ref="send"] { min-width: 36px; min-height: 36px; display: inline-flex; align-items: center; justify-content: center; }
+#chat-panel [data-ref="send"] svg { width: 18px; height: 18px; display: block; }
+
+/* Regenerate button styling to match demo */
+[data-ref="regenerateArea"] button[data-ref="regenerate"] { border: 1px dashed rgba(255,255,255,0.04); padding: 6px 10px; border-radius: 8px; }
+[data-ref="regenerateArea"] button[data-ref="regenerate"] svg { width: 12px; height: 12px; }
+
+/* Message list specifics to emulate demo behavior */
+.aq-rightbar .group { margin-bottom: 0.6rem; }
+.aq-rightbar .flex-shrink-0 { flex-shrink:0; }
+.aq-rightbar .rounded-lg { border-radius: 12px; }
+.aq-rightbar .prose { color: var(--fg); }
+
+/* Hover action helpers: support Tailwind-like classnames used in renderer */
+.group .group-hover\:opacity-100 { opacity: 0; transition: opacity 140ms ease; }
+.group:hover .group-hover\:opacity-100 { opacity: 1 !important; }
+.opacity-0 { opacity: 0; }
+
+/* Tag chips and avatars */
+.tag-chip { display:inline-flex; align-items:center; justify-content:center; }
+
+
+
+
 /* Story summary and tags sections */
 .aq-story-summary-section { border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem; margin-bottom: 0.5rem; }
 .aq-story-summary-header { display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.5rem; }
@@ -78,6 +308,14 @@ body { margin:0; font-family: 'Inter', system-ui, -apple-system, Segoe UI, Robot
 }
 .chapter-summary-section { padding: 0 0.5rem 0.5rem; }
 .summary-edit-container { display:block; }
+
+/* Utility: clamp two lines of text */
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 .chapter-summary-input {
   display: block;
   min-height: calc(1.2em * 3 + 0.8rem);
@@ -261,6 +499,45 @@ textarea[data-ref="rawEditor"] {
 .aq-tui-wrap .toastui-editor-ww-container {
   border-radius: 6px;
 }
+
+.aq-external-tui-toolbar {
+  display: flex !important;
+  gap: 0.35rem !important;
+  align-items: center !important;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.03);
+  padding: 0.15rem 0.25rem;
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(2,6,23,0.4);
+  transform: translateY(0);
+}
+.aq-external-tui-toolbar button {
+  background: transparent !important;
+  border: none !important;
+  padding: 0.25rem 0.5rem !important;
+  margin: 0 !important;
+  color: var(--fg) !important;
+}
+.aq-external-tui-toolbar .toastui-editor-toolbar-separator { display: none !important; }
+.aq-external-tui-toolbar {
+  display: flex !important;
+  gap: 0.35rem !important;
+  align-items: center !important;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.03);
+  padding: 0.15rem 0.25rem;
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(2,6,23,0.4);
+  transform: translateY(0);
+}
+.aq-external-tui-toolbar button {
+  background: transparent !important;
+  border: none !important;
+  padding: 0.25rem 0.5rem !important;
+  margin: 0 !important;
+  color: var(--fg) !important;
+}
+.aq-external-tui-toolbar .toastui-editor-toolbar-separator { display: none !important; }
 
 /* Right chat sidebar */
 .aq-rightbar {
