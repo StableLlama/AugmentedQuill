@@ -1,4 +1,5 @@
 import { UI_STRINGS } from '../constants/editorConstants.js';
+import { renderTemplate } from '../utils/templateLoader.js';
 
 export class ChapterRenderer {
   /**
@@ -61,14 +62,11 @@ export class ChapterRenderer {
     }
     const chips = this.shellView.el?.querySelector('[data-ref="tagChips"]');
     if (chips) {
-      chips.innerHTML = '';
       const tags = (this.shellView.storyTags || '').split(',').map(t => t.trim()).filter(Boolean);
       if (!tags.length) {
-        const placeholder = document.createElement('div');
-        placeholder.className = 'aq-empty';
-        placeholder.textContent = 'No tags';
-        chips.appendChild(placeholder);
+        chips.innerHTML = '<div class="aq-empty">No tags</div>';
       } else {
+        chips.innerHTML = '';
         tags.forEach(t => {
           const el = document.createElement('span');
           el.className = 'tag-chip';
@@ -82,34 +80,31 @@ export class ChapterRenderer {
   /**
    * Renders the chapter list.
    */
-  renderChapterList() {
+  async renderChapterList() {
     const list = this.shellView.el?.querySelector('[data-chapter-list]');
     if (!list) return;
     if (this.shellView.chapters.length === 0) {
-      list.innerHTML = `
-        <div class="text-center py-10 text-stone-600">
-          <i data-lucide="file-text" class="mx-auto mb-2 opacity-50" style="width:32px;height:32px"></i>
-          <p class="text-sm">No chapters yet.</p>
-        </div>
-      `;
+      const tpl = await renderTemplate('chapter-empty');
+      list.innerHTML = '';
+      list.insertAdjacentHTML('beforeend', tpl);
       try { if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons(); } catch (_) {}
       return;
     }
 
-    list.innerHTML = this.shellView.chapters.map(chapter => {
+    // Build list using templates
+    list.innerHTML = '';
+    // Render each chapter via template for clarity and reuse
+    for (const chapter of this.shellView.chapters) {
       const active = chapter.id === this.shellView.activeId;
-      return `
-      <div class="group relative p-3 rounded-lg cursor-pointer transition-all border ${active ? 'bg-stone-800 border-indigo-500/50 shadow-sm' : 'bg-transparent border-transparent hover:bg-stone-800'}" data-chapter-id="${chapter.id}" data-action="select-chapter">
-        <div class="flex justify-between items-start">
-          <h3 class="font-medium text-sm mb-1 ${active ? 'text-indigo-400' : 'text-stone-300'}">${this.escapeHtml(chapter.title || 'Untitled Chapter')}</h3>
-          <button class="opacity-0 group-hover:opacity-100 p-1 text-stone-500 hover:text-red-400 transition-opacity" data-action="delete-chapter" data-chapter-id="${chapter.id}" title="Delete Chapter">
-            <i data-lucide="trash-2" style="width:14px;height:14px;vertical-align:middle"></i>
-          </button>
-        </div>
-        <p class="text-xs text-stone-500 line-clamp-2">${this.escapeHtml(chapter.summary || 'No summary available...')}</p>
-      </div>
-      `;
-    }).join('');
+      const tpl = await renderTemplate('chapter-item', {
+        id: chapter.id,
+        wrapperClass: active ? 'bg-stone-800 border-indigo-500/50 shadow-sm' : 'bg-transparent border-transparent hover:bg-stone-800',
+        titleClass: active ? 'text-indigo-400' : 'text-stone-300',
+        title: this.escapeHtml(chapter.title || 'Untitled Chapter'),
+        summary: this.escapeHtml(chapter.summary || 'No summary available...')
+      });
+      list.insertAdjacentHTML('beforeend', tpl);
+    }
     // Refresh refs
     this.shellView._scanRefs();
   }

@@ -1,3 +1,5 @@
+
+
 export class FlowMode {
   /**
    * Manages Flow mode for AI-assisted writing.
@@ -36,6 +38,7 @@ export class FlowMode {
       rightBox.innerHTML = this.shellView.flowRight || loadingText;
       rightBox.onclick = () => this._flowPick('right');
     }
+    
     const disabled = this.shellView.flowBusy || !this.shellView.flowActive;
     ['flow-discard', 'flow-redo'].forEach(sel => {
       const btn = this.shellView.el.querySelector(`[data-action="${sel}"]`);

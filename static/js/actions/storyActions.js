@@ -21,7 +21,15 @@ export class StoryActions {
     if (!select) return;
     const models = Array.isArray(this.shellView.storyModels) ? this.shellView.storyModels : [];
     const current = this.shellView.storyCurrentModel || '';
-    select.innerHTML = models.map(m => `<option value="${m}" ${m === current ? 'selected' : ''}>${m}</option>`).join('');
+    // Build options without using innerHTML to avoid HTML injection and simplify testing
+    select.innerHTML = '';
+    models.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m;
+      if (m === current) opt.selected = true;
+      opt.textContent = m;
+      select.appendChild(opt);
+    });
   }
 
   /**

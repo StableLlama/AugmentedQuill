@@ -1,5 +1,6 @@
 import { fetchJSON, API } from './utils/utils.js';
 import { Component } from './components/component.js';
+import { renderTemplate } from './utils/templateLoader.js';
 
 /**
  * Settings Page Component
@@ -291,17 +292,18 @@ export class ModelsEditor extends Component {
   /**
    * Render models list
    */
-  renderModels() {
+  async renderModels() {
     const container = this.el?.querySelector('[data-models-list]');
     if (!container) return;
 
     // Compact provider cards for left column; detailed config is rendered on the right
-    container.innerHTML = this.models.map((m, idx) => {
+    container.innerHTML = '';
+    for (let idx = 0; idx < this.models.length; idx++) {
+      const m = this.models[idx];
       const isSelected = this.selected_name === m.name;
       const shortBase = (m.base_url || m.baseUrl || '').replace(/^https?:\/\//, '').slice(0, 30);
       const endpointOk = m.endpoint_ok === true;
       const modelAvailable = m.remote_model && m.remote_models && m.remote_models.includes(m.remote_model);
-      // usage tags: prefer explicit uses/tags/purposes arrays
       const uses = Array.isArray(m.uses) ? m.uses : (Array.isArray(m.tags) ? m.tags : (Array.isArray(m.purposes) ? m.purposes : []));
       const tagHtml = (uses || []).map(u => {
         const key = (''+u).toLowerCase();
@@ -312,25 +314,20 @@ export class ModelsEditor extends Component {
 
       const statusTitle = `Endpoint: ${endpointOk ? 'OK' : 'Unknown'}\nModel: ${modelAvailable ? 'available' : 'not found'}`;
       const modelLabel = this.escapeHtml(m.remote_model || m.model || '');
+      const statusHtml = endpointOk ? '<span class="w-3 h-3 rounded-full bg-green-500 inline-block"></span>' : '<span class="w-3 h-3 rounded-full bg-amber-400 inline-block"></span>';
 
-      return (`
-        <div data-model-index="${idx}" class="p-3 rounded-lg cursor-pointer transition ${isSelected ? 'bg-indigo-900/20 border border-indigo-500/50' : 'bg-stone-800 border border-stone-700 hover:border-stone-600'}">
-          <div class="flex items-start justify-between">
-            <div>
-              <div class="text-sm font-medium text-stone-200">${this.escapeHtml(m.name || '(unnamed)')}</div>
-              <div class="text-xs text-stone-500 mt-1">${shortBase || 'N/A'}</div>
-            </div>
-            <div class="flex items-center space-x-2">
-              <div title="${this.escapeHtml(statusTitle)}">${endpointOk ? '<span class="w-3 h-3 rounded-full bg-green-500 inline-block"></span>' : '<span class="w-3 h-3 rounded-full bg-amber-400 inline-block"></span>'}</div>
-            </div>
-          </div>
-          <div class="mt-3">
-            <div class="text-xs text-stone-400 mb-2">Model: <span class="text-stone-200">${modelLabel}</span></div>
-            <div class="flex items-center">${tagHtml}</div>
-          </div>
-        </div>
-      `);
-    }).join('');
+      const tpl = await renderTemplate('model-item', {
+        idx,
+        wrapperClass: isSelected ? 'bg-indigo-900/20 border border-indigo-500/50' : 'bg-stone-800 border border-stone-700 hover:border-stone-600',
+        name: this.escapeHtml(m.name || '(unnamed)'),
+        shortBase: shortBase || 'N/A',
+        statusTitle: this.escapeHtml(statusTitle),
+        statusHtml: statusHtml,
+        modelLabel: modelLabel,
+        tagHtml: tagHtml
+      });
+      container.insertAdjacentHTML('beforeend', tpl);
+    }
 
     this.renderNameIssues();
     this.renderSaveButton();
@@ -341,7 +338,7 @@ export class ModelsEditor extends Component {
   /**
    * Render the right-hand provider configuration panel for the selected model
    */
-  renderProviderConfig() {
+  async renderProviderConfig() {
     if (!this.el) return;
     const container = this.el.querySelector('#provider-config');
     if (!container) return;
@@ -356,109 +353,74 @@ export class ModelsEditor extends Component {
     const endpointOk = m.endpoint_ok === true;
     const modelAvailable = m.remote_model && Array.isArray(m.remote_models) && m.remote_models.includes(m.remote_model);
 
-    container.innerHTML = `
-      <div class="space-y-6 animate-in slide-in-from-right-4 duration-200">
-        <div class="flex justify-between items-start">
-          <div>
-            <h3 class="text-xl font-bold text-stone-200">${this.escapeHtml(m.name)}</h3>
-            <p class="text-xs text-stone-500 mt-1">ID: ${this.escapeHtml(m.id || m.name || '')}</p>
-          </div>
-          <div class="flex space-x-2 items-center">
-            <button id="set-active-provider" class="px-3 py-1 rounded bg-stone-800 text-stone-200">${active ? 'Active' : 'Set Active'}</button>
-            <button id="delete-provider" class="p-2 text-stone-600 hover:text-red-400 rounded"><i data-lucide="trash-2" style="width:16px;height:16px"></i></button>
-          </div>
-        </div>
+    const endpoint_html = endpointOk ? '<span class="inline-flex items-center gap-2 text-green-400"><span class="w-2 h-2 rounded-full bg-green-500 inline-block"></span>Endpoint OK</span>' : '<span class="inline-flex items-center gap-2 text-amber-400"><span class="w-2 h-2 rounded-full bg-stone-600 inline-block"></span>Endpoint Unknown</span>';
+    const model_available_html = modelAvailable ? '<span class="text-green-400">Model available</span>' : '<span class="text-amber-400">Model not found</span>';
 
-        <div class="space-y-4">
-          <div class="space-y-1">
-            <label class="text-xs font-medium text-stone-500 uppercase">Name</label>
-            <input id="prov-name" value="${this.escapeHtml(m.name)}" class="w-full bg-stone-950 border border-stone-700 rounded p-2 text-sm text-stone-200" />
-          </div>
+    const tpl = await renderTemplate('provider-config', {
+      name: this.escapeHtml(m.name),
+      id: this.escapeHtml(m.id || m.name || ''),
+      activeText: active ? 'Active' : 'Set Active',
+      prov_name: this.escapeHtml(m.name),
+      prov_base: this.escapeHtml(m.base_url || m.baseUrl || ''),
+      prov_key: this.escapeHtml(m.api_key || m.apiKey || ''),
+      endpoint_html: endpoint_html,
+      model_available_html: model_available_html,
+      prov_timeout: m.timeout_s || m.timeout || 60,
+      prov_temperature: (typeof m.temperature === 'number' ? m.temperature : (m.temperature || 0.7)),
+      prov_top_p: (typeof m.top_p === 'number' ? m.top_p : (m.top_p || 1.0)),
+      prov_max_tokens: m.max_tokens || m.maxTokens || 2048,
+      prov_system_prompt: this.escapeHtml(m.system_prompt || m.systemPrompt || ''),
+      prov_continuation_prompt: this.escapeHtml(m.continuation_prompt || m.continuationPrompt || ''),
+      prov_expert_hidden: (m._expertVisible ? '' : 'hidden')
+    });
 
-          <div class="space-y-1">
-            <label class="text-xs font-medium text-stone-500 uppercase">Base URL</label>
-            <input id="prov-base" value="${this.escapeHtml(m.base_url || m.baseUrl || '')}" class="w-full bg-stone-950 border border-stone-700 rounded p-2 text-sm text-stone-200" />
-          </div>
+    container.innerHTML = tpl;
+    const node = container.firstElementChild;
+    // Populate model selector container without string concatenation
+    const modelContainer = node.querySelector('#prov-model-container');
+    if (modelContainer) {
+      modelContainer.innerHTML = '';
+      if (Array.isArray(m.remote_models) && m.remote_models.length) {
+        const wrap = document.createElement('div');
+        wrap.className = 'flex gap-2';
+        const sel = document.createElement('select');
+        sel.id = 'prov-modelid';
+        sel.className = 'flex-1 bg-stone-950 border border-stone-700 rounded p-2 text-sm text-stone-200';
+        m.remote_models.forEach(rm => {
+          const opt = document.createElement('option');
+          opt.value = rm;
+          opt.textContent = rm;
+          if (rm === (m.remote_model || m.model || '')) opt.selected = true;
+          sel.appendChild(opt);
+        });
+        const btn = document.createElement('button');
+        btn.id = 'prov-load-models';
+        btn.className = 'px-3 py-1 bg-stone-800 text-stone-200 rounded';
+        btn.textContent = 'Load';
+        wrap.appendChild(sel);
+        wrap.appendChild(btn);
+        modelContainer.appendChild(wrap);
+      } else {
+        const inp = document.createElement('input');
+        inp.id = 'prov-modelid';
+        inp.value = this.escapeHtml(m.remote_model || m.model || '');
+        inp.className = 'w-full bg-stone-950 border border-stone-700 rounded p-2 text-sm text-stone-200';
+        modelContainer.appendChild(inp);
+      }
+    }
+    try { if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons(); } catch (_) {}
 
-          <div class="space-y-1">
-            <label class="text-xs font-medium text-stone-500 uppercase">API Key</label>
-            <input id="prov-key" value="${this.escapeHtml(m.api_key || m.apiKey || '')}" type="password" class="w-full bg-stone-950 border border-stone-700 rounded p-2 text-sm text-stone-200" />
-          </div>
-
-          <div class="flex items-center gap-4 text-sm text-stone-400">
-            <div>${endpointOk ? '<span class="inline-flex items-center gap-2 text-green-400"><span class="w-2 h-2 rounded-full bg-green-500 inline-block"></span>Endpoint OK</span>' : '<span class="inline-flex items-center gap-2 text-amber-400"><span class="w-2 h-2 rounded-full bg-stone-600 inline-block"></span>Endpoint Unknown</span>'}</div>
-            <div>${modelAvailable ? '<span class="text-green-400">Model available</span>' : '<span class="text-amber-400">Model not found</span>'}</div>
-          </div>
-
-          <div>
-            <label class="text-xs font-medium text-stone-500 uppercase">Model</label>
-            ${Array.isArray(m.remote_models) && m.remote_models.length ? `
-              <div class="flex gap-2">
-                <select id="prov-modelid" class="flex-1 bg-stone-950 border border-stone-700 rounded p-2 text-sm text-stone-200">
-                  ${m.remote_models.map(rm => `<option value="${this.escapeHtml(rm)}" ${rm === (m.remote_model || m.model || '') ? 'selected' : ''}>${this.escapeHtml(rm)}</option>`).join('')}
-                </select>
-                <button id="prov-load-models" class="px-3 py-1 bg-stone-800 text-stone-200 rounded">Load</button>
-              </div>
-            ` : `
-              <input id="prov-modelid" value="${this.escapeHtml(m.remote_model || m.model || '')}" class="w-full bg-stone-950 border border-stone-700 rounded p-2 text-sm text-stone-200" />
-            `}
-          </div>
-
-          <div class="space-y-1 mt-3">
-            <label class="text-xs font-medium text-stone-500 uppercase">Timeout (s)</label>
-            <input id="prov-timeout" type="number" value="${m.timeout_s || m.timeout || 60}" class="w-full bg-stone-950 border border-stone-700 rounded p-2 text-sm text-stone-200" />
-          </div>
-
-          <div class="pt-4 border-t border-stone-800">
-            <h4 class="text-sm font-semibold text-stone-300">Model Parameters</h4>
-            <div class="mt-3 space-y-3">
-              <div>
-                <label class="text-xs text-stone-500">Temperature: <span class="text-stone-300">${typeof m.temperature === 'number' ? m.temperature : (m.temperature || 0.7)}</span></label>
-                <input id="prov-temperature" type="range" min="0" max="1" step="0.01" value="${typeof m.temperature === 'number' ? m.temperature : (m.temperature || 0.7)}" class="w-full" />
-              </div>
-              <div>
-                <label class="text-xs text-stone-500">Top-p: <span class="text-stone-300">${typeof m.top_p === 'number' ? m.top_p : (m.top_p || 1.0)}</span></label>
-                <input id="prov-top-p" type="range" min="0" max="1" step="0.01" value="${typeof m.top_p === 'number' ? m.top_p : (m.top_p || 1.0)}" class="w-full" />
-              </div>
-              <div>
-                <label class="text-xs text-stone-500">Max tokens</label>
-                <input id="prov-max-tokens" type="number" min="1" value="${m.max_tokens || m.maxTokens || 2048}" class="w-full bg-stone-950 border border-stone-700 rounded p-2 text-sm text-stone-200" />
-              </div>
-            </div>
-
-            <div class="mt-3">
-              <button id="prov-toggle-expert" class="px-2 py-1 text-sm bg-stone-800 text-stone-200 rounded">Expert options</button>
-              <div id="prov-expert" class="mt-3 hidden">
-                <div class="space-y-3">
-                  <div>
-                    <label class="text-xs text-stone-500">System prompt override</label>
-                    <textarea id="prov-system-prompt" rows="4" class="w-full bg-stone-950 border border-stone-700 rounded p-2 text-sm text-stone-200">${this.escapeHtml(m.system_prompt || m.systemPrompt || '')}</textarea>
-                  </div>
-                  <div>
-                    <label class="text-xs text-stone-500">Continuation prompt</label>
-                    <textarea id="prov-continuation-prompt" rows="3" class="w-full bg-stone-950 border border-stone-700 rounded p-2 text-sm text-stone-200">${this.escapeHtml(m.continuation_prompt || m.continuationPrompt || '')}</textarea>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    `;
-
-    // Wire interactions
-    const setActiveBtn = container.querySelector('#set-active-provider');
-    const deleteBtn = container.querySelector('#delete-provider');
-    const nameInp = container.querySelector('#prov-name');
-    const typeSel = container.querySelector('#prov-type');
-    const baseInp = container.querySelector('#prov-base');
-    const keyInp = container.querySelector('#prov-key');
-    // test button removed (not functional)
-    const modelIdInp = container.querySelector('#prov-modelid');
-    const timeoutInp = container.querySelector('#prov-timeout');
-    const loadModelsBtn = container.querySelector('#prov-load-models');
-    const toggleExpertBtn = container.querySelector('#prov-toggle-expert');
-    const expertDiv = container.querySelector('#prov-expert');
+    const setActiveBtn = node.querySelector('#set-active-provider');
+    const deleteBtn = node.querySelector('#delete-provider');
+    const nameInp = node.querySelector('#prov-name');
+    const typeSel = node.querySelector('#prov-type');
+    const baseInp = node.querySelector('#prov-base');
+    const keyInp = node.querySelector('#prov-key');
+    const modelIdInp = node.querySelector('#prov-modelid');
+    const timeoutInp = node.querySelector('#prov-timeout');
+    const loadModelsBtn = node.querySelector('#prov-load-models');
+    const toggleExpertBtn = node.querySelector('#prov-toggle-expert');
+    const expertDiv = node.querySelector('#prov-expert');
 
     if (setActiveBtn) setActiveBtn.addEventListener('click', () => {
       this.selected_name = m.name;
@@ -476,7 +438,6 @@ export class ModelsEditor extends Component {
 
     const updateField = (field, val) => {
       if (!this.models[idx]) return;
-      // normalize keys to match stored object
       if (field === 'name') this.models[idx].name = val;
       else if (field === 'provider') this.models[idx].provider = val;
       else if (field === 'base_url') this.models[idx].base_url = val;
@@ -488,7 +449,6 @@ export class ModelsEditor extends Component {
       else if (field === 'max_tokens') this.models[idx].max_tokens = Number(val) || 0;
       else if (field === 'system_prompt') this.models[idx].system_prompt = val;
       else if (field === 'continuation_prompt') this.models[idx].continuation_prompt = val;
-      // Changing connection-related fields should reset endpoint check
       if (['base_url','api_key','timeout_s'].includes(field)) {
         this.models[idx].endpoint_ok = undefined;
       }
@@ -505,17 +465,15 @@ export class ModelsEditor extends Component {
     }
     if (timeoutInp) timeoutInp.addEventListener('input', (e)=> updateField('timeout_s', e.target.value));
 
-    // Advanced fields
-    const tempInp = container.querySelector('#prov-temperature');
-    const topPInp = container.querySelector('#prov-top-p');
-    const maxTokInp = container.querySelector('#prov-max-tokens');
-    const sysPrompt = container.querySelector('#prov-system-prompt');
-    const contPrompt = container.querySelector('#prov-continuation-prompt');
+    const tempInp = node.querySelector('#prov-temperature');
+    const topPInp = node.querySelector('#prov-top-p');
+    const maxTokInp = node.querySelector('#prov-max-tokens');
+    const sysPrompt = node.querySelector('#prov-system-prompt');
+    const contPrompt = node.querySelector('#prov-continuation-prompt');
 
     if (tempInp) tempInp.addEventListener('input', (e)=> {
       const v = parseFloat(e.target.value);
       updateField('temperature', v);
-      // update label nearby by re-rendering only provider config
       this.renderProviderConfig();
     });
     if (topPInp) topPInp.addEventListener('input', (e)=> {
@@ -526,8 +484,6 @@ export class ModelsEditor extends Component {
     if (maxTokInp) maxTokInp.addEventListener('input', (e)=> updateField('max_tokens', e.target.value));
     if (sysPrompt) sysPrompt.addEventListener('input', (e)=> updateField('system_prompt', e.target.value));
     if (contPrompt) contPrompt.addEventListener('input', (e)=> updateField('continuation_prompt', e.target.value));
-
-    // testBtn handler removed
 
     if (loadModelsBtn) loadModelsBtn.addEventListener('click', async () => {
       await this.loadRemoteModels(idx);
@@ -555,39 +511,41 @@ export class ModelsEditor extends Component {
   /**
    * Render project list
    */
-  renderProjectList() {
+  async renderProjectList() {
     const listEl = this.el?.querySelector('[data-project-list]');
     if (!listEl) return;
 
     if (!this.available_projects || this.available_projects.length === 0) {
-        listEl.innerHTML = `<div class="aq-tip">No projects found under the built-in projects folder.</div>`;
-        return;
+      listEl.innerHTML = '<div class="aq-tip">No projects found under the built-in projects folder.</div>';
+      return;
     }
-    listEl.innerHTML = this.available_projects.map(ap => {
+    listEl.innerHTML = '';
+    for (const ap of this.available_projects) {
       const isActive = ap.name === this.current_project;
       const updated = ap.updatedAt || ap.updated_at || '';
       const when = updated ? `Last edited: ${new Date(updated).toLocaleDateString()}` : '';
-      return (`
-        <div class="group flex items-center justify-between p-4 rounded-lg border transition-all ${isActive ? 'bg-indigo-900/20 border-indigo-500/50' : 'bg-stone-800 border-stone-700 hover:border-stone-600'}">
-          <div class="flex items-center space-x-4">
-            <div class="w-2 h-12 rounded-full ${isActive ? 'bg-indigo-500' : 'bg-stone-600'}"></div>
-            <div>
-              <div class="flex items-center space-x-2">
-                <h4 class="font-bold text-stone-200">${this.escapeHtml(ap.name)}</h4>
-                ${!ap.is_valid ? `<span class="text-xs text-yellow-400">(init)</span>` : ''}
-              </div>
-              <p class="text-xs text-stone-500 mt-1">${when}</p>
-            </div>
-          </div>
-          <div class="flex items-center space-x-3">
-            ${!isActive ? `<button type="button" class="px-3 py-1 bg-stone-700 text-stone-200 rounded text-sm" onclick="window.app.modelsEditor.selectByName('${this.escapeHtml(ap.name).replace(/'/g, "\\'")}')">Open</button>` : `<span class="text-xs font-medium text-indigo-400 bg-indigo-950/50 px-2 py-1 rounded">Active</span>`}
-            <button type="button" class="p-2 text-stone-600 hover:text-red-400 hover:bg-red-950/30 rounded transition-colors" onclick="window.app.modelsEditor.deleteProject('${this.escapeHtml(ap.name).replace(/'/g, "\\'")}')" title="Delete">
-              <i data-lucide="trash-2" style="width:14px;height:14px"></i>
-            </button>
-          </div>
-        </div>
-      `);
-    }).join('');
+      const wrapperClass = isActive ? 'bg-indigo-900/20 border-indigo-500/50' : 'bg-stone-800 border-stone-700 hover:border-stone-600';
+      const accentClass = isActive ? 'bg-indigo-500' : 'bg-stone-600';
+      const initBadge = !ap.is_valid ? '<span class="text-xs text-yellow-400">(init)</span>' : '';
+      const openButtonHtml = !isActive ? `<button type="button" class="px-3 py-1 bg-stone-700 text-stone-200 rounded text-sm" data-action="open-project" data-project-name="${this.escapeHtml(ap.name).replace(/'/g, "\\'")}">Open</button>` : `<span class="text-xs font-medium text-indigo-400 bg-indigo-950/50 px-2 py-1 rounded">Active</span>`;
+
+      const tpl = await renderTemplate('project-item', {
+        wrapperClass,
+        accentClass,
+        name: this.escapeHtml(ap.name),
+        nameEscaped: this.escapeHtml(ap.name).replace(/'/g, "\\'"),
+        initBadge,
+        when,
+        openButtonHtml
+      });
+      listEl.insertAdjacentHTML('beforeend', tpl);
+      const node = listEl.lastElementChild;
+      // wire buttons
+      const openBtn = node.querySelector('[data-action="open-project"]');
+      if (openBtn) openBtn.addEventListener('click', () => this.selectByName(ap.name));
+      const delBtn = node.querySelector('[data-action="delete-project"]');
+      if (delBtn) delBtn.addEventListener('click', () => this.deleteProject(ap.name));
+    }
   }
 
   /**
@@ -1073,20 +1031,34 @@ export class ModelsEditor extends Component {
     container.style.display = hasIssues ? 'block' : 'none';
 
     if (!hasIssues) {
-        container.innerHTML = '';
-        return;
+      container.innerHTML = '';
+      return;
     }
 
     const emptyName = this.hasEmptyName();
     const duplicates = this.duplicateNamesList();
 
-    container.innerHTML = `
-        <strong>Model name issues:</strong>
-        <ul style="margin:0.5rem 0 0 1rem;">
-            ${emptyName ? `<li>Each model must have a non-empty name.</li>` : ''}
-            ${duplicates.map(dn => `<li>Duplicate name: <code>${this.escapeHtml(dn)}</code></li>`).join('')}
-        </ul>
-    `;
+    // Build the issues list using DOM nodes to avoid string concatenation
+    container.innerHTML = '';
+    const strong = document.createElement('strong');
+    strong.textContent = 'Model name issues:';
+    container.appendChild(strong);
+    const ul = document.createElement('ul');
+    ul.style.margin = '0.5rem 0 0 1rem';
+    if (emptyName) {
+      const li = document.createElement('li');
+      li.textContent = 'Each model must have a non-empty name.';
+      ul.appendChild(li);
+    }
+    duplicates.forEach(dn => {
+      const li = document.createElement('li');
+      li.textContent = 'Duplicate name: ';
+      const code = document.createElement('code');
+      code.textContent = dn;
+      li.appendChild(code);
+      ul.appendChild(li);
+    });
+    container.appendChild(ul);
   }
 
   renderSaveButton() {

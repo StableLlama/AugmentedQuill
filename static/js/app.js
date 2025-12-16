@@ -8,6 +8,7 @@ import { ShellView } from './editor.js';
 import { registry } from './components/component.js';
 import { ChatView } from './chat.js';
 
+
 // Global Variables
 let isSidebarOpen = false;
 let isChatOpen = true;

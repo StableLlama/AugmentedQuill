@@ -17,7 +17,7 @@ export class ModelSelector {
   render() {
     const sel = this.chatView.$refs.modelSelect;
     if (!sel) return;
-    sel.innerHTML = '';
+      sel.innerHTML = '';
     const placeholder = document.createElement('option');
     placeholder.value = '';
     placeholder.textContent = this.chatView.models.length ? UI_STRINGS.CHOOSE_MODEL : UI_STRINGS.NO_MODELS;
