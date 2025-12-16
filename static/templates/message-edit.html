@@ -4,7 +4,7 @@
   </div>
   <div class="flex-1 max-w-[85%] relative">
     <div class="bg-stone-800 border border-stone-600 rounded-lg p-3 shadow-lg">
-      <textarea class="w-full bg-stone-900 text-stone-200 text-sm p-2 rounded border border-stone-700 focus:outline-none min-h-[100px]" data-editarea>{{editBuffer}}</textarea>
+      <textarea class="w-full bg-stone-900 text-stone-200 text-sm p-2 rounded border border-stone-700 focus:outline-none min-h-[100px]" data-editarea data-msg-id="{{msgId}}">{{editBuffer}}</textarea>
       <div class="flex justify-end space-x-2 mt-2">
         <button class="p-1 text-stone-400 hover:text-stone-200" data-action="cancel-edit" data-msg-id="{{msgId}}"><i data-lucide="x"></i></button>
         <button class="p-1 text-emerald-500 hover:text-emerald-400" data-action="save-edit" data-msg-id="{{msgId}}"><i data-lucide="save"></i></button>

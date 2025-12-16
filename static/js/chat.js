@@ -1,7 +1,6 @@
 import { fetchJSON, getJSONOrEmpty, API } from './utils/utils.js';
 import { Component } from './components/component.js';
-import { ROLES, EVENTS, UI_STRINGS } from './constants/constants.js';
-import { MarkdownRenderer } from './markdown.js';
+import { ROLES, EVENTS } from './constants/constants.js';
 import { TOOLS } from './tools.js';
 import { ModelSelector } from './renderers/modelSelector.js';
 import { MessageRenderer } from './renderers/messageRenderer.js';
@@ -152,9 +151,18 @@ export class ChatView extends Component {
     const cancelSystem = this.el.querySelector('[data-action="cancel-system"]');
     if (toggleBtn && systemPanel) {
       toggleBtn.addEventListener('click', () => {
-        const show = systemPanel.classList.toggle('hidden');
-        // if showing, populate textarea
-        if (!show && systemTextarea) systemTextarea.value = this.systemPrompt || '';
+        const nowHidden = systemPanel.classList.toggle('hidden');
+        // If showing, populate textarea
+        if (!nowHidden && systemTextarea) systemTextarea.value = this.systemPrompt || '';
+
+        // Active styling to match mockup
+        if (nowHidden) {
+          toggleBtn.classList.remove('bg-stone-800', 'text-indigo-400');
+          toggleBtn.classList.add('text-stone-500');
+        } else {
+          toggleBtn.classList.add('bg-stone-800', 'text-indigo-400');
+          toggleBtn.classList.remove('text-stone-500');
+        }
       });
     }
     if (saveSystem && systemTextarea) {
@@ -264,11 +272,6 @@ export class ChatView extends Component {
         regenBtn.__aq_bound = true;
       }
     }
-    const empty = this.$refs.chatEmpty;
-    if (empty) {
-      const has = Array.isArray(this.messages) && this.messages.some(m => m.role !== ROLES.TOOL);
-      empty.style.display = has ? 'none' : '';
-    }
   }
 
   /**
@@ -370,9 +373,12 @@ export class ChatView extends Component {
     let toolCalls = [];
 
     try {
-      while (true) {
-        const { done, value } = await reader.read();
+      let done = false;
+      while (!done) {
+        const result = await reader.read();
+        done = result.done;
         if (done) break;
+        const value = result.value;
 
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');

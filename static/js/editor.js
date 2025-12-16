@@ -541,6 +541,11 @@ export class ShellView extends Component {
       suggestParagraphsBtn.addEventListener('click', () => this.storyActions.handleSuggestParagraphs());
     }
 
+    const dismissSuggestBtn = document.querySelector('[data-action="story-suggest-dismiss"]');
+    if (dismissSuggestBtn) {
+      dismissSuggestBtn.addEventListener('click', () => this.storyActions.dismissContinuations());
+    }
+
     const cancelStoryBtn = document.querySelector('[data-action="story-cancel"]');
     if (cancelStoryBtn) {
       cancelStoryBtn.addEventListener('click', () => this.storyActions.cancelStoryAction());

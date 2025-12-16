@@ -48,47 +48,49 @@
 <body class="flex flex-col h-screen bg-stone-950 font-sans text-stone-200 overflow-hidden">
   <header class="h-14 bg-stone-900 border-b border-stone-800 flex items-center justify-between px-4 shadow-sm z-40 relative shrink-0">
     <div class="flex items-center space-x-4">
-      <div class="flex items-center space-x-2 mr-2">
+      <button data-action="toggle-sidebar" class="md:hidden p-1 -ml-2 text-stone-400 hover:text-stone-200" title="Menu">
+        <i data-lucide="menu" style="width:24px;height:24px"></i>
+      </button>
+      <div class="flex items-center space-x-2 mr-2 md:mr-4 cursor-pointer" data-action="open-settings" hx-get="/settings" hx-target="#settings-content" hx-swap="innerHTML">
         <div class="bg-indigo-600 rounded-md p-1.5 shadow-lg shadow-indigo-900/20">
-          <i data-lucide="pen" class="text-white" style="width:18px;height:18px"></i>
+          <i data-lucide="wand-sparkles" class="text-white" style="width:18px;height:18px"></i>
         </div>
         <div class="flex flex-col">
-          <span class="font-bold text-stone-200 tracking-tight leading-none">AugmentedQuill</span>
+          <span class="font-bold text-stone-200 tracking-tight leading-none hidden sm:inline">AugmentedQuill</span>
           <span class="text-[10px] text-stone-500 font-mono leading-none hidden sm:inline">AI</span>
         </div>
       </div>
       <div class="h-6 w-px bg-stone-800 mx-2 hidden sm:block"></div>
       <div class="flex space-x-1">
-        <button class="p-1 text-stone-400 hover:text-stone-200" data-action="undo" title="Undo">
+        <button class="p-1.5 rounded-md text-stone-500 hover:bg-stone-800 hover:text-stone-300 transition-colors" data-action="undo" title="Undo">
           <i data-lucide="undo"></i>
         </button>
-        <button class="p-1 text-stone-400 hover:text-stone-200" data-action="redo" title="Redo">
+        <button class="p-1.5 rounded-md text-stone-500 hover:bg-stone-800 hover:text-stone-300 transition-colors" data-action="redo" title="Redo">
           <i data-lucide="redo"></i>
         </button>
       </div>
     </div>
 
     <!-- Center: Editor Toolbar -->
-    <div id="editor-center" class="flex items-center space-x-4 mx-auto">
+    <div id="editor-center" class="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 hidden md:flex items-center space-x-4">
       <div class="flex items-center p-1 rounded-lg bg-stone-800 border border-stone-700">
         <button class="flex items-center space-x-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all bg-indigo-600 text-white" data-mode="raw"><i data-lucide="file-text"></i><span>Raw</span></button>
         <button class="flex items-center space-x-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all text-stone-400 hover:text-stone-200" data-mode="markdown"><i data-lucide="square-code"></i><span>MD</span></button>
         <button class="flex items-center space-x-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all text-stone-400 hover:text-stone-200" data-mode="wysiwyg"><i data-lucide="eye"></i><span>Visual</span></button>
       </div>
-      <div id="editor-format-toolbar-global" class="flex items-center gap-2">
-          <div data-raw-toolbar class="flex items-center gap-1">
-            <button class="px-2 py-1 text-xs rounded hover:bg-stone-800" data-action="wrap-selection" data-before="**" data-after="**" title="Bold"><i data-lucide="bold"></i></button>
-            <button class="px-2 py-1 text-xs rounded hover:bg-stone-800" data-action="wrap-selection" data-before="*" data-after="*" title="Italic"><i data-lucide="italic"></i></button>
-            <div class="flex items-center gap-1">
-              <button class="px-2 py-1 text-xs rounded hover:bg-stone-800" data-action="insert-heading" data-level="1" title="H1"><i data-lucide="heading-1"></i></button>
-              <button class="px-2 py-1 text-xs rounded hover:bg-stone-800" data-action="insert-heading" data-level="2" title="H2"><i data-lucide="heading-2"></i></button>
-              <button class="px-2 py-1 text-xs rounded hover:bg-stone-800" data-action="insert-heading" data-level="3" title="H3"><i data-lucide="heading-3"></i></button>
-            </div>
-            <button class="px-2 py-1 text-xs rounded hover:bg-stone-800" data-action="insert-link" title="Link"><i data-lucide="link"></i></button>
-            <button class="px-2 py-1 text-xs rounded hover:bg-stone-800" data-action="toggle-list" data-prefix="- " title="List"><i data-lucide="list"></i></button>
-            <button class="px-2 py-1 text-xs rounded hover:bg-stone-800" data-action="wrap-selection" data-before="`" data-after="`" title="Code"><i data-lucide="code"></i></button>
-            <button class="px-2 py-1 text-xs rounded hover:bg-stone-800" data-action="toggle-prefix" data-prefix="> " title="Blockquote"><i data-lucide="text-quote"></i></button>
-          </div>
+      <div class="w-px h-4 bg-stone-800"></div>
+
+      <div id="editor-format-toolbar-global" class="flex items-center space-x-0.5">
+        <button class="p-1.5 rounded-md text-stone-500 hover:bg-stone-800 hover:text-stone-300 transition-colors" data-action="wrap-selection" data-before="**" data-after="**" title="Bold">
+          <i data-lucide="bold"></i>
+        </button>
+        <button class="p-1.5 rounded-md text-stone-500 hover:bg-stone-800 hover:text-stone-300 transition-colors" data-action="wrap-selection" data-before="*" data-after="*" title="Italic">
+          <i data-lucide="italic"></i>
+        </button>
+        <div class="w-px h-4 bg-stone-800 mx-1"></div>
+        <button class="p-1.5 rounded-md text-stone-500 hover:bg-stone-800 hover:text-stone-300 transition-colors font-serif font-bold text-xs w-8" data-action="insert-heading" data-level="1" title="Heading 1">H1</button>
+        <button class="p-1.5 rounded-md text-stone-500 hover:bg-stone-800 hover:text-stone-300 transition-colors font-serif font-bold text-xs w-8" data-action="insert-heading" data-level="2" title="Heading 2">H2</button>
+        <button class="p-1.5 rounded-md text-stone-500 hover:bg-stone-800 hover:text-stone-300 transition-colors font-serif font-bold text-xs w-8" data-action="insert-heading" data-level="3" title="Heading 3">H3</button>
       </div>
     </div>
 
@@ -96,18 +98,22 @@
 
     <!-- Right: Settings & Panels -->
     <div class="flex items-center space-x-2 relative">
-      <button class="p-1 text-stone-400 hover:text-stone-200" data-action="save" title="Save">
-        <i data-lucide="save"></i>
+      <button class="p-2 rounded-md text-stone-400 hover:bg-stone-800 hover:text-stone-200 transition-colors" data-action="open-settings" hx-get="/settings" hx-target="#settings-content" hx-swap="innerHTML" title="Settings">
+        <i data-lucide="settings" style="width:18px;height:18px"></i>
       </button>
-      <button class="px-2 py-1 text-xs font-medium bg-stone-800 text-stone-400 hover:text-stone-200 rounded" data-action="open-settings" hx-get="/settings" hx-target="#settings-content" hx-swap="innerHTML" title="Settings">
-        <i data-lucide="settings"></i>Settings
+
+      <button class="hidden sm:inline-flex items-center gap-2 p-2 rounded-md text-stone-400 hover:bg-stone-800 hover:text-stone-200 transition-colors" data-action="toggle-appearance" title="Page Appearance">
+        <i data-lucide="type" style="width:16px;height:16px"></i>
+        <span class="text-xs font-medium">Appearance</span>
       </button>
-      <button class="px-2 py-1 text-xs font-medium bg-stone-800 text-stone-400 hover:text-stone-200 rounded hidden sm:inline" data-action="toggle-appearance" title="Page Appearance">
-        <i data-lucide="monitor-cog" style="vertical-align:middle; margin-right:6px"></i>Appearance
+      <button class="sm:hidden p-2 rounded-md text-stone-400 hover:bg-stone-800 hover:text-stone-200 transition-colors" data-action="toggle-appearance" title="Page Appearance">
+        <i data-lucide="type" style="width:16px;height:16px"></i>
       </button>
-      <button class="px-2 py-1 text-xs font-medium bg-indigo-600 text-white rounded" data-action="toggle-chat" id="chat-toggle-btn">
-        <i class="chat-icon-close" data-lucide="panel-right-close"></i>
-        <i class="chat-icon-open hidden" data-lucide="panel-right-open"></i>
+
+      <button class="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium bg-stone-800 text-stone-200 border border-stone-700 rounded-md hover:bg-stone-700 transition-colors" data-action="toggle-chat" id="chat-toggle-btn" title="Toggle chat">
+        <i class="chat-icon-close" data-lucide="panel-right-close" style="width:16px;height:16px"></i>
+        <i class="chat-icon-open hidden" data-lucide="panel-right-open" style="width:16px;height:16px"></i>
+        <span data-ref="chatToggleLabel">Hide</span>
       </button>
     </div>
   </header>

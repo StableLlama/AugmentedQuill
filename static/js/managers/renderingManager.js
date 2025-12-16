@@ -152,12 +152,12 @@ export class RenderingManager {
     // Show the container
     el.style.display = 'flex';
 
-    // Apply current content width so TUI matches raw editor width
+    // Width is controlled by the outer paper page container.
     try {
-      const widthCh = this.shellView.contentWidth || 80;
-      el.style.maxWidth = `${widthCh}ch`;
-      el.style.marginLeft = 'auto';
-      el.style.marginRight = 'auto';
+      el.style.maxWidth = '100%';
+      el.style.width = '100%';
+      el.style.marginLeft = '';
+      el.style.marginRight = '';
     } catch (_) {}
 
     this.shellView._tuiEl = el;
@@ -194,10 +194,11 @@ export class RenderingManager {
         const el = this.shellView._tuiEl;
         if (!el) return;
         const applyAppearanceToTui = () => {
-          const widthCh = this.shellView.contentWidth || 80;
-          el.style.maxWidth = `${widthCh}ch`;
-          el.style.marginLeft = 'auto';
-          el.style.marginRight = 'auto';
+          // Width is controlled by the paper page container; keep TUI full width inside it.
+          el.style.maxWidth = '100%';
+          el.style.width = '100%';
+          el.style.marginLeft = '';
+          el.style.marginRight = '';
 
           const fontPx = (this.shellView.fontSize && Number(this.shellView.fontSize)) ? `${this.shellView.fontSize}px` : null;
           const brightness = null; // brightness handled via filter on outer container if needed

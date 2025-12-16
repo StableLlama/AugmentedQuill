@@ -32,39 +32,23 @@ document.addEventListener('input', function (e) {
   if (target.id === 'brightness-slider') {
     const value = target.value;
     document.getElementById('brightness-value').textContent = value + '%';
-    // Apply combined brightness+contrast so one doesn't overwrite the other
-    const contrastEl = document.getElementById('contrast-slider');
-    const contrastVal = contrastEl ? contrastEl.value : 100;
-    const filterStr = `brightness(${value}%) contrast(${contrastVal}%)`;
-    const textarea = document.querySelector('[data-ref="rawEditor"]');
-    if (textarea) {
-      textarea.style.filter = filterStr;
+    const page = document.querySelector('[data-ref="editorPage"]');
+    if (page) {
+      page.style.backgroundColor = `hsl(0, 0%, ${value}%)`;
     }
-    // Also apply to Toast UI editor containers
-    try {
-      document.querySelectorAll('[data-ref="tuiEditor"]').forEach(el => el.style.filter = filterStr);
-    } catch (_) {}
   } else if (target.id === 'contrast-slider') {
     const value = target.value;
     document.getElementById('contrast-value').textContent = value + '%';
-    // Apply combined brightness+contrast so one doesn't overwrite the other
-    const brightnessEl = document.getElementById('brightness-slider');
-    const brightnessVal = brightnessEl ? brightnessEl.value : 100;
-    const filterStr = `brightness(${brightnessVal}%) contrast(${value}%)`;
-    const textarea = document.querySelector('[data-ref="rawEditor"]');
-    if (textarea) {
-      textarea.style.filter = filterStr;
+    const page = document.querySelector('[data-ref="editorPage"]');
+    if (page) {
+      const alpha = Math.max(0, Math.min(1, Number(value) / 100));
+      page.style.color = `rgba(0, 0, 0, ${alpha})`;
     }
-    try {
-      document.querySelectorAll('[data-ref="tuiEditor"]').forEach(el => el.style.filter = filterStr);
-    } catch (_) {}
   } else if (target.id === 'font-size-slider') {
     const value = target.value;
     document.getElementById('font-size-value').textContent = value + 'px';
-    const textarea = document.querySelector('[data-ref="rawEditor"]');
-    if (textarea) {
-      textarea.style.fontSize = `${value}px`;
-    }
+    const page = document.querySelector('[data-ref="editorPage"]');
+    if (page) page.style.fontSize = `${value}px`;
     // Propagate to shellView and TUI
     try {
       if (window.app && window.app.shellView) {
@@ -75,10 +59,8 @@ document.addEventListener('input', function (e) {
   } else if (target.id === 'line-width-slider') {
     const value = target.value;
     document.getElementById('line-width-value').textContent = value + 'ch';
-    const textarea = document.querySelector('[data-ref="rawEditor"]');
-    if (textarea) {
-      textarea.style.maxWidth = `${value}ch`;
-    }
+    const page = document.querySelector('[data-ref="editorPage"]');
+    if (page) page.style.maxWidth = `${value}ch`;
     // Propagate to shellView and TUI
     try {
       if (window.app && window.app.shellView) {
@@ -87,6 +69,11 @@ document.addEventListener('input', function (e) {
       }
     } catch (_) {}
   }
+});
+
+// Initialize responsive chat state once DOM is ready.
+document.addEventListener('DOMContentLoaded', () => {
+  try { applyChatVisibility(); } catch (_) {}
 });
 
 // Handle global actions
@@ -171,32 +158,44 @@ function updateSidebarClass() {
 // Chat toggle
 function toggleChat() {
   isChatOpen = !isChatOpen;
-  updateChatClass();
-  updateChatIcon();
+  applyChatVisibility();
 }
 
-function updateChatClass() {
+function applyChatVisibility() {
   const chatPanel = document.getElementById('chat-panel');
-  if (isChatOpen) {
+  const btn = document.getElementById('chat-toggle-btn');
+  const closeIcon = btn ? btn.querySelector('.chat-icon-close') : document.querySelector('.chat-icon-close');
+  const openIcon = btn ? btn.querySelector('.chat-icon-open') : document.querySelector('.chat-icon-open');
+  const label = btn ? btn.querySelector('[data-ref="chatToggleLabel"]') : document.querySelector('[data-ref="chatToggleLabel"]');
+
+  if (!chatPanel) return;
+
+  const isDesktop = window.matchMedia && window.matchMedia('(min-width: 768px)').matches;
+
+  // Icon + label state (always explicit; never "toggle" to avoid drift)
+  if (closeIcon) closeIcon.classList.toggle('hidden', !isChatOpen);
+  if (openIcon) openIcon.classList.toggle('hidden', isChatOpen);
+  if (label) label.textContent = isChatOpen ? 'Hide' : 'AI';
+  if (btn) btn.setAttribute('aria-expanded', String(!!isChatOpen));
+
+  // Panel state
+  // - Desktop: use `hidden` so layout reflows and editor grows.
+  // - Mobile: slide off-canvas (fixed panel) but keep it in DOM.
+  if (isDesktop) {
+    chatPanel.classList.toggle('hidden', !isChatOpen);
     chatPanel.classList.remove('translate-x-full');
     chatPanel.classList.add('translate-x-0');
   } else {
-    chatPanel.classList.remove('translate-x-0');
-    chatPanel.classList.add('translate-x-full');
+    chatPanel.classList.remove('hidden');
+    chatPanel.classList.toggle('translate-x-full', !isChatOpen);
+    chatPanel.classList.toggle('translate-x-0', isChatOpen);
   }
 }
 
-function updateChatIcon() {
-  const closeIcon = document.querySelector('.chat-icon-close');
-  const openIcon = document.querySelector('.chat-icon-open');
-  if (isChatOpen) {
-    closeIcon.classList.remove('hidden');
-    openIcon.classList.add('hidden');
-  } else {
-    closeIcon.classList.add('hidden');
-    openIcon.classList.remove('hidden');
-  }
-}
+// Keep chat layout correct when crossing responsive breakpoints.
+window.addEventListener('resize', () => {
+  try { applyChatVisibility(); } catch (_) {}
+});
 
 // Appearance panel toggle
 function toggleAppearance() {
@@ -353,12 +352,15 @@ document.addEventListener('DOMContentLoaded', function() {
       const fontSlider = document.getElementById('font-size-slider');
       const lineWidth = document.getElementById('line-width-slider');
       const brightness = document.getElementById('brightness-slider');
+      const contrast = document.getElementById('contrast-slider');
+      const page = document.querySelector('[data-ref="editorPage"]');
       if (window.app && window.app.shellView) {
         if (fontSlider) {
           const v = Number(fontSlider.value) || null;
           if (v != null) {
             window.app.shellView.fontSize = v;
             try { window.app.shellView.contentEditor.renderFontSize(); } catch (_) {}
+            if (page) page.style.fontSize = `${v}px`;
           }
         }
         if (lineWidth) {
@@ -366,18 +368,17 @@ document.addEventListener('DOMContentLoaded', function() {
           if (lw != null) {
             window.app.shellView.contentWidth = lw;
             try { window.app.shellView.contentEditor.renderContentWidth(); } catch (_) {}
+            if (page) page.style.maxWidth = `${lw}ch`;
           }
         }
-        // Apply combined brightness + contrast on initial load
-        const contrast = document.getElementById('contrast-slider');
+        // Apply initial "paper" background + text contrast
         const b = brightness ? (Number(brightness.value) || 100) : 100;
         const c = contrast ? (Number(contrast.value) || 100) : 100;
-        const filterStrInit = `brightness(${b}%) contrast(${c}%)`;
-        try {
-          const textarea = document.querySelector('[data-ref="rawEditor"]');
-          if (textarea) textarea.style.filter = filterStrInit;
-          document.querySelectorAll('[data-ref="tuiEditor"]').forEach(el => el.style.filter = filterStrInit);
-        } catch (_) {}
+        const alpha = Math.max(0, Math.min(1, c / 100));
+        if (page) {
+          page.style.backgroundColor = `hsl(0, 0%, ${b}%)`;
+          page.style.color = `rgba(0, 0, 0, ${alpha})`;
+        }
       }
     };
     applyAppearance();
@@ -385,8 +386,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Update initial classes
   updateSidebarClass();
-  updateChatClass();
-  updateChatIcon();
+  try { applyChatVisibility(); } catch (_) {}
 });
 
 // Re-initialize components on HTMX content swaps

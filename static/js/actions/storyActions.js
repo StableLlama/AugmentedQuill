@@ -22,7 +22,24 @@ export class StoryActions {
     const container = this.shellView.shellView?.el?.querySelector('[data-ref="continuationsContainer"]') || this.shellView.el.querySelector('[data-ref="continuationsContainer"]');
     const list = this.shellView.shellView?.el?.querySelector('[data-ref="continuationsList"]') || this.shellView.el.querySelector('[data-ref="continuationsList"]');
     const btn = document.querySelector('[data-action="story-suggest"]');
+    const buttonRow = this.shellView.el.querySelector('[data-ref="suggestButtonRow"]');
     if (btn) btn.disabled = true;
+
+    let prevBtnHtml = null;
+    try {
+      if (btn) {
+        prevBtnHtml = btn.innerHTML;
+        btn.innerHTML = `
+          <i data-lucide="loader-circle" class="animate-spin" style="width:18px;height:18px"></i>
+          <span class="font-medium text-sm">Crafting suggestions...</span>
+        `;
+        try {
+          if (window.lucide && typeof window.lucide.createIcons === 'function') {
+            window.lucide.createIcons();
+          }
+        } catch (_) {}
+      }
+    } catch (_) {}
     try {
       const payload = { chap_id: this.shellView.activeId, model_name: this.shellView.storyCurrentModel, current_text: this.shellView.content || '' };
       const [a, b] = await Promise.all([
@@ -31,22 +48,49 @@ export class StoryActions {
       ]);
       if (!list) throw new Error('No continuations list available');
       list.innerHTML = '';
-      [a, b].forEach((text, idx) => {
+      [a, b].forEach((text) => {
         const card = document.createElement('div');
-        card.className = 'group relative p-5 rounded-lg border border-stone-700 bg-stone-800 hover:bg-stone-750 cursor-pointer transition-all';
-        const inner = document.createElement('div');
-        inner.className = 'font-serif text-base leading-relaxed text-stone-300';
-        inner.innerHTML = this._escapeHtml(text).replace(/\n/g, '<br/>');
-        card.appendChild(inner);
+        card.className = 'group relative p-5 rounded-lg border border-stone-700 bg-stone-800 hover:bg-stone-750 hover:border-indigo-500/50 cursor-pointer transition-all hover:shadow-lg hover:-translate-y-0.5';
+        card.innerHTML = `
+          <div class="font-serif text-lg leading-relaxed text-stone-300 group-hover:text-stone-100">${this._escapeHtml(text).replace(/\n/g, '<br/>')}</div>
+          <div class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-all transform translate-x-2 group-hover:translate-x-0 hidden md:block">
+            <div class="bg-indigo-600 text-white p-1.5 rounded-full shadow-md">
+              <i data-lucide="arrow-right" style="width:16px;height:16px"></i>
+            </div>
+          </div>
+        `;
         card.addEventListener('click', () => this._acceptContinuation(text));
         list.appendChild(card);
       });
       if (container) container.classList.remove('hidden');
+      if (buttonRow) buttonRow.classList.add('hidden');
+      try {
+        if (window.lucide && typeof window.lucide.createIcons === 'function') {
+          window.lucide.createIcons();
+        }
+      } catch (_) {}
     } catch (e) {
       toast('Failed to fetch suggestions: ' + (e.message || e), 'error');
     } finally {
-      if (btn) btn.disabled = false;
+      if (btn) {
+        btn.disabled = false;
+        if (prevBtnHtml != null) btn.innerHTML = prevBtnHtml;
+        try {
+          if (window.lucide && typeof window.lucide.createIcons === 'function') {
+            window.lucide.createIcons();
+          }
+        } catch (_) {}
+      }
     }
+  }
+
+  dismissContinuations() {
+    const container = this.shellView.el.querySelector('[data-ref="continuationsContainer"]');
+    const list = this.shellView.el.querySelector('[data-ref="continuationsList"]');
+    const buttonRow = this.shellView.el.querySelector('[data-ref="suggestButtonRow"]');
+    if (list) list.innerHTML = '';
+    if (container) container.classList.add('hidden');
+    if (buttonRow) buttonRow.classList.remove('hidden');
   }
 
   async _fetchPlainSuggestion(payload) {
@@ -79,11 +123,11 @@ export class StoryActions {
   _acceptContinuation(text) {
     try {
       const base = this.shellView.content || '';
-      const sep = base && !base.endsWith('\n') ? '\n\n' : '\n\n';
-      this.shellView.content = base + sep + text;
-      // hide continuation container
-      const container = this.shellView.el.querySelector('[data-ref="continuationsContainer"]');
-      if (container) container.classList.add('hidden');
+      if (text && text.trim()) {
+        const sep = base && !base.endsWith('\n') ? '\n\n' : '\n\n';
+        this.shellView.content = base + sep + text;
+      }
+      this.dismissContinuations();
       // scroll editor into view if possible
       try { this.shellView.contentEditor.scrollToBottom(); } catch (_) {}
     } catch (e) {

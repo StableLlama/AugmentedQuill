@@ -5,7 +5,7 @@
       <p class="text-xs text-stone-500 mt-1">ID: {{id}}</p>
     </div>
     <div class="flex space-x-2 items-center">
-      <button id="set-active-provider" class="px-3 py-1 rounded bg-stone-800 text-stone-200">{{activeText}}</button>
+      <button id="set-active-provider" class="{{setActiveBtnClass}}" {{setActiveDisabled}}>{{activeText}}</button>
       <button id="delete-provider" class="p-2 text-stone-600 hover:text-red-400 hover:bg-red-950/30 rounded transition-colors" title="Delete provider"><i data-lucide="trash-2" style="width:16px;height:16px"></i></button>
     </div>
   </div>

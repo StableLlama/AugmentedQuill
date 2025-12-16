@@ -203,10 +203,12 @@ export class ModelsEditor extends Component {
               this.renderModels();
               this.renderProviderConfig();
               // probe remote models for availability and refresh UI when done
-              this.loadRemoteModels(idx).then(() => {
-                try { this.renderModels(); } catch (_) {}
-                try { this.renderProviderConfig(); } catch (_) {}
-              }).catch(() => {});
+              this.loadRemoteModels(idx)
+                .then(() => {
+                  this.renderModels();
+                  this.renderProviderConfig();
+                })
+                .catch(() => {});
             }
           }
         });
@@ -307,30 +309,20 @@ export class ModelsEditor extends Component {
     for (let idx = 0; idx < this.models.length; idx++) {
       const m = this.models[idx];
       const isSelected = this.selected_name === m.name;
-      const shortBase = (m.base_url || m.baseUrl || '').replace(/^https?:\/\//, '').slice(0, 30);
       const endpointOk = m.endpoint_ok === true;
-      const modelAvailable = m.remote_model && m.remote_models && m.remote_models.includes(m.remote_model);
-      const uses = Array.isArray(m.uses) ? m.uses : (Array.isArray(m.tags) ? m.tags : (Array.isArray(m.purposes) ? m.purposes : []));
-      const tagHtml = (uses || []).map(u => {
-        const key = (''+u).toLowerCase();
-        if (key.includes('chat')) return '<span class="inline-block bg-indigo-700 text-xs text-white px-2 py-0.5 rounded mr-1">Chat</span>';
-        if (key.includes('story') || key.includes('write')) return '<span class="inline-block bg-amber-700 text-xs text-white px-2 py-0.5 rounded mr-1">Story writing</span>';
-        return `<span class="inline-block bg-stone-700 text-xs text-stone-200 px-2 py-0.5 rounded mr-1">${this.escapeHtml((''+u).replace(/\b\w/g, c=>c.toUpperCase()))}</span>`;
-      }).join('');
 
-      const statusTitle = `Endpoint: ${endpointOk ? 'OK' : 'Unknown'}\nModel: ${modelAvailable ? 'available' : 'not found'}`;
-      const modelLabel = this.escapeHtml(m.remote_model || m.model || '');
+      const statusTitle = `Endpoint: ${endpointOk ? 'OK' : 'Unknown'}`;
       const statusHtml = endpointOk ? '<span class="w-3 h-3 rounded-full bg-green-500 inline-block"></span>' : '<span class="w-3 h-3 rounded-full bg-amber-400 inline-block"></span>';
+      const activeDotHtml = isSelected ? '<div class="w-2 h-2 rounded-full bg-green-500 shadow-sm shadow-green-900"></div>' : '';
 
       const tpl = await renderTemplate('model-item', {
         idx,
-        wrapperClass: isSelected ? 'bg-indigo-900/20 border border-indigo-500/50' : 'bg-stone-800 border border-stone-700 hover:border-stone-600',
+        wrapperClass: isSelected ? 'bg-indigo-900/20 border-indigo-500/50' : 'bg-stone-800 border-stone-700 hover:bg-stone-750',
         name: this.escapeHtml(m.name || '(unnamed)'),
-        shortBase: shortBase || 'N/A',
+        providerLabel: this.escapeHtml((m.provider || 'openai').toString()),
         statusTitle: this.escapeHtml(statusTitle),
         statusHtml: statusHtml,
-        modelLabel: modelLabel,
-        tagHtml: tagHtml
+        activeDotHtml: activeDotHtml
       });
       container.insertAdjacentHTML('beforeend', tpl);
     }
@@ -367,6 +359,10 @@ export class ModelsEditor extends Component {
       name: this.escapeHtml(m.name),
       id: this.escapeHtml(m.id || m.name || ''),
       activeText: active ? 'Active' : 'Set Active',
+      setActiveBtnClass: active
+        ? 'inline-flex items-center justify-center rounded-md font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 border bg-indigo-600 text-white border-transparent hover:bg-indigo-700 focus:ring-indigo-500 px-3 py-1 text-sm gap-2 disabled:opacity-50 disabled:cursor-not-allowed'
+        : 'inline-flex items-center justify-center rounded-md font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 border bg-stone-800 text-stone-200 border-stone-700 hover:bg-stone-700 focus:ring-stone-500 px-3 py-1 text-sm gap-2',
+      setActiveDisabled: active ? 'disabled' : '',
       prov_name: this.escapeHtml(m.name),
       prov_base: this.escapeHtml(m.base_url || m.baseUrl || ''),
       prov_key: this.escapeHtml(m.api_key || m.apiKey || ''),
@@ -415,7 +411,11 @@ export class ModelsEditor extends Component {
         modelContainer.appendChild(inp);
       }
     }
-    try { if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons(); } catch (_) {}
+    try {
+      if (window.lucide && typeof window.lucide.createIcons === 'function') window.lucide.createIcons();
+    } catch (e) {
+      void e;
+    }
 
     const setActiveBtn = node.querySelector('#set-active-provider');
     const deleteBtn = node.querySelector('#delete-provider');
@@ -471,7 +471,7 @@ export class ModelsEditor extends Component {
       // If the remote_model was changed via a SELECT, probe immediately to
       // refresh availability and the models list.
       if (field === 'remote_model' && typeof modelIdInp !== 'undefined' && modelIdInp && modelIdInp.tagName === 'SELECT') {
-        try { doImmediateProbe(); } catch (_) {}
+        doImmediateProbe().catch(() => {});
       }
     };
 
@@ -486,8 +486,10 @@ export class ModelsEditor extends Component {
       probeDebounce = setTimeout(async () => {
         try {
           await this.loadRemoteModels(idx);
-        } catch (_) {}
-        try { this.renderModels(); } catch (_) {}
+        } catch (e) {
+          void e;
+        }
+        this.renderModels();
       }, 700);
     };
 
@@ -497,9 +499,11 @@ export class ModelsEditor extends Component {
       if (this.models[idx]) this.models[idx].endpoint_ok = undefined;
       try {
         await this.loadRemoteModels(idx);
-      } catch (_) {}
-      try { this.renderModels(); } catch (_) {}
-      try { this.renderProviderConfig(); } catch (_) {}
+      } catch (e) {
+        void e;
+      }
+      this.renderModels();
+      this.renderProviderConfig();
     };
 
     if (baseInp) baseInp.addEventListener('input', (e)=> { updateField('base_url', e.target.value); scheduleProbe(); });
@@ -694,8 +698,8 @@ export class ModelsEditor extends Component {
       this.models.push(newModel);
       // Select and render the new model immediately so user sees changes
       this.selected_name = newModel.name;
-      try { this.renderModels(); } catch (_) {}
-      try { this.renderProviderConfig(); } catch (_) {}
+        this.renderModels();
+        this.renderProviderConfig();
   }
 
   /**
@@ -804,7 +808,7 @@ export class ModelsEditor extends Component {
   duplicateNamesList() {
     const counts = this._countModelNames();
     return Object.entries(counts)
-      .filter(([_, count]) => count > 1)
+      .filter(([name, count]) => name && count > 1)
       .map(([name]) => name);
   }
 
@@ -945,10 +949,18 @@ export class ModelsEditor extends Component {
    * Create a new project with the entered name
    */
   async createProject() {
-    const name = this.new_project_name?.trim();
+    let name = this.new_project_name?.trim();
     if (!name) {
-      this.error_msg = 'Enter a project name.';
-      return;
+      const base = 'New Project';
+      const existing = Array.isArray(this.available_projects) ? this.available_projects : [];
+      if (!existing.includes(base)) {
+        name = base;
+      } else {
+        let n = 2;
+        while (existing.includes(`${base} (${n})`)) n += 1;
+        name = `${base} (${n})`;
+      }
+      this.new_project_name = name;
     }
     // Create by selecting (backend creates if doesn't exist)
     const res = await this.selectByName(name);

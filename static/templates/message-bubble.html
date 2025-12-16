@@ -4,7 +4,7 @@
   </div>
   <div class="flex-1 max-w-[85%] relative">
     <div class="rounded-lg p-3 text-sm leading-relaxed {{bubbleClass}}">{{{bubbleContent}}}</div>
-    <div class="absolute top-0 {{hoverPosClass}} opacity-0 group-hover:opacity-100 transition-opacity flex flex-col space-y-1">
+    <div class="absolute top-0 {{hoverPosClass}} opacity-0 group-hover:opacity-100 transition-opacity flex flex-col space-y-1 {{controlsClass}}">
       <button class="p-1 text-stone-500 hover:text-stone-300 bg-stone-900/50 rounded" title="Edit" data-action="edit-message" data-msg-id="{{msgId}}"><i data-lucide="pen"></i></button>
       <button class="p-1 text-stone-500 hover:text-red-400 bg-stone-900/50 rounded" title="Delete" data-action="delete-message" data-msg-id="{{msgId}}"><i data-lucide="trash-2"></i></button>
     </div>

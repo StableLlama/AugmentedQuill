@@ -1,15 +1,10 @@
-<div data-model-index="{{idx}}" class="p-3 rounded-lg cursor-pointer transition {{wrapperClass}}">
-  <div class="flex items-start justify-between">
-    <div>
-      <div class="text-sm font-medium text-stone-200">{{name}}</div>
-      <div class="text-xs text-stone-500 mt-1">{{shortBase}}</div>
-    </div>
-    <div class="flex items-center space-x-2">
-      <div title="{{statusTitle}}">{{{statusHtml}}}</div>
-    </div>
+<div data-model-index="{{idx}}" class="p-3 rounded-lg border cursor-pointer transition-all flex justify-between items-center {{wrapperClass}}">
+  <div class="truncate">
+    <div class="font-medium text-sm text-stone-200">{{name}}</div>
+    <div class="text-xs text-stone-500 uppercase">{{providerLabel}}</div>
   </div>
-  <div class="mt-3">
-    <div class="text-xs text-stone-400 mb-2">Model: <span class="text-stone-200">{{modelLabel}}</span></div>
-    <div class="flex items-center">{{{tagHtml}}}</div>
+  <div class="flex items-center space-x-2">
+    {{{activeDotHtml}}}
+    <div title="{{statusTitle}}">{{{statusHtml}}}</div>
   </div>
 </div>

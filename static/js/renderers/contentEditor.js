@@ -44,20 +44,26 @@ export class ContentEditor {
    * Renders the content width.
    */
   renderContentWidth() {
+    const page = this.shellView.el && this.shellView.el.querySelector ? this.shellView.el.querySelector('[data-ref="editorPage"]') : null;
     const textarea = this.shellView.$refs.rawEditor;
     if (textarea) {
-      textarea.style.maxWidth = `${this.shellView.contentWidth}ch`;
-      textarea.style.marginLeft = 'auto';
-      textarea.style.marginRight = 'auto';
-      textarea.parentNode && (textarea.parentNode.style.display = 'block');
+      // Keep textarea full width inside the page container; width is controlled by the page.
+      textarea.style.maxWidth = '100%';
     }
 
-    // Apply width to Toast UI editor container if present
+    if (page) {
+      page.style.maxWidth = `${this.shellView.contentWidth}ch`;
+      page.style.marginLeft = 'auto';
+      page.style.marginRight = 'auto';
+    }
+
+    // Toast UI container lives inside the page; keep it full-width so the page controls width.
     const tuiEl = this.shellView._tuiEl || (this.shellView.el && this.shellView.el.querySelector ? this.shellView.el.querySelector('[data-ref="tuiEditor"]') : null);
     if (tuiEl) {
-      tuiEl.style.maxWidth = `${this.shellView.contentWidth}ch`;
-      tuiEl.style.marginLeft = 'auto';
-      tuiEl.style.marginRight = 'auto';
+      tuiEl.style.maxWidth = '100%';
+      tuiEl.style.width = '100%';
+      tuiEl.style.marginLeft = '';
+      tuiEl.style.marginRight = '';
       // Ensure inner editor uses full width
       tuiEl.querySelector && tuiEl.querySelector('.toastui-editor-defaultUI') && (tuiEl.querySelector('.toastui-editor-defaultUI').style.width = '100%');
     }
@@ -67,9 +73,14 @@ export class ContentEditor {
    * Renders the font size.
    */
   renderFontSize() {
+    const page = this.shellView.el && this.shellView.el.querySelector ? this.shellView.el.querySelector('[data-ref="editorPage"]') : null;
     const textarea = this.shellView.$refs.rawEditor;
     if (textarea) {
-      textarea.style.fontSize = `${this.shellView.fontSize}px`;
+      // Let the page container control base font size.
+      textarea.style.fontSize = 'inherit';
+    }
+    if (page) {
+      page.style.fontSize = `${this.shellView.fontSize}px`;
     }
     // Also apply font size to TUI containers if present
     const tuiEl = this.shellView._tuiEl || (this.shellView.el && this.shellView.el.querySelector ? this.shellView.el.querySelector('[data-ref="tuiEditor"]') : null);
