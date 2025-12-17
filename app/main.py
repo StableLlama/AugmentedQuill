@@ -5,9 +5,8 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import load_machine_config, load_story_config
@@ -47,8 +46,6 @@ app.add_middleware(
 # Mount static files if folder exists (created in repo)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
-templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
-
 # Include API routers
 app.include_router(settings_router)
 app.include_router(projects_router)
@@ -58,12 +55,8 @@ app.include_router(chat_router)
 
 
 @app.get("/", response_class=HTMLResponse)
-async def index(request: Request) -> HTMLResponse:
-    # Serve static template; frontend fetches dynamic data via REST JSON APIs.
-    return templates.TemplateResponse(
-        "index.html",
-        {"request": request},
-    )
+async def index(request: Request):
+    return FileResponse(str(TEMPLATES_DIR / "index.html"))
 
 
 @app.get("/health")
@@ -95,13 +88,7 @@ async def api_machine() -> dict:
 
 
 
-@app.get("/settings", response_class=HTMLResponse)
-async def settings_get(request: Request) -> HTMLResponse:
-    """Serve settings UI shell; frontend will fetch JSON via REST to populate."""
-    return templates.TemplateResponse(
-        "settings.html",
-        {"request": request},
-    )
+
 
 
 def build_arg_parser() -> argparse.ArgumentParser:

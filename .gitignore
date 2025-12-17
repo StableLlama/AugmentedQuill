@@ -211,3 +211,6 @@ __marimo__/
 
 #tmp
 demosample/
+frontend/node_modules/
+config/*.json
+!config/examples/*.json

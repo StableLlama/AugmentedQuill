@@ -4,7 +4,7 @@
 
 Web GUI for LLM assisted prose writing
 
-The project is using Python with FastAPI on the backend and HTMX
+The project is using Python with FastAPI on the backend and React/Vite
 on the frontend. The LLMs are accessed via the OpenAI API.
 
 The project features a simple user interface for writing prose like novels.
@@ -28,7 +28,7 @@ currently selected LLM.
 The application follows a modular FastAPI architecture:
 
 - **Backend**: FastAPI with modular routers for different API endpoints
-- **Frontend**: HTMX for interactive web interface
+- **Frontend**: React SPA served by FastAPI (built with Vite)
 - **Configuration**: JSON-based config files with environment variable support
 - **LLM Integration**: OpenAI API with support for multiple endpoints
 
@@ -51,12 +51,20 @@ app/
 ├── config.py            # Configuration loading
 ├── projects.py          # Project management
 └── llm.py               # LLM client implementation
+frontend/                # React Frontend Source
+├── src/
+├── public/
+├── package.json
+└── vite.config.ts
 ```
 
 
 ## Quickstart
 
 - Python 3.11+ recommended.
+- Node.js 18+ recommended (for building frontend).
+
+### Backend Setup
 - Create and activate a virtual environment:
   - python3 -m venv .venv
   - source .venv/bin/activate
@@ -65,11 +73,20 @@ app/
 - For development (including testing):
   - pip install -e ".[dev]"
 
+### Frontend Setup
+- Navigate to frontend directory:
+  - cd frontend
+- Install dependencies:
+  - npm install
+- Build the frontend:
+  - npm run build
+- This will generate static files in `static/dist` and `templates/index.html`.
+
 ## Running the API
 
-This repository includes a minimal FastAPI app with a healthcheck endpoint and a rudimentary GUI.
+This repository includes a minimal FastAPI app with a healthcheck endpoint and the React GUI.
 
-After installation, start the server:
+After installation and building the frontend, start the server:
 - augmentedquill --help
 - augmentedquill --host 127.0.0.1 --port 8000 --reload
 
@@ -81,7 +98,6 @@ Verify it is up:
 
 Open the GUI in your browser:
 - http://127.0.0.1:8000/
-- Click the Refresh button to fetch a live status fragment via HTMX; the server time should update.
 
 ## Configuration
 

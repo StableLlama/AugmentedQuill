@@ -1,0 +1,5 @@
+{
+  "name": "StoryWeaver AI",
+  "description": "A collaborative story writing application powered by Gemini, featuring chapter management, context-aware chat, and intelligent editing tools.",
+  "requestFramePermissions": []
+}
