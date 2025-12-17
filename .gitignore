@@ -10,7 +10,7 @@ __pycache__/
 .Python
 build/
 develop-eggs/
-dist/
+# dist/  <-- Commented out to allow static/dist
 downloads/
 eggs/
 .eggs/
@@ -214,3 +214,7 @@ demosample/
 frontend/node_modules/
 config/*.json
 !config/examples/*.json
+
+# Build artifacts
+static/dist/
+templates/index.html

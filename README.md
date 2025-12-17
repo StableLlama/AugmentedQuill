@@ -61,43 +61,50 @@ frontend/                # React Frontend Source
 
 ## Quickstart
 
-- Python 3.11+ recommended.
-- Node.js 18+ recommended (for building frontend).
+### Prerequisites
+- Python 3.11+
+- Node.js 18+ (required to build the frontend)
 
-### Backend Setup
-- Create and activate a virtual environment:
-  - python3 -m venv .venv
-  - source .venv/bin/activate
-- Install the project in editable mode:
-  - pip install -e .
-- For development (including testing):
-  - pip install -e ".[dev]"
+### Installation
 
-### Frontend Setup
-- Navigate to frontend directory:
-  - cd frontend
-- Install dependencies:
-  - npm install
-- Build the frontend:
-  - npm run build
-- This will generate static files in `static/dist` and `templates/index.html`.
+1.  **Backend Setup**:
+    ```bash
+    python3 -m venv .venv
+    source .venv/bin/activate
+    pip install -e .
+    ```
 
-## Running the API
+2.  **Frontend Setup & Build**:
+    The frontend must be built before running the application, as build artifacts are not checked into the repository.
+    ```bash
+    cd frontend
+    npm install
+    npm run build
+    ```
+    This generates the necessary static files in `static/dist` and `templates/index.html`.
 
-This repository includes a minimal FastAPI app with a healthcheck endpoint and the React GUI.
+3.  **Run the Application**:
+    ```bash
+    augmentedquill --host 127.0.0.1 --port 8000
+    ```
+    Open http://127.0.0.1:8000 in your browser.
 
-After installation and building the frontend, start the server:
-- augmentedquill --help
-- augmentedquill --host 127.0.0.1 --port 8000 --reload
+### Development Workflow
 
-Alternatively, start with uvicorn CLI directly:
-- uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+If you want to modify the frontend and see changes on the fly:
 
-Verify it is up:
-- curl http://127.0.0.1:8000/health → {"status":"ok"}
+1.  **Install Dev Dependencies**:
+    ```bash
+    pip install -e ".[dev]"
+    cd frontend && npm install
+    ```
 
-Open the GUI in your browser:
-- http://127.0.0.1:8000/
+2.  **Run in Development Mode**:
+    *   **Option A (VS Code)**: Use the "Full Stack Dev" launch configuration. This starts the backend and the frontend dev server automatically.
+    *   **Option B (Terminal)**:
+        *   Terminal 1 (Backend): `augmentedquill --reload`
+        *   Terminal 2 (Frontend): `cd frontend && npm run dev`
+        *   Open http://localhost:3000 (Vite Dev Server) for hot-reloading. API requests are proxied to port 8000.
 
 ## Configuration
 
