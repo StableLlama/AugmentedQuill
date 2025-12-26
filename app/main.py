@@ -56,6 +56,10 @@ app.include_router(chat_router)
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
+    # Prefer the built frontend (static/dist/index.html) so hashed asset references match.
+    built_index = STATIC_DIR / "dist" / "index.html"
+    if built_index.exists():
+        return FileResponse(str(built_index))
     return FileResponse(str(TEMPLATES_DIR / "index.html"))
 
 

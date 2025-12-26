@@ -2,7 +2,6 @@ import React, { useRef, useEffect, useImperativeHandle } from 'react';
 import { Chapter, EditorSettings, ViewMode } from '../types';
 import { Sparkles, Loader2, SplitSquareHorizontal, RefreshCw, PenLine, Wand2, FileEdit, BookOpen } from 'lucide-react';
 import { Button } from './Button';
-import { MarkdownView } from './MarkdownView';
 // @ts-ignore
 import { marked } from 'marked';
 // @ts-ignore
@@ -77,7 +76,6 @@ export const Editor = React.forwardRef<any, EditorProps>(({
   onToggleSummary,
   onContextChange
 }, ref) => {
-  const contentRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLDivElement>(null);
   const wysiwygRef = useRef<HTMLDivElement>(null);
   
@@ -300,18 +298,19 @@ export const Editor = React.forwardRef<any, EditorProps>(({
       )}
 
       {/* Main Scrollable Content Area */}
-      <div className="flex-1 overflow-y-auto px-4 py-6 md:py-8 flex flex-col items-center scroll-smooth">
+        <div className="flex-1 overflow-y-auto px-4 py-6 md:py-8 flex flex-col items-center scroll-smooth">
         
         {/* The Paper - Grows infinitely */}
         <div 
-          className="relative w-full shadow-2xl transition-all duration-300 ease-in-out px-4 py-8 md:px-12 md:py-16 mx-auto flex flex-col"
+          className="relative w-full shadow-2xl transition-all duration-300 ease-in-out px-4 py-8 md:px-12 md:py-16 mx-auto flex flex-col flex-none"
           style={{
-             maxWidth: `${settings.maxWidth}ch`,
-             backgroundColor: pageBackgroundColor,
-             color: textColor,
-             fontSize: `${settings.fontSize}px`,
-             fontFamily: fontFamily,
-             minHeight: '80vh' 
+            maxWidth: `${settings.maxWidth}ch`,
+            backgroundColor: pageBackgroundColor,
+            color: textColor,
+            fontSize: `${settings.fontSize}px`,
+            fontFamily: fontFamily,
+            // At least fill the available scroll area height, but always grow with content.
+            minHeight: '100%',
           }}
         >
           {/* Title Input */}
@@ -329,22 +328,23 @@ export const Editor = React.forwardRef<any, EditorProps>(({
           />
 
           {/* Editor Area */}
-          <div className="flex flex-col relative pb-12 w-full">
+          <div id="editor-area" className="flex flex-col relative w-full">
              
              {/* WYSIWYG View */}
-             <div 
+             <div
+                id="wysiwyg-editor"
                 ref={wysiwygRef}
                 contentEditable
                 onInput={handleWysiwygInput}
                 onMouseUp={checkContext}
                 onKeyUp={(e) => { checkContext(); }}
                 className={`prose-editor outline-none w-full ${viewMode === 'wysiwyg' ? 'block' : 'hidden'}`}
-                style={{ ...commonTextStyle, minHeight: '60vh' }}
+                style={{ ...commonTextStyle }}
              />
 
              {/* Raw / Markdown View */}
              {(viewMode === 'raw' || viewMode === 'markdown') && (
-                 <div className="relative w-full flex flex-col">
+                 <div id="raw-markdown-editor" className="relative w-full flex flex-col">
                      <PlainTextEditable
                         ref={textareaRef}
                         value={chapter.content}
@@ -354,25 +354,12 @@ export const Editor = React.forwardRef<any, EditorProps>(({
                         }}
                         onSelect={checkContext}
                         onKeyDown={handleKeyDown}
-                        className={`w-full bg-transparent ${viewMode === 'markdown' ? 'text-transparent caret-stone-800 selection:bg-amber-500/30 selection:text-transparent relative z-10' : 'text-inherit'}`}
+                        className="w-full bg-transparent text-inherit outline-none"
                         placeholder="Start writing your chapter here..."
                         style={{ 
                             ...commonTextStyle, 
-                            minHeight: '60vh'
                         }}
                       />
-
-                     {/* Markdown Preview Overlay */}
-                     {viewMode === 'markdown' && (
-                         <div 
-                            ref={contentRef}
-                            aria-hidden="true" 
-                            className="pointer-events-none absolute inset-0 z-0"
-                            style={{ ...commonTextStyle }}
-                         >
-                            <MarkdownView content={chapter.content} />
-                         </div>
-                     )}
                  </div>
              )}
           </div>

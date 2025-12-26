@@ -1,5 +1,7 @@
 # AugmentedQuill
 
+NOTE: This is under heavy development, do NOT try to use it, yet.
+
 <img src="static/images/logo_2048.png" alt="Augmented Quill - Your Words, Amplified" width="1024">
 
 Web GUI for LLM assisted prose writing
