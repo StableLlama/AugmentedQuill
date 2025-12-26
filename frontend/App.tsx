@@ -427,7 +427,7 @@ Always prioritize the user's creative vision.`;
                 <Wand2 className="text-white" size={18} />
              </div>
              <div className="flex flex-col">
-                 <span className={`font-bold tracking-tight leading-none hidden sm:inline ${textMain}`}>StoryWeaver</span>
+                 <span className={`font-bold tracking-tight leading-none hidden sm:inline ${textMain}`}>AugmentedQuill</span>
                  <span className="text-[10px] text-stone-500 font-mono leading-none hidden sm:inline">{story.title}</span>
              </div>
           </div>
