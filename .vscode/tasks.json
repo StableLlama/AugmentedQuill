@@ -4,7 +4,8 @@
 		{
 			"label": "frontend: install",
 			"type": "shell",
-			"command": "npm install",
+			"command": "npm",
+			"args": ["install"],
 			"options": {
 				"cwd": "${workspaceFolder}/frontend"
 			},
@@ -16,7 +17,8 @@
 		{
 			"label": "frontend: build",
 			"type": "shell",
-			"command": "npm run build",
+			"command": "npm",
+			"args": ["run", "build"],
 			"options": {
 				"cwd": "${workspaceFolder}/frontend"
 			},
@@ -27,10 +29,12 @@
 		{
 			"label": "frontend: dev",
 			"type": "shell",
-			"command": "npm run dev",
+			"command": "npm",
+			"args": ["run", "dev", "--", "--host", "127.0.0.1", "--port", "8000", "--strictPort"],
 			"options": {
 				"cwd": "${workspaceFolder}/frontend"
 			},
+			"dependsOn": "frontend: install",
 			"isBackground": true,
 			"problemMatcher": {
 				"owner": "custom",
@@ -40,7 +44,7 @@
 				"background": {
 					"activeOnStart": true,
 					"beginsPattern": "VITE v",
-					"endsPattern": "Network:"
+					"endsPattern": "ready in"
 				}
 			},
 			"presentation": {

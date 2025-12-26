@@ -4,19 +4,27 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
+    const isDev = mode === 'development';
     return {
-      base: '/static/dist/',
+      base: isDev ? '/' : '/static/dist/',
       build: {
         outDir: '../static/dist',
         emptyOutDir: true,
         minify: false,
+        sourcemap: true,
+      },
+      css: {
+        devSourcemap: true,
       },
       server: {
-        port: 3000,
+        // During development we keep the browser URL on :8000.
+        // The FastAPI backend should run on :8001 and is reached via proxy.
+        port: 8000,
+        strictPort: true,
         host: '0.0.0.0',
         proxy: {
             '/api': {
-                target: 'http://127.0.0.1:8000',
+                target: 'http://127.0.0.1:8001',
                 changeOrigin: true,
             }
         }

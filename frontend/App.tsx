@@ -93,6 +93,9 @@ const App: React.FC = () => {
   // Suggestion State
   const [continuations, setContinuations] = useState<string[]>([]);
   const [isSuggesting, setIsSuggesting] = useState(false);
+  const [isSuggestionMode, setIsSuggestionMode] = useState(false);
+  const [suggestCursor, setSuggestCursor] = useState<number | null>(null);
+  const [suggestUndoStack, setSuggestUndoStack] = useState<Array<{ content: string; cursor: number }>>([]);
 
   // Editor Appearance Settings
   const [editorSettings, setEditorSettings] = useState<EditorSettings>({
@@ -292,13 +295,30 @@ Always prioritize the user's creative vision.`;
     setChatMessages(prev => prev.filter(msg => msg.id !== id));
   };
 
-  const handleTriggerSuggestions = async () => {
+  const clampCursor = (cursor: number, content: string) => {
+    if (!Number.isFinite(cursor)) return content.length;
+    return Math.max(0, Math.min(Math.floor(cursor), content.length));
+  };
+
+  const handleTriggerSuggestions = async (
+    cursor?: number,
+    contentOverride?: string,
+    enableSuggestionMode: boolean = true
+  ) => {
     if (!currentChapter) return;
+    if (isSuggesting) return;
+
+    const baseContent = contentOverride ?? currentChapter.content;
+    const c = clampCursor(cursor ?? baseContent.length, baseContent);
+
+    if (enableSuggestionMode) setIsSuggestionMode(true);
+    setSuggestCursor(c);
+
     setIsSuggesting(true);
     setContinuations([]);
     try {
       const storyContext = `Title: ${story.title}\nSummary: ${story.summary}\nTags: ${story.styleTags.join(', ')}`;
-      const options = await generateContinuations(currentChapter.content, storyContext, systemPrompt, activeStoryConfig, currentChapter.id);
+      const options = await generateContinuations(baseContent.slice(0, c), storyContext, systemPrompt, activeStoryConfig, currentChapter.id);
       setContinuations(options);
     } catch (e) {
       console.error("Failed to generate suggestions", e);
@@ -307,11 +327,83 @@ Always prioritize the user's creative vision.`;
     }
   };
 
-  const handleAcceptContinuation = (text: string) => {
+  const handleAcceptContinuation = async (text: string) => {
     if (!currentChapterId || !currentChapter) return;
-    const separator = currentChapter.content.length > 0 && !currentChapter.content.endsWith('\n') ? '\n\n' : '';
-    updateChapter(currentChapterId, { content: currentChapter.content + separator + text });
-    setContinuations([]);
+
+    // Dismiss
+    if (!text) {
+      setContinuations([]);
+      setIsSuggestionMode(false);
+      setSuggestCursor(null);
+      setSuggestUndoStack([]);
+      return;
+    }
+
+    const currentContent = currentChapter.content;
+    const c = clampCursor(suggestCursor ?? currentContent.length, currentContent);
+    const prefix = currentContent.slice(0, c);
+    const suffix = currentContent.slice(c);
+    const separator = prefix.length > 0 && !prefix.endsWith('\n') ? '\n\n' : '';
+    const newContent = prefix + separator + text + suffix;
+
+    setSuggestUndoStack(prev => [...prev, { content: currentContent, cursor: c }]);
+    updateChapter(currentChapterId, { content: newContent });
+
+    const newCursor = c + separator.length + text.length;
+    setSuggestCursor(newCursor);
+    setIsSuggestionMode(true);
+
+    // Continue generating from the insertion point
+    await handleTriggerSuggestions(newCursor, newContent, true);
+  };
+
+  const handleKeyboardSuggestionAction = async (
+    action: 'trigger' | 'chooseLeft' | 'chooseRight' | 'regenerate' | 'undo' | 'exit',
+    cursor?: number
+  ) => {
+    if (!currentChapterId || !currentChapter) return;
+    if (isSuggesting && action !== 'exit') return;
+
+    if (action === 'exit') {
+      setContinuations([]);
+      setIsSuggestionMode(false);
+      setSuggestCursor(null);
+      setSuggestUndoStack([]);
+      return;
+    }
+
+    if (action === 'trigger') {
+      await handleTriggerSuggestions(cursor, undefined, true);
+      return;
+    }
+
+    if (action === 'chooseLeft') {
+      if (continuations[0]) await handleAcceptContinuation(continuations[0]);
+      return;
+    }
+
+    if (action === 'chooseRight') {
+      if (continuations[1]) await handleAcceptContinuation(continuations[1]);
+      return;
+    }
+
+    if (action === 'regenerate') {
+      const c = clampCursor(suggestCursor ?? cursor ?? currentChapter.content.length, currentChapter.content);
+      await handleTriggerSuggestions(c, undefined, true);
+      return;
+    }
+
+    if (action === 'undo') {
+      const last = suggestUndoStack[suggestUndoStack.length - 1];
+      if (!last) return;
+      const nextStack = suggestUndoStack.slice(0, -1);
+      setSuggestUndoStack(nextStack);
+
+      updateChapter(currentChapterId, { content: last.content });
+      setSuggestCursor(last.cursor);
+      setIsSuggestionMode(true);
+      await handleTriggerSuggestions(last.cursor, last.content, true);
+    }
   };
 
   const handleAiAction = async (target: 'summary' | 'chapter', action: 'update' | 'rewrite' | 'extend') => {
@@ -686,6 +778,8 @@ Always prioritize the user's creative vision.`;
                         isSuggesting={isSuggesting} 
                         onTriggerSuggestions={handleTriggerSuggestions} 
                         onAcceptContinuation={handleAcceptContinuation}
+                      isSuggestionMode={isSuggestionMode}
+                      onKeyboardSuggestionAction={handleKeyboardSuggestionAction}
                         onAiAction={handleAiAction}
                         isAiLoading={isAiActionLoading}
                         isSummaryOpen={isSummaryOpen}

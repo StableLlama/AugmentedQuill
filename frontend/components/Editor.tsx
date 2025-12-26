@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useImperativeHandle } from 'react';
+import React, { useRef, useEffect, useImperativeHandle, useCallback } from 'react';
 import { Chapter, EditorSettings, ViewMode } from '../types';
 import { Sparkles, Loader2, SplitSquareHorizontal, RefreshCw, PenLine, Wand2, FileEdit, BookOpen } from 'lucide-react';
 import { Button } from './Button';
@@ -16,6 +16,11 @@ interface EditorProps {
   isSuggesting: boolean;
   onTriggerSuggestions: () => void;
   onAcceptContinuation: (text: string) => void;
+    isSuggestionMode: boolean;
+    onKeyboardSuggestionAction: (
+        action: 'trigger' | 'chooseLeft' | 'chooseRight' | 'regenerate' | 'undo' | 'exit',
+        cursor?: number
+    ) => void;
   onAiAction: (target: 'summary' | 'chapter', action: 'update' | 'rewrite' | 'extend') => void;
   isAiLoading: boolean;
   isSummaryOpen: boolean;
@@ -70,6 +75,8 @@ export const Editor = React.forwardRef<any, EditorProps>(({
   isSuggesting,
   onTriggerSuggestions,
   onAcceptContinuation,
+    isSuggestionMode,
+    onKeyboardSuggestionAction,
   onAiAction,
   isAiLoading,
   isSummaryOpen,
@@ -138,7 +145,102 @@ export const Editor = React.forwardRef<any, EditorProps>(({
       onContextChange(formats);
   };
 
+  const getCaretOffset = (root: HTMLElement | null): number | null => {
+      if (!root) return null;
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0) return null;
+      const range = selection.getRangeAt(0);
+      if (!root.contains(range.startContainer)) return null;
+      const preRange = range.cloneRange();
+      preRange.selectNodeContents(root);
+      preRange.setEnd(range.startContainer, range.startOffset);
+      return preRange.toString().length;
+  };
+
+  const getEditorCaretOffset = useCallback((): number | null => {
+      if (viewMode === 'raw' || viewMode === 'markdown') {
+          return getCaretOffset(textareaRef.current);
+      }
+      if (viewMode === 'wysiwyg') {
+          // Mapping a WYSIWYG DOM selection to markdown offsets is non-trivial.
+          // For now, only allow trigger when selection is inside the wysiwyg editor;
+          // insertion happens at end-of-content semantics in the parent.
+          const inside = !!wysiwygRef.current && !!window.getSelection()?.anchorNode && wysiwygRef.current.contains(window.getSelection()!.anchorNode);
+          return inside ? chapter.content.length : null;
+      }
+      return null;
+  }, [viewMode, chapter.content.length]);
+
+  const maybeHandleSuggestionHotkey = useCallback((e: KeyboardEvent | React.KeyboardEvent) => {
+      const key = 'key' in e ? e.key : '';
+      const ctrlKey = 'ctrlKey' in e ? e.ctrlKey : false;
+      const metaKey = 'metaKey' in e ? e.metaKey : false;
+
+      const suggestionActive = isSuggestionMode || continuations.length > 0 || isSuggesting;
+
+      // Trigger: Ctrl+Enter / Cmd+Enter
+      if (key === 'Enter' && (ctrlKey || metaKey)) {
+          const cursor = getEditorCaretOffset() ?? chapter.content.length;
+          e.preventDefault();
+          // @ts-ignore - stopPropagation exists on both KeyboardEvent and React synthetic events
+          e.stopPropagation?.();
+          onKeyboardSuggestionAction('trigger', cursor);
+          return true;
+      }
+
+      if (!suggestionActive) return false;
+
+      if (key === 'ArrowLeft') {
+          e.preventDefault();
+          // @ts-ignore
+          e.stopPropagation?.();
+          onKeyboardSuggestionAction('chooseLeft');
+          return true;
+      }
+      if (key === 'ArrowRight') {
+          e.preventDefault();
+          // @ts-ignore
+          e.stopPropagation?.();
+          onKeyboardSuggestionAction('chooseRight');
+          return true;
+      }
+      if (key === 'ArrowDown') {
+          e.preventDefault();
+          // @ts-ignore
+          e.stopPropagation?.();
+          onKeyboardSuggestionAction('regenerate');
+          return true;
+      }
+      if (key === 'ArrowUp') {
+          e.preventDefault();
+          // @ts-ignore
+          e.stopPropagation?.();
+          onKeyboardSuggestionAction('undo');
+          return true;
+      }
+      if (key === 'Escape') {
+          e.preventDefault();
+          // @ts-ignore
+          e.stopPropagation?.();
+          onKeyboardSuggestionAction('exit');
+          return true;
+      }
+      return false;
+  }, [isSuggestionMode, continuations.length, isSuggesting, onKeyboardSuggestionAction, getEditorCaretOffset]);
+
+  useEffect(() => {
+      // Capture global keydown so the shortcuts work even if focus moved away
+      // (e.g. footer button, scroll container).
+      const onKeyDown = (e: KeyboardEvent) => {
+          maybeHandleSuggestionHotkey(e);
+      };
+      window.addEventListener('keydown', onKeyDown, { capture: true });
+      return () => window.removeEventListener('keydown', onKeyDown, { capture: true } as any);
+  }, [maybeHandleSuggestionHotkey]);
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (maybeHandleSuggestionHotkey(e)) return;
+
       // Basic Enter handling to prevent div insertion, ensuring clean newlines
       if (e.key === 'Enter') {
           // Let the browser handle simple newlines in plain text mode usually, 
@@ -337,6 +439,7 @@ export const Editor = React.forwardRef<any, EditorProps>(({
                 contentEditable
                 onInput={handleWysiwygInput}
                 onMouseUp={checkContext}
+                     onKeyDown={handleKeyDown}
                 onKeyUp={(e) => { checkContext(); }}
                 className={`prose-editor outline-none w-full ${viewMode === 'wysiwyg' ? 'block' : 'hidden'}`}
                 style={{ ...commonTextStyle }}
@@ -391,7 +494,7 @@ export const Editor = React.forwardRef<any, EditorProps>(({
          ) : (
             <div className="p-3 flex justify-center items-center">
                <button onClick={onTriggerSuggestions} disabled={isSuggesting || isAiLoading} className={`group flex items-center space-x-3 px-6 py-3 rounded-full border transition-all hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed ${settings.theme === 'light' ? 'bg-white border-stone-200 hover:bg-stone-50 text-stone-600' : 'bg-stone-800 border-stone-700 hover:bg-stone-700 hover:border-amber-500/30 text-stone-300'}`}>
-                  {isSuggesting || isAiLoading ? (<><Loader2 className="animate-spin text-amber-500" size={18} /><span className="font-medium text-sm">Working...</span></>) : (<><div className="bg-amber-100 dark:bg-amber-900/50 p-1 rounded-md text-amber-600 dark:text-amber-400"><Sparkles size={16} /></div><span className="font-medium text-sm">Suggest Next Paragraphs</span></>)}
+                  {isSuggesting || isAiLoading ? (<><Loader2 className="animate-spin text-amber-500" size={18} /><span className="font-medium text-sm">Working...</span></>) : (<><div className="bg-amber-100 dark:bg-amber-900/50 p-1 rounded-md text-amber-600 dark:text-amber-400"><Sparkles size={16} /></div><span className="font-medium text-sm">Suggest next paragraph</span></>)}
                </button>
             </div>
          )}

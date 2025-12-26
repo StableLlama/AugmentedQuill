@@ -55,7 +55,7 @@ def _load_chapter_titles(count: int) -> List[str]:
 
 
 def _normalize_chapter_entry(entry: Any) -> Dict[str, str]:
-    """Ensures a chapter entry is a dict with 'title' and 'summary'.
+    """Ensures a chapter entry is a dict with 'title', 'summary', 'filename'.
 
     Additionally sanitizes the common bogus string "[object Object]" that can
     arrive from UI mishaps, treating it as empty so filename fallbacks apply.
@@ -72,10 +72,11 @@ def _normalize_chapter_entry(entry: Any) -> Dict[str, str]:
         return {
             "title": _sanitize_text(entry.get("title", "")),
             "summary": _sanitize_text(entry.get("summary", "")),
+            "filename": _sanitize_text(entry.get("filename", "")),
         }
     elif isinstance(entry, (str, int, float)):
-        return {"title": _sanitize_text(entry), "summary": ""}
-    return {"title": "", "summary": ""}
+        return {"title": _sanitize_text(entry), "summary": "", "filename": ""}
+    return {"title": "", "summary": "", "filename": ""}
 
 
 def _chapter_by_id_or_404(chap_id: int) -> tuple[Path, int, int]:

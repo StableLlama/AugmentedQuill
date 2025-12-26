@@ -6,7 +6,16 @@
             "type": "debugpy",
             "request": "launch",
             "module": "app.main",
-            "args": ["--reload", "--host", "127.0.0.1", "--port", "8000"],
+            "args": ["--host", "127.0.0.1", "--port", "8000"],
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "Backend (Dev API 8001)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "app.main",
+            "args": ["--host", "127.0.0.1", "--port", "8001"],
             "console": "integratedTerminal",
             "justMyCode": true
         },
@@ -14,18 +23,19 @@
             "name": "Frontend (Chrome)",
             "type": "chrome",
             "request": "launch",
-            "url": "http://localhost:3000",
-            "webRoot": "${workspaceFolder}/frontend/src",
+            "url": "http://127.0.0.1:8000",
+            "webRoot": "${workspaceFolder}/frontend",
             "sourceMapPathOverrides": {
-                "webpack:///./src/*": "${webRoot}/*"
+                "vite:///*": "${webRoot}/*",
+                "/@fs/*": "${workspaceFolder}/*"
             }
         }
     ],
     "compounds": [
         {
             "name": "Full Stack Dev (Backend + Frontend)",
-            "configurations": ["Backend (FastAPI)"],
-            "preLaunchTask": "frontend: build"
+            "configurations": ["Backend (Dev API 8001)"],
+            "preLaunchTask": "frontend: dev"
         }
     ]
 }

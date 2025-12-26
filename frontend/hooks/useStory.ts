@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { StoryState, Chapter } from '../types';
 import { api } from '../services/api';
 
@@ -17,6 +17,7 @@ export const useStory = () => {
   const [currentChapterId, setCurrentChapterId] = useState<string | null>(null);
   const [history, setHistory] = useState<StoryState[]>([INITIAL_STORY]);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const hasFetchedRef = useRef(false);
 
   const pushState = useCallback((newState: StoryState) => {
     const updatedState = { ...newState, lastUpdated: Date.now() };
@@ -27,26 +28,30 @@ export const useStory = () => {
     setStory(updatedState);
   }, [history, currentIndex]);
 
-  const selectChapter = useCallback(async (id: string | null, currentStoryState?: StoryState) => {
-    const state = currentStoryState || story;
+  const selectChapter = useCallback((id: string | null) => {
     setCurrentChapterId(id);
-    
-    if (id) {
-      const chapter = state.chapters.find(c => c.id === id);
-      if (chapter) {
-          try {
-            const res = await api.chapters.get(Number(id));
-            const updatedChapters = state.chapters.map(c => c.id === id ? { ...c, content: res.content } : c);
-            const updatedStory = { ...state, chapters: updatedChapters, currentChapterId: id };
-            setStory(updatedStory);
-          } catch (e) {
-            console.error("Failed to load chapter content", e);
-          }
-      }
+  }, []);
+
+  // Load chapter content when currentChapterId changes
+  useEffect(() => {
+    if (currentChapterId) {
+      const loadContent = async () => {
+        try {
+          const res = await api.chapters.get(Number(currentChapterId));
+          setStory(prev => {
+            const updatedChapters = prev.chapters.map(c => c.id === currentChapterId ? { ...c, content: res.content } : c);
+            return { ...prev, chapters: updatedChapters };
+          });
+        } catch (e) {
+          console.error("Failed to load chapter content", e);
+        }
+      };
+      loadContent();
     }
-  }, [story]);
+  }, [currentChapterId]);
 
   const fetchStory = useCallback(async () => {
+    if (story.id) return; // Already loaded
     try {
       const projects = await api.projects.list();
       if (projects.current) {
@@ -74,20 +79,19 @@ export const useStory = () => {
           setHistory([newStory]);
           setCurrentIndex(0);
           
-          if (newStory.currentChapterId) {
-             selectChapter(newStory.currentChapterId, newStory);
-          } else {
-             setCurrentChapterId(null);
-          }
+          setCurrentChapterId(newStory.currentChapterId);
         }
       }
     } catch (e) {
       console.error("Failed to fetch story", e);
     }
-  }, [selectChapter]);
+  }, []);
 
   useEffect(() => {
-    fetchStory();
+    if (!hasFetchedRef.current) {
+      hasFetchedRef.current = true;
+      fetchStory();
+    }
   }, [fetchStory]);
 
   const updateStoryMetadata = async (title: string, summary: string, tags: string[]) => {
@@ -138,7 +142,6 @@ export const useStory = () => {
             currentChapterId: newChapter.id 
         };
         pushState(newState);
-        selectChapter(newChapter.id, newState);
         
     } catch (e) {
         console.error("Failed to add chapter", e);
@@ -153,8 +156,6 @@ export const useStory = () => {
         
         const newState = { ...story, chapters: newChapters, currentChapterId: newSelection };
         pushState(newState);
-        if (newSelection) selectChapter(newSelection, newState);
-        else setCurrentChapterId(null);
     } catch (e) {
         console.error("Failed to delete chapter", e);
     }

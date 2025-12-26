@@ -74,14 +74,14 @@ async def api_health() -> dict:
     return {"status": "ok"}
 
 
-@app.get("/api/story")
-async def api_story() -> dict:
-    active = get_active_project_dir()
-    if active:
-        story = load_story_config(active / "story.json")
-    else:
-        story = load_story_config(CONFIG_DIR / "story.json")
-    return story or {}
+# @app.get("/api/story")
+# async def api_story() -> dict:
+#     active = get_active_project_dir()
+#     if active:
+#         story = load_story_config(active / "story.json")
+#     else:
+#         story = load_story_config(CONFIG_DIR / "story.json")
+#     return story or {}
 
 
 @app.get("/api/machine")
@@ -135,8 +135,13 @@ def main(argv: Optional[list[str]] = None) -> None:
     # Import uvicorn lazily so that importing this module doesn't require it for tests/tools
     import uvicorn  # type: ignore
 
+    # Prefer passing the in-process app instance to avoid re-import differences.
+    # Uvicorn's reload/multi-worker modes require an import string.
+    use_import_string = bool(args.reload) or (isinstance(args.workers, int) and args.workers > 1)
+    app_target = "app.main:app" if use_import_string else app
+
     uvicorn.run(
-        "app.main:app",
+        app_target,
         host=args.host,
         port=args.port,
         reload=bool(args.reload) if args.workers in (None, 0) else False,
