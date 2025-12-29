@@ -61,7 +61,7 @@ export const ChapterList: React.FC<ChapterListProps> = ({
         {chapters.map((chapter) => (
           <div
             key={chapter.id}
-            className={`group relative p-3 rounded-lg cursor-pointer transition-all border ${
+            className={`group relative p-3 rounded-lg cursor-pointer transition border ${
               currentChapterId === chapter.id ? itemActive : itemInactive
             }`}
             onClick={() => onSelect(chapter.id)}

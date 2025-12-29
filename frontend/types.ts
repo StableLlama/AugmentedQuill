@@ -35,6 +35,7 @@ export interface EditorSettings {
   brightness: number; // 0.5 - 1.0
   contrast: number; // 0.5 - 1.0
   theme: AppTheme;
+  sidebarWidth: number;
 }
 
 export interface LLMConfig {

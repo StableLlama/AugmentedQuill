@@ -97,7 +97,7 @@ const App: React.FC = () => {
 
   // App State
   const [appSettings, setAppSettings] = useState<AppSettings>(() => {
-    const saved = localStorage.getItem('storyweaver_settings');
+    const saved = localStorage.getItem('augmentedquill_settings');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
@@ -117,7 +117,7 @@ const App: React.FC = () => {
   });
 
   const [projects, setProjects] = useState<ProjectMetadata[]>(() => {
-    const saved = localStorage.getItem('storyweaver_projects_meta');
+    const saved = localStorage.getItem('augmentedquill_projects_meta');
     return saved
       ? JSON.parse(saved)
       : [{ id: story.id, title: story.title, updatedAt: Date.now() }];
@@ -150,18 +150,37 @@ const App: React.FC = () => {
   >([]);
 
   // Editor Appearance Settings
-  const [editorSettings, setEditorSettings] = useState<EditorSettings>({
-    fontSize: 18,
-    maxWidth: 60,
-    brightness: 0.95,
-    contrast: 0.9,
-    theme: 'mixed', // Default: Dark UI + Light Paper
+  const [editorSettings, setEditorSettings] = useState<EditorSettings>(() => {
+    const saved = localStorage.getItem('augmentedquill_editor_settings');
+    const defaults: EditorSettings = {
+      fontSize: 18,
+      maxWidth: 60,
+      brightness: 0.95,
+      contrast: 0.9,
+      theme: 'mixed', // Default: Dark UI + Light Paper
+      sidebarWidth: 320,
+    };
+    if (saved) {
+      try {
+        return { ...defaults, ...JSON.parse(saved) };
+      } catch (e) {
+        return defaults;
+      }
+    }
+    return defaults;
   });
 
   // Persist Settings
   useEffect(() => {
-    localStorage.setItem('storyweaver_settings', JSON.stringify(appSettings));
+    localStorage.setItem('augmentedquill_settings', JSON.stringify(appSettings));
   }, [appSettings]);
+
+  useEffect(() => {
+    localStorage.setItem(
+      'augmentedquill_editor_settings',
+      JSON.stringify(editorSettings)
+    );
+  }, [editorSettings]);
 
   // Persist Current Project Logic
   useEffect(() => {
@@ -185,7 +204,7 @@ const App: React.FC = () => {
   }, [story.title, story.chapters, story.summary, story.styleTags]);
 
   useEffect(() => {
-    localStorage.setItem('storyweaver_projects_meta', JSON.stringify(projects));
+    localStorage.setItem('augmentedquill_projects_meta', JSON.stringify(projects));
   }, [projects]);
 
   // Project Management Functions
@@ -670,6 +689,9 @@ Always prioritize the user's creative vision.`;
   return (
     <div
       className={`flex flex-col h-screen font-sans overflow-hidden ${bgMain} ${textMain}`}
+      style={
+        { '--sidebar-width': `${editorSettings.sidebarWidth}px` } as React.CSSProperties
+      }
     >
       <SettingsDialog
         isOpen={isSettingsOpen}
@@ -1444,6 +1466,32 @@ Always prioritize the user's creative vision.`;
                       className={sliderClass}
                     />
                   </div>
+                  <div className="space-y-2">
+                    <div
+                      className={`flex justify-between items-center text-sm ${textMain}`}
+                    >
+                      <span className="flex items-center gap-2">
+                        <SplitSquareHorizontal size={14} /> Sidebar Width
+                      </span>
+                      <span className="font-mono text-xs text-stone-500">
+                        {editorSettings.sidebarWidth}px
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="200"
+                      max="600"
+                      step="10"
+                      value={editorSettings.sidebarWidth}
+                      onChange={(e) =>
+                        setEditorSettings({
+                          ...editorSettings,
+                          sidebarWidth: Number(e.target.value),
+                        })
+                      }
+                      className={sliderClass}
+                    />
+                  </div>
                 </div>
               </div>
             )}
@@ -1472,7 +1520,7 @@ Always prioritize the user's creative vision.`;
           ></div>
         )}
         <div
-          className={`fixed inset-y-0 left-0 top-14 w-80 flex flex-col border-r flex-shrink-0 z-40 transition-transform duration-300 ease-in-out lg:relative lg:top-auto lg:translate-x-0 ${
+          className={`fixed inset-y-0 left-0 top-14 w-[var(--sidebar-width)] flex-col border-r flex-shrink-0 z-40 transition-transform duration-300 ease-in-out lg:relative lg:top-auto lg:translate-x-0 flex ${
             isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
           } ${
             isLight ? 'bg-stone-50 border-stone-200' : 'bg-stone-900 border-stone-800'
@@ -1528,7 +1576,7 @@ Always prioritize the user's creative vision.`;
           </div>
         </div>
         {isChatOpen && (
-          <div className="fixed inset-y-0 right-0 top-14 w-full sm:w-96 flex-shrink-0 flex flex-col z-40 shadow-xl transition-all duration-300 ease-in-out md:relative md:top-auto md:z-20 md:h-full">
+          <div className="fixed inset-y-0 right-0 top-14 w-full md:w-[var(--sidebar-width)] flex-shrink-0 flex flex-col z-40 shadow-xl transition duration-300 ease-in-out md:relative md:top-auto md:z-20 md:h-full">
             <Chat
               messages={chatMessages}
               isLoading={isChatLoading}
