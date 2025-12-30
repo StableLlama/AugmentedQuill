@@ -7,8 +7,8 @@ the rest of the application can remain provider-agnostic.
 Design goals:
 - Single responsibility: Only LLM concerns live here.
 - Testability: Functions are small and deterministic given inputs.
-- Backward compatibility: app.main re-exports wrappers with legacy names.
 """
+
 from __future__ import annotations
 
 from typing import Any, Dict, AsyncIterator, Tuple
@@ -25,13 +25,15 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 CONFIG_DIR = BASE_DIR / "config"
 
 
-def resolve_openai_credentials(payload: Dict[str, Any]) -> Tuple[str, str | None, str, int]:
+def resolve_openai_credentials(
+    payload: Dict[str, Any],
+) -> Tuple[str, str | None, str, int]:
     """Resolve (base_url, api_key, model_id, timeout_s) from machine config and overrides.
 
     Precedence:
     1. Environment variables OPENAI_BASE_URL / OPENAI_API_KEY
     2. Payload overrides: base_url, api_key, model, timeout_s or model_name (by name)
-    3. machine.json -> openai.models[] (selected by name) or legacy single-model fields
+    3. machine.json -> openai.models[] (selected by name)
     """
     machine = load_machine_config(CONFIG_DIR / "machine.json") or {}
     openai_cfg: Dict[str, Any] = machine.get("openai") or {}
@@ -43,25 +45,27 @@ def resolve_openai_credentials(payload: Dict[str, Any]) -> Tuple[str, str | None
     timeout_s = payload.get("timeout_s")
 
     models = openai_cfg.get("models") if isinstance(openai_cfg, dict) else None
-    if isinstance(models, list) and models:
-        chosen = None
-        if selected_name:
-            for m in models:
-                if isinstance(m, dict) and (m.get("name") == selected_name):
-                    chosen = m
-                    break
-        if chosen is None:
-            chosen = models[0]
-        base_url = chosen.get("base_url") or base_url
-        api_key = chosen.get("api_key") or api_key
-        model_id = chosen.get("model") or model_id
-        timeout_s = chosen.get("timeout_s", 60) or timeout_s
-    else:
-        # Legacy single-model fields
-        base_url = base_url or openai_cfg.get("base_url")
-        api_key = api_key or openai_cfg.get("api_key")
-        model_id = model_id or openai_cfg.get("model")
-        timeout_s = timeout_s or openai_cfg.get("timeout_s", 60)
+    if not (isinstance(models, list) and models):
+        from fastapi import HTTPException
+
+        raise HTTPException(
+            status_code=400,
+            detail="No OpenAI models configured. Configure openai.models[] in machine.json.",
+        )
+
+    chosen = None
+    if selected_name:
+        for m in models:
+            if isinstance(m, dict) and (m.get("name") == selected_name):
+                chosen = m
+                break
+    if chosen is None:
+        chosen = models[0]
+
+    base_url = chosen.get("base_url") or base_url
+    api_key = chosen.get("api_key") or api_key
+    model_id = chosen.get("model") or model_id
+    timeout_s = chosen.get("timeout_s", 60) or timeout_s
 
     # Environment wins
     env_base = os.getenv("OPENAI_BASE_URL")
@@ -74,7 +78,9 @@ def resolve_openai_credentials(payload: Dict[str, Any]) -> Tuple[str, str | None
     if not base_url or not model_id:
         from fastapi import HTTPException
 
-        raise HTTPException(status_code=400, detail="Missing base_url or model in configuration")
+        raise HTTPException(
+            status_code=400, detail="Missing base_url or model in configuration"
+        )
 
     try:
         ts = int(timeout_s or 60)
@@ -100,7 +106,9 @@ async def openai_chat_complete(
 
     Pulls llm_prefs (temperature, max_tokens) from story.json of active project.
     """
-    story = load_story_config((get_active_project_dir() or CONFIG_DIR) / "story.json") or {}
+    story = (
+        load_story_config((get_active_project_dir() or CONFIG_DIR) / "story.json") or {}
+    )
     prefs = (story.get("llm_prefs") or {}) if isinstance(story, dict) else {}
     temperature = prefs.get("temperature", 0.7)
     try:
@@ -114,7 +122,11 @@ async def openai_chat_complete(
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
 
-    body: Dict[str, Any] = {"model": model_id, "messages": messages, "temperature": temperature}
+    body: Dict[str, Any] = {
+        "model": model_id,
+        "messages": messages,
+        "temperature": temperature,
+    }
     if isinstance(max_tokens, int):
         body["max_tokens"] = max_tokens
     if extra_body:
@@ -126,7 +138,17 @@ async def openai_chat_complete(
         timeout_obj = httpx.Timeout(60.0)
 
     if _llm_debug_enabled():
-        print("LLM REQUEST:", {"url": url, "headers": {k: ("***" if k == "Authorization" else v) for k, v in headers.items()}, "body": body})
+        print(
+            "LLM REQUEST:",
+            {
+                "url": url,
+                "headers": {
+                    k: ("***" if k == "Authorization" else v)
+                    for k, v in headers.items()
+                },
+                "body": body,
+            },
+        )
 
     async with httpx.AsyncClient(timeout=timeout_obj) as client:
         r = await client.post(url, headers=headers, json=body)
@@ -150,7 +172,9 @@ async def openai_completions(
 
     Pulls llm_prefs (temperature, max_tokens) from story.json of active project.
     """
-    story = load_story_config((get_active_project_dir() or CONFIG_DIR) / "story.json") or {}
+    story = (
+        load_story_config((get_active_project_dir() or CONFIG_DIR) / "story.json") or {}
+    )
     prefs = (story.get("llm_prefs") or {}) if isinstance(story, dict) else {}
     temperature = prefs.get("temperature", 0.7)
     try:
@@ -164,7 +188,12 @@ async def openai_completions(
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
 
-    body: Dict[str, Any] = {"model": model_id, "prompt": prompt, "temperature": temperature, "n": n}
+    body: Dict[str, Any] = {
+        "model": model_id,
+        "prompt": prompt,
+        "temperature": temperature,
+        "n": n,
+    }
     if isinstance(max_tokens, int):
         body["max_tokens"] = max_tokens
     if extra_body:
@@ -176,7 +205,17 @@ async def openai_completions(
         timeout_obj = httpx.Timeout(60.0)
 
     if _llm_debug_enabled():
-        print("LLM REQUEST:", {"url": url, "headers": {k: ("***" if k == "Authorization" else v) for k, v in headers.items()}, "body": body})
+        print(
+            "LLM REQUEST:",
+            {
+                "url": url,
+                "headers": {
+                    k: ("***" if k == "Authorization" else v)
+                    for k, v in headers.items()
+                },
+                "body": body,
+            },
+        )
 
     async with httpx.AsyncClient(timeout=timeout_obj) as client:
         r = await client.post(url, headers=headers, json=body)
@@ -200,7 +239,9 @@ async def openai_chat_complete_stream(
     pieces for simplicity on the caller side.
     """
     url = str(base_url).rstrip("/") + "/chat/completions"
-    story = load_story_config((get_active_project_dir() or CONFIG_DIR) / "story.json") or {}
+    story = (
+        load_story_config((get_active_project_dir() or CONFIG_DIR) / "story.json") or {}
+    )
     prefs = (story.get("llm_prefs") or {}) if isinstance(story, dict) else {}
     temperature = prefs.get("temperature", 0.7)
     try:
@@ -238,7 +279,9 @@ async def openai_chat_complete_stream(
                     if data == "[DONE]":
                         break
                     try:
-                        obj = httpx.Response(200, json={}).json()  # placeholder to keep type checkers happy
+                        obj = httpx.Response(
+                            200, json={}
+                        ).json()  # placeholder to keep type checkers happy
                     except Exception:
                         obj = None
                     # We cannot rely on httpx to parse each line; parse minimally
@@ -274,7 +317,9 @@ async def openai_completions_stream(
     pieces for simplicity on the caller side.
     """
     url = str(base_url).rstrip("/") + "/completions"
-    story = load_story_config((get_active_project_dir() or CONFIG_DIR) / "story.json") or {}
+    story = (
+        load_story_config((get_active_project_dir() or CONFIG_DIR) / "story.json") or {}
+    )
     prefs = (story.get("llm_prefs") or {}) if isinstance(story, dict) else {}
     temperature = prefs.get("temperature", 0.7)
     try:
@@ -314,7 +359,9 @@ async def openai_completions_stream(
                     if data == "[DONE]":
                         break
                     try:
-                        obj = httpx.Response(200, json={}).json()  # placeholder to keep type checkers happy
+                        obj = httpx.Response(
+                            200, json={}
+                        ).json()  # placeholder to keep type checkers happy
                     except Exception:
                         obj = None
                     # We cannot rely on httpx to parse each line; parse minimally

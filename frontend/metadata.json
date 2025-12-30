@@ -1,0 +1,5 @@
+{
+  "name": "AugmentedQuill",
+  "description": "A collaborative story writing application using OpenAI-compatible models, featuring chapter management, context-aware chat, and intelligent editing tools.",
+  "requestFramePermissions": []
+}

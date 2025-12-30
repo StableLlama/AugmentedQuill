@@ -1,10 +1,10 @@
-from pathlib import Path
-from typing import Dict
-from fastapi import HTTPException
-
 from app.projects import get_active_project_dir
 from app.config import load_story_config
-from .chapter_helpers import _scan_chapter_files, _normalize_chapter_entry
+from .chapter_helpers import (
+    _scan_chapter_files,
+    _normalize_chapter_entry,
+    _chapter_by_id_or_404,
+)
 
 
 def _project_overview() -> dict:
@@ -26,12 +26,14 @@ def _project_overview() -> dict:
         # Fallback for bogus title values
         if not title or str(title).strip() in ("[object Object]", "object Object"):
             title = path.name
-        out.append({
-            "id": idx,
-            "filename": path.name,
-            "title": title,
-            "summary": summary,
-        })
+        out.append(
+            {
+                "id": idx,
+                "filename": path.name,
+                "title": title,
+                "summary": summary,
+            }
+        )
     return {
         "project_title": story.get("project_title") or (active.name if active else ""),
         "chapters": out,
@@ -48,4 +50,10 @@ def _chapter_content_slice(chap_id: int, start: int = 0, max_chars: int = 8000) 
     text = path.read_text(encoding="utf-8")
     total = len(text)
     end = min(total, start + max_chars)
-    return {"id": chap_id, "start": start, "end": end, "total": total, "content": text[start:end]}
+    return {
+        "id": chap_id,
+        "start": start,
+        "end": end,
+        "total": total,
+        "content": text[start:end],
+    }

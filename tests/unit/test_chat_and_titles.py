@@ -32,8 +32,20 @@ class ChatAndTitlesTest(TestCase):
             return {
                 "openai": {
                     "models": [
-                        {"name": "m1", "base_url": "http://x", "api_key": "k", "model": "id1", "timeout_s": 10},
-                        {"name": "m2", "base_url": "http://x", "api_key": "k", "model": "id2", "timeout_s": 10},
+                        {
+                            "name": "m1",
+                            "base_url": "http://x",
+                            "api_key": "k",
+                            "model": "id1",
+                            "timeout_s": 10,
+                        },
+                        {
+                            "name": "m2",
+                            "base_url": "http://x",
+                            "api_key": "k",
+                            "model": "id2",
+                            "timeout_s": 10,
+                        },
                     ],
                     "selected": "does-not-exist",
                 }

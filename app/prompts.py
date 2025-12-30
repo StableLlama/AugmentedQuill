@@ -6,7 +6,6 @@ Prompts can be overridden on a per-model basis through the settings.
 """
 
 from typing import Dict, Any, Optional
-import json as _json
 
 
 # Default system messages
@@ -59,7 +58,9 @@ DEFAULT_USER_PROMPTS = {
 }
 
 
-def get_system_message(message_type: str, model_overrides: Optional[Dict[str, Any]] = None) -> str:
+def get_system_message(
+    message_type: str, model_overrides: Optional[Dict[str, Any]] = None
+) -> str:
     """
     Get a system message, checking for model-specific overrides first.
 
@@ -97,7 +98,9 @@ def get_user_prompt(prompt_type: str, **kwargs) -> str:
         raise ValueError(f"Missing required parameter for prompt {prompt_type}: {e}")
 
 
-def load_model_prompt_overrides(machine_config: Dict[str, Any], selected_model: Optional[str] = None) -> Dict[str, str]:
+def load_model_prompt_overrides(
+    machine_config: Dict[str, Any], selected_model: Optional[str] = None
+) -> Dict[str, str]:
     """
     Load prompt overrides for a specific model from machine config.
 

@@ -9,10 +9,11 @@ from app.config import load_story_config
 def _scan_chapter_files() -> List[Tuple[int, Path]]:
     """Return list of (index, path) for chapter files under active project.
 
-    Supports files like '0001.txt' (preferred) and legacy like 'chapter01.txt'.
+    Supports files like '0001.txt'.
     Sorted by numeric index ascending.
     """
     from app.projects import get_active_project_dir
+
     active = get_active_project_dir()
     if not active:
         return []
@@ -29,14 +30,6 @@ def _scan_chapter_files() -> List[Tuple[int, Path]]:
             idx = int(m.group(1))
             items.append((idx, p))
             continue
-        # legacy chapter01.txt -> index 1
-        m2 = re.match(r"^chapter(\d+)\.txt$", name, re.IGNORECASE)
-        if m2:
-            try:
-                idx = int(m2.group(1))
-                items.append((idx, p))
-            except ValueError:
-                pass
     items.sort(key=lambda t: t[0])
     return items
 
@@ -46,6 +39,7 @@ def _load_chapter_titles(count: int) -> List[str]:
     Do not pad; callers decide fallbacks (e.g., filename).
     """
     from app.projects import get_active_project_dir
+
     active = get_active_project_dir()
     story = load_story_config((active / "story.json") if active else None) or {}
     titles = story.get("chapters") or []
@@ -55,7 +49,7 @@ def _load_chapter_titles(count: int) -> List[str]:
 
 
 def _normalize_chapter_entry(entry: Any) -> Dict[str, str]:
-    """Ensures a chapter entry is a dict with 'title' and 'summary'.
+    """Ensures a chapter entry is a dict with 'title', 'summary', 'filename'.
 
     Additionally sanitizes the common bogus string "[object Object]" that can
     arrive from UI mishaps, treating it as empty so filename fallbacks apply.
@@ -72,15 +66,18 @@ def _normalize_chapter_entry(entry: Any) -> Dict[str, str]:
         return {
             "title": _sanitize_text(entry.get("title", "")),
             "summary": _sanitize_text(entry.get("summary", "")),
+            "filename": _sanitize_text(entry.get("filename", "")),
         }
     elif isinstance(entry, (str, int, float)):
-        return {"title": _sanitize_text(entry), "summary": ""}
-    return {"title": "", "summary": ""}
+        return {"title": _sanitize_text(entry), "summary": "", "filename": ""}
+    return {"title": "", "summary": "", "filename": ""}
 
 
 def _chapter_by_id_or_404(chap_id: int) -> tuple[Path, int, int]:
     files = _scan_chapter_files()
-    match = next(((idx, p, i) for i, (idx, p) in enumerate(files) if idx == chap_id), None)
+    match = next(
+        ((idx, p, i) for i, (idx, p) in enumerate(files) if idx == chap_id), None
+    )
     if not match:
         raise HTTPException(status_code=404, detail="Chapter not found")
     return match  # (idx, path, pos)

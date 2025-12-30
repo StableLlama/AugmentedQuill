@@ -1,16 +1,29 @@
 {
-    // Use IntelliSense to learn about possible attributes.
-    // Hover to view descriptions of existing attributes.
-    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
-    "version": "0.2.0",
-    "configurations": [
-        {
-            "name": "Python Debugger: AugmentedQuill",
-            "type": "debugpy",
-            "request": "launch",
-            "module": "app.main",
-            "args": ["--reload", "--host", "127.0.0.1", "--port", "8000"],
-            "console": "integratedTerminal"
-        }
-    ]
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Backend (Dev API 28000)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "app.main",
+      "args": ["--host", "127.0.0.1", "--port", "28000", "--reload"],
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "Frontend (Vite 28001)",
+      "type": "node-terminal",
+      "request": "launch",
+      "preLaunchTask": "frontend: install",
+      "command": "npm run dev -- --host 127.0.0.1 --port 28001 --strictPort",
+      "cwd": "${workspaceFolder}/frontend"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Full Stack Dev (Backend + Frontend)",
+      "configurations": ["Backend (Dev API 28000)", "Frontend (Vite 28001)"],
+      "stopAll": true
+    }
+  ]
 }

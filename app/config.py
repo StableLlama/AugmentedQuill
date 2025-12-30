@@ -9,6 +9,7 @@ Conventions:
 
 Only generic JSON dicts are returned to keep things simple in early stages.
 """
+
 from __future__ import annotations
 
 import json
@@ -27,6 +28,7 @@ def _interpolate_env(value: Any) -> Any:
     Non-string types are returned unchanged.
     """
     if isinstance(value, str):
+
         def replace(match: re.Match[str]) -> str:
             var = match.group(1)
             return os.getenv(var, match.group(0))  # leave placeholder if unset

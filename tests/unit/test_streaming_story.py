@@ -6,6 +6,7 @@ from unittest import TestCase
 from fastapi.testclient import TestClient
 
 import app.main as main
+import app.llm as llm
 from app.projects import select_project
 
 
@@ -40,8 +41,8 @@ class StreamingStoryTest(TestCase):
 
     def _patch_stream(self):
         # Patch credential resolver to avoid needing config
-        self._orig_resolve = getattr(main, "_resolve_openai_credentials")
-        self._orig_stream = getattr(main, "_openai_chat_complete_stream")
+        self._orig_resolve = llm.resolve_openai_credentials
+        self._orig_stream = llm.openai_chat_complete_stream
 
         def fake_resolve(payload):  # type: ignore
             return ("https://fake/v1", None, "fake-model", 5)
@@ -51,30 +52,36 @@ class StreamingStoryTest(TestCase):
             for part in ("A", "B", "C"):
                 yield part
 
-        main._resolve_openai_credentials = fake_resolve  # type: ignore
-        main._openai_chat_complete_stream = fake_stream  # type: ignore
+        llm.resolve_openai_credentials = fake_resolve  # type: ignore
+        llm.openai_chat_complete_stream = fake_stream  # type: ignore
 
         def _undo():
-            main._resolve_openai_credentials = self._orig_resolve  # type: ignore
-            main._openai_chat_complete_stream = self._orig_stream  # type: ignore
+            llm.resolve_openai_credentials = self._orig_resolve  # type: ignore
+            llm.openai_chat_complete_stream = self._orig_stream  # type: ignore
 
         self.addCleanup(_undo)
 
     def test_summary_stream_persists_on_complete(self):
         pdir = self._make_project()
         self._patch_stream()
-        r = self.client.post("/api/story/summary/stream", json={"chap_id": 1, "mode": "update", "model_name": "fake"})
+        r = self.client.post(
+            "/api/story/summary/stream",
+            json={"chap_id": 1, "mode": "update", "model_name": "fake"},
+        )
         self.assertEqual(r.status_code, 200, r.text)
         self.assertEqual(r.text, "ABC")
         # Persisted
         import json
+
         story = json.loads((pdir / "story.json").read_text(encoding="utf-8"))
         self.assertEqual(story["chapters"][0]["summary"], "ABC")
 
     def test_write_stream_overwrites_file(self):
         pdir = self._make_project()
         self._patch_stream()
-        r = self.client.post("/api/story/write/stream", json={"chap_id": 1, "model_name": "fake"})
+        r = self.client.post(
+            "/api/story/write/stream", json={"chap_id": 1, "model_name": "fake"}
+        )
         self.assertEqual(r.status_code, 200, r.text)
         self.assertEqual(r.text, "ABC")
         text = (pdir / "chapters" / "0001.txt").read_text(encoding="utf-8")
@@ -83,7 +90,9 @@ class StreamingStoryTest(TestCase):
     def test_continue_stream_appends(self):
         pdir = self._make_project()
         self._patch_stream()
-        r = self.client.post("/api/story/continue/stream", json={"chap_id": 1, "model_name": "fake"})
+        r = self.client.post(
+            "/api/story/continue/stream", json={"chap_id": 1, "model_name": "fake"}
+        )
         self.assertEqual(r.status_code, 200, r.text)
         self.assertEqual(r.text, "ABC")
         text = (pdir / "chapters" / "0001.txt").read_text(encoding="utf-8")

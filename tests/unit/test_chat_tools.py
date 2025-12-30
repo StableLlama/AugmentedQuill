@@ -45,7 +45,10 @@ class ChatToolsTest(TestCase):
         body = {
             "model_name": None,
             "messages": [
-                {"role": "user", "content": "What chapters exist and what's in the first?"},
+                {
+                    "role": "user",
+                    "content": "What chapters exist and what's in the first?",
+                },
                 {
                     "role": "assistant",
                     "content": None,
@@ -53,12 +56,18 @@ class ChatToolsTest(TestCase):
                         {
                             "id": "call_overview",
                             "type": "function",
-                            "function": {"name": "get_project_overview", "arguments": "{}"},
+                            "function": {
+                                "name": "get_project_overview",
+                                "arguments": "{}",
+                            },
                         },
                         {
                             "id": "call_content",
                             "type": "function",
-                            "function": {"name": "get_chapter_content", "arguments": "{\"chap_id\":1,\"start\":0,\"max_chars\":200}"},
+                            "function": {
+                                "name": "get_chapter_content",
+                                "arguments": '{"chap_id":1,"start":0,"max_chars":200}',
+                            },
                         },
                     ],
                 },
@@ -81,7 +90,7 @@ class ChatToolsTest(TestCase):
         # Validate second tool returns content for chap 1
         t2 = app[1]
         self.assertEqual(t2.get("name"), "get_chapter_content")
-        self.assertIn("\"id\": 1", t2.get("content", ""))
+        self.assertIn('"id": 1', t2.get("content", ""))
 
     def test_tools_execute_write_functions(self):
         self._bootstrap_project()
@@ -98,7 +107,10 @@ class ChatToolsTest(TestCase):
                         {
                             "id": "call_write_content",
                             "type": "function",
-                            "function": {"name": "write_chapter_content", "arguments": "{\"chap_id\":1,\"content\":\"Updated content\"}"},
+                            "function": {
+                                "name": "write_chapter_content",
+                                "arguments": '{"chap_id":1,"content":"Updated content"}',
+                            },
                         },
                     ],
                 },
@@ -133,7 +145,10 @@ class ChatToolsTest(TestCase):
                         {
                             "id": "call_write_summary",
                             "type": "function",
-                            "function": {"name": "write_chapter_summary", "arguments": "{\"chap_id\":1,\"summary\":\"Updated summary\"}"},
+                            "function": {
+                                "name": "write_chapter_summary",
+                                "arguments": '{"chap_id":1,"summary":"Updated summary"}',
+                            },
                         },
                     ],
                 },

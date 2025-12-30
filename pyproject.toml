@@ -44,8 +44,5 @@ line-length = 88
 target-version = "py311"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "N", "UP", "YTT", "S", "BLE", "FBT", "B", "A", "COM", "C4", "DTZ", "T10", "DJ", "EM", "EXE", "FA", "ISC", "ICN", "G", "INP", "PIE", "T20", "PYI", "PT", "Q", "RSE", "RET", "SLF", "SLOT", "SIM", "TID", "TCH", "INT", "ARG", "PTH", "ERA", "PD", "PGH", "PL", "TRY", "FLY", "NPY", "AIR", "PERF", "FURB", "LOG", "RUF"]
 ignore = ["E501", "S101", "S104", "COM812", "ISC001"]
-
-[tool.ruff.lint.per-file-ignores]
-"tests/**/*" = ["S101", "ARG", "FBT", "PLR2004"]
+per-file-ignores = {"tests/**/*" = ["S101", "ARG", "FBT", "PLR2004"]}

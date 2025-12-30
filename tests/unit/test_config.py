@@ -12,14 +12,16 @@ class ConfigLoaderTest(TestCase):
         with tempfile.TemporaryDirectory() as td:
             cfg_path = Path(td) / "machine.json"
             cfg_path.write_text(
-                json.dumps({
-                    "openai": {
-                        "api_key": "${OPENAI_API_KEY}",
-                        "base_url": "https://api.example.com/v1",
-                        "model": "gpt-old",
-                        "timeout_s": 10
+                json.dumps(
+                    {
+                        "openai": {
+                            "api_key": "${OPENAI_API_KEY}",
+                            "base_url": "https://api.example.com/v1",
+                            "model": "gpt-old",
+                            "timeout_s": 10,
+                        }
                     }
-                }),
+                ),
                 encoding="utf-8",
             )
 
@@ -28,7 +30,7 @@ class ConfigLoaderTest(TestCase):
                 "openai": {
                     "base_url": "https://default.invalid/v1",
                     "model": "gpt-default",
-                    "timeout_s": 5
+                    "timeout_s": 5,
                 }
             }
 
@@ -56,12 +58,14 @@ class ConfigLoaderTest(TestCase):
             os.environ["PROJECT_TITLE"] = "My Novel"
             try:
                 cfg_path.write_text(
-                    json.dumps({
-                        "project_title": "${PROJECT_TITLE}",
-                        "format": "markdown",
-                        "chapters": ["000-intro.md", "010-conflict.md"],
-                        "llm_prefs": {"temperature": 0.7, "max_tokens": 2048}
-                    }),
+                    json.dumps(
+                        {
+                            "project_title": "${PROJECT_TITLE}",
+                            "format": "markdown",
+                            "chapters": ["000-intro.md", "010-conflict.md"],
+                            "llm_prefs": {"temperature": 0.7, "max_tokens": 2048},
+                        }
+                    ),
                     encoding="utf-8",
                 )
                 cfg = load_story_config(cfg_path)

@@ -1,6 +1,5 @@
 import json
 import os
-import shutil
 import tempfile
 from pathlib import Path
 from unittest import TestCase
@@ -9,9 +8,7 @@ from app.projects import (
     validate_project_dir,
     initialize_project_dir,
     select_project,
-    delete_project,
     load_registry,
-    get_registry_path,
     write_chapter_content,
     write_chapter_summary,
 )
@@ -109,11 +106,11 @@ class ProjectsTest(TestCase):
         chapters_dir.mkdir(parents=True, exist_ok=True)
         chapter_file = chapters_dir / "0001.txt"
         chapter_file.write_text("Original content", encoding="utf-8")
-        
+
         # Write new content
         new_content = "New chapter content"
         write_chapter_content(1, new_content)
-        
+
         # Check the file was updated
         self.assertEqual(chapter_file.read_text(encoding="utf-8"), new_content)
 
@@ -130,11 +127,11 @@ class ProjectsTest(TestCase):
         chapters_dir.mkdir(parents=True, exist_ok=True)
         chapter_file = chapters_dir / "0001.txt"
         chapter_file.write_text("Content", encoding="utf-8")
-        
+
         # Write new summary
         new_summary = "New chapter summary"
         write_chapter_summary(1, new_summary)
-        
+
         # Check the story.json was updated
         updated_story = json.loads(story_file.read_text(encoding="utf-8"))
         self.assertEqual(updated_story["chapters"][0]["summary"], new_summary)
