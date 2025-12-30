@@ -151,4 +151,16 @@ export const api = {
       return res.json();
     },
   },
+  debug: {
+    getLogs: async () => {
+      const res = await fetch(`${API_BASE}/debug/llm_logs`);
+      if (!res.ok) throw new Error('Failed to fetch debug logs');
+      return res.json();
+    },
+    clearLogs: async () => {
+      const res = await fetch(`${API_BASE}/debug/llm_logs`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to clear debug logs');
+      return res.json();
+    },
+  },
 };
