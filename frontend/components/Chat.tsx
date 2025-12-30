@@ -151,7 +151,6 @@ export const Chat: React.FC<ChatProps> = ({
               size="sm"
               variant="ghost"
               onClick={() => setShowSystemPrompt(false)}
-              theme={theme}
             >
               Cancel
             </Button>
@@ -160,7 +159,6 @@ export const Chat: React.FC<ChatProps> = ({
               size="sm"
               variant="primary"
               onClick={handleSystemPromptSave}
-              theme={theme}
             >
               Update Persona
             </Button>
@@ -304,7 +302,6 @@ export const Chat: React.FC<ChatProps> = ({
               onClick={onRegenerate}
               icon={<RefreshCw size={12} />}
               className="text-xs py-1 h-7 border-dashed"
-              theme={theme}
             >
               Regenerate last response
             </Button>

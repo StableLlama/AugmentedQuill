@@ -761,7 +761,6 @@ Always prioritize the user's creative vision.`;
               onClick={undo}
               disabled={!canUndo}
               title="Undo"
-              theme={currentTheme}
             >
               <Undo size={16} />
             </Button>
@@ -772,7 +771,6 @@ Always prioritize the user's creative vision.`;
               onClick={redo}
               disabled={!canRedo}
               title="Redo"
-              theme={currentTheme}
             >
               <Redo size={16} />
             </Button>
@@ -790,7 +788,6 @@ Always prioritize the user's creative vision.`;
               onClick={() => setIsSummaryOpen(!isSummaryOpen)}
               icon={<BookOpen size={14} />}
               className="text-xs h-7"
-              theme={currentTheme}
             >
               {isSummaryOpen ? 'Hide' : 'Edit Summary'}
             </Button>
@@ -1264,7 +1261,6 @@ Always prioritize the user's creative vision.`;
                 disabled={isAiActionLoading}
                 icon={<Wand2 size={12} />}
                 title="Extend"
-                theme={currentTheme}
               >
                 <span className="hidden xl:inline">Extend</span>
               </Button>
@@ -1277,7 +1273,6 @@ Always prioritize the user's creative vision.`;
                 disabled={isAiActionLoading}
                 icon={<FileEdit size={12} />}
                 title="Rewrite"
-                theme={currentTheme}
               >
                 <span className="hidden xl:inline">Rewrite</span>
               </Button>
@@ -1294,7 +1289,6 @@ Always prioritize the user's creative vision.`;
             onClick={() => setIsSettingsOpen(true)}
             title="Settings"
             className="mr-1"
-            theme={currentTheme}
           >
             <SettingsIcon size={18} />
           </Button>
@@ -1307,7 +1301,6 @@ Always prioritize the user's creative vision.`;
               icon={<Type size={16} />}
               title="Page Appearance"
               className="hidden sm:inline-flex"
-              theme={currentTheme}
             >
               Appearance
             </Button>
@@ -1516,7 +1509,6 @@ Always prioritize the user's creative vision.`;
             icon={
               isChatOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />
             }
-            theme={currentTheme}
           >
             {isChatOpen ? 'Hide' : 'AI'}
           </Button>
