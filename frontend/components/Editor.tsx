@@ -499,7 +499,6 @@ export const Editor = React.forwardRef<any, EditorProps>(
                 onClick={onToggleSummary}
                 icon={<BookOpen size={14} />}
                 className="text-xs"
-                theme={settings.theme}
               >
                 {isSummaryOpen ? 'Hide Summary' : 'Edit Summary'}
               </Button>
@@ -528,7 +527,6 @@ export const Editor = React.forwardRef<any, EditorProps>(
                   onClick={() => onAiAction('chapter', 'extend')}
                   disabled={isAiLoading}
                   icon={<Wand2 size={12} />}
-                  theme={settings.theme}
                 >
                   Extend
                 </Button>
@@ -540,7 +538,6 @@ export const Editor = React.forwardRef<any, EditorProps>(
                   onClick={() => onAiAction('chapter', 'rewrite')}
                   disabled={isAiLoading}
                   icon={<FileEdit size={12} />}
-                  theme={settings.theme}
                 >
                   Rewrite
                 </Button>
@@ -570,7 +567,6 @@ export const Editor = React.forwardRef<any, EditorProps>(
                     onClick={() => onAiAction('summary', 'update')}
                     disabled={isAiLoading}
                     icon={<RefreshCw size={10} />}
-                    theme={settings.theme}
                   >
                     AI Update
                   </Button>
@@ -582,7 +578,6 @@ export const Editor = React.forwardRef<any, EditorProps>(
                     onClick={() => onAiAction('summary', 'rewrite')}
                     disabled={isAiLoading}
                     icon={<PenLine size={10} />}
-                    theme={settings.theme}
                   >
                     AI Rewrite
                   </Button>
