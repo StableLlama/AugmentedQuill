@@ -5,6 +5,7 @@ import { StoryMetadata } from './components/StoryMetadata';
 import { ChapterList } from './components/ChapterList';
 import { Editor } from './components/Editor';
 import { Chat } from './components/Chat';
+import { DebugLogs } from './components/DebugLogs';
 import { Button } from './components/Button';
 import { SettingsDialog } from './components/SettingsDialog';
 import {
@@ -33,6 +34,7 @@ import {
   RefreshCw,
   Sun,
   Moon,
+  Bug,
   Type,
   Monitor,
   X,
@@ -130,6 +132,7 @@ const App: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isAppearanceOpen, setIsAppearanceOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isDebugLogsOpen, setIsDebugLogsOpen] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('raw');
   const [showWhitespace, setShowWhitespace] = useState<boolean>(false);
   const [isSummaryOpen, setIsSummaryOpen] = useState(false);
@@ -1499,6 +1502,16 @@ Always prioritize the user's creative vision.`;
                 </div>
               </div>
             )}
+            <Button
+              theme={currentTheme}
+              variant="ghost"
+              size="sm"
+              onClick={() => setIsDebugLogsOpen(true)}
+              title="Debug Logs"
+              className="mr-1"
+            >
+              <Bug size={18} />
+            </Button>
           </div>
 
           <Button
@@ -1603,6 +1616,12 @@ Always prioritize the user's creative vision.`;
           </div>
         )}
       </div>
+
+      <DebugLogs
+        isOpen={isDebugLogsOpen}
+        onClose={() => setIsDebugLogsOpen(false)}
+        theme={currentTheme}
+      />
     </div>
   );
 };

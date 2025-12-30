@@ -2,9 +2,11 @@ from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import JSONResponse
 import json as _json
 import httpx
+import datetime
 
 from app.config import load_story_config
 from app.projects import get_active_project_dir
+from app.llm import add_llm_log, create_log_entry
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -32,6 +34,10 @@ async def _list_remote_models(
     Returns (ok, models, detail).
     """
     url = _normalize_base_url(base_url) + "/models"
+    headers = _auth_headers(api_key)
+    log_entry = create_log_entry(url, "GET", headers, None)
+    add_llm_log(log_entry)
+
     try:
         timeout_obj = httpx.Timeout(float(timeout_s))
     except Exception:
@@ -39,11 +45,17 @@ async def _list_remote_models(
 
     try:
         async with httpx.AsyncClient(timeout=timeout_obj) as client:
-            r = await client.get(url, headers=_auth_headers(api_key))
+            r = await client.get(url, headers=headers)
+            log_entry["response"]["status_code"] = r.status_code
+            log_entry["timestamp_end"] = datetime.datetime.now().isoformat()
             if not r.is_success:
+                log_entry["response"]["error"] = f"HTTP {r.status_code}"
                 return False, [], f"HTTP {r.status_code}"
             data = r.json()
+            log_entry["response"]["body"] = data
     except Exception as e:
+        log_entry["timestamp_end"] = datetime.datetime.now().isoformat()
+        log_entry["response"]["error"] = str(e)
         return False, [], str(e)
 
     models: list[str] = []
@@ -94,24 +106,38 @@ async def _remote_model_exists(
 
     try:
         async with httpx.AsyncClient(timeout=timeout_obj) as client:
-            r = await client.get(
-                f"{base}/models/{model_id}", headers=_auth_headers(api_key)
-            )
+            url1 = f"{base}/models/{model_id}"
+            log_entry1 = create_log_entry(url1, "GET", _auth_headers(api_key), None)
+            add_llm_log(log_entry1)
+
+            r = await client.get(url1, headers=_auth_headers(api_key))
+            log_entry1["response"]["status_code"] = r.status_code
+            log_entry1["timestamp_end"] = datetime.datetime.now().isoformat()
+
             if r.is_success:
+                log_entry1["response"]["body"] = r.json()
                 return True, None
 
             # Fallback: minimal chat call (some providers don't expose /models/{id})
+            url2 = f"{base}/chat/completions"
             payload = {
                 "model": model_id,
                 "messages": [{"role": "user", "content": "ping"}],
                 "max_tokens": 1,
                 "temperature": 0,
             }
-            r2 = await client.post(
-                f"{base}/chat/completions", headers=headers, json=payload
-            )
+            log_entry2 = create_log_entry(url2, "POST", headers, payload)
+            add_llm_log(log_entry2)
+
+            r2 = await client.post(url2, headers=headers, json=payload)
+            log_entry2["response"]["status_code"] = r2.status_code
+            log_entry2["timestamp_end"] = datetime.datetime.now().isoformat()
+
             if r2.is_success:
+                log_entry2["response"]["body"] = r2.json()
                 return True, None
+
+            log_entry2["response"]["error"] = f"HTTP {r2.status_code}"
             return False, f"HTTP {r2.status_code}"
     except Exception as e:
         return False, str(e)

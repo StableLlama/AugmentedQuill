@@ -11,9 +11,11 @@ Design goals:
 
 from __future__ import annotations
 
-from typing import Any, Dict, AsyncIterator, Tuple
+from typing import Any, Dict, AsyncIterator, Tuple, List
 from pathlib import Path
 import os
+import datetime
+import uuid
 
 import httpx
 
@@ -23,6 +25,43 @@ from app.projects import get_active_project_dir
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 CONFIG_DIR = BASE_DIR / "config"
+
+# Global list to store LLM communication logs for the current session
+llm_logs: List[Dict[str, Any]] = []
+
+
+def add_llm_log(log_entry: Dict[str, Any]):
+    """Add a log entry to the global list, keeping only the last 100 entries."""
+    llm_logs.append(log_entry)
+    if len(llm_logs) > 100:
+        llm_logs.pop(0)
+
+
+def create_log_entry(
+    url: str, method: str, headers: Dict[str, str], body: Any, streaming: bool = False
+) -> Dict[str, Any]:
+    """Create a new log entry structure."""
+    return {
+        "id": str(uuid.uuid4()),
+        "timestamp_start": datetime.datetime.now().isoformat(),
+        "timestamp_end": None,
+        "request": {
+            "url": url,
+            "method": method,
+            "headers": {
+                k: ("***" if k.lower() == "authorization" else v)
+                for k, v in headers.items()
+            },
+            "body": body,
+        },
+        "response": {
+            "status_code": None,
+            "streaming": streaming,
+            "chunks": [] if streaming else None,
+            "full_content": "" if streaming else None,
+            "body": None if not streaming else None,
+        },
+    }
 
 
 def resolve_openai_credentials(
@@ -132,6 +171,9 @@ async def openai_chat_complete(
     if extra_body:
         body.update(extra_body)
 
+    log_entry = create_log_entry(url, "POST", headers, body)
+    add_llm_log(log_entry)
+
     try:
         timeout_obj = httpx.Timeout(float(timeout_s or 60))
     except Exception:
@@ -142,20 +184,27 @@ async def openai_chat_complete(
             "LLM REQUEST:",
             {
                 "url": url,
-                "headers": {
-                    k: ("***" if k == "Authorization" else v)
-                    for k, v in headers.items()
-                },
+                "headers": log_entry["request"]["headers"],
                 "body": body,
             },
         )
 
     async with httpx.AsyncClient(timeout=timeout_obj) as client:
-        r = await client.post(url, headers=headers, json=body)
-        if _llm_debug_enabled():
-            print("LLM RESPONSE:", r.status_code)
-        r.raise_for_status()
-        return r.json()
+        try:
+            r = await client.post(url, headers=headers, json=body)
+            log_entry["timestamp_end"] = datetime.datetime.now().isoformat()
+            log_entry["response"]["status_code"] = r.status_code
+            if _llm_debug_enabled():
+                print("LLM RESPONSE:", r.status_code)
+
+            r.raise_for_status()
+            resp_json = r.json()
+            log_entry["response"]["body"] = resp_json
+            return resp_json
+        except Exception as e:
+            log_entry["timestamp_end"] = datetime.datetime.now().isoformat()
+            log_entry["response"]["error"] = str(e)
+            raise
 
 
 async def openai_completions(
@@ -199,6 +248,9 @@ async def openai_completions(
     if extra_body:
         body.update(extra_body)
 
+    log_entry = create_log_entry(url, "POST", headers, body)
+    add_llm_log(log_entry)
+
     try:
         timeout_obj = httpx.Timeout(float(timeout_s or 60))
     except Exception:
@@ -209,20 +261,27 @@ async def openai_completions(
             "LLM REQUEST:",
             {
                 "url": url,
-                "headers": {
-                    k: ("***" if k == "Authorization" else v)
-                    for k, v in headers.items()
-                },
+                "headers": log_entry["request"]["headers"],
                 "body": body,
             },
         )
 
     async with httpx.AsyncClient(timeout=timeout_obj) as client:
-        r = await client.post(url, headers=headers, json=body)
-        if _llm_debug_enabled():
-            print("LLM RESPONSE:", r.status_code)
-        r.raise_for_status()
-        return r.json()
+        try:
+            r = await client.post(url, headers=headers, json=body)
+            log_entry["timestamp_end"] = datetime.datetime.now().isoformat()
+            log_entry["response"]["status_code"] = r.status_code
+            if _llm_debug_enabled():
+                print("LLM RESPONSE:", r.status_code)
+
+            r.raise_for_status()
+            resp_json = r.json()
+            log_entry["response"]["body"] = resp_json
+            return resp_json
+        except Exception as e:
+            log_entry["timestamp_end"] = datetime.datetime.now().isoformat()
+            log_entry["response"]["error"] = str(e)
+            raise
 
 
 async def openai_chat_complete_stream(
@@ -263,43 +322,45 @@ async def openai_chat_complete_stream(
     if isinstance(max_tokens, int):
         body["max_tokens"] = max_tokens
 
+    log_entry = create_log_entry(url, "POST", headers, body, streaming=True)
+    add_llm_log(log_entry)
+
     try:
         timeout_obj = httpx.Timeout(float(timeout_s or 60))
     except Exception:
         timeout_obj = httpx.Timeout(60.0)
 
     async with httpx.AsyncClient(timeout=timeout_obj) as client:
-        async with client.stream("POST", url, headers=headers, json=body) as resp:
-            resp.raise_for_status()
-            async for line in resp.aiter_lines():
-                if not line:
-                    continue
-                if line.startswith("data: "):
-                    data = line[len("data: ") :].strip()
-                    if data == "[DONE]":
-                        break
-                    try:
-                        obj = httpx.Response(
-                            200, json={}
-                        ).json()  # placeholder to keep type checkers happy
-                    except Exception:
-                        obj = None
-                    # We cannot rely on httpx to parse each line; parse minimally
-                    # Fallback: try json module
-                    import json as _json
-
-                    try:
-                        obj = _json.loads(data)
-                    except Exception:
-                        obj = None
-                    if not isinstance(obj, dict):
+        try:
+            async with client.stream("POST", url, headers=headers, json=body) as resp:
+                log_entry["response"]["status_code"] = resp.status_code
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
+                    if not line:
                         continue
-                    try:
-                        content = obj["choices"][0]["delta"].get("content")
-                    except Exception:
-                        content = None
-                    if content:
-                        yield content
+                    if line.startswith("data: "):
+                        data = line[len("data: ") :].strip()
+                        if data == "[DONE]":
+                            break
+
+                        import json as _json
+
+                        try:
+                            obj = _json.loads(data)
+                            log_entry["response"]["chunks"].append(obj)
+                        except Exception:
+                            obj = None
+                        if not isinstance(obj, dict):
+                            continue
+                        try:
+                            content = obj["choices"][0]["delta"].get("content")
+                        except Exception:
+                            content = None
+                        if content:
+                            log_entry["response"]["full_content"] += content
+                            yield content
+        finally:
+            log_entry["timestamp_end"] = datetime.datetime.now().isoformat()
 
 
 async def openai_completions_stream(
@@ -343,40 +404,42 @@ async def openai_completions_stream(
     if extra_body:
         body.update(extra_body)
 
+    log_entry = create_log_entry(url, "POST", headers, body, streaming=True)
+    add_llm_log(log_entry)
+
     try:
         timeout_obj = httpx.Timeout(float(timeout_s or 60))
     except Exception:
         timeout_obj = httpx.Timeout(60.0)
 
     async with httpx.AsyncClient(timeout=timeout_obj) as client:
-        async with client.stream("POST", url, headers=headers, json=body) as resp:
-            resp.raise_for_status()
-            async for line in resp.aiter_lines():
-                if not line:
-                    continue
-                if line.startswith("data: "):
-                    data = line[len("data: ") :].strip()
-                    if data == "[DONE]":
-                        break
-                    try:
-                        obj = httpx.Response(
-                            200, json={}
-                        ).json()  # placeholder to keep type checkers happy
-                    except Exception:
-                        obj = None
-                    # We cannot rely on httpx to parse each line; parse minimally
-                    # Fallback: try json module
-                    import json as _json
-
-                    try:
-                        obj = _json.loads(data)
-                    except Exception:
-                        obj = None
-                    if not isinstance(obj, dict):
+        try:
+            async with client.stream("POST", url, headers=headers, json=body) as resp:
+                log_entry["response"]["status_code"] = resp.status_code
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
+                    if not line:
                         continue
-                    try:
-                        content = obj["choices"][0]["text"]
-                    except Exception:
-                        content = None
-                    if content:
-                        yield content
+                    if line.startswith("data: "):
+                        data = line[len("data: ") :].strip()
+                        if data == "[DONE]":
+                            break
+
+                        import json as _json
+
+                        try:
+                            obj = _json.loads(data)
+                            log_entry["response"]["chunks"].append(obj)
+                        except Exception:
+                            obj = None
+                        if not isinstance(obj, dict):
+                            continue
+                        try:
+                            content = obj["choices"][0]["text"]
+                        except Exception:
+                            content = None
+                        if content:
+                            log_entry["response"]["full_content"] += content
+                            yield content
+        finally:
+            log_entry["timestamp_end"] = datetime.datetime.now().isoformat()

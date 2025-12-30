@@ -1,4 +1,5 @@
 import httpx
+import datetime
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 
@@ -15,6 +16,7 @@ from app.helpers.story_helpers import (
     _story_continue_helper,
 )
 from app.prompts import get_system_message, load_model_prompt_overrides
+from app.llm import add_llm_log, create_log_entry
 import json as _json
 from typing import Any, Dict
 
@@ -1141,6 +1143,9 @@ async def api_chat_stream(request: Request) -> StreamingResponse:
     else:
         body["tool_choice"] = "auto"
 
+    log_entry = create_log_entry(url, "POST", headers, body, streaming=True)
+    add_llm_log(log_entry)
+
     async def _gen():
         try:
             async with httpx.AsyncClient(
@@ -1149,13 +1154,18 @@ async def api_chat_stream(request: Request) -> StreamingResponse:
                 async with client.stream(
                     "POST", url, headers=headers, json=body
                 ) as resp:
+                    log_entry["response"]["status_code"] = resp.status_code
                     if resp.status_code >= 400:
                         error_content = await resp.aread()
+                        log_entry["timestamp_end"] = datetime.datetime.now().isoformat()
                         try:
                             error_data = _json.loads(error_content)
+                            log_entry["response"]["error"] = error_data
                             yield f'data: {{"error": "Upstream error", "status": {resp.status_code}, "data": {_json.dumps(error_data)}}}\n\n'
                         except Exception:
-                            yield f'data: {{"error": "Upstream error", "status": {resp.status_code}, "data": "{_json.dumps(error_content.decode("utf-8", errors="ignore"))}"}}\n\n'
+                            err_text = error_content.decode("utf-8", errors="ignore")
+                            log_entry["response"]["error"] = err_text
+                            yield f'data: {{"error": "Upstream error", "status": {resp.status_code}, "data": "{_json.dumps(err_text)}"}}\n\n'
                         return
 
                     # Check if response is SSE or regular JSON
@@ -1164,6 +1174,10 @@ async def api_chat_stream(request: Request) -> StreamingResponse:
                         # Not SSE, treat as regular JSON response
                         try:
                             response_data = await resp.json()
+                            log_entry["response"]["body"] = response_data
+                            log_entry["timestamp_end"] = (
+                                datetime.datetime.now().isoformat()
+                            )
                             if "choices" in response_data and response_data["choices"]:
                                 choice = response_data["choices"][0]
                                 if (
@@ -1260,6 +1274,7 @@ async def api_chat_stream(request: Request) -> StreamingResponse:
                                     break
                                 try:
                                     chunk = _json.loads(data_str)
+                                    log_entry["response"]["chunks"].append(chunk)
                                     # Extract content from the chunk
                                     if "choices" in chunk and chunk["choices"]:
                                         choice = chunk["choices"][0]
@@ -1269,6 +1284,9 @@ async def api_chat_stream(request: Request) -> StreamingResponse:
                                             if "content" in delta:
                                                 content = delta["content"]
                                                 if content:
+                                                    log_entry["response"][
+                                                        "full_content"
+                                                    ] += content
                                                     # Check if content contains tool call syntax and parse tool calls
                                                     import re
 
@@ -1361,7 +1379,10 @@ async def api_chat_stream(request: Request) -> StreamingResponse:
                                 except _json.JSONDecodeError:
                                     continue
         except Exception as e:
+            log_entry["response"]["error"] = str(e)
             yield f'data: {{"error": "Request failed", "message": "{_json.dumps(str(e))}"}}\n\n'
+        finally:
+            log_entry["timestamp_end"] = datetime.datetime.now().isoformat()
 
     return StreamingResponse(_gen(), media_type="text/event-stream")
 
@@ -1392,15 +1413,21 @@ async def proxy_list_models(request: Request) -> JSONResponse:
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
 
+    log_entry = create_log_entry(url, "GET", headers, None)
+    add_llm_log(log_entry)
+
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(float(timeout_s))) as client:
             resp = await client.get(url, headers=headers)
+            log_entry["response"]["status_code"] = resp.status_code
+            log_entry["timestamp_end"] = datetime.datetime.now().isoformat()
             # Relay status code if not 2xx
             content = (
                 resp.json()
                 if resp.headers.get("content-type", "").startswith("application/json")
                 else {"raw": resp.text}
             )
+            log_entry["response"]["body"] = content
             if resp.status_code >= 400:
                 return JSONResponse(
                     status_code=resp.status_code,
