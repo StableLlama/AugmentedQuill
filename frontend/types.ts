@@ -20,9 +20,12 @@ export interface StoryState extends Story {
 
 export interface ChatMessage {
   id: string;
-  role: 'user' | 'model';
+  role: 'user' | 'model' | 'tool';
   text: string;
   isError?: boolean;
+  name?: string;
+  tool_call_id?: string;
+  tool_calls?: any[];
 }
 
 export type ViewMode = 'raw' | 'markdown' | 'wysiwyg';

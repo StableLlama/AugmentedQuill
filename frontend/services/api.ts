@@ -151,6 +151,21 @@ export const api = {
       return res.json();
     },
   },
+  chat: {
+    executeTools: async (payload: {
+      messages: any[];
+      active_chapter_id?: number;
+      model_name?: string;
+    }) => {
+      const res = await fetch(`${API_BASE}/chat/tools`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error('Failed to execute chat tools');
+      return res.json();
+    },
+  },
   debug: {
     getLogs: async () => {
       const res = await fetch(`${API_BASE}/debug/llm_logs`);

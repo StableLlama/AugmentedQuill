@@ -12,9 +12,34 @@ import {
   Save,
   X,
   Settings2,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import { Button } from './Button';
 import { MarkdownView } from './MarkdownView';
+
+const CollapsibleToolSection: React.FC<{
+  title: string;
+  children: React.ReactNode;
+  defaultExpanded?: boolean;
+}> = ({ title, children, defaultExpanded = false }) => {
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+
+  return (
+    <div className="mt-2 border border-black/10 dark:border-white/10 rounded overflow-hidden">
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full flex items-center justify-between px-2 py-1 bg-black/5 dark:bg-black/20 hover:bg-black/10 dark:hover:bg-black/30 transition-colors text-[10px] font-mono text-brand-gray-500"
+      >
+        <span className="flex items-center gap-1">
+          {isExpanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+          {title}
+        </span>
+      </button>
+      {isExpanded && <div className="p-2 bg-transparent">{children}</div>}
+    </div>
+  );
+};
 
 interface ChatProps {
   messages: ChatMessage[];
@@ -192,12 +217,20 @@ export const Chat: React.FC<ChatProps> = ({
               className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center border mt-1 ${
                 msg.role === 'user'
                   ? 'bg-brand-100 border-brand-200 text-brand-700'
+                  : msg.role === 'tool'
+                  ? 'bg-blue-500/10 border-blue-500/20 text-blue-500'
                   : isLight
                   ? 'bg-brand-gray-50 border-brand-gray-200 text-brand-gray-500'
                   : 'bg-brand-gray-800 border-brand-gray-700 text-brand-gray-400'
               }`}
             >
-              {msg.role === 'user' ? <User size={16} /> : <Bot size={16} />}
+              {msg.role === 'user' ? (
+                <User size={16} />
+              ) : msg.role === 'tool' ? (
+                <Settings2 size={16} />
+              ) : (
+                <Bot size={16} />
+              )}
             </div>
 
             <div className={`flex-1 max-w-[85%] relative`}>
@@ -232,10 +265,45 @@ export const Chat: React.FC<ChatProps> = ({
               ) : (
                 <div
                   className={`rounded-lg p-3 text-sm leading-relaxed ${
-                    msg.role === 'user' ? msgUserBg : msgBotBg
+                    msg.role === 'user'
+                      ? msgUserBg
+                      : msg.role === 'tool'
+                      ? 'bg-blue-500/5 border border-blue-500/20 text-blue-600 dark:text-blue-400 font-mono text-xs'
+                      : msgBotBg
                   }`}
                 >
-                  <MarkdownView content={msg.text} />
+                  {msg.role === 'tool' ? (
+                    <CollapsibleToolSection title={`Tool Result: ${msg.name}`}>
+                      <MarkdownView content={msg.text} />
+                    </CollapsibleToolSection>
+                  ) : (
+                    <>
+                      <MarkdownView content={msg.text} />
+                      {msg.tool_calls && msg.tool_calls.length > 0 && (
+                        <CollapsibleToolSection
+                          title={`${msg.tool_calls.length} Tool Call${
+                            msg.tool_calls.length > 1 ? 's' : ''
+                          }`}
+                        >
+                          <div className="space-y-2">
+                            {msg.tool_calls.map((tc, i) => (
+                              <div
+                                key={i}
+                                className="p-2 rounded bg-black/5 dark:bg-black/20 border border-black/10 dark:border-white/10 text-[10px] font-mono"
+                              >
+                                <div className="text-blue-600 dark:text-blue-400 font-bold">
+                                  Call: {tc.name}
+                                </div>
+                                <div className="opacity-60 truncate">
+                                  {JSON.stringify(tc.args)}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </CollapsibleToolSection>
+                      )}
+                    </>
+                  )}
                 </div>
               )}
 
