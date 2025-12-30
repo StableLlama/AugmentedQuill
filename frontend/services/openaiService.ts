@@ -59,7 +59,8 @@ export const getModels = async (config: LLMConfig): Promise<string[]> => {
 };
 
 async function readSSEStream(
-  reader: ReadableStreamDefaultReader<Uint8Array>
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  onToolCalls?: (toolCalls: any[]) => void
 ): Promise<string> {
   let text = '';
   let buffer = '';
@@ -83,6 +84,9 @@ async function readSSEStream(
           if (data.content) {
             text += data.content;
           }
+          if (data.tool_calls && onToolCalls) {
+            onToolCalls(data.tool_calls);
+          }
         } catch (e) {
           console.error('Failed to parse SSE data', e);
         }
@@ -94,7 +98,7 @@ async function readSSEStream(
 
 export const createChatSession = (
   systemInstruction: string,
-  history: { role: string; parts: { text: string }[] }[],
+  history: any[],
   config: LLMConfig
 ): UnifiedChat => {
   return {
@@ -103,12 +107,31 @@ export const createChatSession = (
 
       const messages = [
         { role: 'system', content: systemInstruction },
-        ...history.map((h) => ({
-          role: h.role === 'model' ? 'assistant' : 'user',
-          content: h.parts[0].text,
-        })),
-        { role: 'user', content: userMsgText },
+        ...history.map((h) => {
+          const m: any = {
+            role: h.role === 'model' ? 'assistant' : h.role,
+            content: h.text || (h.parts && h.parts[0]?.text) || '',
+          };
+          if (h.name) m.name = h.name;
+          if (h.tool_call_id) m.tool_call_id = h.tool_call_id;
+          if (h.tool_calls) {
+            m.tool_calls = h.tool_calls.map((tc: any) => ({
+              id: tc.id,
+              type: 'function',
+              function: {
+                name: tc.name,
+                arguments:
+                  typeof tc.args === 'string' ? tc.args : JSON.stringify(tc.args),
+              },
+            }));
+          }
+          return m;
+        }),
       ];
+
+      if (userMsgText) {
+        messages.push({ role: 'user', content: userMsgText });
+      }
 
       try {
         const res = await fetch('/api/chat/stream', {
@@ -122,8 +145,43 @@ export const createChatSession = (
         const reader = res.body?.getReader();
         if (!reader) return { text: '' };
 
-        const text = await readSSEStream(reader);
-        return { text };
+        const toolCallsAccumulator: any[] = [];
+        const text = await readSSEStream(reader, (calls) => {
+          for (const call of calls) {
+            const index = call.index ?? 0;
+            if (!toolCallsAccumulator[index]) {
+              toolCallsAccumulator[index] = { id: '', name: '', args: '' };
+            }
+            if (call.id) toolCallsAccumulator[index].id = call.id;
+            if (call.function) {
+              if (call.function.name)
+                toolCallsAccumulator[index].name += call.function.name;
+              if (call.function.arguments)
+                toolCallsAccumulator[index].args += call.function.arguments;
+            }
+          }
+        });
+
+        const functionCalls = toolCallsAccumulator
+          .filter((c) => c && (c.name || c.args))
+          .map((c) => {
+            let parsedArgs = {};
+            try {
+              parsedArgs = c.args ? JSON.parse(c.args) : {};
+            } catch (e) {
+              console.error('Failed to parse tool arguments', c.args);
+            }
+            return {
+              id: c.id,
+              name: c.name,
+              args: parsedArgs,
+            };
+          });
+
+        return {
+          text,
+          functionCalls: functionCalls.length > 0 ? functionCalls : undefined,
+        };
       } catch (e) {
         console.error('Chat failed', e);
         throw e;

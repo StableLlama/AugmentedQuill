@@ -343,6 +343,17 @@ export const DebugLogs: React.FC<DebugLogsProps> = ({ isOpen, onClose, theme }) 
                                 {log.response.full_content}
                               </div>
                             </div>
+                            {(log.response as any).tool_calls && (
+                              <div className="space-y-1">
+                                <span className="text-blue-400">tool_calls:</span>
+                                <div className="mt-1">
+                                  <JsonView
+                                    data={(log.response as any).tool_calls}
+                                    theme={theme}
+                                  />
+                                </div>
+                              </div>
+                            )}
                             <div className="space-y-1">
                               <span className="text-blue-400">metadata:</span>
                               <JsonView

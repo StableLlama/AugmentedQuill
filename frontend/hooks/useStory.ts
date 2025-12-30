@@ -31,6 +31,39 @@ export const useStory = () => {
     [history, currentIndex]
   );
 
+  const refreshStory = useCallback(async () => {
+    try {
+      const projects = await api.projects.list();
+      const currentProject = projects.current || story.id;
+      if (!currentProject) return;
+
+      const res = await api.projects.select(currentProject);
+      if (res.ok && res.story) {
+        const chaptersRes = await api.chapters.list();
+        const chapters = chaptersRes.chapters.map((c: any) => ({
+          id: String(c.id),
+          title: c.title,
+          summary: c.summary,
+          content: '',
+        }));
+
+        const newStory: StoryState = {
+          id: currentProject,
+          title: res.story.title || currentProject,
+          summary: res.story.summary || '',
+          styleTags: res.story.tags || [],
+          chapters: chapters,
+          currentChapterId: currentChapterId,
+          lastUpdated: Date.now(),
+        };
+
+        setStory(newStory);
+      }
+    } catch (e) {
+      console.error('Failed to refresh story', e);
+    }
+  }, [story.id, currentChapterId]);
+
   const selectChapter = useCallback((id: string | null) => {
     setCurrentChapterId(id);
   }, []);
@@ -217,6 +250,7 @@ export const useStory = () => {
     addChapter,
     deleteChapter,
     loadStory,
+    refreshStory,
     undo,
     redo,
     canUndo: currentIndex > 0,

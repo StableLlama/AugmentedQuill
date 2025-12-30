@@ -45,6 +45,7 @@ def _parse_tool_calls_from_content(content: str) -> list[dict] | None:
 
     Handles various formats like:
     - <tool_call>get_project_overview</tool_call>
+    - <tool_call><function=get_project_overview></function></tool_call>
     - [TOOL_CALL]get_project_overview[/TOOL_CALL]
     - Tool: get_project_overview
     """
@@ -52,12 +53,39 @@ def _parse_tool_calls_from_content(content: str) -> list[dict] | None:
 
     calls = []
 
-    # Look for <tool_call> tags
+    # 1. Look for <tool_call> tags
     pattern1 = r"<tool_call>(.*?)</tool_call>"
-    matches1 = re.findall(pattern1, content, re.IGNORECASE | re.DOTALL)
+    matches1 = re.finditer(pattern1, content, re.IGNORECASE | re.DOTALL)
 
-    for content_inner in matches1:
-        func_match = re.match(r"(\w+)(?:\((.*)\))?", content_inner.strip())
+    for m in matches1:
+        content_inner = m.group(1).strip()
+
+        # Try XML-like format: <function=NAME>ARGS</function>
+        xml_match = re.search(
+            r"<function=(\w+)>(.*?)</function>",
+            content_inner,
+            re.IGNORECASE | re.DOTALL,
+        )
+        if xml_match:
+            name = xml_match.group(1)
+            args_str = xml_match.group(2).strip() or "{}"
+            try:
+                args_obj = _json.loads(args_str)
+            except Exception:
+                args_obj = {}
+
+            calls.append(
+                {
+                    "id": f"call_{name}_{len(calls)}",
+                    "type": "function",
+                    "function": {"name": name, "arguments": _json.dumps(args_obj)},
+                    "original_text": m.group(0),
+                }
+            )
+            continue
+
+        # Try NAME(ARGS) format
+        func_match = re.match(r"(\w+)(?:\((.*)\))?", content_inner, re.DOTALL)
         if func_match:
             name = func_match.group(1)
             args_str = func_match.group(2) or "{}"
@@ -66,20 +94,22 @@ def _parse_tool_calls_from_content(content: str) -> list[dict] | None:
             except Exception:
                 args_obj = {}
 
-            call = {
-                "id": f"call_{name}_{len(calls)}",
-                "type": "function",
-                "function": {"name": name, "arguments": _json.dumps(args_obj)},
-                "original_text": f"<tool_call>{content_inner}</tool_call>",
-            }
-            calls.append(call)
+            calls.append(
+                {
+                    "id": f"call_{name}_{len(calls)}",
+                    "type": "function",
+                    "function": {"name": name, "arguments": _json.dumps(args_obj)},
+                    "original_text": m.group(0),
+                }
+            )
 
-    # Look for [TOOL_CALL] tags
+    # 2. Look for [TOOL_CALL] tags
     pattern2 = r"\[TOOL_CALL\](.*?)\[/TOOL_CALL\]"
-    matches2 = re.findall(pattern2, content, re.IGNORECASE | re.DOTALL)
+    matches2 = re.finditer(pattern2, content, re.IGNORECASE | re.DOTALL)
 
-    for content_inner in matches2:
-        func_match = re.match(r"(\w+)(?:\((.*)\))?", content_inner.strip())
+    for m in matches2:
+        content_inner = m.group(1).strip()
+        func_match = re.match(r"(\w+)(?:\((.*)\))?", content_inner, re.DOTALL)
         if func_match:
             name = func_match.group(1)
             args_str = func_match.group(2) or "{}"
@@ -88,38 +118,35 @@ def _parse_tool_calls_from_content(content: str) -> list[dict] | None:
             except Exception:
                 args_obj = {}
 
-            call = {
-                "id": f"call_{name}_{len(calls)}",
-                "type": "function",
-                "function": {"name": name, "arguments": _json.dumps(args_obj)},
-                "original_text": f"[TOOL_CALL]{content_inner}[/TOOL_CALL]",
-            }
-            calls.append(call)
+            calls.append(
+                {
+                    "id": f"call_{name}_{len(calls)}",
+                    "type": "function",
+                    "function": {"name": name, "arguments": _json.dumps(args_obj)},
+                    "original_text": m.group(0),
+                }
+            )
 
-    # Look for "Tool:" prefix (must be at start of word)
-    pattern3 = r"(^|(?<=\s))(Tool):\s+(\w+)(?:\(([^)]*)\))?"
-    matches3 = re.findall(pattern3, content, re.IGNORECASE)
+    # 3. Look for "Tool:" prefix (must be at start of line or after whitespace)
+    pattern3 = r"(?:^|(?<=\s))Tool:\s+(\w+)(?:\(([^)]*)\))?"
+    matches3 = re.finditer(pattern3, content, re.IGNORECASE)
 
-    for match in matches3:
-        _, prefix, name, args_str = match
-        args_str = args_str.strip() if args_str else "{}"
+    for m in matches3:
+        name = m.group(1)
+        args_str = m.group(2).strip() if m.group(2) else "{}"
         try:
             args_obj = _json.loads(args_str) if args_str != "{}" else {}
         except Exception:
             args_obj = {}
 
-        # Find the original text to remove
-        original_text = f"{prefix}: {name}"
-        if args_str and args_str != "{}":
-            original_text += f"({args_str})"
-
-        call = {
-            "id": f"call_{name}_{len(calls)}",
-            "type": "function",
-            "function": {"name": name, "arguments": _json.dumps(args_obj)},
-            "original_text": original_text,
-        }
-        calls.append(call)
+        calls.append(
+            {
+                "id": f"call_{name}_{len(calls)}",
+                "type": "function",
+                "function": {"name": name, "arguments": _json.dumps(args_obj)},
+                "original_text": m.group(0),
+            }
+        )
 
     return calls if calls else None
 
@@ -997,6 +1024,16 @@ async def api_chat_tools(request: Request) -> JSONResponse:
         msg = await _exec_chat_tool(name, args_obj, call_id, payload, mutations)
         appended.append(msg)
 
+    # Log tool execution if there were any
+    if appended:
+        log_entry = create_log_entry(
+            "/api/chat/tools", "POST", {}, {"tool_calls": tool_calls}
+        )
+        log_entry["response"]["status_code"] = 200
+        log_entry["response"]["body"] = {"appended_messages": appended}
+        log_entry["timestamp_end"] = datetime.datetime.now().isoformat()
+        add_llm_log(log_entry)
+
     return JSONResponse(
         status_code=200,
         content={"ok": True, "appended_messages": appended, "mutations": mutations},
@@ -1206,11 +1243,24 @@ async def api_chat_stream(request: Request) -> StreamingResponse:
 
                                         # Clean content of tool call syntax only if it contains tool call patterns
                                         if has_tool_syntax:
+
+                                            def _get_tool_name(inner):
+                                                inner = inner.strip()
+                                                xml_m = re.search(
+                                                    r"<function=(\w+)>", inner, re.I
+                                                )
+                                                if xml_m:
+                                                    return xml_m.group(1)
+                                                name_m = re.match(r"(\w+)", inner)
+                                                if name_m:
+                                                    return name_m.group(1)
+                                                return "tool"
+
                                             clean_content = re.sub(
-                                                r"<tool_call>([^<]*)</tool_call>",
-                                                lambda m: f"Calling tool: {m.group(1).replace('_', ' ')}",
+                                                r"<tool_call>(.*?)</tool_call>",
+                                                lambda m: f"Calling tool: {_get_tool_name(m.group(1)).replace('_', ' ')}",
                                                 content,
-                                                flags=re.IGNORECASE,
+                                                flags=re.IGNORECASE | re.DOTALL,
                                             )
                                             clean_content = re.sub(
                                                 r"<tool_call[^>]*>",
@@ -1225,10 +1275,10 @@ async def api_chat_stream(request: Request) -> StreamingResponse:
                                                 flags=re.IGNORECASE,
                                             )
                                             clean_content = re.sub(
-                                                r"\[TOOL_CALL\]([^\[]*)\[/TOOL_CALL\]",
-                                                lambda m: f"Calling tool: {m.group(1).replace('_', ' ')}",
+                                                r"\[TOOL_CALL\](.*?)\[/TOOL_CALL\]",
+                                                lambda m: f"Calling tool: {_get_tool_name(m.group(1)).replace('_', ' ')}",
                                                 clean_content,
-                                                flags=re.IGNORECASE,
+                                                flags=re.IGNORECASE | re.DOTALL,
                                             )
                                             clean_content = re.sub(
                                                 r"^Tool:\s*(\w+)(?:\(([^)]*)\))?",
@@ -1265,11 +1315,38 @@ async def api_chat_stream(request: Request) -> StreamingResponse:
                         return
 
                     buffer = ""
+                    sent_tool_call_ids = set()
+                    aggregated_tool_calls = []
                     async for line in resp.aiter_lines():
                         if line.strip():
                             if line.startswith("data: "):
                                 data_str = line[6:]  # Remove "data: " prefix
                                 if data_str.strip() == "[DONE]":
+                                    # Final check for text-based tool calls
+                                    final_content = log_entry["response"].get(
+                                        "full_content", ""
+                                    )
+                                    if final_content:
+                                        parsed_tool_calls = (
+                                            _parse_tool_calls_from_content(
+                                                final_content
+                                            )
+                                        )
+                                        if parsed_tool_calls:
+                                            new_calls = [
+                                                c
+                                                for c in parsed_tool_calls
+                                                if c["id"] not in sent_tool_call_ids
+                                            ]
+                                            if new_calls:
+                                                for c in new_calls:
+                                                    sent_tool_call_ids.add(c["id"])
+                                                    aggregated_tool_calls.append(c)
+                                                yield f'data: {{"tool_calls": {_json.dumps(new_calls)}}}\n\n'
+
+                                    log_entry["response"][
+                                        "tool_calls"
+                                    ] = aggregated_tool_calls
                                     yield 'data: {"done": true}\n\n'
                                     break
                                 try:
@@ -1304,16 +1381,48 @@ async def api_chat_stream(request: Request) -> StreamingResponse:
                                                             content
                                                         )
                                                         if parsed_tool_calls:
-                                                            # Send parsed tool calls
-                                                            yield f'data: {{"tool_calls": {_json.dumps(parsed_tool_calls)}}}\n\n'
+                                                            new_calls = [
+                                                                c
+                                                                for c in parsed_tool_calls
+                                                                if c["id"]
+                                                                not in sent_tool_call_ids
+                                                            ]
+                                                            if new_calls:
+                                                                for c in new_calls:
+                                                                    sent_tool_call_ids.add(
+                                                                        c["id"]
+                                                                    )
+                                                                    aggregated_tool_calls.append(
+                                                                        c
+                                                                    )
+                                                                # Send parsed tool calls
+                                                                yield f'data: {{"tool_calls": {_json.dumps(new_calls)}}}\n\n'
 
                                                     # Clean content of tool call syntax only if it contains tool call patterns
                                                     if has_tool_syntax:
+
+                                                        def _get_tool_name(inner):
+                                                            inner = inner.strip()
+                                                            xml_m = re.search(
+                                                                r"<function=(\w+)>",
+                                                                inner,
+                                                                re.I,
+                                                            )
+                                                            if xml_m:
+                                                                return xml_m.group(1)
+                                                            name_m = re.match(
+                                                                r"(\w+)", inner
+                                                            )
+                                                            if name_m:
+                                                                return name_m.group(1)
+                                                            return "tool"
+
                                                         clean_content = re.sub(
-                                                            r"<tool_call>([^<]*)</tool_call>",
-                                                            lambda m: f"Calling tool: {m.group(1).replace('_', ' ')}",
+                                                            r"<tool_call>(.*?)</tool_call>",
+                                                            lambda m: f"Calling tool: {_get_tool_name(m.group(1)).replace('_', ' ')}",
                                                             content,
-                                                            flags=re.IGNORECASE,
+                                                            flags=re.IGNORECASE
+                                                            | re.DOTALL,
                                                         )
                                                         clean_content = re.sub(
                                                             r"<tool_call[^>]*>",
@@ -1328,10 +1437,11 @@ async def api_chat_stream(request: Request) -> StreamingResponse:
                                                             flags=re.IGNORECASE,
                                                         )
                                                         clean_content = re.sub(
-                                                            r"\[TOOL_CALL\]([^\[]*)\[/TOOL_CALL\]",
-                                                            lambda m: f"Calling tool: {m.group(1).replace('_', ' ')}",
+                                                            r"\[TOOL_CALL\](.*?)\[/TOOL_CALL\]",
+                                                            lambda m: f"Calling tool: {_get_tool_name(m.group(1)).replace('_', ' ')}",
                                                             clean_content,
-                                                            flags=re.IGNORECASE,
+                                                            flags=re.IGNORECASE
+                                                            | re.DOTALL,
                                                         )
                                                         clean_content = re.sub(
                                                             r"^Tool:\s*(\w+)(?:\(([^)]*)\))?",
@@ -1367,6 +1477,38 @@ async def api_chat_stream(request: Request) -> StreamingResponse:
                                                 "tool_calls" in delta
                                                 and delta["tool_calls"]
                                             ):
+                                                # Aggregate tool calls for logging
+                                                for tc in delta["tool_calls"]:
+                                                    idx = tc.get("index", 0)
+                                                    while (
+                                                        len(aggregated_tool_calls)
+                                                        <= idx
+                                                    ):
+                                                        aggregated_tool_calls.append(
+                                                            {
+                                                                "id": "",
+                                                                "type": "function",
+                                                                "function": {
+                                                                    "name": "",
+                                                                    "arguments": "",
+                                                                },
+                                                            }
+                                                        )
+
+                                                    target = aggregated_tool_calls[idx]
+                                                    if tc.get("id"):
+                                                        target["id"] = tc["id"]
+                                                    if tc.get("function"):
+                                                        f = tc["function"]
+                                                        if f.get("name"):
+                                                            target["function"][
+                                                                "name"
+                                                            ] += f["name"]
+                                                        if f.get("arguments"):
+                                                            target["function"][
+                                                                "arguments"
+                                                            ] += f["arguments"]
+
                                                 # Send tool calls chunk
                                                 yield f'data: {{"tool_calls": {_json.dumps(delta["tool_calls"])}}}\n\n'
                                         # Check for finish_reason to end streaming
@@ -1374,6 +1516,36 @@ async def api_chat_stream(request: Request) -> StreamingResponse:
                                             "finish_reason" in choice
                                             and choice["finish_reason"]
                                         ):
+                                            # Final check for text-based tool calls
+                                            final_content = log_entry["response"].get(
+                                                "full_content", ""
+                                            )
+                                            if final_content:
+                                                parsed_tool_calls = (
+                                                    _parse_tool_calls_from_content(
+                                                        final_content
+                                                    )
+                                                )
+                                                if parsed_tool_calls:
+                                                    new_calls = [
+                                                        c
+                                                        for c in parsed_tool_calls
+                                                        if c["id"]
+                                                        not in sent_tool_call_ids
+                                                    ]
+                                                    if new_calls:
+                                                        for c in new_calls:
+                                                            sent_tool_call_ids.add(
+                                                                c["id"]
+                                                            )
+                                                            aggregated_tool_calls.append(
+                                                                c
+                                                            )
+                                                        yield f'data: {{"tool_calls": {_json.dumps(new_calls)}}}\n\n'
+
+                                            log_entry["response"][
+                                                "tool_calls"
+                                            ] = aggregated_tool_calls
                                             yield 'data: {"done": true}\n\n'
                                             break
                                 except _json.JSONDecodeError:

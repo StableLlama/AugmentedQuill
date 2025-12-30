@@ -56,11 +56,13 @@ def _deep_merge(base: Dict[str, Any], override: Mapping[str, Any]) -> Dict[str, 
     return result
 
 
-def load_json_file(path: os.PathLike[str] | str) -> Dict[str, Any]:
+def load_json_file(path: os.PathLike[str] | str | None) -> Dict[str, Any]:
     """Load JSON from path if it exists; return empty dict if missing.
 
     Raises ValueError for malformed JSON.
     """
+    if path is None:
+        return {}
     p = Path(path)
     if not p.exists():
         return {}
@@ -105,7 +107,7 @@ def _env_overrides_for_openai() -> Dict[str, Any]:
 
 
 def load_machine_config(
-    path: os.PathLike[str] | str = "config/machine.json",
+    path: os.PathLike[str] | str | None = "config/machine.json",
     defaults: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Load machine configuration applying precedence and interpolation.
@@ -122,7 +124,7 @@ def load_machine_config(
 
 
 def load_story_config(
-    path: os.PathLike[str] | str = "config/story.json",
+    path: os.PathLike[str] | str | None = "config/story.json",
     defaults: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Load story-specific configuration with env interpolation only.

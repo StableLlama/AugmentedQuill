@@ -58,6 +58,7 @@ import {
   LayoutTemplate,
   Palette,
 } from 'lucide-react';
+import { api } from './services/api';
 
 // Default Settings
 const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -88,6 +89,7 @@ const App: React.FC = () => {
     addChapter,
     deleteChapter,
     loadStory,
+    refreshStory,
     undo,
     redo,
     canUndo,
@@ -289,12 +291,8 @@ Always prioritize the user's creative vision.`;
   const executeChatRequest = async (userText: string, history: ChatMessage[]) => {
     setIsChatLoading(true);
     try {
-      const historyForSdk = history.map((msg) => ({
-        role: msg.role,
-        parts: [{ text: msg.text }],
-      }));
-
-      const session = createChatSession(systemPrompt, historyForSdk, activeChatConfig);
+      let currentHistory = [...history];
+      const session = createChatSession(systemPrompt, currentHistory, activeChatConfig);
 
       let promptWithContext = userText;
       if (currentChapter) {
@@ -308,46 +306,72 @@ Always prioritize the user's creative vision.`;
         )}\n[Current Content End]\n\nUser Request: ${userText}`;
       }
 
-      const result = await session.sendMessage({ message: promptWithContext });
+      let result = await session.sendMessage({ message: promptWithContext });
 
-      const functionCalls = result.functionCalls;
-      let responseText = result.text || '';
+      while (result.functionCalls && result.functionCalls.length > 0) {
+        // 1. Add assistant message with tool calls to history
+        const assistantMsg: ChatMessage = {
+          id: uuidv4(),
+          role: 'model',
+          text: result.text || '',
+          tool_calls: result.functionCalls,
+        };
+        currentHistory.push(assistantMsg);
+        setChatMessages([...currentHistory]);
 
-      if (functionCalls && functionCalls.length > 0) {
-        const functionResponses = [];
-        for (const call of functionCalls) {
-          let toolResult = { result: 'Success' };
-          if (call.name === 'update_chapter_content') {
-            const args = call.args as any;
-            if (currentChapterId && args.content) {
-              updateChapter(currentChapterId, { content: args.content });
-              toolResult = { result: `Chapter content updated.` };
-            } else {
-              toolResult = { result: `Error: No chapter selected.` };
-            }
-          } else if (call.name === 'create_chapter') {
-            const args = call.args as any;
-            addChapter(args.title, args.summary);
-            toolResult = { result: `Created chapter "${args.title}"` };
-          } else if (call.name === 'update_chapter_summary') {
-            const args = call.args as any;
-            if (currentChapterId && args.summary) {
-              updateChapter(currentChapterId, { summary: args.summary });
-              toolResult = { result: `Summary updated.` };
-            }
+        // 2. Execute tools via backend
+        const toolResponse = await api.chat.executeTools({
+          messages: currentHistory.map((m) => ({
+            role: m.role === 'model' ? 'assistant' : m.role,
+            content: m.text,
+            tool_calls: m.tool_calls?.map((tc) => ({
+              id: tc.id,
+              type: 'function',
+              function: {
+                name: tc.name,
+                arguments:
+                  typeof tc.args === 'string' ? tc.args : JSON.stringify(tc.args),
+              },
+            })),
+          })),
+          active_chapter_id: currentChapterId ? Number(currentChapterId) : undefined,
+        });
+
+        if (toolResponse.ok) {
+          // 3. Add tool results to history
+          for (const msg of toolResponse.appended_messages) {
+            currentHistory.push({
+              id: uuidv4(),
+              role: 'tool',
+              text: msg.content,
+              name: msg.name,
+              tool_call_id: msg.tool_call_id,
+            });
           }
-          functionResponses.push({
-            id: call.id,
-            name: call.name,
-            response: toolResult,
-          });
+          setChatMessages([...currentHistory]);
+
+          if (toolResponse.mutations?.story_changed) {
+            await refreshStory();
+          }
+
+          // 4. Call LLM again with tool results
+          // We create a new session with updated history
+          const nextSession = createChatSession(
+            systemPrompt,
+            currentHistory,
+            activeChatConfig
+          );
+          result = await nextSession.sendMessage({ message: '' });
+        } else {
+          break;
         }
-        responseText += '\n\n(Actions executed)';
       }
+
+      // Final message
       const botMessage: ChatMessage = {
         id: uuidv4(),
         role: 'model',
-        text: responseText,
+        text: result.text || '',
       };
       setChatMessages((prev) => [...prev, botMessage]);
     } catch (error) {
