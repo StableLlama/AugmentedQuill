@@ -219,6 +219,7 @@ def initialize_project_dir(path: Path, project_title: str = "Untitled Project") 
             "format": "markdown",
             "llm_prefs": {"temperature": 0.7, "max_tokens": 2048},
             "created_at": _now_iso(),
+            "tags": [],
         }
         story_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 

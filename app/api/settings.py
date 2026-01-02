@@ -550,7 +550,13 @@ async def api_story_tags_put(request: Request) -> JSONResponse:
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON body")
 
-    tags = payload.get("tags", "")
+    tags = payload.get("tags")
+    if not isinstance(tags, list):
+        return JSONResponse(
+            status_code=400,
+            content={"ok": False, "detail": "tags must be an array"},
+        )
+
     try:
         active = get_active_project_dir()
         story_path = (active / "story.json") if active else (CONFIG_DIR / "story.json")

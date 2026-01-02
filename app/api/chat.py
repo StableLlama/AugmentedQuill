@@ -185,8 +185,9 @@ STORY_TOOLS = [
                 "type": "object",
                 "properties": {
                     "tags": {
-                        "type": "string",
-                        "description": "The new tags for the story, as a comma-separated string.",
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "The new tags for the story, as an array of strings.",
                     },
                 },
                 "required": ["tags"],
@@ -477,7 +478,7 @@ async def _exec_chat_tool(
         if name == "get_story_tags":
             active = get_active_project_dir()
             story = load_story_config((active / "story.json") if active else None) or {}
-            tags = story.get("tags", "")
+            tags = story.get("tags", [])
             return {
                 "role": "tool",
                 "tool_call_id": call_id,
@@ -485,7 +486,17 @@ async def _exec_chat_tool(
                 "content": _json.dumps({"tags": tags}),
             }
         if name == "set_story_tags":
-            tags = str(args_obj.get("tags", "")).strip()
+            tags = args_obj.get("tags")
+            if not isinstance(tags, list):
+                return {
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "name": name,
+                    "content": _json.dumps(
+                        {"error": "tags must be an array of strings"}
+                    ),
+                }
+
             active = get_active_project_dir()
             if not active:
                 return {

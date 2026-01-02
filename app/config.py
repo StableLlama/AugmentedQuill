@@ -135,4 +135,9 @@ def load_story_config(
     defaults = dict(defaults or {})
     json_config = load_json_file(path)
     json_config = _interpolate_env(json_config)
-    return _deep_merge(defaults, json_config)
+    merged = _deep_merge(defaults, json_config)
+
+    if "tags" in merged and not isinstance(merged["tags"], list):
+        raise ValueError(f"Invalid story config at {path}: 'tags' must be an array")
+
+    return merged
