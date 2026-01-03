@@ -188,6 +188,26 @@ const App: React.FC = () => {
     fetchPrompts();
   }, [story.id]); // Re-fetch when project changes
 
+  useEffect(() => {
+    const fetchProjects = async () => {
+      try {
+        const data = await api.projects.list();
+        if (data.projects) {
+          setProjects(
+            data.projects.map((p: any) => ({
+              id: p.id,
+              title: p.title || p.name,
+              updatedAt: Date.now(),
+            }))
+          );
+        }
+      } catch (e) {
+        console.error('Failed to fetch projects', e);
+      }
+    };
+    fetchProjects();
+  }, []);
+
   // Editor Appearance Settings
   const [editorSettings, setEditorSettings] = useState<EditorSettings>(() => {
     const saved = localStorage.getItem('augmentedquill_editor_settings');

@@ -132,6 +132,15 @@ export const api = {
     },
   },
   story: {
+    updateTitle: async (title: string) => {
+      const res = await fetch(`${API_BASE}/story/title`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title }),
+      });
+      if (!res.ok) throw new Error('Failed to update story title');
+      return res.json();
+    },
     updateSummary: async (summary: string) => {
       const res = await fetch(`${API_BASE}/story/summary`, {
         method: 'PUT',

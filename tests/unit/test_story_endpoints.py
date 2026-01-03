@@ -76,7 +76,7 @@ class StoryEndpointsTest(TestCase):
                 txt = "AI summary"
             return {"choices": [{"message": {"role": "assistant", "content": txt}}]}
 
-        llm.resolve_openai_credentials = lambda payload: (
+        llm.resolve_openai_credentials = lambda payload, **kwargs: (
             "https://fake.local/v1",
             None,
             "fake-model",
@@ -154,7 +154,7 @@ class StoryEndpointsTest(TestCase):
         llm.openai_completions_stream = fake_stream  # type: ignore
         # Also ensure credential resolution succeeds for this test
         orig_resolve = llm.resolve_openai_credentials
-        llm.resolve_openai_credentials = lambda payload: (
+        llm.resolve_openai_credentials = lambda payload, **kwargs: (
             "https://fake.local/v1",
             None,
             "fake-model",
@@ -176,3 +176,45 @@ class StoryEndpointsTest(TestCase):
         self.assertTrue(r.headers.get("content-type", "").startswith("text/plain"))
         text = r.text or ""
         self.assertGreater(len(text.strip()), 0, f"empty response body: {repr(text)}")
+
+    def test_post_story_title_updates_and_persists(self):
+        pdir = self._make_project()
+        new_title = "My New Story Title"
+        r = self.client.post("/api/story/title", json={"title": new_title})
+        self.assertEqual(r.status_code, 200, r.text)
+        data = r.json()
+        self.assertTrue(data.get("ok"))
+
+        # Verify persisted in story.json
+        import json
+
+        story = json.loads((pdir / "story.json").read_text(encoding="utf-8"))
+        self.assertEqual(story["project_title"], new_title)
+
+    def test_put_story_summary_updates_and_persists(self):
+        pdir = self._make_project()
+        new_summary = "This is a new story summary."
+        r = self.client.put("/api/story/summary", json={"summary": new_summary})
+        self.assertEqual(r.status_code, 200, r.text)
+        data = r.json()
+        self.assertTrue(data.get("ok"))
+
+        # Verify persisted in story.json
+        import json
+
+        story = json.loads((pdir / "story.json").read_text(encoding="utf-8"))
+        self.assertEqual(story["story_summary"], new_summary)
+
+    def test_put_story_tags_updates_and_persists(self):
+        pdir = self._make_project()
+        new_tags = ["fantasy", "adventure"]
+        r = self.client.put("/api/story/tags", json={"tags": new_tags})
+        self.assertEqual(r.status_code, 200, r.text)
+        data = r.json()
+        self.assertTrue(data.get("ok"))
+
+        # Verify persisted in story.json
+        import json
+
+        story = json.loads((pdir / "story.json").read_text(encoding="utf-8"))
+        self.assertEqual(story["tags"], new_tags)

@@ -227,7 +227,7 @@ def initialize_project_dir(path: Path, project_title: str = "Untitled Project") 
 def list_projects() -> List[Dict[str, str | bool]]:
     """List projects under the projects root directory.
 
-    Returns a list of dicts: {name, path, is_valid}
+    Returns a list of dicts: {name, path, is_valid, title}
     """
     root = get_projects_root()
     if not root.exists():
@@ -235,7 +235,18 @@ def list_projects() -> List[Dict[str, str | bool]]:
     items: List[Dict[str, str | bool]] = []
     for d in sorted([p for p in root.iterdir() if p.is_dir()]):
         info = validate_project_dir(d)
-        items.append({"name": d.name, "path": str(d), "is_valid": info.is_valid})
+        title = d.name
+        if info.is_valid:
+            try:
+                from app.config import load_story_config
+
+                story = load_story_config(d / "story.json")
+                title = story.get("project_title") or d.name
+            except Exception:
+                pass
+        items.append(
+            {"name": d.name, "path": str(d), "is_valid": info.is_valid, "title": title}
+        )
     return items
 
 
