@@ -1232,7 +1232,7 @@ async def api_chat_stream(request: Request) -> StreamingResponse:
                         except Exception:
                             err_text = error_content.decode("utf-8", errors="ignore")
                             log_entry["response"]["error"] = err_text
-                            yield f'data: {{"error": "Upstream error", "status": {resp.status_code}, "data": "{_json.dumps(err_text)}"}}\n\n'
+                            yield f'data: {{"error": "Upstream error", "status": {resp.status_code}, "data": {_json.dumps(err_text)}}}\n\n'
                         return
 
                     # Check if response is SSE or regular JSON

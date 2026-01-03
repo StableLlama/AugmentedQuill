@@ -461,12 +461,14 @@ Always prioritize the user's creative vision.`
         text: result.text || '',
       };
       setChatMessages((prev) => [...prev, botMessage]);
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
       const errorMessage: ChatMessage = {
         id: uuidv4(),
         role: 'model',
-        text: 'Sorry, I encountered an error processing your request. Please check your AI settings.',
+        text: error?.message?.startsWith('Upstream error:')
+          ? `AI Error: ${error.message.replace('Upstream error: ', '')}`
+          : 'Sorry, I encountered an error processing your request. Please check your AI settings.',
         isError: true,
       };
       setChatMessages((prev) => [...prev, errorMessage]);

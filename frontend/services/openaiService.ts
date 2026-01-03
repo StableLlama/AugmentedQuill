@@ -81,6 +81,11 @@ async function readSSEStream(
         if (dataStr === '[DONE]') continue;
         try {
           const data = JSON.parse(dataStr);
+          if (data.error) {
+            throw new Error(
+              `Upstream error: ${data.error}${data.status ? ` (${data.status})` : ''}`
+            );
+          }
           if (data.content) {
             text += data.content;
           }
@@ -88,6 +93,9 @@ async function readSSEStream(
             onToolCalls(data.tool_calls);
           }
         } catch (e) {
+          if (e instanceof Error && e.message.startsWith('Upstream error:')) {
+            throw e;
+          }
           console.error('Failed to parse SSE data', e);
         }
       }
