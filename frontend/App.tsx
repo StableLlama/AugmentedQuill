@@ -99,6 +99,7 @@ const App: React.FC = () => {
 
   const currentChapter = story.chapters.find((c) => c.id === currentChapterId);
   const editorRef = useRef<any>(null);
+  const appearanceRef = useRef<HTMLDivElement>(null);
 
   // App State
   const [appSettings, setAppSettings] = useState<AppSettings>(() => {
@@ -144,6 +145,25 @@ const App: React.FC = () => {
   const [isChatOpen, setIsChatOpen] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isAppearanceOpen, setIsAppearanceOpen] = useState(false);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        appearanceRef.current &&
+        !appearanceRef.current.contains(event.target as Node)
+      ) {
+        setIsAppearanceOpen(false);
+      }
+    }
+
+    if (isAppearanceOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isAppearanceOpen]);
+
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isDebugLogsOpen, setIsDebugLogsOpen] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('raw');
@@ -1410,7 +1430,7 @@ Always prioritize the user's creative vision.`
           >
             <SettingsIcon size={18} />
           </Button>
-          <div className="relative">
+          <div className="relative" ref={appearanceRef}>
             <Button
               theme={currentTheme}
               variant={isAppearanceOpen ? 'secondary' : 'ghost'}
