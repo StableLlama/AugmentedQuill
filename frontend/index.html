@@ -103,6 +103,18 @@
         outline: none;
       }
 
+      .prose-editor p:first-child {
+        margin-top: 0;
+      }
+
+      .prose-editor p:last-child {
+        margin-bottom: 0;
+      }
+
+      .prose-editor p {
+        margin: 0.5em 0;
+      }
+
       .prose-editor blockquote {
         border-left: 4px solid #78716c;
         padding-left: 1rem;
@@ -156,6 +168,33 @@
         max-width: 100%;
         border-radius: 0.5rem;
         margin: 1rem 0;
+      }
+
+      .prose-editor table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 1rem 0;
+        font-size: 0.875rem;
+      }
+
+      .prose-editor th,
+      .prose-editor td {
+        border: 1px solid #44403c;
+        /* brand-gray-700 */
+        padding: 0.5rem;
+        text-align: left;
+      }
+
+      .prose-editor th {
+        background-color: #292524;
+        /* brand-gray-800 */
+        font-weight: 700;
+        color: #d97706;
+        /* brand-600 */
+      }
+
+      .prose-editor tr:nth-child(even) {
+        background-color: rgba(0, 0, 0, 0.1);
       }
     </style>
   </head>
