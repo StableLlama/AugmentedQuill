@@ -76,7 +76,8 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
     },
   ],
   activeChatProviderId: 'default',
-  activeStoryProviderId: 'default',
+  activeWritingProviderId: 'default',
+  activeEditingProviderId: 'default',
 };
 
 const App: React.FC = () => {
@@ -98,6 +99,7 @@ const App: React.FC = () => {
 
   const currentChapter = story.chapters.find((c) => c.id === currentChapterId);
   const editorRef = useRef<any>(null);
+  const appearanceRef = useRef<HTMLDivElement>(null);
 
   // App State
   const [appSettings, setAppSettings] = useState<AppSettings>(() => {
@@ -105,14 +107,24 @@ const App: React.FC = () => {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (!parsed.activeStoryProviderId && parsed.activeProviderId) {
+        // Migration: if we have activeStoryProviderId but not the new ones
+        if (parsed.activeStoryProviderId && !parsed.activeWritingProviderId) {
           return {
             ...parsed,
-            activeStoryProviderId: parsed.activeProviderId,
-            activeChatProviderId: parsed.activeProviderId,
+            activeWritingProviderId: parsed.activeStoryProviderId,
+            activeEditingProviderId: parsed.activeStoryProviderId,
           };
         }
-        return parsed.activeStoryProviderId ? parsed : DEFAULT_APP_SETTINGS;
+        // Migration: if we only have activeProviderId (very old)
+        if (!parsed.activeWritingProviderId && parsed.activeProviderId) {
+          return {
+            ...parsed,
+            activeChatProviderId: parsed.activeProviderId,
+            activeWritingProviderId: parsed.activeProviderId,
+            activeEditingProviderId: parsed.activeProviderId,
+          };
+        }
+        return parsed.activeWritingProviderId ? parsed : DEFAULT_APP_SETTINGS;
       } catch (e) {
         return DEFAULT_APP_SETTINGS;
       }
@@ -133,6 +145,25 @@ const App: React.FC = () => {
   const [isChatOpen, setIsChatOpen] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isAppearanceOpen, setIsAppearanceOpen] = useState(false);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        appearanceRef.current &&
+        !appearanceRef.current.contains(event.target as Node)
+      ) {
+        setIsAppearanceOpen(false);
+      }
+    }
+
+    if (isAppearanceOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isAppearanceOpen]);
+
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isDebugLogsOpen, setIsDebugLogsOpen] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('raw');
@@ -176,6 +207,26 @@ const App: React.FC = () => {
     };
     fetchPrompts();
   }, [story.id]); // Re-fetch when project changes
+
+  useEffect(() => {
+    const fetchProjects = async () => {
+      try {
+        const data = await api.projects.list();
+        if (data.projects) {
+          setProjects(
+            data.projects.map((p: any) => ({
+              id: p.id,
+              title: p.title || p.name,
+              updatedAt: Date.now(),
+            }))
+          );
+        }
+      } catch (e) {
+        console.error('Failed to fetch projects', e);
+      }
+    };
+    fetchProjects();
+  }, []);
 
   // Editor Appearance Settings
   const [editorSettings, setEditorSettings] = useState<EditorSettings>(() => {
@@ -290,8 +341,11 @@ const App: React.FC = () => {
   const activeChatConfig =
     appSettings.providers.find((p) => p.id === appSettings.activeChatProviderId) ||
     appSettings.providers[0];
-  const activeStoryConfig =
-    appSettings.providers.find((p) => p.id === appSettings.activeStoryProviderId) ||
+  const activeWritingConfig =
+    appSettings.providers.find((p) => p.id === appSettings.activeWritingProviderId) ||
+    appSettings.providers[0];
+  const activeEditingConfig =
+    appSettings.providers.find((p) => p.id === appSettings.activeEditingProviderId) ||
     appSettings.providers[0];
 
   const getSystemPrompt = () => {
@@ -318,7 +372,12 @@ Always prioritize the user's creative vision.`
     setIsChatLoading(true);
     try {
       let currentHistory = [...history];
-      const session = createChatSession(systemPrompt, currentHistory, activeChatConfig);
+      const session = createChatSession(
+        systemPrompt,
+        currentHistory,
+        activeChatConfig,
+        'CHAT'
+      );
 
       let promptWithContext = userText;
       if (currentChapter) {
@@ -333,24 +392,69 @@ Always prioritize the user's creative vision.`
           .replace('{user_text}', userText);
       }
 
-      let result = await session.sendMessage({ message: promptWithContext });
+      const updateMessage = (
+        msgId: string,
+        update: { text?: string; thinking?: string; traceback?: string }
+      ) => {
+        setChatMessages((prev) => {
+          const idx = prev.findIndex((m) => m.id === msgId);
+          if (idx !== -1) {
+            const newMsgs = [...prev];
+            newMsgs[idx] = {
+              ...newMsgs[idx],
+              text: update.text ?? newMsgs[idx].text,
+              thinking: update.thinking ?? newMsgs[idx].thinking,
+              traceback: update.traceback ?? newMsgs[idx].traceback,
+            };
+            return newMsgs;
+          } else {
+            return [
+              ...prev,
+              {
+                id: msgId,
+                role: 'model',
+                text: update.text ?? '',
+                thinking: update.thinking ?? '',
+                traceback: update.traceback ?? '',
+              },
+            ];
+          }
+        });
+      };
+
+      let currentMsgId = uuidv4();
+      let result = await session.sendMessage({ message: promptWithContext }, (update) =>
+        updateMessage(currentMsgId, update)
+      );
 
       while (result.functionCalls && result.functionCalls.length > 0) {
-        // 1. Add assistant message with tool calls to history
+        // 1. Update assistant message with tool calls in history
         const assistantMsg: ChatMessage = {
-          id: uuidv4(),
+          id: currentMsgId,
           role: 'model',
           text: result.text || '',
+          thinking: result.thinking,
           tool_calls: result.functionCalls,
         };
+
+        // Replace or add
+        setChatMessages((prev) => {
+          const idx = prev.findIndex((m) => m.id === currentMsgId);
+          if (idx !== -1) {
+            const newMsgs = [...prev];
+            newMsgs[idx] = assistantMsg;
+            return newMsgs;
+          }
+          return [...prev, assistantMsg];
+        });
+
         currentHistory.push(assistantMsg);
-        setChatMessages([...currentHistory]);
 
         // 2. Execute tools via backend
         const toolResponse = await api.chat.executeTools({
           messages: currentHistory.map((m) => ({
             role: m.role === 'model' ? 'assistant' : m.role,
-            content: m.text,
+            content: m.text || null, // Ensure content is null if empty for tool calls
             tool_calls: m.tool_calls?.map((tc) => ({
               id: tc.id,
               type: 'function',
@@ -386,28 +490,54 @@ Always prioritize the user's creative vision.`
           const nextSession = createChatSession(
             systemPrompt,
             currentHistory,
-            activeChatConfig
+            activeChatConfig,
+            'CHAT'
           );
-          result = await nextSession.sendMessage({ message: '' });
+          currentMsgId = uuidv4();
+          result = await nextSession.sendMessage({ message: '' }, (update) =>
+            updateMessage(currentMsgId, update)
+          );
+
+          // If the new result also has function calls, the while loop continues.
+          // If it's just text, the loop ends and we fall through to final update.
         } else {
           break;
         }
       }
 
-      // Final message
+      // Final message update
       const botMessage: ChatMessage = {
-        id: uuidv4(),
+        id: currentMsgId,
         role: 'model',
         text: result.text || '',
+        thinking: result.thinking,
+        tool_calls: result.functionCalls, // Ensure tool calls are preserved in final state
       };
-      setChatMessages((prev) => [...prev, botMessage]);
-    } catch (error) {
-      console.error(error);
+      setChatMessages((prev) => {
+        const idx = prev.findIndex((m) => m.id === currentMsgId);
+        if (idx !== -1) {
+          const newMsgs = [...prev];
+          newMsgs[idx] = botMessage;
+          return newMsgs;
+        }
+        return [...prev, botMessage];
+      });
+    } catch (error: any) {
+      let errorText = `AI Error: ${error.message || 'An unexpected error occurred'}`;
+      if (error.data) {
+        const detail =
+          typeof error.data === 'string'
+            ? error.data
+            : JSON.stringify(error.data, null, 2);
+        errorText += `\n\n**Details:**\n${detail}`;
+      }
+
       const errorMessage: ChatMessage = {
         id: uuidv4(),
         role: 'model',
-        text: 'Sorry, I encountered an error processing your request. Please check your AI settings.',
+        text: errorText,
         isError: true,
+        traceback: error.traceback,
       };
       setChatMessages((prev) => [...prev, errorMessage]);
     } finally {
@@ -476,12 +606,18 @@ Always prioritize the user's creative vision.`
         baseContent.slice(0, c),
         storyContext,
         systemPrompt,
-        activeStoryConfig,
+        activeWritingConfig,
         currentChapter.id
       );
       setContinuations(options);
-    } catch (e) {
-      console.error('Failed to generate suggestions', e);
+    } catch (e: any) {
+      const errorMessage: ChatMessage = {
+        id: uuidv4(),
+        role: 'model',
+        text: `Suggestion Error: ${e.message || 'Failed to generate suggestions'}`,
+        isError: true,
+      };
+      setChatMessages((prev) => [...prev, errorMessage]);
     } finally {
       setIsSuggesting(false);
     }
@@ -677,7 +813,9 @@ Always prioritize the user's creative vision.`
     }
 
     try {
-      const result = await generateSimpleContent(prompt, sysMsg, activeStoryConfig);
+      const modelType = target === 'summary' ? 'EDITING' : 'WRITING';
+      const config = target === 'summary' ? activeEditingConfig : activeWritingConfig;
+      const result = await generateSimpleContent(prompt, sysMsg, config, modelType);
 
       if (target === 'summary') {
         updateChapter(currentChapter.id, { summary: result });
@@ -694,8 +832,14 @@ Always prioritize the user's creative vision.`
           updateChapter(currentChapter.id, { content: result });
         }
       }
-    } catch (e) {
-      console.error('AI Action failed', e);
+    } catch (e: any) {
+      const errorMessage: ChatMessage = {
+        id: uuidv4(),
+        role: 'model',
+        text: `AI Action Error: ${e.message || 'Failed to perform AI action'}`,
+        isError: true,
+      };
+      setChatMessages((prev) => [...prev, errorMessage]);
     } finally {
       setIsAiActionLoading(false);
     }
@@ -722,6 +866,10 @@ Always prioritize the user's creative vision.`
 
   const currentTheme = editorSettings.theme || 'mixed';
   const isLight = currentTheme === 'light';
+
+  useEffect(() => {
+    document.body.className = currentTheme;
+  }, [currentTheme]);
 
   // Styles based on theme (Light vs Dark/Mixed for UI elements)
   const bgMain = isLight ? 'bg-brand-gray-50' : 'bg-brand-gray-950';
@@ -763,7 +911,9 @@ Always prioritize the user's creative vision.`
     <div
       className={`flex flex-col h-screen font-sans overflow-hidden ${bgMain} ${textMain}`}
       style={
-        { '--sidebar-width': `${editorSettings.sidebarWidth}px` } as React.CSSProperties
+        {
+          '--sidebar-width': `${editorSettings.sidebarWidth}px`,
+        } as React.CSSProperties
       }
     >
       <SettingsDialog
@@ -1100,8 +1250,8 @@ Always prioritize the user's creative vision.`
                   isFormatMenuOpen
                     ? buttonActive
                     : isLight
-                    ? 'text-brand-gray-500 hover:bg-brand-gray-100'
-                    : 'text-brand-gray-400 hover:bg-brand-gray-800'
+                      ? 'text-brand-gray-500 hover:bg-brand-gray-100'
+                      : 'text-brand-gray-400 hover:bg-brand-gray-800'
                 }`}
                 title="Formatting"
               >
@@ -1177,8 +1327,8 @@ Always prioritize the user's creative vision.`
                 isMobileFormatMenuOpen
                   ? buttonActive
                   : isLight
-                  ? 'bg-brand-gray-50 border-brand-gray-200 text-brand-gray-700'
-                  : 'bg-brand-gray-900 border-brand-gray-700 text-brand-gray-300'
+                    ? 'bg-brand-gray-50 border-brand-gray-200 text-brand-gray-700'
+                    : 'bg-brand-gray-900 border-brand-gray-700 text-brand-gray-300'
               }`}
             >
               <Type size={16} />
@@ -1332,7 +1482,7 @@ Always prioritize the user's creative vision.`
                 onClick={() => handleAiAction('chapter', 'extend')}
                 disabled={isAiActionLoading}
                 icon={<Wand2 size={12} />}
-                title="Extend"
+                title="Extend Chapter (WRITING model)"
               >
                 <span className="hidden xl:inline">Extend</span>
               </Button>
@@ -1344,10 +1494,126 @@ Always prioritize the user's creative vision.`
                 onClick={() => handleAiAction('chapter', 'rewrite')}
                 disabled={isAiActionLoading}
                 icon={<FileEdit size={12} />}
-                title="Rewrite"
+                title="Rewrite Chapter (WRITING model)"
               >
                 <span className="hidden xl:inline">Rewrite</span>
               </Button>
+            </div>
+          </div>
+
+          {/* Quick Model Selectors */}
+          <div
+            className={`hidden 2xl:flex items-center space-x-3 ml-2 pl-2 border-l h-8 ${
+              isLight ? 'border-brand-gray-200' : 'border-brand-gray-800'
+            }`}
+          >
+            <div className="flex flex-col justify-center">
+              <label
+                className={`text-[8px] font-bold uppercase leading-none mb-0.5 ${
+                  isLight ? 'text-fuchsia-600' : 'text-fuchsia-400'
+                }`}
+              >
+                Editing
+              </label>
+              <select
+                className={`text-[10px] bg-transparent border-none p-0 focus:ring-0 cursor-pointer w-24 truncate font-medium ${
+                  isLight ? 'text-brand-gray-600' : 'text-brand-gray-300'
+                }`}
+                value={appSettings.activeEditingProviderId}
+                onChange={(e) =>
+                  setAppSettings((prev) => ({
+                    ...prev,
+                    activeEditingProviderId: e.target.value,
+                  }))
+                }
+                title="Active Editing Model"
+              >
+                {appSettings.providers.map((p) => (
+                  <option
+                    key={p.id}
+                    value={p.id}
+                    className={
+                      isLight
+                        ? 'bg-white text-brand-gray-900'
+                        : 'bg-brand-gray-900 text-brand-gray-100'
+                    }
+                  >
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-col justify-center">
+              <label
+                className={`text-[8px] font-bold uppercase leading-none mb-0.5 ${
+                  isLight ? 'text-violet-600' : 'text-violet-400'
+                }`}
+              >
+                Writing
+              </label>
+              <select
+                className={`text-[10px] bg-transparent border-none p-0 focus:ring-0 cursor-pointer w-24 truncate font-medium ${
+                  isLight ? 'text-brand-gray-600' : 'text-brand-gray-300'
+                }`}
+                value={appSettings.activeWritingProviderId}
+                onChange={(e) =>
+                  setAppSettings((prev) => ({
+                    ...prev,
+                    activeWritingProviderId: e.target.value,
+                  }))
+                }
+                title="Active Writing Model"
+              >
+                {appSettings.providers.map((p) => (
+                  <option
+                    key={p.id}
+                    value={p.id}
+                    className={
+                      isLight
+                        ? 'bg-white text-brand-gray-900'
+                        : 'bg-brand-gray-900 text-brand-gray-100'
+                    }
+                  >
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-col justify-center">
+              <label
+                className={`text-[8px] font-bold uppercase leading-none mb-0.5 ${
+                  isLight ? 'text-blue-600' : 'text-blue-400'
+                }`}
+              >
+                Chat
+              </label>
+              <select
+                className={`text-[10px] bg-transparent border-none p-0 focus:ring-0 cursor-pointer w-24 truncate font-medium ${
+                  isLight ? 'text-brand-gray-600' : 'text-brand-gray-300'
+                }`}
+                value={appSettings.activeChatProviderId}
+                onChange={(e) =>
+                  setAppSettings((prev) => ({
+                    ...prev,
+                    activeChatProviderId: e.target.value,
+                  }))
+                }
+                title="Active Chat Model"
+              >
+                {appSettings.providers.map((p) => (
+                  <option
+                    key={p.id}
+                    value={p.id}
+                    className={
+                      isLight
+                        ? 'bg-white text-brand-gray-900'
+                        : 'bg-brand-gray-900 text-brand-gray-100'
+                    }
+                  >
+                    {p.name}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
         </div>
@@ -1364,7 +1630,7 @@ Always prioritize the user's creative vision.`
           >
             <SettingsIcon size={18} />
           </Button>
-          <div className="relative">
+          <div className="relative" ref={appearanceRef}>
             <Button
               theme={currentTheme}
               variant={isAppearanceOpen ? 'secondary' : 'ghost'}
@@ -1606,7 +1872,7 @@ Always prioritize the user's creative vision.`
           ></div>
         )}
         <div
-          className={`fixed inset-y-0 left-0 top-14 w-[var(--sidebar-width)] flex-col border-r flex-shrink-0 z-40 transition-transform duration-300 ease-in-out lg:relative lg:top-auto lg:translate-x-0 flex ${
+          className={`fixed inset-y-0 left-0 top-14 w-[var(--sidebar-width)] flex-col border-r flex-shrink-0 z-40 transition-transform duration-300 ease-in-out lg:relative lg:top-auto lg:translate-x-0 flex h-full ${
             isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
           } ${
             isLight
@@ -1631,7 +1897,7 @@ Always prioritize the user's creative vision.`
           />
         </div>
         <div
-          className={`flex-1 flex flex-col relative overflow-hidden w-full ${bgMain}`}
+          className={`flex-1 flex flex-col relative overflow-hidden w-full h-full ${bgMain}`}
         >
           <div className="flex-1 overflow-hidden h-full flex flex-col">
             {currentChapter ? (
@@ -1670,7 +1936,7 @@ Always prioritize the user's creative vision.`
           </div>
         </div>
         {isChatOpen && (
-          <div className="fixed inset-y-0 right-0 top-14 w-full md:w-[var(--sidebar-width)] flex-shrink-0 flex flex-col z-40 shadow-xl transition duration-300 ease-in-out md:relative md:top-auto md:z-20 md:h-full">
+          <div className="fixed inset-y-0 right-0 top-14 w-full md:w-[var(--sidebar-width)] flex-shrink-0 flex flex-col z-40 shadow-xl transition duration-300 ease-in-out md:relative md:top-auto md:bottom-auto md:z-20 md:h-full">
             <Chat
               messages={chatMessages}
               isLoading={isChatLoading}

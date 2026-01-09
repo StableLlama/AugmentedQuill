@@ -18,6 +18,7 @@ import datetime
 import uuid
 
 import httpx
+import re
 
 from app.config import load_machine_config, load_story_config
 from app.projects import get_active_project_dir
@@ -28,6 +29,38 @@ CONFIG_DIR = BASE_DIR / "config"
 
 # Global list to store LLM communication logs for the current session
 llm_logs: List[Dict[str, Any]] = []
+
+
+def strip_thinking_tags(content: str) -> str:
+    """Strip thinking/analysis tags from content, returning only the final message."""
+    if not content:
+        return content
+
+    # Handle <|channel|>analysis<|message|>...<|end|><|start|>assistant<|channel|>final<|message|>
+    if "<|channel|>analysis<|message|>" in content:
+        # Try to find the final channel
+        final_match = re.search(
+            r"<\|channel\|>final<\|message\|>(.*)", content, re.DOTALL
+        )
+        if final_match:
+            return final_match.group(1).strip()
+        # If no final channel found but analysis is present, it might be just analysis or incomplete
+        # Remove the analysis part
+        content = re.sub(
+            r"<\|channel\|>analysis<\|message\|>.*?<\|end\|>",
+            "",
+            content,
+            flags=re.DOTALL,
+        )
+        content = re.sub(
+            r"<\|start\|>assistant<\|channel\|>final<\|message\|>", "", content
+        )
+        return content.strip()
+
+    # Handle <thought>...</thought> or <thinking>...</thinking>
+    content = re.sub(r"<(thought|thinking)>.*?</\1>", "", content, flags=re.DOTALL)
+
+    return content.strip()
 
 
 def add_llm_log(log_entry: Dict[str, Any]):
@@ -64,20 +97,43 @@ def create_log_entry(
     }
 
 
+def get_selected_model_name(
+    payload: Dict[str, Any], model_type: str | None = None
+) -> str | None:
+    """Get the selected model name based on payload and model_type."""
+    machine = load_machine_config(CONFIG_DIR / "machine.json") or {}
+    openai_cfg: Dict[str, Any] = machine.get("openai") or {}
+
+    selected_name = payload.get("model_name")
+    if not selected_name and model_type:
+        if model_type == "WRITING":
+            selected_name = openai_cfg.get("selected_writing")
+        elif model_type == "CHAT":
+            selected_name = openai_cfg.get("selected_chat")
+        elif model_type == "EDITING":
+            selected_name = openai_cfg.get("selected_editing")
+
+    if not selected_name:
+        selected_name = openai_cfg.get("selected")
+    return selected_name
+
+
 def resolve_openai_credentials(
     payload: Dict[str, Any],
+    model_type: str | None = None,
 ) -> Tuple[str, str | None, str, int]:
     """Resolve (base_url, api_key, model_id, timeout_s) from machine config and overrides.
 
     Precedence:
     1. Environment variables OPENAI_BASE_URL / OPENAI_API_KEY
     2. Payload overrides: base_url, api_key, model, timeout_s or model_name (by name)
-    3. machine.json -> openai.models[] (selected by name)
+    3. machine.json -> openai.models[] (selected by name based on model_type)
     """
     machine = load_machine_config(CONFIG_DIR / "machine.json") or {}
     openai_cfg: Dict[str, Any] = machine.get("openai") or {}
 
-    selected_name = payload.get("model_name") or openai_cfg.get("selected")
+    selected_name = get_selected_model_name(payload, model_type)
+
     base_url = payload.get("base_url")
     api_key = payload.get("api_key")
     model_id = payload.get("model")
@@ -359,6 +415,9 @@ async def openai_chat_complete_stream(
                         if content:
                             log_entry["response"]["full_content"] += content
                             yield content
+        except Exception as e:
+            log_entry["response"]["error"] = str(e)
+            raise
         finally:
             log_entry["timestamp_end"] = datetime.datetime.now().isoformat()
 
@@ -441,5 +500,8 @@ async def openai_completions_stream(
                         if content:
                             log_entry["response"]["full_content"] += content
                             yield content
+        except Exception as e:
+            log_entry["response"]["error"] = str(e)
+            raise
         finally:
             log_entry["timestamp_end"] = datetime.datetime.now().isoformat()

@@ -196,6 +196,9 @@ async def api_settings_post(request: Request) -> JSONResponse:
     openai_cfg = (machine or {}).get("openai") or {}
     models = openai_cfg.get("models")
     selected = openai_cfg.get("selected") or ""
+    selected_chat = openai_cfg.get("selected_chat") or ""
+    selected_writing = openai_cfg.get("selected_writing") or ""
+    selected_editing = openai_cfg.get("selected_editing") or ""
 
     # If models present, ensure names are unique and non-empty
     if isinstance(models, list) and models:
@@ -225,7 +228,17 @@ async def api_settings_post(request: Request) -> JSONResponse:
         # default selected
         if not selected:
             selected = models[0].get("name", "") if models else ""
+        if not selected_chat:
+            selected_chat = selected
+        if not selected_writing:
+            selected_writing = selected
+        if not selected_editing:
+            selected_editing = selected
+
         openai_cfg["selected"] = selected
+        openai_cfg["selected_chat"] = selected_chat
+        openai_cfg["selected_writing"] = selected_writing
+        openai_cfg["selected_editing"] = selected_editing
     else:
         return JSONResponse(
             status_code=400,
@@ -275,12 +288,15 @@ async def api_prompts_get(model_name: str | None = None) -> JSONResponse:
             model_overrides.get(key) or DEFAULT_USER_PROMPTS.get(key, "")
         )
 
+    from app.prompts import PROMPT_TYPES
+
     return JSONResponse(
         status_code=200,
         content={
             "ok": True,
             "system_messages": system_messages,
             "user_prompts": user_prompts,
+            "prompt_types": PROMPT_TYPES,
         },
     )
 
@@ -534,7 +550,13 @@ async def api_story_tags_put(request: Request) -> JSONResponse:
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON body")
 
-    tags = payload.get("tags", "")
+    tags = payload.get("tags")
+    if not isinstance(tags, list):
+        return JSONResponse(
+            status_code=400,
+            content={"ok": False, "detail": "tags must be an array"},
+        )
+
     try:
         active = get_active_project_dir()
         story_path = (active / "story.json") if active else (CONFIG_DIR / "story.json")

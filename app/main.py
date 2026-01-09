@@ -5,9 +5,10 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.config import load_machine_config
 
@@ -52,6 +53,20 @@ def create_app() -> FastAPI:
     app.include_router(story_router)
     app.include_router(chat_router)
     app.include_router(debug_router)
+
+    @app.exception_handler(StarletteHTTPException)
+    async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"ok": False, "detail": exc.detail},
+        )
+
+    @app.exception_handler(Exception)
+    async def generic_exception_handler(request: Request, exc: Exception):
+        return JSONResponse(
+            status_code=500,
+            content={"ok": False, "detail": str(exc)},
+        )
 
     @app.get("/", response_class=HTMLResponse)
     async def index(request: Request):

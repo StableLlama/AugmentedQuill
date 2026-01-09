@@ -118,7 +118,7 @@ export const StoryMetadata: React.FC<StoryMetadataProps> = ({
       </div>
       <div className="text-sm text-brand-gray-500 mb-4 leading-relaxed">
         {summary ? (
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-col gap-1 max-h-32 overflow-y-auto pr-1 custom-scrollbar">
             <MarkdownView content={summary} simple />
             {hasUnsupportedSummaryMarkdown(summary) && <SummaryWarning />}
           </div>

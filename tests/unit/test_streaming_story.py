@@ -44,7 +44,7 @@ class StreamingStoryTest(TestCase):
         self._orig_resolve = llm.resolve_openai_credentials
         self._orig_stream = llm.openai_chat_complete_stream
 
-        def fake_resolve(payload):  # type: ignore
+        def fake_resolve(payload, **kwargs):  # type: ignore
             return ("https://fake/v1", None, "fake-model", 5)
 
         async def fake_stream(**kwargs):  # type: ignore

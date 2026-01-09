@@ -39,7 +39,7 @@ export const ChapterList: React.FC<ChapterListProps> = ({
   const titleInactive = isLight ? 'text-brand-gray-700' : 'text-brand-gray-400';
 
   return (
-    <div className={`flex flex-col h-full border-r ${bgClass}`}>
+    <div className={`flex flex-col flex-1 min-h-0 border-r ${bgClass}`}>
       <div
         className={`p-4 border-b flex justify-between items-center sticky top-0 z-10 ${bgClass} ${
           isLight ? 'border-brand-gray-200' : 'border-brand-gray-800'

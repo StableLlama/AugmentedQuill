@@ -58,12 +58,13 @@ async def api_story_story_summary(request: Request) -> JSONResponse:
             content={"ok": False, "detail": "No chapter summaries available"},
         )
 
-    base_url, api_key, model_id, timeout_s = llm.resolve_openai_credentials(payload)
+    base_url, api_key, model_id, timeout_s = llm.resolve_openai_credentials(
+        payload, model_type="EDITING"
+    )
 
     # Load model-specific prompt overrides
     machine_config = load_machine_config(BASE_DIR / "config" / "machine.json") or {}
-    openai_cfg = machine_config.get("openai", {})
-    selected_model_name = payload.get("model_name") or openai_cfg.get("selected")
+    selected_model_name = llm.get_selected_model_name(payload, model_type="EDITING")
     model_overrides = load_model_prompt_overrides(machine_config, selected_model_name)
 
     sys_msg = {
@@ -170,12 +171,13 @@ async def api_story_summary(request: Request) -> JSONResponse:
         )
     current_summary = chapters_data[pos].get("summary", "")
 
-    base_url, api_key, model_id, timeout_s = llm.resolve_openai_credentials(payload)
+    base_url, api_key, model_id, timeout_s = llm.resolve_openai_credentials(
+        payload, model_type="EDITING"
+    )
 
     # Load model-specific prompt overrides
     machine_config = load_machine_config(BASE_DIR / "config" / "machine.json") or {}
-    openai_cfg = machine_config.get("openai", {})
-    selected_model_name = payload.get("model_name") or openai_cfg.get("selected")
+    selected_model_name = llm.get_selected_model_name(payload, model_type="EDITING")
     model_overrides = load_model_prompt_overrides(machine_config, selected_model_name)
 
     # Build messages
@@ -279,12 +281,13 @@ async def api_story_write(request: Request) -> JSONResponse:
     summary = chapters_data[pos].get("summary", "").strip()
     title = chapters_data[pos].get("title") or path.name
 
-    base_url, api_key, model_id, timeout_s = llm.resolve_openai_credentials(payload)
+    base_url, api_key, model_id, timeout_s = llm.resolve_openai_credentials(
+        payload, model_type="WRITING"
+    )
 
     # Load model-specific prompt overrides
     machine_config = load_machine_config(BASE_DIR / "config" / "machine.json") or {}
-    openai_cfg = machine_config.get("openai", {})
-    selected_model_name = payload.get("model_name") or openai_cfg.get("selected")
+    selected_model_name = llm.get_selected_model_name(payload, model_type="WRITING")
     model_overrides = load_model_prompt_overrides(machine_config, selected_model_name)
 
     sys_msg = {
@@ -369,12 +372,13 @@ async def api_story_continue(request: Request) -> JSONResponse:
     summary = chapters_data[pos].get("summary", "")
     title = chapters_data[pos].get("title") or path.name
 
-    base_url, api_key, model_id, timeout_s = llm.resolve_openai_credentials(payload)
+    base_url, api_key, model_id, timeout_s = llm.resolve_openai_credentials(
+        payload, model_type="WRITING"
+    )
 
     # Load model-specific prompt overrides
     machine_config = load_machine_config(BASE_DIR / "config" / "machine.json") or {}
-    openai_cfg = machine_config.get("openai", {})
-    selected_model_name = payload.get("model_name") or openai_cfg.get("selected")
+    selected_model_name = llm.get_selected_model_name(payload, model_type="WRITING")
     model_overrides = load_model_prompt_overrides(machine_config, selected_model_name)
 
     sys_msg = {
@@ -464,12 +468,13 @@ async def api_story_suggest(request: Request) -> StreamingResponse:
     summary = chapters_data[pos].get("summary", "")
     title = chapters_data[pos].get("title") or path.name
 
-    base_url, api_key, model_id, timeout_s = llm.resolve_openai_credentials(payload)
+    base_url, api_key, model_id, timeout_s = llm.resolve_openai_credentials(
+        payload, model_type="WRITING"
+    )
 
     # Load model-specific prompt overrides
     machine_config = load_machine_config(BASE_DIR / "config" / "machine.json") or {}
-    openai_cfg = machine_config.get("openai", {})
-    selected_model_name = payload.get("model_name") or openai_cfg.get("selected")
+    selected_model_name = llm.get_selected_model_name(payload, model_type="WRITING")
     model_overrides = load_model_prompt_overrides(machine_config, selected_model_name)
 
     # Build prompt with title and summary
@@ -552,12 +557,13 @@ async def api_story_summary_stream(request: Request):
         )
     current_summary = chapters_data[pos].get("summary", "")
 
-    base_url, api_key, model_id, timeout_s = llm.resolve_openai_credentials(payload)
+    base_url, api_key, model_id, timeout_s = llm.resolve_openai_credentials(
+        payload, model_type="EDITING"
+    )
 
     # Load model-specific prompt overrides
     machine_config = load_machine_config(BASE_DIR / "config" / "machine.json") or {}
-    openai_cfg = machine_config.get("openai", {})
-    selected_model_name = payload.get("model_name") or openai_cfg.get("selected")
+    selected_model_name = llm.get_selected_model_name(payload, model_type="EDITING")
     model_overrides = load_model_prompt_overrides(machine_config, selected_model_name)
 
     sys_msg = {
@@ -630,12 +636,13 @@ async def api_story_write_stream(request: Request):
     summary = chapters_data[pos].get("summary", "").strip()
     title = chapters_data[pos].get("title") or path.name
 
-    base_url, api_key, model_id, timeout_s = llm.resolve_openai_credentials(payload)
+    base_url, api_key, model_id, timeout_s = llm.resolve_openai_credentials(
+        payload, model_type="WRITING"
+    )
 
     # Load model-specific prompt overrides
     machine_config = load_machine_config(BASE_DIR / "config" / "machine.json") or {}
-    openai_cfg = machine_config.get("openai", {})
-    selected_model_name = payload.get("model_name") or openai_cfg.get("selected")
+    selected_model_name = llm.get_selected_model_name(payload, model_type="WRITING")
     model_overrides = load_model_prompt_overrides(machine_config, selected_model_name)
 
     sys_msg = {
@@ -703,12 +710,13 @@ async def api_story_continue_stream(request: Request):
     summary = chapters_data[pos].get("summary", "")
     title = chapters_data[pos].get("title") or path.name
 
-    base_url, api_key, model_id, timeout_s = llm.resolve_openai_credentials(payload)
+    base_url, api_key, model_id, timeout_s = llm.resolve_openai_credentials(
+        payload, model_type="WRITING"
+    )
 
     # Load model-specific prompt overrides
     machine_config = load_machine_config(BASE_DIR / "config" / "machine.json") or {}
-    openai_cfg = machine_config.get("openai", {})
-    selected_model_name = payload.get("model_name") or openai_cfg.get("selected")
+    selected_model_name = llm.get_selected_model_name(payload, model_type="WRITING")
     model_overrides = load_model_prompt_overrides(machine_config, selected_model_name)
 
     sys_msg = {
@@ -783,12 +791,13 @@ async def api_story_story_summary_stream(request: Request):
     if not chapter_summaries:
         raise HTTPException(status_code=400, detail="No chapter summaries available")
 
-    base_url, api_key, model_id, timeout_s = llm.resolve_openai_credentials(payload)
+    base_url, api_key, model_id, timeout_s = llm.resolve_openai_credentials(
+        payload, model_type="EDITING"
+    )
 
     # Load model-specific prompt overrides
     machine_config = load_machine_config(BASE_DIR / "config" / "machine.json") or {}
-    openai_cfg = machine_config.get("openai", {})
-    selected_model_name = payload.get("model_name") or openai_cfg.get("selected")
+    selected_model_name = llm.get_selected_model_name(payload, model_type="EDITING")
     model_overrides = load_model_prompt_overrides(machine_config, selected_model_name)
 
     sys_msg = {

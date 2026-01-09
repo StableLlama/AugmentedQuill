@@ -314,7 +314,9 @@ export const Editor = React.forwardRef<any, EditorProps>(
       };
       window.addEventListener('keydown', onKeyDown, { capture: true });
       return () =>
-        window.removeEventListener('keydown', onKeyDown, { capture: true } as any);
+        window.removeEventListener('keydown', onKeyDown, {
+          capture: true,
+        } as any);
     }, [maybeHandleSuggestionHotkey]);
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -527,6 +529,7 @@ export const Editor = React.forwardRef<any, EditorProps>(
                   onClick={() => onAiAction('chapter', 'extend')}
                   disabled={isAiLoading}
                   icon={<Wand2 size={12} />}
+                  title="Extend Chapter (WRITING model)"
                 >
                   Extend
                 </Button>
@@ -538,6 +541,7 @@ export const Editor = React.forwardRef<any, EditorProps>(
                   onClick={() => onAiAction('chapter', 'rewrite')}
                   disabled={isAiLoading}
                   icon={<FileEdit size={12} />}
+                  title="Rewrite Chapter (WRITING model)"
                 >
                   Rewrite
                 </Button>
@@ -567,6 +571,7 @@ export const Editor = React.forwardRef<any, EditorProps>(
                     onClick={() => onAiAction('summary', 'update')}
                     disabled={isAiLoading}
                     icon={<RefreshCw size={10} />}
+                    title="Update Summary (EDITING model)"
                   >
                     AI Update
                   </Button>
@@ -578,6 +583,7 @@ export const Editor = React.forwardRef<any, EditorProps>(
                     onClick={() => onAiAction('summary', 'rewrite')}
                     disabled={isAiLoading}
                     icon={<PenLine size={10} />}
+                    title="Rewrite Summary (EDITING model)"
                   >
                     AI Rewrite
                   </Button>
@@ -594,7 +600,7 @@ export const Editor = React.forwardRef<any, EditorProps>(
         )}
 
         {/* Main Scrollable Content Area */}
-        <div className="flex-1 overflow-y-auto px-4 py-6 md:py-8 flex flex-col items-center scroll-smooth">
+        <div className="flex-1 overflow-y-auto px-4 py-6 md:py-8 flex flex-col items-center">
           {/* The Paper - Grows infinitely */}
           <div
             className="relative w-full shadow-2xl transition duration-300 ease-in-out px-4 py-8 md:px-12 md:py-16 mx-auto flex flex-col flex-none"
@@ -703,7 +709,7 @@ export const Editor = React.forwardRef<any, EditorProps>(
                     }`}
                   >
                     <div
-                      className={`font-serif text-lg leading-relaxed ${
+                      className={`font-serif text-sm leading-relaxed ${
                         settings.theme === 'light'
                           ? 'text-brand-gray-800'
                           : 'text-brand-gray-300 group-hover:text-brand-gray-200'
@@ -725,15 +731,18 @@ export const Editor = React.forwardRef<any, EditorProps>(
                     ? 'bg-brand-gray-50 border-brand-gray-200 hover:bg-brand-gray-50 text-brand-gray-600'
                     : 'bg-brand-gray-800 border-brand-gray-700 hover:bg-brand-gray-700 hover:border-brand-500/30 text-brand-gray-300'
                 }`}
+                title="Get AI Suggestions (WRITING model)"
               >
                 {isSuggesting || isAiLoading ? (
                   <>
-                    <Loader2 className="animate-spin text-brand-500" size={18} />
-                    <span className="font-medium text-sm">Working...</span>
+                    <Loader2 className="animate-spin text-violet-500" size={18} />
+                    <span className="font-medium text-sm text-violet-600 dark:text-violet-400">
+                      Working...
+                    </span>
                   </>
                 ) : (
                   <>
-                    <div className="bg-brand-100 dark:bg-brand-gray-700 p-1 rounded-md text-brand-600 dark:text-brand-gray-300">
+                    <div className="bg-violet-100 dark:bg-violet-900/30 p-1 rounded-md text-violet-600 dark:text-violet-400">
                       <Sparkles size={16} />
                     </div>
                     <span className="font-medium text-sm">Suggest next paragraph</span>

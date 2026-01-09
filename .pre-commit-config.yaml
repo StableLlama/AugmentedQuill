@@ -1,30 +1,30 @@
 repos:
   - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.14.10
+    rev: v0.14.11
     hooks:
       - id: ruff
         # Do not auto-fix in pre-commit; only report issues for manual review
         language_version: python3
 
   - repo: https://github.com/psf/black
-    rev: 24.3.0
+    rev: 25.12.0
     hooks:
       - id: black
         # Run black in check-only mode so it does not modify files automatically
-        args: ["--check"]
+        args: ['--check']
         language_version: python3
 
   - repo: https://github.com/pre-commit/mirrors-prettier
-    rev: v3.0.0
+    rev: v4.0.0-alpha.8
     hooks:
       - id: prettier
         # Check-only via default behavior; do not auto-format on commit
         files: "\\.(js|ts|tsx|jsx|json|css|scss|md|html)$"
 
   - repo: https://github.com/pre-commit/mirrors-eslint
-    rev: v8.49.0
+    rev: v10.0.0-beta.0
     hooks:
       - id: eslint
         # Do not fix automatically; fail on any warnings to enforce manual fixes
-        args: ["--max-warnings=0"]
-        files: "\\.(js|ts|tsx|jsx)$"
+        args: ['--max-warnings=0', '--config', 'frontend/eslint.config.cjs']
+        files: '^frontend/.*'

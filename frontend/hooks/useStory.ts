@@ -49,8 +49,8 @@ export const useStory = () => {
 
         const newStory: StoryState = {
           id: currentProject,
-          title: res.story.title || currentProject,
-          summary: res.story.summary || '',
+          title: res.story.project_title || currentProject,
+          summary: res.story.story_summary || '',
           styleTags: res.story.tags || [],
           chapters: chapters,
           llm_prefs: res.story.llm_prefs,
@@ -106,8 +106,8 @@ export const useStory = () => {
 
           const newStory: StoryState = {
             id: projects.current,
-            title: res.story.title || projects.current,
-            summary: res.story.summary || '',
+            title: res.story.project_title || projects.current,
+            summary: res.story.story_summary || '',
             styleTags: res.story.tags || [],
             chapters: chapters,
             llm_prefs: res.story.llm_prefs,
@@ -143,6 +143,7 @@ export const useStory = () => {
     pushState(newState);
 
     try {
+      await api.story.updateTitle(title);
       await api.story.updateSummary(summary);
       await api.story.updateTags(tags);
     } catch (e) {

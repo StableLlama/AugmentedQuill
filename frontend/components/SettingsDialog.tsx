@@ -58,43 +58,84 @@ const PROMPT_GROUPS = [
   {
     title: 'System Messages',
     prompts: [
-      { id: 'story_writer', label: 'Story Writer' },
-      { id: 'story_continuer', label: 'Story Continuer' },
-      { id: 'chapter_summarizer', label: 'Chapter Summarizer' },
-      { id: 'story_summarizer', label: 'Story Summarizer' },
-      { id: 'chat_llm', label: 'Chat Assistant' },
-      { id: 'ai_action_summary_update', label: 'AI Action: Update Summary' },
-      { id: 'ai_action_summary_rewrite', label: 'AI Action: Rewrite Summary' },
-      { id: 'ai_action_chapter_extend', label: 'AI Action: Extend Chapter' },
-      { id: 'ai_action_chapter_rewrite', label: 'AI Action: Rewrite Chapter' },
+      { id: 'chat_llm', label: 'Chat Assistant', type: 'CHAT' },
+      { id: 'editing_llm', label: 'Editing Assistant', type: 'EDITING' },
+      { id: 'story_writer', label: 'Story Writer', type: 'WRITING' },
+      { id: 'story_continuer', label: 'Story Continuer', type: 'WRITING' },
+      {
+        id: 'chapter_summarizer',
+        label: 'Chapter Summarizer',
+        type: 'EDITING',
+      },
+      { id: 'story_summarizer', label: 'Story Summarizer', type: 'EDITING' },
+      {
+        id: 'ai_action_summary_update',
+        label: 'AI Action: Update Summary',
+        type: 'EDITING',
+      },
+      {
+        id: 'ai_action_summary_rewrite',
+        label: 'AI Action: Rewrite Summary',
+        type: 'EDITING',
+      },
+      {
+        id: 'ai_action_chapter_extend',
+        label: 'AI Action: Extend Chapter',
+        type: 'WRITING',
+      },
+      {
+        id: 'ai_action_chapter_rewrite',
+        label: 'AI Action: Rewrite Chapter',
+        type: 'WRITING',
+      },
     ],
   },
   {
     title: 'User Prompts',
     prompts: [
-      { id: 'chapter_summary_new', label: 'New Chapter Summary' },
-      { id: 'chapter_summary_update', label: 'Update Chapter Summary' },
-      { id: 'write_chapter', label: 'Write Chapter' },
-      { id: 'continue_chapter', label: 'Continue Chapter' },
-      { id: 'story_summary_new', label: 'New Story Summary' },
-      { id: 'story_summary_update', label: 'Update Story Summary' },
-      { id: 'suggest_continuation', label: 'Suggest Continuation (Autocomplete)' },
-      { id: 'chat_user_context', label: 'Chat User Context' },
+      {
+        id: 'chapter_summary_new',
+        label: 'New Chapter Summary',
+        type: 'EDITING',
+      },
+      {
+        id: 'chapter_summary_update',
+        label: 'Update Chapter Summary',
+        type: 'EDITING',
+      },
+      { id: 'write_chapter', label: 'Write Chapter', type: 'WRITING' },
+      { id: 'continue_chapter', label: 'Continue Chapter', type: 'WRITING' },
+      { id: 'story_summary_new', label: 'New Story Summary', type: 'EDITING' },
+      {
+        id: 'story_summary_update',
+        label: 'Update Story Summary',
+        type: 'EDITING',
+      },
+      {
+        id: 'suggest_continuation',
+        label: 'Suggest Continuation (Autocomplete)',
+        type: 'WRITING',
+      },
+      { id: 'chat_user_context', label: 'Chat User Context', type: 'CHAT' },
       {
         id: 'ai_action_summary_update_user',
         label: 'AI Action: Update Summary (User)',
+        type: 'EDITING',
       },
       {
         id: 'ai_action_summary_rewrite_user',
         label: 'AI Action: Rewrite Summary (User)',
+        type: 'EDITING',
       },
       {
         id: 'ai_action_chapter_extend_user',
         label: 'AI Action: Extend Chapter (User)',
+        type: 'WRITING',
       },
       {
         id: 'ai_action_chapter_rewrite_user',
         label: 'AI Action: Rewrite Chapter (User)',
+        type: 'WRITING',
       },
     ],
   },
@@ -177,20 +218,51 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
           if (cancelled) return;
 
           if (providers.length > 0) {
-            const selectedId =
+            const fallbackId =
               providers.find((p) => p.id === selectedName)?.id || providers[0].id;
-            setLocalSettings((prev) => ({
-              ...prev,
-              providers,
-              activeChatProviderId: selectedId,
-              activeStoryProviderId: selectedId,
-            }));
-            setEditingProviderId(selectedId);
 
-            // Treat backend-loaded values as initial (do not auto-trigger model test)
-            prevModelIdRef.current[selectedId] = providers.find(
-              (p) => p.id === selectedId
-            )?.modelId;
+            const getValidId = (
+              currentId: string | undefined,
+              specificSaved: string | undefined
+            ) => {
+              // 1. Prefer current in-memory value if valid
+              if (currentId && providers.some((p) => p.id === currentId)) {
+                return currentId;
+              }
+              // 2. Prefer specific saved value (selected_chat, etc) if valid
+              if (specificSaved && providers.some((p) => p.id === specificSaved)) {
+                return specificSaved;
+              }
+              // 3. Fallback to generic selected or first
+              return fallbackId;
+            };
+
+            setLocalSettings((prev) => {
+              const newChatId = getValidId(
+                prev.activeChatProviderId,
+                (openai as any).selected_chat
+              );
+              // Update editing provider to match chat if untracked, or keep if valid
+              setEditingProviderId((currEdit) => {
+                if (currEdit && providers.some((p) => p.id === currEdit))
+                  return currEdit;
+                return newChatId;
+              });
+
+              return {
+                ...prev,
+                providers,
+                activeChatProviderId: newChatId,
+                activeWritingProviderId: getValidId(
+                  prev.activeWritingProviderId,
+                  (openai as any).selected_writing
+                ),
+                activeEditingProviderId: getValidId(
+                  prev.activeEditingProviderId,
+                  (openai as any).selected_editing
+                ),
+              };
+            });
           }
         } catch (e) {
           console.error('Failed to load machine config', e);
@@ -203,130 +275,144 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
     }
   }, [isOpen, settings]);
 
-  // Auto-test connection and fetch models only when:
-  // - dialog opens
-  // - active provider changes (user selects another provider)
-  // - baseUrl/apiKey/timeout for active provider changes
+  // Auto-test connection and fetch models for all providers.
   useEffect(() => {
-    const provider = localSettings.providers.find((p) => p.id === editingProviderId);
-    if (!provider) return;
-
-    const providerId = provider.id;
-    const baseUrl = (provider.baseUrl || '').trim();
-    const apiKey = (provider.apiKey || '').trim();
-    const timeoutS = Math.max(1, Math.round((provider.timeout || 10000) / 1000));
-    const testKey = `${baseUrl}|${apiKey}|${timeoutS}`;
-
-    // Only attempt if baseUrl and apiKey are present
-    if (!baseUrl || !apiKey) {
-      setConnectionStatus((s) => ({ ...s, [providerId]: 'idle' }));
-      setModelStatus((s) => ({ ...s, [providerId]: 'idle' }));
-      setModelLists((prev) => ({ ...prev, [providerId]: [] }));
-      return;
-    }
-
-    // Avoid re-testing unless the relevant inputs changed or dialog just opened.
-    if (lastConnTestKeyRef.current[providerId] === testKey) {
-      return;
-    }
-    lastConnTestKeyRef.current[providerId] = testKey;
+    if (!isOpen) return;
 
     let cancelled = false;
+    const timeouts: ReturnType<typeof setTimeout>[] = [];
 
-    const run = async () => {
-      setConnectionStatus((s) => ({ ...s, [providerId]: 'loading' }));
-      try {
-        const res = await api.machine.test({
-          base_url: baseUrl,
-          api_key: apiKey,
-          timeout_s: timeoutS,
-        });
+    localSettings.providers.forEach((provider) => {
+      const providerId = provider.id;
+      const baseUrl = (provider.baseUrl || '').trim();
+      const apiKey = (provider.apiKey || '').trim();
+      const timeoutS = Math.max(1, Math.round((provider.timeout || 10000) / 1000));
+      const testKey = `${baseUrl}|${apiKey}|${timeoutS}`;
+
+      // Only attempt if baseUrl and apiKey are present
+      if (!baseUrl || !apiKey) {
+        setConnectionStatus((s) => ({ ...s, [providerId]: 'idle' }));
+        setModelStatus((s) => ({ ...s, [providerId]: 'idle' }));
+        setModelLists((prev) => ({ ...prev, [providerId]: [] }));
+        return;
+      }
+
+      // Avoid re-testing unless the relevant inputs changed or dialog just opened.
+      if (lastConnTestKeyRef.current[providerId] === testKey) {
+        return;
+      }
+
+      const run = async () => {
         if (cancelled) return;
-        setConnectionStatus((s) => ({
-          ...s,
-          [providerId]: res?.ok ? 'success' : 'error',
-        }));
-        if (res?.ok) {
-          setModelLists((prev) => ({ ...prev, [providerId]: res.models || [] }));
-        } else {
+        setConnectionStatus((s) => ({ ...s, [providerId]: 'loading' }));
+        try {
+          const res = await api.machine.test({
+            base_url: baseUrl,
+            api_key: apiKey,
+            timeout_s: timeoutS,
+          });
+          if (cancelled) return;
+          lastConnTestKeyRef.current[providerId] = testKey;
+          setConnectionStatus((s) => ({
+            ...s,
+            [providerId]: res?.ok ? 'success' : 'error',
+          }));
+          if (res?.ok) {
+            setModelLists((prev) => ({
+              ...prev,
+              [providerId]: res.models || [],
+            }));
+          } else {
+            setModelLists((prev) => ({ ...prev, [providerId]: [] }));
+          }
+        } catch (e) {
+          if (cancelled) return;
+          lastConnTestKeyRef.current[providerId] = testKey;
+          setConnectionStatus((s) => ({ ...s, [providerId]: 'error' }));
           setModelLists((prev) => ({ ...prev, [providerId]: [] }));
         }
-      } catch (e) {
-        if (cancelled) return;
-        setConnectionStatus((s) => ({ ...s, [providerId]: 'error' }));
-        setModelLists((prev) => ({ ...prev, [providerId]: [] }));
-      }
-    };
+      };
 
-    const t = setTimeout(run, 600);
+      timeouts.push(setTimeout(run, 600));
+    });
+
     return () => {
       cancelled = true;
-      clearTimeout(t);
+      timeouts.forEach(clearTimeout);
     };
-  }, [isOpen, editingProviderId, localSettings.providers]);
+  }, [isOpen, localSettings.providers]);
 
-  // Test model availability only when the user changes Model ID (no polling).
+  // Test model availability for all providers.
   useEffect(() => {
-    const provider = localSettings.providers.find((p) => p.id === editingProviderId);
-    if (!provider) return;
-
-    const providerId = provider.id;
-    const modelId = (provider.modelId || '').trim();
-    const prevModelId = prevModelIdRef.current[providerId];
-
-    // Track changes; skip initial load.
-    if (prevModelId === undefined) {
-      prevModelIdRef.current[providerId] = modelId;
-      setModelStatus((s) => ({ ...s, [providerId]: 'idle' }));
-      return;
-    }
-
-    if (prevModelId === modelId) {
-      return;
-    }
-    prevModelIdRef.current[providerId] = modelId;
-
-    // Only test if connection is OK.
-    if (connectionStatus[providerId] !== 'success' || !modelId) {
-      setModelStatus((s) => ({ ...s, [providerId]: 'idle' }));
-      return;
-    }
-
-    const baseUrl = (provider.baseUrl || '').trim();
-    const apiKey = (provider.apiKey || '').trim();
-    const timeoutS = Math.max(1, Math.round((provider.timeout || 10000) / 1000));
+    if (!isOpen) return;
 
     let cancelled = false;
+    const timeouts: ReturnType<typeof setTimeout>[] = [];
 
-    const run = async () => {
-      setModelStatus((s) => ({ ...s, [providerId]: 'loading' }));
-      try {
-        const res = await api.machine.testModel({
-          base_url: baseUrl,
-          api_key: apiKey,
-          timeout_s: timeoutS,
-          model_id: modelId,
-        });
-        if (cancelled) return;
-        if (Array.isArray(res?.models)) {
-          setModelLists((prev) => ({ ...prev, [providerId]: res.models }));
-        }
-        setModelStatus((s) => ({
-          ...s,
-          [providerId]: res?.ok && res?.model_ok ? 'success' : 'error',
-        }));
-      } catch (e) {
-        if (cancelled) return;
-        setModelStatus((s) => ({ ...s, [providerId]: 'error' }));
+    localSettings.providers.forEach((provider) => {
+      const providerId = provider.id;
+      const modelId = (provider.modelId || '').trim();
+      const prevId = prevModelIdRef.current[providerId];
+
+      // If nothing changed and we already have a status, skip.
+      if (
+        prevId === modelId &&
+        modelStatus[providerId] &&
+        modelStatus[providerId] !== 'idle'
+      ) {
+        return;
       }
-    };
 
-    const t = setTimeout(run, 500);
+      // If no modelId, it's idle.
+      if (!modelId) {
+        prevModelIdRef.current[providerId] = modelId;
+        setModelStatus((s) => ({ ...s, [providerId]: 'idle' }));
+        return;
+      }
+
+      // Only test if connection is OK.
+      if (connectionStatus[providerId] !== 'success') {
+        return;
+      }
+
+      const baseUrl = (provider.baseUrl || '').trim();
+      const apiKey = (provider.apiKey || '').trim();
+      const timeoutS = Math.max(1, Math.round((provider.timeout || 10000) / 1000));
+
+      const run = async () => {
+        if (cancelled) return;
+        setModelStatus((s) => ({ ...s, [providerId]: 'loading' }));
+        try {
+          const res = await api.machine.testModel({
+            base_url: baseUrl,
+            api_key: apiKey,
+            timeout_s: timeoutS,
+            model_id: modelId,
+          });
+          if (cancelled) return;
+          prevModelIdRef.current[providerId] = modelId;
+          if (Array.isArray(res?.models)) {
+            setModelLists((prev) => ({ ...prev, [providerId]: res.models }));
+          }
+          setModelStatus((s) => ({
+            ...s,
+            [providerId]: res?.ok && res?.model_ok ? 'success' : 'error',
+          }));
+        } catch (e) {
+          if (cancelled) return;
+          prevModelIdRef.current[providerId] = modelId;
+          setModelStatus((s) => ({ ...s, [providerId]: 'error' }));
+        }
+      };
+
+      timeouts.push(setTimeout(run, 500));
+    });
+
     return () => {
       cancelled = true;
-      clearTimeout(t);
+      timeouts.forEach(clearTimeout);
     };
-  }, [isOpen, editingProviderId, localSettings.providers, connectionStatus]);
+  }, [isOpen, localSettings.providers, connectionStatus]);
 
   // Close model dropdown when switching providers
   useEffect(() => {
@@ -340,13 +426,22 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
     setSaveLoading(true);
     try {
       const providers = localSettings.providers || [];
-      const active =
+      const activeChat =
         providers.find((p) => p.id === localSettings.activeChatProviderId) ||
+        providers[0];
+      const activeWriting =
+        providers.find((p) => p.id === localSettings.activeWritingProviderId) ||
+        providers[0];
+      const activeEditing =
+        providers.find((p) => p.id === localSettings.activeEditingProviderId) ||
         providers[0];
 
       const machinePayload = {
         openai: {
-          selected: active?.name || '',
+          selected: activeChat?.name || '',
+          selected_chat: activeChat?.name || '',
+          selected_writing: activeWriting?.name || '',
+          selected_editing: activeEditing?.name || '',
           models: providers.map((p) => ({
             name: (p.name || '').trim(),
             base_url: (p.baseUrl || '').trim(),
@@ -379,7 +474,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
       ...prev,
       providers: [...prev.providers, newProvider],
       activeChatProviderId: prev.activeChatProviderId || newProvider.id,
-      activeStoryProviderId: prev.activeStoryProviderId || newProvider.id,
+      activeWritingProviderId: prev.activeWritingProviderId || newProvider.id,
+      activeEditingProviderId: prev.activeEditingProviderId || newProvider.id,
     }));
     setEditingProviderId(newProvider.id);
   };
@@ -400,8 +496,14 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
         providers: remaining,
         activeChatProviderId:
           prev.activeChatProviderId === id ? fallbackId : prev.activeChatProviderId,
-        activeStoryProviderId:
-          prev.activeStoryProviderId === id ? fallbackId : prev.activeStoryProviderId,
+        activeWritingProviderId:
+          prev.activeWritingProviderId === id
+            ? fallbackId
+            : prev.activeWritingProviderId,
+        activeEditingProviderId:
+          prev.activeEditingProviderId === id
+            ? fallbackId
+            : prev.activeEditingProviderId,
       };
     });
     if (editingProviderId === id) setEditingProviderId(null);
@@ -477,8 +579,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                     ? 'bg-brand-600 text-white border border-brand-500'
                     : 'bg-brand-gray-800 text-brand-gray-200 border border-brand-gray-700'
                   : isLight
-                  ? 'text-brand-gray-600 hover:text-brand-gray-900 hover:bg-brand-gray-100'
-                  : 'text-brand-gray-400 hover:text-brand-gray-300 hover:bg-brand-gray-900'
+                    ? 'text-brand-gray-600 hover:text-brand-gray-900 hover:bg-brand-gray-100'
+                    : 'text-brand-gray-400 hover:text-brand-gray-300 hover:bg-brand-gray-900'
               }`}
             >
               <HardDrive size={18} />
@@ -492,8 +594,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                     ? 'bg-brand-600 text-white border border-brand-500'
                     : 'bg-brand-gray-800 text-brand-gray-200 border border-brand-gray-700'
                   : isLight
-                  ? 'text-brand-gray-600 hover:text-brand-gray-900 hover:bg-brand-gray-100'
-                  : 'text-brand-gray-400 hover:text-brand-gray-300 hover:bg-brand-gray-900'
+                    ? 'text-brand-gray-600 hover:text-brand-gray-900 hover:bg-brand-gray-100'
+                    : 'text-brand-gray-400 hover:text-brand-gray-300 hover:bg-brand-gray-900'
               }`}
             >
               <Cpu size={18} />
@@ -543,8 +645,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                         proj.id === activeProjectId
                           ? 'bg-brand-50 border-brand-500/50'
                           : isLight
-                          ? 'bg-brand-gray-50 border-brand-gray-200 hover:border-brand-gray-300'
-                          : 'bg-brand-gray-800 border-brand-gray-700 hover:border-brand-gray-600'
+                            ? 'bg-brand-gray-50 border-brand-gray-200 hover:border-brand-gray-300'
+                            : 'bg-brand-gray-800 border-brand-gray-700 hover:border-brand-gray-600'
                       }`}
                     >
                       <div className="flex items-center space-x-4">
@@ -553,8 +655,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                             proj.id === activeProjectId
                               ? 'bg-brand-500'
                               : isLight
-                              ? 'bg-brand-gray-300'
-                              : 'bg-brand-gray-600'
+                                ? 'bg-brand-gray-300'
+                                : 'bg-brand-gray-600'
                           }`}
                         ></div>
                         <div className="flex-1">
@@ -691,8 +793,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                           editingProviderId === p.id
                             ? 'bg-brand-50 border-brand-500/50'
                             : isLight
-                            ? 'bg-brand-gray-50 border-brand-gray-200 hover:bg-brand-gray-100'
-                            : 'bg-brand-gray-800 border-brand-gray-700 hover:bg-brand-gray-750'
+                              ? 'bg-brand-gray-50 border-brand-gray-200 hover:bg-brand-gray-100'
+                              : 'bg-brand-gray-800 border-brand-gray-700 hover:bg-brand-gray-750'
                         }`}
                       >
                         <div className="flex justify-between items-center w-full">
@@ -706,32 +808,51 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                             </div>
                             <div className="text-xs text-brand-gray-500" />
                           </div>
-                          <div className="flex items-center space-x-2">
+                          <div className="flex items-center space-x-1">
                             <span
                               className={`h-2.5 w-2.5 rounded-full border ${
                                 connectionStatus[p.id] === 'success'
                                   ? 'bg-emerald-500 border-emerald-500'
                                   : connectionStatus[p.id] === 'error'
-                                  ? 'bg-red-500 border-red-500'
-                                  : connectionStatus[p.id] === 'loading'
-                                  ? 'bg-brand-500 border-brand-500'
-                                  : isLight
-                                  ? 'bg-brand-gray-200 border-brand-gray-300'
-                                  : 'bg-brand-gray-700 border-brand-gray-600'
+                                    ? 'bg-red-500 border-red-500'
+                                    : connectionStatus[p.id] === 'loading'
+                                      ? 'bg-brand-500 border-brand-500'
+                                      : isLight
+                                        ? 'bg-brand-gray-200 border-brand-gray-300'
+                                        : 'bg-brand-gray-700 border-brand-gray-600'
                               }`}
-                              title={connectionStatus[p.id] || 'idle'}
+                              title={`Connection: ${connectionStatus[p.id] || 'idle'}`}
+                            />
+                            <span
+                              className={`h-2.5 w-2.5 rounded-full border ${
+                                modelStatus[p.id] === 'success'
+                                  ? 'bg-emerald-500 border-emerald-500'
+                                  : modelStatus[p.id] === 'error'
+                                    ? 'bg-red-500 border-red-500'
+                                    : modelStatus[p.id] === 'loading'
+                                      ? 'bg-brand-500 border-brand-500'
+                                      : isLight
+                                        ? 'bg-brand-gray-200 border-brand-gray-300'
+                                        : 'bg-brand-gray-700 border-brand-gray-600'
+                              }`}
+                              title={`Model: ${modelStatus[p.id] || 'idle'}`}
                             />
                           </div>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-1">
                           {p.id === localSettings.activeChatProviderId && (
-                            <span className="text-[10px] bg-brand-100 text-brand-700 px-1.5 py-0.5 rounded border border-brand-200 flex items-center gap-1">
+                            <span className="text-[9px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded border border-blue-200 flex items-center gap-1">
                               <MessageSquare size={10} /> Chat
                             </span>
                           )}
-                          {p.id === localSettings.activeStoryProviderId && (
-                            <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded border border-emerald-200 flex items-center gap-1">
-                              <BookOpen size={10} /> Story
+                          {p.id === localSettings.activeWritingProviderId && (
+                            <span className="text-[9px] bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded border border-violet-200 flex items-center gap-1">
+                              <BookOpen size={10} /> Writing
+                            </span>
+                          )}
+                          {p.id === localSettings.activeEditingProviderId && (
+                            <span className="text-[9px] bg-fuchsia-100 text-fuchsia-700 px-1.5 py-0.5 rounded border border-fuchsia-200 flex items-center gap-1">
+                              <Edit2 size={10} /> Editing
                             </span>
                           )}
                         </div>
@@ -771,7 +892,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
 
                       {/* Role Selection Buttons */}
                       <div
-                        className={`grid grid-cols-2 gap-3 p-3 rounded-lg border ${
+                        className={`grid grid-cols-3 gap-3 p-3 rounded-lg border ${
                           isLight
                             ? 'bg-brand-gray-50 border-brand-gray-200'
                             : 'bg-brand-gray-950 border-brand-gray-800'
@@ -784,38 +905,58 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                               activeChatProviderId: activeProvider.id,
                             }))
                           }
-                          className={`flex items-center justify-center gap-2 py-2 rounded text-xs font-bold uppercase transition-all ${
+                          className={`flex items-center justify-center gap-2 py-2 rounded text-[10px] font-bold uppercase transition-all ${
                             localSettings.activeChatProviderId === activeProvider.id
                               ? isLight
-                                ? 'bg-brand-600 text-white shadow-md'
-                                : 'bg-brand-gray-800 text-brand-gray-200 border border-brand-gray-700'
+                                ? 'bg-blue-600 text-white shadow-md'
+                                : 'bg-blue-900/40 text-blue-300 border border-blue-800/50'
                               : isLight
-                              ? 'bg-brand-gray-100 text-brand-gray-600 hover:bg-brand-gray-200'
-                              : 'bg-brand-gray-800 text-brand-gray-400 hover:bg-brand-gray-700'
+                                ? 'bg-brand-gray-100 text-brand-gray-600 hover:bg-brand-gray-200'
+                                : 'bg-brand-gray-800 text-brand-gray-400 hover:bg-brand-gray-700'
                           }`}
                         >
                           <MessageSquare size={14} />
-                          Use for Chat
+                          Chat
                         </button>
                         <button
                           onClick={() =>
                             setLocalSettings((s) => ({
                               ...s,
-                              activeStoryProviderId: activeProvider.id,
+                              activeWritingProviderId: activeProvider.id,
                             }))
                           }
-                          className={`flex items-center justify-center gap-2 py-2 rounded text-xs font-bold uppercase transition-all ${
-                            localSettings.activeStoryProviderId === activeProvider.id
+                          className={`flex items-center justify-center gap-2 py-2 rounded text-[10px] font-bold uppercase transition-all ${
+                            localSettings.activeWritingProviderId === activeProvider.id
                               ? isLight
-                                ? 'bg-emerald-600 text-white shadow-md'
-                                : 'bg-emerald-900/40 text-emerald-300 border border-emerald-800/50'
+                                ? 'bg-violet-600 text-white shadow-md'
+                                : 'bg-violet-900/40 text-violet-300 border border-violet-800/50'
                               : isLight
-                              ? 'bg-brand-gray-100 text-brand-gray-600 hover:bg-brand-gray-200'
-                              : 'bg-brand-gray-800 text-brand-gray-400 hover:bg-brand-gray-700'
+                                ? 'bg-brand-gray-100 text-brand-gray-600 hover:bg-brand-gray-200'
+                                : 'bg-brand-gray-800 text-brand-gray-400 hover:bg-brand-gray-700'
                           }`}
                         >
                           <BookOpen size={14} />
-                          Use for Story
+                          Writing
+                        </button>
+                        <button
+                          onClick={() =>
+                            setLocalSettings((s) => ({
+                              ...s,
+                              activeEditingProviderId: activeProvider.id,
+                            }))
+                          }
+                          className={`flex items-center justify-center gap-2 py-2 rounded text-[10px] font-bold uppercase transition-all ${
+                            localSettings.activeEditingProviderId === activeProvider.id
+                              ? isLight
+                                ? 'bg-fuchsia-600 text-white shadow-md'
+                                : 'bg-fuchsia-900/40 text-fuchsia-300 border border-fuchsia-800/50'
+                              : isLight
+                                ? 'bg-brand-gray-100 text-brand-gray-600 hover:bg-brand-gray-200'
+                                : 'bg-brand-gray-800 text-brand-gray-400 hover:bg-brand-gray-700'
+                          }`}
+                        >
+                          <Edit2 size={14} />
+                          Editing
                         </button>
                       </div>
 
@@ -889,12 +1030,12 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                                 connectionStatus[activeProvider.id] === 'success'
                                   ? 'bg-emerald-500'
                                   : connectionStatus[activeProvider.id] === 'error'
-                                  ? 'bg-red-500'
-                                  : connectionStatus[activeProvider.id] === 'loading'
-                                  ? 'bg-brand-500'
-                                  : isLight
-                                  ? 'bg-brand-gray-300'
-                                  : 'bg-brand-gray-600'
+                                    ? 'bg-red-500'
+                                    : connectionStatus[activeProvider.id] === 'loading'
+                                      ? 'bg-brand-500'
+                                      : isLight
+                                        ? 'bg-brand-gray-300'
+                                        : 'bg-brand-gray-600'
                               }`}
                             />
                             {connectionStatus[activeProvider.id] === 'success' && (
@@ -997,8 +1138,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                                                   ? 'bg-brand-50 text-brand-gray-900'
                                                   : 'bg-brand-gray-900 text-brand-gray-300'
                                                 : isLight
-                                                ? 'text-brand-gray-800 hover:bg-brand-gray-50'
-                                                : 'text-brand-gray-300 hover:bg-brand-gray-900'
+                                                  ? 'text-brand-gray-800 hover:bg-brand-gray-50'
+                                                  : 'text-brand-gray-300 hover:bg-brand-gray-900'
                                             }`}
                                           >
                                             {m}
@@ -1016,12 +1157,12 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                                   modelStatus[activeProvider.id] === 'success'
                                     ? 'bg-emerald-500'
                                     : modelStatus[activeProvider.id] === 'error'
-                                    ? 'bg-red-500'
-                                    : modelStatus[activeProvider.id] === 'loading'
-                                    ? 'bg-brand-500'
-                                    : isLight
-                                    ? 'bg-brand-gray-300'
-                                    : 'bg-brand-gray-600'
+                                      ? 'bg-red-500'
+                                      : modelStatus[activeProvider.id] === 'loading'
+                                        ? 'bg-brand-500'
+                                        : isLight
+                                          ? 'bg-brand-gray-300'
+                                          : 'bg-brand-gray-600'
                                 }`}
                               />
                               {modelStatus[activeProvider.id] === 'success' && (
@@ -1150,39 +1291,82 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                                   {group.title}
                                 </h5>
                                 <div className="space-y-3">
-                                  {group.prompts.map((prompt) => (
-                                    <div key={prompt.id} className="space-y-1">
-                                      <label className="text-[10px] font-medium text-brand-gray-500">
-                                        {prompt.label}
-                                      </label>
-                                      <textarea
-                                        rows={5}
-                                        value={
-                                          (activeProvider.prompts as any)?.[
-                                            prompt.id
-                                          ] || ''
-                                        }
-                                        onChange={(e) =>
-                                          updateProvider(activeProvider.id, {
-                                            prompts: {
-                                              ...(activeProvider.prompts || {}),
-                                              [prompt.id]: e.target.value,
-                                            },
-                                          })
-                                        }
-                                        placeholder={
-                                          defaultPrompts.system_messages[prompt.id] ||
-                                          defaultPrompts.user_prompts[prompt.id] ||
-                                          'Default instruction...'
-                                        }
-                                        className={`w-full border rounded p-2 text-[11px] focus:border-brand-500 focus:outline-none ${
-                                          isLight
-                                            ? 'bg-brand-gray-50 border-brand-gray-300 text-brand-gray-800'
-                                            : 'bg-brand-gray-950 border-brand-gray-700 text-brand-gray-300'
-                                        }`}
-                                      />
-                                    </div>
-                                  ))}
+                                  {group.prompts.map((prompt) => {
+                                    const Icon =
+                                      prompt.type === 'CHAT'
+                                        ? MessageSquare
+                                        : prompt.type === 'WRITING'
+                                          ? BookOpen
+                                          : Edit2;
+                                    const colorClass =
+                                      prompt.type === 'CHAT'
+                                        ? 'text-blue-600'
+                                        : prompt.type === 'WRITING'
+                                          ? 'text-violet-600'
+                                          : 'text-fuchsia-600';
+                                    const bgColorClass =
+                                      prompt.type === 'CHAT'
+                                        ? 'bg-blue-50'
+                                        : prompt.type === 'WRITING'
+                                          ? 'bg-violet-50'
+                                          : 'bg-fuchsia-50';
+                                    const darkBgColorClass =
+                                      prompt.type === 'CHAT'
+                                        ? 'dark:bg-blue-900/20'
+                                        : prompt.type === 'WRITING'
+                                          ? 'dark:bg-violet-900/20'
+                                          : 'dark:bg-fuchsia-900/20';
+
+                                    return (
+                                      <div key={prompt.id} className="space-y-1">
+                                        <div className="flex items-center gap-2">
+                                          <div
+                                            className={`p-1 rounded ${bgColorClass} ${darkBgColorClass}`}
+                                          >
+                                            <Icon size={10} className={colorClass} />
+                                          </div>
+                                          <label
+                                            className={`text-[10px] font-bold uppercase tracking-tight ${colorClass}`}
+                                          >
+                                            {prompt.label}
+                                            <span
+                                              className={
+                                                'ml-2 text-[8px] px-1 rounded border border-current opacity-70'
+                                              }
+                                            >
+                                              {prompt.type}
+                                            </span>
+                                          </label>
+                                        </div>
+                                        <textarea
+                                          rows={5}
+                                          value={
+                                            (activeProvider.prompts as any)?.[
+                                              prompt.id
+                                            ] || ''
+                                          }
+                                          onChange={(e) =>
+                                            updateProvider(activeProvider.id, {
+                                              prompts: {
+                                                ...(activeProvider.prompts || {}),
+                                                [prompt.id]: e.target.value,
+                                              },
+                                            })
+                                          }
+                                          placeholder={
+                                            defaultPrompts.system_messages[prompt.id] ||
+                                            defaultPrompts.user_prompts[prompt.id] ||
+                                            'Default instruction...'
+                                          }
+                                          className={`w-full border rounded p-2 text-[11px] focus:border-brand-500 focus:outline-none ${
+                                            isLight
+                                              ? 'bg-brand-gray-50 border-brand-gray-300 text-brand-gray-800'
+                                              : 'bg-brand-gray-950 border-brand-gray-700 text-brand-gray-300'
+                                          }`}
+                                        />
+                                      </div>
+                                    );
+                                  })}
                                 </div>
                               </div>
                             ))}

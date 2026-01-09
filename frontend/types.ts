@@ -25,10 +25,12 @@ export interface ChatMessage {
   id: string;
   role: 'user' | 'model' | 'tool';
   text: string;
+  thinking?: string;
   isError?: boolean;
   name?: string;
   tool_call_id?: string;
   tool_calls?: any[];
+  traceback?: string;
 }
 
 export type ViewMode = 'raw' | 'markdown' | 'wysiwyg';
@@ -62,8 +64,9 @@ export interface LLMConfig {
 
 export interface AppSettings {
   providers: LLMConfig[];
-  activeStoryProviderId: string;
+  activeWritingProviderId: string;
   activeChatProviderId: string;
+  activeEditingProviderId: string;
 }
 
 export interface ProjectMetadata {

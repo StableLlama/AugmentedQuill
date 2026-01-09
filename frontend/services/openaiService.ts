@@ -1,9 +1,36 @@
 import { LLMConfig } from '../types';
 
+export class ChatError extends Error {
+  traceback?: string;
+  status?: number;
+  data?: any;
+
+  constructor(
+    message: string,
+    options?: { traceback?: string; status?: number; data?: any }
+  ) {
+    super(message);
+    this.name = 'ChatError';
+    this.traceback = options?.traceback;
+    this.status = options?.status;
+    this.data = options?.data;
+  }
+}
+
 export interface UnifiedChat {
   sendMessage(
-    message: string | { message: any }
-  ): Promise<{ text: string; functionCalls?: any[] }>;
+    message: string | { message: any },
+    onUpdate?: (update: {
+      text?: string;
+      thinking?: string;
+      traceback?: string;
+    }) => void
+  ): Promise<{
+    text: string;
+    thinking?: string;
+    functionCalls?: any[];
+    traceback?: string;
+  }>;
 }
 
 export const testConnection = async (config: LLMConfig): Promise<boolean> => {
@@ -60,7 +87,9 @@ export const getModels = async (config: LLMConfig): Promise<string[]> => {
 
 async function readSSEStream(
   reader: ReadableStreamDefaultReader<Uint8Array>,
-  onToolCalls?: (toolCalls: any[]) => void
+  onToolCalls?: (toolCalls: any[]) => void,
+  onThinking?: (thinking: string) => void,
+  onContent?: (content: string) => void
 ): Promise<string> {
   let text = '';
   let buffer = '';
@@ -81,13 +110,37 @@ async function readSSEStream(
         if (dataStr === '[DONE]') continue;
         try {
           const data = JSON.parse(dataStr);
+          if (data.error) {
+            let msg = data.message || data.error;
+            throw new ChatError(msg, {
+              traceback: data.traceback,
+              status: data.status,
+              data: data.data,
+            });
+          }
           if (data.content) {
             text += data.content;
+            if (onContent) onContent(data.content);
+          }
+          if (data.thinking && onThinking) {
+            onThinking(data.thinking);
           }
           if (data.tool_calls && onToolCalls) {
             onToolCalls(data.tool_calls);
           }
         } catch (e) {
+          if (e instanceof Error) {
+            const msg = e.message.toLowerCase();
+            if (
+              msg.includes('status:') ||
+              msg.includes('error') ||
+              msg.includes('failed') ||
+              msg.includes('traceback')
+            ) {
+              // Re-throw handled errors from backend
+              throw e;
+            }
+          }
           console.error('Failed to parse SSE data', e);
         }
       }
@@ -99,10 +152,11 @@ async function readSSEStream(
 export const createChatSession = (
   systemInstruction: string,
   history: any[],
-  config: LLMConfig
+  config: LLMConfig,
+  modelType: 'CHAT' | 'WRITING' | 'EDITING' = 'CHAT'
 ): UnifiedChat => {
   return {
-    sendMessage: async (msg) => {
+    sendMessage: async (msg, onUpdate) => {
       const userMsgText = typeof msg === 'string' ? msg : (msg as any).message;
 
       const messages = [
@@ -137,7 +191,7 @@ export const createChatSession = (
         const res = await fetch('/api/chat/stream', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ messages }),
+          body: JSON.stringify({ messages, model_type: modelType }),
         });
 
         if (!res.ok) throw new Error('Chat request failed');
@@ -146,21 +200,39 @@ export const createChatSession = (
         if (!reader) return { text: '' };
 
         const toolCallsAccumulator: any[] = [];
-        const text = await readSSEStream(reader, (calls) => {
-          for (const call of calls) {
-            const index = call.index ?? 0;
-            if (!toolCallsAccumulator[index]) {
-              toolCallsAccumulator[index] = { id: '', name: '', args: '' };
+        let thinking = '';
+        let fullText = '';
+        const text = await readSSEStream(
+          reader,
+          (calls) => {
+            for (const call of calls) {
+              const index = call.index ?? 0;
+              if (!toolCallsAccumulator[index]) {
+                toolCallsAccumulator[index] = { id: '', name: '', args: '' };
+              }
+              if (call.id) toolCallsAccumulator[index].id = call.id;
+              if (call.function) {
+                if (call.function.name) {
+                  // Only append if it's not exactly the same as what we already have.
+                  // This prevents doubling up if the backend sends the full name twice.
+                  if (toolCallsAccumulator[index].name !== call.function.name) {
+                    toolCallsAccumulator[index].name += call.function.name;
+                  }
+                }
+                if (call.function.arguments)
+                  toolCallsAccumulator[index].args += call.function.arguments;
+              }
             }
-            if (call.id) toolCallsAccumulator[index].id = call.id;
-            if (call.function) {
-              if (call.function.name)
-                toolCallsAccumulator[index].name += call.function.name;
-              if (call.function.arguments)
-                toolCallsAccumulator[index].args += call.function.arguments;
-            }
+          },
+          (t) => {
+            thinking += t;
+            if (onUpdate) onUpdate({ thinking });
+          },
+          (chunk) => {
+            fullText += chunk;
+            if (onUpdate) onUpdate({ text: fullText });
           }
-        });
+        );
 
         const functionCalls = toolCallsAccumulator
           .filter((c) => c && (c.name || c.args))
@@ -180,10 +252,11 @@ export const createChatSession = (
 
         return {
           text,
+          thinking: thinking || undefined,
           functionCalls: functionCalls.length > 0 ? functionCalls : undefined,
+          traceback: undefined, // Or capture if needed
         };
-      } catch (e) {
-        console.error('Chat failed', e);
+      } catch (e: any) {
         throw e;
       }
     },
@@ -193,7 +266,8 @@ export const createChatSession = (
 export const generateSimpleContent = async (
   prompt: string,
   systemInstruction: string,
-  config: LLMConfig
+  config: LLMConfig,
+  modelType?: 'CHAT' | 'WRITING' | 'EDITING'
 ) => {
   const messages = [
     { role: 'system', content: systemInstruction },
@@ -204,7 +278,7 @@ export const generateSimpleContent = async (
     const res = await fetch('/api/chat/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages }),
+      body: JSON.stringify({ messages, model_type: modelType }),
     });
 
     if (!res.ok) throw new Error('Generation failed');
@@ -213,9 +287,9 @@ export const generateSimpleContent = async (
     if (!reader) return '';
 
     return await readSSEStream(reader);
-  } catch (e) {
-    console.error('Generation failed', e);
-    return '';
+  } catch (e: any) {
+    // Re-throw so the caller can handle it and show it to the user
+    throw e;
   }
 };
 

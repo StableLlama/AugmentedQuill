@@ -16,7 +16,7 @@ USER_PROMPTS_JSON_PATH = BASE_DIR / "config" / "prompts.json"
 
 def _load_prompts() -> Dict[str, Any]:
     # 1. Load internal defaults
-    prompts = {"system_messages": {}, "user_prompts": {}}
+    prompts = {"system_messages": {}, "user_prompts": {}, "prompt_types": {}}
     if DEFAULTS_JSON_PATH.exists():
         try:
             with open(DEFAULTS_JSON_PATH, "r", encoding="utf-8") as f:
@@ -29,6 +29,8 @@ def _load_prompts() -> Dict[str, Any]:
                                 prompts[section][k] = "\n".join(v)
                             else:
                                 prompts[section][k] = v
+                if "prompt_types" in raw:
+                    prompts["prompt_types"] = raw["prompt_types"]
         except Exception:
             pass
 
@@ -44,6 +46,8 @@ def _load_prompts() -> Dict[str, Any]:
                                 prompts[section][k] = "\n".join(v)
                             else:
                                 prompts[section][k] = v
+                if "prompt_types" in user_overrides:
+                    prompts["prompt_types"].update(user_overrides["prompt_types"])
         except Exception:
             pass
 
@@ -53,6 +57,7 @@ def _load_prompts() -> Dict[str, Any]:
 _PROMPTS = _load_prompts()
 DEFAULT_SYSTEM_MESSAGES = _PROMPTS.get("system_messages", {})
 DEFAULT_USER_PROMPTS = _PROMPTS.get("user_prompts", {})
+PROMPT_TYPES = _PROMPTS.get("prompt_types", {})
 
 
 def ensure_string(v: Any) -> str:

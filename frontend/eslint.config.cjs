@@ -15,6 +15,8 @@ module.exports = [
     plugins: {
       '@typescript-eslint': require('@typescript-eslint/eslint-plugin'),
     },
-    rules: {},
+    rules: {
+      quotes: ['error', 'single', { avoidEscape: true }],
+    },
   },
 ];

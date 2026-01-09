@@ -25,6 +25,10 @@ const CollapsibleToolSection: React.FC<{
 }> = ({ title, children, defaultExpanded = false }) => {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
 
+  useEffect(() => {
+    setIsExpanded(defaultExpanded);
+  }, [defaultExpanded]);
+
   return (
     <div className="mt-2 border border-black/10 dark:border-white/10 rounded overflow-hidden">
       <button
@@ -78,8 +82,8 @@ export const Chat: React.FC<ChatProps> = ({
   const textMain = isLight ? 'text-brand-gray-800' : 'text-brand-gray-400';
   const headerBg = isLight ? 'bg-brand-gray-100' : 'bg-brand-gray-900';
   const msgUserBg = isLight
-    ? 'bg-brand-600 text-white'
-    : 'bg-brand-900/40 text-brand-300 border border-brand-800/50';
+    ? 'bg-blue-600 text-white'
+    : 'bg-blue-900/40 text-blue-300 border border-blue-800/50';
   const msgBotBg = isLight
     ? 'bg-brand-gray-50 border border-brand-gray-200 shadow-sm'
     : 'bg-brand-gray-800/50 border border-brand-gray-700 shadow-sm';
@@ -206,7 +210,7 @@ export const Chat: React.FC<ChatProps> = ({
           </div>
         )}
 
-        {messages.map((msg) => (
+        {messages.map((msg, i) => (
           <div
             key={msg.id}
             className={`group flex items-start space-x-3 ${
@@ -216,12 +220,12 @@ export const Chat: React.FC<ChatProps> = ({
             <div
               className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center border mt-1 ${
                 msg.role === 'user'
-                  ? 'bg-brand-100 border-brand-200 text-brand-700'
+                  ? 'bg-blue-100 border-blue-200 text-blue-700'
                   : msg.role === 'tool'
-                  ? 'bg-blue-500/10 border-blue-500/20 text-blue-500'
-                  : isLight
-                  ? 'bg-brand-gray-50 border-brand-gray-200 text-brand-gray-500'
-                  : 'bg-brand-gray-800 border-brand-gray-700 text-brand-gray-400'
+                    ? 'bg-blue-500/10 border-blue-500/20 text-blue-500'
+                    : isLight
+                      ? 'bg-brand-gray-50 border-brand-gray-200 text-brand-gray-500'
+                      : 'bg-brand-gray-800 border-brand-gray-700 text-brand-gray-400'
               }`}
             >
               {msg.role === 'user' ? (
@@ -233,7 +237,7 @@ export const Chat: React.FC<ChatProps> = ({
               )}
             </div>
 
-            <div className={`flex-1 max-w-[85%] relative`}>
+            <div className={'flex-1 max-w-[85%] relative'}>
               {editingMessageId === msg.id ? (
                 <div
                   className={`border rounded-lg p-3 shadow-lg ${
@@ -268,8 +272,8 @@ export const Chat: React.FC<ChatProps> = ({
                     msg.role === 'user'
                       ? msgUserBg
                       : msg.role === 'tool'
-                      ? 'bg-blue-500/5 border border-blue-500/20 text-blue-600 dark:text-blue-400 font-mono text-xs'
-                      : msgBotBg
+                        ? 'bg-blue-500/5 border border-blue-500/20 text-blue-600 dark:text-blue-400 font-mono text-xs'
+                        : msgBotBg
                   }`}
                 >
                   {msg.role === 'tool' ? (
@@ -278,7 +282,27 @@ export const Chat: React.FC<ChatProps> = ({
                     </CollapsibleToolSection>
                   ) : (
                     <>
+                      {msg.thinking && (
+                        <CollapsibleToolSection
+                          title="Thinking Process"
+                          defaultExpanded={isLoading && i === messages.length - 1}
+                        >
+                          <div className="text-xs italic text-brand-gray-500 whitespace-pre-wrap">
+                            {msg.thinking}
+                          </div>
+                        </CollapsibleToolSection>
+                      )}
                       <MarkdownView content={msg.text} />
+                      {msg.traceback && (
+                        <CollapsibleToolSection
+                          title="Stack Trace"
+                          defaultExpanded={false}
+                        >
+                          <div className="text-[10px] font-mono bg-black/5 dark:bg-black/40 p-2 rounded overflow-x-auto whitespace-pre border border-black/10 dark:border-white/10 text-red-600 dark:text-red-400">
+                            {msg.traceback}
+                          </div>
+                        </CollapsibleToolSection>
+                      )}
                       {msg.tool_calls && msg.tool_calls.length > 0 && (
                         <CollapsibleToolSection
                           title={`${msg.tool_calls.length} Tool Call${
@@ -370,6 +394,7 @@ export const Chat: React.FC<ChatProps> = ({
               onClick={onRegenerate}
               icon={<RefreshCw size={12} />}
               className="text-xs py-1 h-7 border-dashed"
+              title="Regenerate last response (CHAT model)"
             >
               Regenerate last response
             </Button>
@@ -389,6 +414,7 @@ export const Chat: React.FC<ChatProps> = ({
             type="submit"
             disabled={!input.trim() || isLoading}
             className="absolute right-2 top-1/2 transform -translate-y-1/2 p-2 text-brand-500 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-brand-gray-200 dark:hover:bg-brand-gray-700 rounded-full transition-colors"
+            title="Send Message (CHAT model)"
           >
             <Send size={18} />
           </button>
