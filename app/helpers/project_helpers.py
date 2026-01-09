@@ -19,7 +19,35 @@ def _project_overview() -> dict:
     }
 
     if p_type == "small":
-        return {**base_info, "content_file": story.get("content_file", "content.md")}
+        fn = story.get("content_file", "content.md")
+
+        # Use metadata from story.json if available
+        chapters = story.get("chapters", [])
+        title = "Story Content"
+        summary = "Full content of the story"
+
+        if chapters and len(chapters) > 0:
+            c0 = chapters[0]
+            if isinstance(c0, dict):
+                t = c0.get("title")
+                if t and str(t).strip():
+                    title = str(t).strip()
+                s = c0.get("summary")
+                if s and str(s).strip():
+                    summary = str(s).strip()
+
+        return {
+            **base_info,
+            "content_file": fn,
+            "chapters": [
+                {
+                    "id": 1,
+                    "filename": fn,
+                    "title": title,
+                    "summary": summary,
+                }
+            ],
+        }
 
     if p_type == "large":
         files = _scan_chapter_files()
