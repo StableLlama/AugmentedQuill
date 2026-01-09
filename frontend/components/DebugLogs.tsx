@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
   Trash2,
@@ -115,6 +115,7 @@ export const DebugLogs: React.FC<DebugLogsProps> = ({ isOpen, onClose, theme }) 
   const [expandedLogs, setExpandedLogs] = useState<Record<string, boolean>>({});
   const [isLoading, setIsLoading] = useState(false);
   const [streamMode, setStreamMode] = useState<'chunks' | 'aggregated'>('aggregated');
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const isLight = theme === 'light';
   const bgMain = isLight ? 'bg-white' : 'bg-brand-gray-950';
@@ -122,11 +123,17 @@ export const DebugLogs: React.FC<DebugLogsProps> = ({ isOpen, onClose, theme }) 
   const borderMain = isLight ? 'border-brand-gray-200' : 'border-brand-gray-800';
   const bgSecondary = isLight ? 'bg-brand-gray-50' : 'bg-brand-gray-900';
 
+  const scrollToBottom = () => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  };
+
   const fetchLogs = async () => {
     setIsLoading(true);
     try {
       const data = await api.debug.getLogs();
-      setLogs([...data].reverse()); // Show newest first
+      setLogs(data); // Show newest at bottom
     } catch (error) {
       console.error('Failed to fetch debug logs:', error);
     } finally {
@@ -149,6 +156,14 @@ export const DebugLogs: React.FC<DebugLogsProps> = ({ isOpen, onClose, theme }) 
       fetchLogs();
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    if (isOpen && logs.length > 0) {
+      // Small delay to ensure content is rendered
+      const timeoutId = setTimeout(scrollToBottom, 50);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [isOpen, logs.length]);
 
   const toggleExpand = (id: string) => {
     setExpandedLogs((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -237,7 +252,7 @@ export const DebugLogs: React.FC<DebugLogsProps> = ({ isOpen, onClose, theme }) 
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-4">
           {logs.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-brand-gray-500 space-y-4">
               <Bug size={48} className="opacity-20" />
