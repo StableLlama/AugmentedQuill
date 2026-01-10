@@ -43,6 +43,7 @@ import {
   Eye,
   Bold,
   Italic,
+  Pilcrow,
   SplitSquareHorizontal,
   Menu,
   MessageSquare,
@@ -1098,7 +1099,7 @@ Always prioritize the user's creative vision.`
               className={`rounded-md p-1 shadow-lg ${
                 isLight
                   ? 'bg-brand-gray-100 border border-brand-gray-200 shadow-brand-900/10'
-                  : 'bg-brand-gray-800 border border-brand-gray-700 shadow-none'
+                  : 'bg-brand-gray-600 border border-brand-gray-500 shadow-none'
               }`}
             >
               <img
@@ -1200,14 +1201,20 @@ Always prioritize the user's creative vision.`
                 <Eye size={13} />
                 <span>Visual</span>
               </button>
+              <div
+                className={`w-px h-4 mx-2 ${
+                  isLight ? 'bg-brand-gray-300' : 'bg-brand-gray-700'
+                }`}
+              />
               <button
                 onClick={() => setShowWhitespace((s) => !s)}
-                title="Show whitespace"
-                className={`flex items-center px-2 py-1 ml-2 rounded-md text-xs font-medium transition-all ${
+                title="Toggle whitespace characters"
+                className={`flex items-center space-x-1 px-2 py-1 rounded-md text-xs font-medium transition-all ${
                   showWhitespace ? buttonActive : `${iconColor} ${iconHover}`
                 }`}
               >
-                {showWhitespace ? 'WS On' : 'WS'}
+                <Pilcrow size={13} />
+                <span>WS</span>
               </button>
             </div>
 

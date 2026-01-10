@@ -145,7 +145,7 @@ export const Chat: React.FC<ChatProps> = ({
         className={`p-4 border-b flex items-center justify-between ${headerBg} ${borderMain}`}
       >
         <div className="flex items-center space-x-2">
-          <Sparkles className="text-brand-500" size={20} />
+          <Sparkles className="text-blue-600" size={20} />
           <h2 className="font-semibold">Writing Partner</h2>
         </div>
         <button

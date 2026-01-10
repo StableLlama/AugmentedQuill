@@ -22,122 +22,12 @@ from app.helpers.story_helpers import (
 from app.prompts import get_system_message, load_model_prompt_overrides
 from app.llm import add_llm_log, create_log_entry
 import json as _json
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 from pathlib import Path
 
 
-class ChannelFilter:
-    """Stateful filter to separate thinking/analysis from final content."""
-
-    def __init__(self):
-        self.current_channel = "final"
-        self.buffer = ""
-        # Combined pattern for all tags we care about
-        self.tag_pattern = re.compile(
-            r"(<\|channel\|>(.*?)<\|message\|>|"
-            r"<\|start\|>assistant.*?<\|message\|>|"
-            r"<\|end\|>|"
-            r"<(thought|thinking)>|"
-            r"</(thought|thinking)>)",
-            re.IGNORECASE | re.DOTALL,
-        )
-
-    def feed(self, chunk: str) -> List[Dict[str, str]]:
-        """Process a chunk and return a list of (channel, content) pairs."""
-        self.buffer += chunk
-        results = []
-
-        while True:
-            match = self.tag_pattern.search(self.buffer)
-            if not match:
-                # No complete tag found.
-                # We should yield everything that is definitely not part of a tag.
-                # Tags start with '<'.
-                first_bracket = self.buffer.find("<")
-                if first_bracket == -1:
-                    # No bracket at all, safe to yield everything
-                    if self.buffer:
-                        results.append(
-                            {"channel": self.current_channel, "content": self.buffer}
-                        )
-                        self.buffer = ""
-                elif first_bracket > 0:
-                    # Yield everything before the first bracket
-                    results.append(
-                        {
-                            "channel": self.current_channel,
-                            "content": self.buffer[:first_bracket],
-                        }
-                    )
-                    self.buffer = self.buffer[first_bracket:]
-
-                # Now the buffer starts with '<' (or is empty).
-                # If it's getting too long, it's probably not a tag we recognize.
-                if len(self.buffer) > 150:
-                    # Yield everything up to the next bracket or everything if no more brackets.
-                    next_bracket = self.buffer.find("<", 1)
-                    if next_bracket != -1:
-                        results.append(
-                            {
-                                "channel": self.current_channel,
-                                "content": self.buffer[:next_bracket],
-                            }
-                        )
-                        self.buffer = self.buffer[next_bracket:]
-                    else:
-                        results.append(
-                            {"channel": self.current_channel, "content": self.buffer}
-                        )
-                        self.buffer = ""
-                break
-            else:
-                # Yield content before the tag
-                start, end = match.span()
-                if start > 0:
-                    content = self.buffer[:start]
-                    results.append(
-                        {"channel": self.current_channel, "content": content}
-                    )
-
-                tag = match.group(0)
-                tag_lower = tag.lower()
-
-                # Switch channel
-                if (
-                    "<|end|>" in tag_lower
-                    or "</thought" in tag_lower
-                    or "</thinking" in tag_lower
-                ):
-                    self.current_channel = "final"
-                elif (
-                    "analysis" in tag_lower
-                    or "<thought" in tag_lower
-                    or "<thinking" in tag_lower
-                ):
-                    self.current_channel = "thinking"
-                elif "commentary" in tag_lower:
-                    # Check if it's a tool call
-                    func_match = re.search(r"to=functions\.(\w+)", tag, re.IGNORECASE)
-                    if func_match:
-                        self.current_channel = f"call:{func_match.group(1)}"
-                    else:
-                        self.current_channel = "final"
-                else:
-                    self.current_channel = "final"
-
-                # Remove tag from buffer
-                self.buffer = self.buffer[end:]
-
-        return results
-
-    def flush(self) -> List[Dict[str, str]]:
-        """Flush remaining buffer."""
-        if self.buffer:
-            res = [{"channel": self.current_channel, "content": self.buffer}]
-            self.buffer = ""
-            return res
-        return []
+from app.helpers.stream_helpers import ChannelFilter
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -167,7 +57,6 @@ def _parse_tool_calls_from_content(content: str) -> list[dict] | None:
     - [TOOL_CALL]get_project_overview[/TOOL_CALL]
     - Tool: get_project_overview
     """
-    import re
 
     calls = []
 
