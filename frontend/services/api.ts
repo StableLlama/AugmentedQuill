@@ -136,14 +136,27 @@ export const api = {
       }
       return res.json();
     },
-    uploadImage: async (file: File) => {
+    uploadImage: async (file: File, targetName?: string) => {
       const formData = new FormData();
       formData.append('file', file);
-      const res = await fetch(`${API_BASE}/projects/images/upload`, {
+      const url = targetName
+        ? `${API_BASE}/projects/images/upload?target_name=${encodeURIComponent(targetName)}`
+        : `${API_BASE}/projects/images/upload`;
+
+      const res = await fetch(url, {
         method: 'POST',
         body: formData,
       });
       if (!res.ok) throw new Error('Failed to upload image');
+      return res.json();
+    },
+    updateImageDescription: async (filename: string, description: string) => {
+      const res = await fetch(`${API_BASE}/projects/images/update_description`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename, description }),
+      });
+      if (!res.ok) throw new Error('Failed to update description');
       return res.json();
     },
     listImages: async () => {

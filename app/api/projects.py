@@ -291,7 +291,9 @@ async def api_create_image_placeholder(request: Request) -> JSONResponse:
 
 
 @router.post("/api/projects/images/upload")
-async def api_upload_image(file: UploadFile = File(...)) -> JSONResponse:
+async def api_upload_image(
+    file: UploadFile = File(...), target_name: str | None = None
+) -> JSONResponse:
     active = get_active_project_dir()
     if not active:
         raise HTTPException(status_code=400, detail="No active project")
@@ -300,15 +302,32 @@ async def api_upload_image(file: UploadFile = File(...)) -> JSONResponse:
     images_dir.mkdir(exist_ok=True)
 
     original_name = Path(file.filename).name
-    safe_name = "".join(c for c in original_name if c.isalnum() or c in "._-").strip()
-    if not safe_name:
-        safe_name = f"image_{uuid.uuid4().hex[:8]}.png"
 
-    target_path = images_dir / safe_name
-    if target_path.exists():
-        stem = target_path.stem
-        suffix = target_path.suffix
-        target_path = images_dir / f"{stem}_{uuid.uuid4().hex[:6]}{suffix}"
+    if target_name:
+        # Secure target name
+        safe_target = "".join(
+            c for c in target_name if c.isalnum() or c in "._-"
+        ).strip()
+        if safe_target:
+            target_path = images_dir / safe_target
+        else:
+            # Fallback if provided name is bad
+            safe_name = "".join(
+                c for c in original_name if c.isalnum() or c in "._-"
+            ).strip()
+            target_path = images_dir / safe_name
+    else:
+        safe_name = "".join(
+            c for c in original_name if c.isalnum() or c in "._-"
+        ).strip()
+        if not safe_name:
+            safe_name = f"image_{uuid.uuid4().hex[:8]}.png"
+
+        target_path = images_dir / safe_name
+        if target_path.exists():
+            stem = target_path.stem
+            suffix = target_path.suffix
+            target_path = images_dir / f"{stem}_{uuid.uuid4().hex[:6]}{suffix}"
 
     try:
         content = await file.read()

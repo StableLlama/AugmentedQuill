@@ -12,6 +12,7 @@ import { StoryMetadata } from './components/StoryMetadata';
 import { ChapterList } from './components/ChapterList';
 import { Editor } from './components/Editor';
 import { Chat } from './components/Chat';
+import { ProjectImages } from './components/ProjectImages';
 import { DebugLogs } from './components/DebugLogs';
 import { Button } from './components/Button';
 import { SettingsDialog } from './components/SettingsDialog';
@@ -246,6 +247,7 @@ const App: React.FC = () => {
   }, [isAppearanceOpen]);
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isImagesOpen, setIsImagesOpen] = useState(false);
   const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
   const [isDebugLogsOpen, setIsDebugLogsOpen] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('raw');
@@ -526,17 +528,7 @@ const App: React.FC = () => {
     appSettings.providers[0];
 
   const getSystemPrompt = () => {
-    return (
-      prompts.system_messages.chat_llm ||
-      `You are a professional creative writing partner and editor.
-You are helping the user write a story titled "${story.title}".
-Story Summary: ${story.summary}
-Style Tags: ${story.styleTags.join(', ')}
-
-Your goal is to assist with writing, editing, brainstorming, and structuring.
-You have tools to directly modify the story content if the user explicitly asks.
-Always prioritize the user's creative vision.`
-    );
+    return prompts.system_messages.chat_llm || '';
   };
 
   const [systemPrompt, setSystemPrompt] = useState(getSystemPrompt());
@@ -557,17 +549,6 @@ Always prioritize the user's creative vision.`
       );
 
       let promptWithContext = userText;
-      if (currentChapter) {
-        const template =
-          prompts.user_prompts.chat_user_context ||
-          '[Current Chapter Context: ID={chapter_id}, Title="{chapter_title}"]\n[Current Content Start]\n{chapter_content}\n[Current Content End]\n\nUser Request: {user_text}';
-
-        promptWithContext = template
-          .replace('{chapter_id}', String(currentChapter.id))
-          .replace('{chapter_title}', currentChapter.title)
-          .replace('{chapter_content}', currentChapter.content.slice(0, 5000))
-          .replace('{user_text}', userText);
-      }
 
       const updateMessage = (
         msgId: string,
@@ -1148,6 +1129,14 @@ Always prioritize the user's creative vision.`
         }}
         theme={currentTheme}
         defaultPrompts={prompts}
+      />
+
+      <ProjectImages
+        isOpen={isImagesOpen}
+        onClose={() => setIsImagesOpen(false)}
+        theme={currentTheme}
+        settings={appSettings}
+        prompts={prompts}
       />
 
       <CreateProjectDialog
@@ -1789,6 +1778,16 @@ Always prioritize the user's creative vision.`
 
         {/* Right: Settings & Panels */}
         <div className="flex items-center space-x-2 shrink-0">
+          <Button
+            theme={currentTheme}
+            variant="ghost"
+            size="sm"
+            onClick={() => setIsImagesOpen(true)}
+            title="Images"
+            className="hidden sm:inline-flex mr-1"
+          >
+            <ImageIcon size={18} />
+          </Button>
           <Button
             theme={currentTheme}
             variant="ghost"

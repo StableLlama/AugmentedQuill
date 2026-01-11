@@ -9,7 +9,8 @@
     "ai_action_summary_rewrite": "EDITING",
     "ai_action_chapter_extend": "WRITING",
     "ai_action_chapter_rewrite": "WRITING",
-    "editing_llm": "EDITING"
+    "editing_llm": "EDITING",
+    "image_describer": "CHAT"
   },
   "system_messages": {
     "story_writer": [
@@ -25,6 +26,10 @@
     "chapter_summarizer": [
       "You are an expert story editor.",
       "Write a concise summary capturing plot, characters, tone, and open threads."
+    ],
+    "image_describer": [
+      "You are a creative writing assistant.",
+      "Analyze the image and provide a description suitable for including in a story."
     ],
     "story_summarizer": [
       "You are an expert story editor.",
@@ -168,6 +173,10 @@
     "ai_action_chapter_rewrite_user": [
       "Summary: {chapter_summary}",
       "Style: {style_tags}"
+    ],
+    "image_describer_prompt": [
+      "Describe this image for a story. Be descriptive but concise.",
+      "Image filename is {filename}."
     ]
   }
 }
