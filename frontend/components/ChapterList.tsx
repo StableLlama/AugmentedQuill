@@ -19,7 +19,7 @@ import {
 interface ChapterListProps {
   chapters: Chapter[];
   books?: Book[];
-  projectType?: 'small' | 'medium' | 'large';
+  projectType?: 'short-story' | 'novel' | 'series';
   currentChapterId: string | null;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
@@ -33,7 +33,7 @@ interface ChapterListProps {
 export const ChapterList: React.FC<ChapterListProps> = ({
   chapters,
   books = [],
-  projectType = 'medium',
+  projectType = 'novel',
   currentChapterId,
   onSelect,
   onDelete,
@@ -111,9 +111,9 @@ export const ChapterList: React.FC<ChapterListProps> = ({
         }`}
       >
         <h2 className={`text-sm font-semibold uppercase tracking-wider ${textHeader}`}>
-          {projectType === 'large' ? 'Books & Chapters' : 'Chapters'}
+          {projectType === 'series' ? 'Books & Chapters' : 'Chapters'}
         </h2>
-        {projectType === 'medium' && (
+        {projectType === 'novel' && (
           <button
             onClick={() => onCreate()}
             className={`p-1 rounded-full transition-colors ${btnHover}`}
@@ -125,7 +125,7 @@ export const ChapterList: React.FC<ChapterListProps> = ({
       </div>
 
       <div className="flex-1 overflow-y-auto p-2 space-y-2">
-        {projectType === 'large' ? (
+        {projectType === 'series' ? (
           <div className="space-y-4">
             {books.map((book) => {
               const bookChapters = chapters.filter((c) => c.book_id === book.id);

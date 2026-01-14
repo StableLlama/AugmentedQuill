@@ -110,7 +110,7 @@ async def api_projects_create(request: Request) -> JSONResponse:
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON body")
     name = (payload or {}).get("name") or ""
-    project_type = (payload or {}).get("type") or "medium"
+    project_type = (payload or {}).get("type") or "novel"
 
     ok, msg = create_project(name, project_type=project_type)
     if not ok:

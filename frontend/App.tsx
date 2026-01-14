@@ -302,7 +302,7 @@ const App: React.FC = () => {
             data.available.map((p: any) => ({
               id: p.name,
               title: p.title || p.name,
-              type: p.type || 'medium',
+              type: p.type || 'novel',
               updatedAt: Date.now(),
             }))
           );
@@ -414,7 +414,7 @@ const App: React.FC = () => {
             available.map((p: any) => ({
               id: p.name,
               title: p.title || p.name,
-              type: p.type || 'medium',
+              type: p.type || 'novel',
               updatedAt: Date.now(),
             }))
           );
@@ -454,7 +454,7 @@ const App: React.FC = () => {
             id: name, // Vital: Use the directory name as ID for subsequent API calls
             title: result.story.project_title || name,
             summary: result.story.story_summary || '',
-            projectType: result.story.project_type || 'medium',
+            projectType: result.story.project_type || 'novel',
             styleTags: result.story.tags || [],
             chapters: (result.story.chapters || []).map((c: any, i: number) => ({
               id: String(i + 1),
@@ -466,9 +466,9 @@ const App: React.FC = () => {
             lastUpdated: Date.now(),
           };
 
-          // For small projects (empty chapters in JSON), add the virtual chapter manually
+          // For short-story projects (empty chapters in JSON), add the virtual chapter manually
           // so the UI doesn't look empty before fetchStory kicks in
-          if (type === 'small' && mappedStory.chapters.length === 0) {
+          if (type === 'short-story' && mappedStory.chapters.length === 0) {
             mappedStory.chapters = [
               {
                 id: '1',

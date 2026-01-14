@@ -34,7 +34,7 @@ interface SettingsDialogProps {
   onRenameProject: (id: string, newName: string) => void;
   onConvertProject: (newType: string) => void;
   onImportProject: (file: File) => Promise<void>;
-  activeProjectType?: 'small' | 'medium' | 'large';
+  activeProjectType?: 'short-story' | 'novel' | 'series';
   activeProjectStats?: {
     chapterCount: number;
     bookCount: number;

@@ -18,14 +18,14 @@ def _project_overview() -> dict:
     """Return project title and a list of chapters with id, filename, title, summary."""
     active = get_active_project_dir()
     story = load_story_config((active / "story.json") if active else None) or {}
-    p_type = story.get("project_type", "medium")
+    p_type = story.get("project_type", "novel")
 
     base_info = {
         "project_title": story.get("project_title") or (active.name if active else ""),
         "project_type": p_type,
     }
 
-    if p_type == "small":
+    if p_type == "short-story":
         fn = story.get("content_file", "content.md")
 
         # Use metadata from story.json if available
@@ -56,7 +56,7 @@ def _project_overview() -> dict:
             ],
         }
 
-    if p_type == "large":
+    if p_type == "series":
         files = _scan_chapter_files()
         books = story.get("books", [])
         enriched_books = []

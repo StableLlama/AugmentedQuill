@@ -31,7 +31,7 @@ interface SettingsProjectsProps {
   onConvertProject: (newType: string) => void;
   onImportProject: (file: File) => Promise<void>;
   onCloseDialog: () => void;
-  activeProjectType?: 'small' | 'medium' | 'large';
+  activeProjectType?: 'short-story' | 'novel' | 'series';
   activeProjectStats: {
     chapterCount: number;
     bookCount: number;
@@ -64,9 +64,9 @@ export const SettingsProjects: React.FC<SettingsProjectsProps> = ({
     if (target === activeProjectType) return true;
 
     const rank = (t: string) => {
-      if (t === 'small') return 0;
-      if (t === 'medium') return 1;
-      if (t === 'large') return 2;
+      if (t === 'short-story') return 0;
+      if (t === 'novel') return 1;
+      if (t === 'series') return 2;
       return 1;
     };
 
@@ -77,13 +77,13 @@ export const SettingsProjects: React.FC<SettingsProjectsProps> = ({
     if (dest > curr) return true;
 
     // Downscale checks
-    if (activeProjectType === 'large') {
+    if (activeProjectType === 'series') {
       if (activeProjectStats.bookCount > 1) return false;
-      if (target === 'small' && activeProjectStats.chapterCount > 1) return false;
+      if (target === 'short-story' && activeProjectStats.chapterCount > 1) return false;
     }
 
-    if (activeProjectType === 'medium') {
-      if (target === 'small' && activeProjectStats.chapterCount > 1) return false;
+    if (activeProjectType === 'novel') {
+      if (target === 'short-story' && activeProjectStats.chapterCount > 1) return false;
     }
 
     return true;
@@ -91,9 +91,9 @@ export const SettingsProjects: React.FC<SettingsProjectsProps> = ({
 
   const getProjectIcon = (type: string) => {
     switch (type) {
-      case 'small':
+      case 'short-story':
         return <FileText size={16} />;
-      case 'large':
+      case 'series':
         return <Library size={16} />;
       default:
         return <BookOpen size={16} />;
@@ -293,7 +293,7 @@ export const SettingsProjects: React.FC<SettingsProjectsProps> = ({
                           isLight ? 'text-brand-gray-500' : 'text-brand-gray-400'
                         }`}
                       >
-                        Size:
+                        Type:
                       </span>
                       <select
                         className={`text-xs p-1 rounded border ${
@@ -306,14 +306,18 @@ export const SettingsProjects: React.FC<SettingsProjectsProps> = ({
                           onConvertProject(e.target.value);
                         }}
                       >
-                        <option value="small" disabled={!canConvertTo('small')}>
-                          Small {!canConvertTo('small') ? '(Too many items)' : ''}
+                        <option
+                          value="short-story"
+                          disabled={!canConvertTo('short-story')}
+                        >
+                          Short Story{' '}
+                          {!canConvertTo('short-story') ? '(Too many items)' : ''}
                         </option>
-                        <option value="medium" disabled={!canConvertTo('medium')}>
-                          Medium {!canConvertTo('medium') ? '(Too many items)' : ''}
+                        <option value="novel" disabled={!canConvertTo('novel')}>
+                          Novel {!canConvertTo('novel') ? '(Too many items)' : ''}
                         </option>
-                        <option value="large" disabled={!canConvertTo('large')}>
-                          Large
+                        <option value="series" disabled={!canConvertTo('series')}>
+                          Series
                         </option>
                       </select>
                     </div>

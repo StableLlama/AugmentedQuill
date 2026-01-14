@@ -25,10 +25,10 @@ async def api_chapters() -> dict:
     active = get_active_project_dir()
     story = load_story_config((active / "story.json") if active else None) or {}
 
-    p_type = story.get("project_type", "medium")
+    p_type = story.get("project_type", "novel")
     chapters_data = []
 
-    if p_type == "large":
+    if p_type == "series":
         for book in story.get("books", []):
             bid = book.get("id")
             for c in book.get("chapters", []):
@@ -40,13 +40,13 @@ async def api_chapters() -> dict:
 
     result = []
     # Note: This assumes 1-to-1 mapping between file scan order and metadata order.
-    # scan_chapters_files for Large iterates books then files.
+    # scan_chapters_files for Series iterates books then files.
     # Metadata iteration above iterates books then chapters.
     # If a file exists but metadata is missing, we pad.
     # If metadata exists but file is missing, scan skips file, so we might lose sync if we just zip.
     # Ideally we should match by filename if possible.
     # But files return (id, path). Path has filename.
-    # Metadata for Large currently stores filename? create_new_chapter adds "filename".
+    # Metadata for Series currently stores filename? create_new_chapter adds "filename".
 
     for i, (idx, p) in enumerate(files):
         # Try to find metadata by filename matching if possible

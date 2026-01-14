@@ -24,7 +24,7 @@ export const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
   theme,
 }) => {
   const [name, setName] = useState('');
-  const [type, setType] = useState('medium');
+  const [type, setType] = useState('novel');
 
   if (!isOpen) return null;
 
@@ -68,13 +68,18 @@ export const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
                 <input
                   type="radio"
                   name="ptype"
-                  value="small"
-                  checked={type === 'small'}
+                  value="short-story"
+                  checked={type === 'short-story'}
                   onChange={(e) => setType(e.target.value)}
                   className="mt-1"
                 />
                 <div>
-                  <span className="block font-bold text-sm">Small (Single File)</span>
+                  <span
+                    className="block font-bold text-sm"
+                    title="Short Story: No chapters"
+                  >
+                    Short Story
+                  </span>
                   <span className="text-xs opacity-70 block">
                     Best for short stories, poems, or notes.
                   </span>
@@ -87,13 +92,18 @@ export const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
                 <input
                   type="radio"
                   name="ptype"
-                  value="medium"
-                  checked={type === 'medium'}
+                  value="novel"
+                  checked={type === 'novel'}
                   onChange={(e) => setType(e.target.value)}
                   className="mt-1"
                 />
                 <div>
-                  <span className="block font-bold text-sm">Medium (Chapters)</span>
+                  <span
+                    className="block font-bold text-sm"
+                    title="Novel: Multiple chapters"
+                  >
+                    Novel
+                  </span>
                   <span className="text-xs opacity-70 block">
                     Standard novel structure with multiple chapters.
                   </span>
@@ -106,14 +116,17 @@ export const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
                 <input
                   type="radio"
                   name="ptype"
-                  value="large"
-                  checked={type === 'large'}
+                  value="series"
+                  checked={type === 'series'}
                   onChange={(e) => setType(e.target.value)}
                   className="mt-1"
                 />
                 <div>
-                  <span className="block font-bold text-sm">
-                    Large (Books & Chapters)
+                  <span
+                    className="block font-bold text-sm"
+                    title="Series: Multiple books"
+                  >
+                    Series
                   </span>
                   <span className="text-xs opacity-70 block">
                     Epic sagas grouped into multiple books.

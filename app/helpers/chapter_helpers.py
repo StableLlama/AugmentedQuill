@@ -34,13 +34,13 @@ def _scan_chapter_files() -> List[Tuple[str, Path]]:
         return []
 
     story = load_story_config(active / "story.json") or {}
-    p_type = story.get("project_type", "medium")
+    p_type = story.get("project_type", "novel")
 
-    if p_type == "small":
+    if p_type == "short-story":
         p = active / "content.md"
         return [(1, p)]
 
-    if p_type == "large":
+    if p_type == "series":
         books = story.get("books", [])
         items = []
         global_idx = 1

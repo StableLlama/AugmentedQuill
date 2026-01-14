@@ -175,10 +175,10 @@ def validate_project_dir(path: Path) -> ProjectInfo:
     A valid project directory contains:
     - story.json file in its root
 
-    Depending on the type in story.json (defaulting to 'medium'/'chapters' if missing):
-    - small: expects content.md
-    - medium: expects chapters/ folder
-    - large: expects books/ folder
+    Depending on the type in story.json (defaulting to 'novel'/'chapters' if missing):
+    - short-story: expects content.md
+    - novel: expects chapters/ folder
+    - series: expects books/ folder
     """
     if not path.exists():
         return ProjectInfo(path, is_valid=False, reason="does_not_exist")
@@ -198,15 +198,15 @@ def validate_project_dir(path: Path) -> ProjectInfo:
     except Exception:
         return ProjectInfo(path, is_valid=False, reason="invalid_story_json")
 
-    p_type = story.get("project_type", "medium")
+    p_type = story.get("project_type", "novel")
 
-    if p_type == "small":
+    if p_type == "short-story":
         # It's valid even if empty, but file should ideally exist or be creatable.
         # Strict validation: require content.md existence?
         # Let's say valid if story.json is there.
         return ProjectInfo(path, is_valid=True, reason="ok")
 
-    elif p_type == "large":
+    elif p_type == "series":
         books_dir = path / "books"
         # Should exist.
         if books_dir.exists() and books_dir.is_dir():
@@ -214,7 +214,7 @@ def validate_project_dir(path: Path) -> ProjectInfo:
         # If missing, maybe just created.
         return ProjectInfo(path, is_valid=True, reason="ok_empty_books")
 
-    else:  # medium or unknown
+    else:  # novel or unknown
         chapters_dir = path / "chapters"
         if chapters_dir.exists() and chapters_dir.is_dir():
             has_txt_md = any(
@@ -230,7 +230,7 @@ def validate_project_dir(path: Path) -> ProjectInfo:
 
 
 def initialize_project_dir(
-    path: Path, project_title: str = "Untitled Project", project_type: str = "medium"
+    path: Path, project_title: str = "Untitled Project", project_type: str = "novel"
 ) -> None:
     """Create minimal project structure at the given path."""
     _ensure_dir(path)
@@ -243,9 +243,9 @@ def initialize_project_dir(
         payload = {
             "project_title": project_title,
             "project_type": project_type,
-            "chapters": [],  # Used for medium
-            "books": [],  # Used for large
-            "content_file": "content.md",  # Used for small
+            "chapters": [],  # Used for novel
+            "books": [],  # Used for series
+            "content_file": "content.md",  # Used for short-story
             "format": "markdown",
             "llm_prefs": {"temperature": 0.7, "max_tokens": 2048},
             "created_at": _now_iso(),
@@ -253,16 +253,16 @@ def initialize_project_dir(
         }
         story_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
-    if project_type == "small":
+    if project_type == "short-story":
         content_path = path / "content.md"
         if not content_path.exists():
             content_path.write_text("", encoding="utf-8")
 
-    elif project_type == "large":
+    elif project_type == "series":
         books_dir = path / "books"
         _ensure_dir(books_dir)
 
-    else:  # medium
+    else:  # novel
         chapters_dir = path / "chapters"
         _ensure_dir(chapters_dir)
 
@@ -279,14 +279,14 @@ def list_projects() -> List[Dict[str, str | bool]]:
     for d in sorted([p for p in root.iterdir() if p.is_dir()]):
         info = validate_project_dir(d)
         title = d.name
-        p_type = "medium"
+        p_type = "novel"
         if info.is_valid:
             try:
                 from app.config import load_story_config
 
                 story = load_story_config(d / "story.json")
                 title = story.get("project_title") or d.name
-                p_type = story.get("project_type", "medium")
+                p_type = story.get("project_type", "novel")
             except Exception:
                 pass
         items.append(
@@ -354,7 +354,7 @@ def write_chapter_summary(chap_id: int, summary: str) -> None:
     story_path.write_text(json.dumps(story, indent=2), encoding="utf-8")
 
 
-def create_project(name: str, project_type: str = "medium") -> Tuple[bool, str]:
+def create_project(name: str, project_type: str = "novel") -> Tuple[bool, str]:
     """Create a new project explicitly."""
     if not name:
         return False, "Project name is required"
@@ -418,7 +418,7 @@ def select_project(name: str) -> Tuple[bool, str]:
     p = root / name
     if not p.exists():
         _ensure_dir(root)
-        initialize_project_dir(p, project_title=name, project_type="medium")
+        initialize_project_dir(p, project_title=name, project_type="novel")
         set_active_project(p)
         return True, "Project created"
     if p.is_dir():
@@ -427,7 +427,7 @@ def select_project(name: str) -> Tuple[bool, str]:
             set_active_project(p)
             return True, "Project loaded"
         if info.reason == "empty":
-            initialize_project_dir(p, project_title=name, project_type="medium")
+            initialize_project_dir(p, project_title=name, project_type="novel")
             set_active_project(p)
             return True, "Project created"
         return False, "Selected path is not a valid project directory"
@@ -437,12 +437,12 @@ def select_project(name: str) -> Tuple[bool, str]:
 def create_new_chapter(title: str = "", book_id: str = None) -> int:
     """Create a new chapter file and update story.json.
 
-    For Large projects with books:
+    For Series projects with books:
       - Appends to the specified book_id.
       - If book_id is None, appends to the last book.
       - Returns global virtual index.
 
-    For Medium projects:
+    For Novel projects:
       - Appends to chapters dir.
       - Returns filename index.
     """
@@ -457,16 +457,16 @@ def create_new_chapter(title: str = "", book_id: str = None) -> int:
 
     story_path = active / "story.json"
     story = load_story_config(story_path) or {}
-    p_type = story.get("project_type", "medium")
+    p_type = story.get("project_type", "novel")
 
     # We defer detailed number calculation until we know the target context
     final_title = title
 
-    if p_type == "small":
-        # Cannot add chapters to small project
-        raise ValueError("Cannot add chapters to a Small project (single file)")
+    if p_type == "short-story":
+        # Cannot add chapters to short-story project
+        raise ValueError("Cannot add chapters to a Short Story project (single file)")
 
-    if p_type == "large":
+    if p_type == "series":
         books = story.get("books", [])
         if not books:
             raise ValueError("No books in this project")
@@ -521,10 +521,10 @@ def create_new_chapter(title: str = "", book_id: str = None) -> int:
 
         return 0  # Should not happen
 
-    # Medium logic (mostly unchanged but robust)
+    # Novel logic (mostly unchanged but robust)
     files = _scan_chapter_files()
     if files:
-        # Medium returns (filename_int, path)
+        # Novel returns (filename_int, path)
         next_idx = files[-1][0] + 1
     else:
         next_idx = 1
@@ -554,12 +554,12 @@ def create_new_chapter(title: str = "", book_id: str = None) -> int:
 
 
 def create_new_book(title: str) -> str:
-    """Create a new book in a Large project."""
+    """Create a new book in a Series project."""
     active = get_active_project_dir()
     story_path = active / "story.json"
     story = load_story_config(story_path) or {}
-    if story.get("project_type") != "large":
-        raise ValueError("Can only create books in Large projects")
+    if story.get("project_type") != "series":
+        raise ValueError("Can only create books in Series projects")
 
     books = story.get("books", [])
 
@@ -591,13 +591,13 @@ def change_project_type(new_type: str) -> Tuple[bool, str]:
 
     story_path = active / "story.json"
     story = load_story_config(story_path) or {}
-    old_type = story.get("project_type", "medium")
+    old_type = story.get("project_type", "novel")
 
     if old_type == new_type:
         return True, "Already this type"
 
-    # Small -> Medium
-    if old_type == "small" and new_type == "medium":
+    # Short Story -> Novel
+    if old_type == "short-story" and new_type == "novel":
         content_path = active / "content.md"
         content = ""
         if content_path.exists():
@@ -608,17 +608,20 @@ def change_project_type(new_type: str) -> Tuple[bool, str]:
         _ensure_dir(active / "chapters")
         (active / "chapters" / "0001.txt").write_text(content, encoding="utf-8")
 
-        story["project_type"] = "medium"
+        story["project_type"] = "novel"
         story["chapters"] = [{"title": "Chapter 1", "summary": ""}]
         if "content_file" in story:
             del story["content_file"]
 
-    # Medium -> Small
-    elif old_type == "medium" and new_type == "small":
+    # Novel -> Short Story
+    elif old_type == "novel" and new_type == "short-story":
         chapters_dir = active / "chapters"
         files = list(chapters_dir.glob("*.txt")) if chapters_dir.exists() else []
         if len(files) > 1:
-            return False, "Cannot convert to Small: Project has multiple chapters."
+            return (
+                False,
+                "Cannot convert to Short Story: Project has multiple chapters.",
+            )
 
         content = ""
         if files:
@@ -626,13 +629,13 @@ def change_project_type(new_type: str) -> Tuple[bool, str]:
             shutil.rmtree(chapters_dir)
 
         (active / "content.md").write_text(content, encoding="utf-8")
-        story["project_type"] = "small"
+        story["project_type"] = "short-story"
         if "chapters" in story:
             del story["chapters"]
         story["content_file"] = "content.md"
 
-    # Medium -> Large
-    elif old_type == "medium" and new_type == "large":
+    # Novel -> Series
+    elif old_type == "novel" and new_type == "series":
         # Create Book 1
         import uuid
 
@@ -653,7 +656,7 @@ def change_project_type(new_type: str) -> Tuple[bool, str]:
             shutil.rmtree(chapters_dir)
 
         # Move images? Existing images in `projects/X/images`?
-        # Large projects have images per book? Or global images?
+        # Series projects have images per book? Or global images?
         # User said: "each book should have its own directory where the chapter files and images are stored in"
         # So we should move images too.
         images_dir = active / "images"
@@ -662,18 +665,18 @@ def change_project_type(new_type: str) -> Tuple[bool, str]:
                 shutil.move(str(f), str(book_dir / "images" / f.name))
             # keep root images dir? logic creates it in initialize.
 
-        story["project_type"] = "large"
+        story["project_type"] = "series"
         story["books"] = [
             {"id": bid, "title": book_title, "chapters": story.get("chapters", [])}
         ]
         if "chapters" in story:
             del story["chapters"]
 
-    # Large -> Medium
-    elif old_type == "large" and new_type == "medium":
+    # Series -> Novel
+    elif old_type == "series" and new_type == "novel":
         books = story.get("books", [])
         if len(books) > 1:
-            return False, "Cannot convert to Medium: Project has multiple books."
+            return False, "Cannot convert to Novel: Project has multiple books."
 
         if books:
             book = books[0]
@@ -696,7 +699,7 @@ def change_project_type(new_type: str) -> Tuple[bool, str]:
             story["chapters"] = book.get("chapters", [])
             shutil.rmtree(active / "books")
 
-        story["project_type"] = "medium"
+        story["project_type"] = "novel"
         if "books" in story:
             del story["books"]
 

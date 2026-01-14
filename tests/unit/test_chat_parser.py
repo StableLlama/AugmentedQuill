@@ -35,7 +35,7 @@ class TestChatParser(unittest.TestCase):
             "name": "create_project", 
             "arguments": {
                 "name": "Test Project",
-                "type": "small"
+                "type": "short-story"
             }
         }
         </tool_call>
@@ -47,7 +47,7 @@ class TestChatParser(unittest.TestCase):
         self.assertEqual(call["function"]["name"], "create_project")
         args = json.loads(call["function"]["arguments"])
         self.assertEqual(args["name"], "Test Project")
-        self.assertEqual(args["type"], "small")
+        self.assertEqual(args["type"], "short-story")
 
     def test_parse_xml_style_tool_call(self):
         """Test parsing of legacy XML-style tool calls."""

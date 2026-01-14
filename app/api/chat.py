@@ -530,8 +530,8 @@ STORY_TOOLS = [
                     },
                     "project_type": {
                         "type": "string",
-                        "enum": ["small", "medium", "large"],
-                        "description": "The type of project: small (single file), medium (chapters), large (books).",
+                        "enum": ["short-story", "novel", "series"],
+                        "description": "The type of project: short-story (single file), novel (chapters), series (books).",
                     },
                 },
                 "required": ["name"],
@@ -575,7 +575,7 @@ STORY_TOOLS = [
         "type": "function",
         "function": {
             "name": "delete_book",
-            "description": "Delete a book from a large project. Requires confirmation.",
+            "description": "Delete a book from a series project. Requires confirmation.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -617,7 +617,7 @@ STORY_TOOLS = [
         "type": "function",
         "function": {
             "name": "create_new_book",
-            "description": "Create a new book in a Large project.",
+            "description": "Create a new book in a Series project.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -634,13 +634,13 @@ STORY_TOOLS = [
         "type": "function",
         "function": {
             "name": "change_project_type",
-            "description": "Convert the active project to a new type (small, medium, large).",
+            "description": "Convert the active project to a new type (short-story, novel, series).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "new_type": {
                         "type": "string",
-                        "enum": ["small", "medium", "large"],
+                        "enum": ["short-story", "novel", "series"],
                         "description": "The new project type.",
                     }
                 },
@@ -1131,7 +1131,7 @@ async def _exec_chat_tool(
             }
         if name == "create_new_chapter":
             title = str(args_obj.get("title", "")).strip()
-            # Optional book_id for large projects
+            # Optional book_id for series projects
             book_id = args_obj.get("book_id")
 
             active = get_active_project_dir()
@@ -1254,7 +1254,7 @@ async def _exec_chat_tool(
             }
         if name == "create_project":
             p_name = args_obj.get("name")
-            p_type = args_obj.get("project_type", "medium")
+            p_type = args_obj.get("project_type", "novel")
             if not p_name:
                 return {
                     "role": "tool",
@@ -1356,7 +1356,7 @@ async def _exec_chat_tool(
             # Also logic to remove chapters associated with book?
             # Assuming chapters list needs cleanup too if I track BookID in chapters.
             # For now, just removing book entry. user can delete chapters separately or I'd need complex logic.
-            # "Small & Minimal" - just remove metadata.
+            # "Short Story" - just remove metadata.
 
             with open(story_path, "w", encoding="utf-8") as f:
                 _json.dump(story, f, indent=2, ensure_ascii=False)

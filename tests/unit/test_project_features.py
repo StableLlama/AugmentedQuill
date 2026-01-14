@@ -43,30 +43,30 @@ class ProjectFeaturesTest(TestCase):
         os.environ.pop("AUGQ_PROJECTS_ROOT", None)
         os.environ.pop("AUGQ_PROJECTS_REGISTRY", None)
 
-    def test_convert_small_to_medium(self):
-        # 1. Create Small project
-        create_project("test_sm", project_type="small")
+    def test_convert_short_story_to_novel(self):
+        # 1. Create Short Story project
+        create_project("test_sm", project_type="short-story")
         select_project("test_sm")
         active = get_active_project_dir()
 
         # Write content
-        (active / "content.md").write_text("Small Content", encoding="utf-8")
+        (active / "content.md").write_text("Short Story Content", encoding="utf-8")
 
-        # 2. Convert to Medium
-        ok, msg = change_project_type("medium")
+        # 2. Convert to Novel
+        ok, msg = change_project_type("novel")
         self.assertTrue(ok, msg)
 
         # 3. Verify
         story = load_story_config(active / "story.json")
-        self.assertEqual(story["project_type"], "medium")
+        self.assertEqual(story["project_type"], "novel")
         self.assertFalse((active / "content.md").exists())
         self.assertTrue((active / "chapters" / "0001.txt").exists())
         text = (active / "chapters" / "0001.txt").read_text(encoding="utf-8")
-        self.assertEqual(text, "Small Content")
+        self.assertEqual(text, "Short Story Content")
 
-    def test_convert_medium_to_small_success(self):
-        # 1. Create Medium project
-        create_project("test_med", project_type="medium")
+    def test_convert_novel_to_short_story_success(self):
+        # 1. Create Novel project
+        create_project("test_med", project_type="novel")
         select_project("test_med")
         active = get_active_project_dir()
 
@@ -76,20 +76,20 @@ class ProjectFeaturesTest(TestCase):
             "Chapter Content", encoding="utf-8"
         )
 
-        # 2. Convert to Small
-        ok, msg = change_project_type("small")
+        # 2. Convert to Short Story
+        ok, msg = change_project_type("short-story")
         self.assertTrue(ok, msg)
 
         # 3. Verify
         story = load_story_config(active / "story.json")
-        self.assertEqual(story["project_type"], "small")
+        self.assertEqual(story["project_type"], "short-story")
         self.assertTrue((active / "content.md").exists())
         self.assertFalse((active / "chapters").exists())
         text = (active / "content.md").read_text(encoding="utf-8")
         self.assertEqual(text, "Chapter Content")
 
-    def test_convert_medium_to_small_fails_if_multiple_chapters(self):
-        create_project("test_med_multi", project_type="medium")
+    def test_convert_novel_to_short_story_fails_if_multiple_chapters(self):
+        create_project("test_med_multi", project_type="novel")
         select_project("test_med_multi")
         active = get_active_project_dir()
 
@@ -97,13 +97,13 @@ class ProjectFeaturesTest(TestCase):
         (active / "chapters" / "0001.txt").write_text("C1", encoding="utf-8")
         (active / "chapters" / "0002.txt").write_text("C2", encoding="utf-8")
 
-        ok, msg = change_project_type("small")
+        ok, msg = change_project_type("short-story")
         self.assertFalse(ok)
         self.assertIn("multiple chapters", msg.lower())
 
-    def test_small_project_overview_with_metadata(self):
-        """Test the regression fix: Small project using story.json metadata for title/summary."""
-        create_project("test_sm_meta", project_type="small")
+    def test_short_story_project_overview_with_metadata(self):
+        """Test the regression fix: Short Story project using story.json metadata for title/summary."""
+        create_project("test_sm_meta", project_type="short-story")
         select_project("test_sm_meta")
         active = get_active_project_dir()
 
@@ -121,9 +121,9 @@ class ProjectFeaturesTest(TestCase):
         self.assertEqual(chapters[0]["summary"], "A great start")
         self.assertEqual(chapters[0]["filename"], "content.md")
 
-    def test_small_project_overview_defaults(self):
+    def test_short_story_project_overview_defaults(self):
         """Test fallback when no metadata exists."""
-        create_project("test_sm_def", project_type="small")
+        create_project("test_sm_def", project_type="short-story")
         select_project("test_sm_def")
 
         overview = _project_overview()
@@ -134,7 +134,7 @@ class ProjectFeaturesTest(TestCase):
 
     def test_export_import_zip(self):
         # 1. Setup a project
-        create_project("export_me", project_type="medium")
+        create_project("export_me", project_type="novel")
         select_project("export_me")
         active = get_active_project_dir()
         (active / "chapters").mkdir(exist_ok=True)
@@ -183,7 +183,7 @@ class ProjectFeaturesTest(TestCase):
     def test_api_import_workflow(self):
         """Test the actual API endpoint for import."""
         # Setup source project
-        create_project("api_export", project_type="medium")
+        create_project("api_export", project_type="novel")
         select_project("api_export")
         active = get_active_project_dir()
         (active / "story.json").write_text(
