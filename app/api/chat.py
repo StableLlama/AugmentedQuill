@@ -21,6 +21,12 @@ from app.projects import (
     create_project,
     list_projects,
     delete_project,
+    read_story_content,
+    write_story_content,
+    update_story_metadata,
+    read_book_content,
+    write_book_content,
+    update_book_metadata,
 )
 from app.helpers.project_helpers import _project_overview, _chapter_content_slice
 from app.helpers.chapter_helpers import (
@@ -252,9 +258,171 @@ STORY_TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "get_story_summary",
-            "description": "Get the overall story summary.",
+            "name": "get_story_metadata",
+            "description": "Get the overall story title and summary.",
             "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_story_metadata",
+            "description": "Update the story title or summary.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "The new story title."},
+                    "summary": {
+                        "type": "string",
+                        "description": "The new story summary.",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_story_content",
+            "description": "Read the story-level introduction or content file.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "write_story_content",
+            "description": "Update the story-level introduction or content file.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "content": {
+                        "type": "string",
+                        "description": "The new content for the story.",
+                    }
+                },
+                "required": ["content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_book_metadata",
+            "description": "Get the title and summary of a specific book (only for series projects).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "book_id": {
+                        "type": "string",
+                        "description": "The UUID of the book.",
+                    }
+                },
+                "required": ["book_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_book_metadata",
+            "description": "Update the title or summary of a specific book.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "book_id": {
+                        "type": "string",
+                        "description": "The UUID of the book.",
+                    },
+                    "title": {"type": "string", "description": "The new book title."},
+                    "summary": {
+                        "type": "string",
+                        "description": "The new book summary.",
+                    },
+                },
+                "required": ["book_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_book_content",
+            "description": "Read the global introduction or content for a specific book.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "book_id": {
+                        "type": "string",
+                        "description": "The UUID of the book.",
+                    }
+                },
+                "required": ["book_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "write_book_content",
+            "description": "Update the global introduction or content for a specific book.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "book_id": {
+                        "type": "string",
+                        "description": "The UUID of the book.",
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "The new content for the book.",
+                    },
+                },
+                "required": ["book_id", "content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_chapter_metadata",
+            "description": "Get the title and summary of a specific chapter.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "chap_id": {
+                        "type": "integer",
+                        "description": "The numeric ID of the chapter.",
+                    }
+                },
+                "required": ["chap_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_chapter_metadata",
+            "description": "Update the title or summary of a specific chapter.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "chap_id": {
+                        "type": "integer",
+                        "description": "The numeric ID of the chapter.",
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "The new chapter title.",
+                    },
+                    "summary": {
+                        "type": "string",
+                        "description": "The new chapter summary.",
+                    },
+                },
+                "required": ["chap_id"],
+            },
         },
     },
     {
@@ -340,27 +508,6 @@ STORY_TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "write_chapter_summary",
-            "description": "Set the summary of a chapter. You MUST use the numeric ID retrieved from get_project_overview.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "chap_id": {
-                        "type": "integer",
-                        "description": "Chapter numeric ID.",
-                    },
-                    "summary": {
-                        "type": "string",
-                        "description": "New summary for the chapter.",
-                    },
-                },
-                "required": ["chap_id", "summary"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "sync_summary",
             "description": "Generate and save a new summary for a chapter, or update its existing summary based on the content of the chapter. This is a destructive action. You MUST use the numeric chapter ID.",
             "parameters": {
@@ -401,23 +548,6 @@ STORY_TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "write_story_summary",
-            "description": "Set the overall story summary.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "summary": {
-                        "type": "string",
-                        "description": "The new story summary.",
-                    }
-                },
-                "required": ["summary"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "create_new_chapter",
             "description": "Create a new chapter with an optional title.",
             "parameters": {
@@ -429,61 +559,6 @@ STORY_TOOLS = [
                     }
                 },
                 "required": [],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_chapter_heading",
-            "description": "Get the heading (title) of a specific chapter. You MUST use the numeric chapter ID.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "chap_id": {
-                        "type": "integer",
-                        "description": "The numeric ID of the chapter.",
-                    }
-                },
-                "required": ["chap_id"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "write_chapter_heading",
-            "description": "Set the heading (title) of a specific chapter. You MUST use the numeric chapter ID.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "chap_id": {
-                        "type": "integer",
-                        "description": "The numeric ID of the chapter.",
-                    },
-                    "heading": {
-                        "type": "string",
-                        "description": "The new heading for the chapter.",
-                    },
-                },
-                "required": ["chap_id", "heading"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_chapter_summary",
-            "description": "Get the summary of a specific chapter. You MUST use the numeric chapter ID.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "chap_id": {
-                        "type": "integer",
-                        "description": "The numeric ID of the chapter.",
-                    }
-                },
-                "required": ["chap_id"],
             },
         },
     },
@@ -853,6 +928,226 @@ async def _exec_chat_tool(
                 "name": name,
                 "content": _json.dumps(data),
             }
+
+        if name == "get_story_metadata":
+            active = get_active_project_dir()
+            story = load_story_config((active / "story.json") if active else None) or {}
+            return {
+                "role": "tool",
+                "tool_call_id": call_id,
+                "name": name,
+                "content": _json.dumps(
+                    {
+                        "title": story.get("project_title", ""),
+                        "summary": story.get("story_summary", ""),
+                    }
+                ),
+            }
+
+        if name == "update_story_metadata":
+            title = args_obj.get("title")
+            summary = args_obj.get("summary")
+
+            try:
+                update_story_metadata(title=title, summary=summary)
+                mutations["story_changed"] = True
+                return {
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "name": name,
+                    "content": _json.dumps({"ok": True}),
+                }
+            except Exception as e:
+                return {
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "name": name,
+                    "content": _json.dumps({"error": str(e)}),
+                }
+
+        if name == "read_story_content":
+            try:
+                content = read_story_content()
+                return {
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "name": name,
+                    "content": _json.dumps({"content": content}),
+                }
+            except Exception as e:
+                return {
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "name": name,
+                    "content": _json.dumps({"error": str(e)}),
+                }
+
+        if name == "write_story_content":
+            content = args_obj.get("content", "")
+
+            try:
+                write_story_content(content)
+                mutations["story_changed"] = True
+                return {
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "name": name,
+                    "content": _json.dumps({"ok": True}),
+                }
+            except Exception as e:
+                return {
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "name": name,
+                    "content": _json.dumps({"error": str(e)}),
+                }
+
+        if name == "get_book_metadata":
+            book_id = args_obj.get("book_id")
+            active = get_active_project_dir()
+            story = load_story_config((active / "story.json") if active else None) or {}
+            books = story.get("books", [])
+            target = next((b for b in books if b.get("id") == book_id), None)
+            if not target:
+                return {
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "name": name,
+                    "content": _json.dumps({"error": f"Book ID {book_id} not found"}),
+                }
+            return {
+                "role": "tool",
+                "tool_call_id": call_id,
+                "name": name,
+                "content": _json.dumps(
+                    {
+                        "title": target.get("title", ""),
+                        "summary": target.get("summary", ""),
+                    }
+                ),
+            }
+
+        if name == "update_book_metadata":
+            book_id = args_obj.get("book_id")
+            title = args_obj.get("title")
+            summary = args_obj.get("summary")
+
+            try:
+                update_book_metadata(book_id, title=title, summary=summary)
+                mutations["story_changed"] = True
+                return {
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "name": name,
+                    "content": _json.dumps({"ok": True}),
+                }
+            except Exception as e:
+                return {
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "name": name,
+                    "content": _json.dumps({"error": str(e)}),
+                }
+
+        if name == "read_book_content":
+            book_id = args_obj.get("book_id")
+
+            try:
+                content = read_book_content(book_id)
+                return {
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "name": name,
+                    "content": _json.dumps({"content": content}),
+                }
+            except Exception as e:
+                return {
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "name": name,
+                    "content": _json.dumps({"error": str(e)}),
+                }
+
+        if name == "write_book_content":
+            book_id = args_obj.get("book_id")
+            content = args_obj.get("content", "")
+
+            try:
+                write_book_content(book_id, content)
+                mutations["story_changed"] = True
+                return {
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "name": name,
+                    "content": _json.dumps({"ok": True}),
+                }
+            except Exception as e:
+                return {
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "name": name,
+                    "content": _json.dumps({"error": str(e)}),
+                }
+
+        if name == "get_chapter_metadata":
+            chap_id = args_obj.get("chap_id")
+            if not isinstance(chap_id, int):
+                return {
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "name": name,
+                    "content": _json.dumps({"error": "chap_id is required"}),
+                }
+            from app.helpers.chapter_helpers import _get_chapter_metadata_entry
+
+            active = get_active_project_dir()
+            story = load_story_config((active / "story.json") if active else None) or {}
+            _, path, _ = _chapter_by_id_or_404(chap_id)
+            meta = _get_chapter_metadata_entry(story, chap_id, path) or {}
+            return {
+                "role": "tool",
+                "tool_call_id": call_id,
+                "name": name,
+                "content": _json.dumps(
+                    {
+                        "title": meta.get("title", "") or path.name,
+                        "summary": meta.get("summary", ""),
+                    }
+                ),
+            }
+
+        if name == "update_chapter_metadata":
+            chap_id = args_obj.get("chap_id")
+            title = args_obj.get("title")
+            summary = args_obj.get("summary")
+            if not isinstance(chap_id, int):
+                return {
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "name": name,
+                    "content": _json.dumps({"error": "chap_id is required"}),
+                }
+
+            try:
+                if title is not None:
+                    write_chapter_title(chap_id, title)
+                if summary is not None:
+                    write_chapter_summary(chap_id, summary)
+                mutations["story_changed"] = True
+                return {
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "name": name,
+                    "content": _json.dumps({"ok": True}),
+                }
+            except Exception as e:
+                return {
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "name": name,
+                    "content": _json.dumps({"error": str(e)}),
+                }
+
         if name == "list_images":
             from app.helpers.image_helpers import get_project_images
 
@@ -967,17 +1262,25 @@ async def _exec_chat_tool(
                 ),
             }
         if name == "get_chapter_summaries":
-            active = get_active_project_dir()
-            story = load_story_config((active / "story.json") if active else None) or {}
-            chapters = story.get("chapters", [])
+            ov = _project_overview()
+            p_type = ov.get("project_type", "novel")
+
+            all_chapters = []
+            if p_type == "series":
+                for book in ov.get("books", []):
+                    all_chapters.extend(book.get("chapters", []))
+            else:
+                all_chapters = ov.get("chapters", [])
+
             summaries = []
-            for i, chapter in enumerate(chapters):
+            for chapter in all_chapters:
                 if isinstance(chapter, dict):
-                    title = chapter.get("title", "").strip() or f"Chapter {i + 1}"
+                    chap_id = chapter.get("id")
+                    title = chapter.get("title", "").strip() or f"Chapter {chap_id}"
                     summary = chapter.get("summary", "").strip()
                     if summary:
                         summaries.append(
-                            {"chapter_id": i, "title": title, "summary": summary}
+                            {"chapter_id": chap_id, "title": title, "summary": summary}
                         )
             return {
                 "role": "tool",

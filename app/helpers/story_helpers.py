@@ -16,7 +16,6 @@ from app.prompts import get_system_message, get_user_prompt, load_model_prompt_o
 from app.config import load_machine_config
 from .chapter_helpers import (
     _chapter_by_id_or_404,
-    _normalize_chapter_entry,
     _get_chapter_metadata_entry,
 )
 
@@ -237,14 +236,26 @@ async def _story_generate_story_summary_helper(*, mode: str = "") -> dict:
         raise HTTPException(status_code=400, detail="No active project")
     story_path = active / "story.json"
     story = load_story_config(story_path) or {}
-    chapters_data = [_normalize_chapter_entry(c) for c in story.get("chapters", [])]
+
+    from app.helpers.project_helpers import _project_overview
+
+    ov = _project_overview()
+    p_type = ov.get("project_type", "novel")
+
+    all_chapters = []
+    if p_type == "series":
+        for book in ov.get("books", []):
+            all_chapters.extend(book.get("chapters", []))
+    else:
+        all_chapters = ov.get("chapters", [])
+
     current_story_summary = story.get("story_summary", "")
 
     # Collect all chapter summaries
     chapter_summaries = []
-    for i, chapter in enumerate(chapters_data):
+    for chapter in all_chapters:
         summary = chapter.get("summary", "").strip()
-        title = chapter.get("title", "").strip() or f"Chapter {i + 1}"
+        title = chapter.get("title", "").strip() or f"Chapter {chapter.get('id')}"
         if summary:
             chapter_summaries.append(f"{title}:\n{summary}")
 

@@ -72,22 +72,28 @@ def _project_overview() -> dict:
 
         id_to_meta = {}
         used_m_ids = set()
-        for i, (idx, p) in enumerate(files):
-            fname = p.name
-            f_bid = p.parent.parent.name
-            match = next(
-                (
-                    c
-                    for c in all_meta
-                    if c.get("filename") == fname
-                    and c.get("_parent_book_id") == f_bid
-                    and id(c) not in used_m_ids
-                ),
-                None,
-            )
-            if match:
-                used_m_ids.add(id(match))
-                id_to_meta[idx] = match
+        for bid in [b.get("id") for b in books]:
+            book_files = [(idx, p) for (idx, p) in files if p.parent.parent.name == bid]
+            book_meta = [m for m in all_meta if m.get("_parent_book_id") == bid]
+
+            for i, (idx, p) in enumerate(book_files):
+                fname = p.name
+                match = next(
+                    (
+                        c
+                        for c in book_meta
+                        if c.get("filename") == fname and id(c) not in used_m_ids
+                    ),
+                    None,
+                )
+                if not match and i < len(book_meta):
+                    cand = book_meta[i]
+                    if not cand.get("filename") and id(cand) not in used_m_ids:
+                        match = cand
+
+                if match:
+                    used_m_ids.add(id(match))
+                    id_to_meta[idx] = match
 
         for b in books:
             bid = b.get("id")

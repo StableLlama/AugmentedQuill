@@ -683,7 +683,112 @@ def create_new_book(title: str) -> str:
     _ensure_dir(b_dir / "chapters")
     _ensure_dir(b_dir / "images")
 
+    # Initialize book content file
+    (b_dir / "book_content.md").write_text("", encoding="utf-8")
+
     return bid
+
+
+def update_book_metadata(book_id: str, title: str = None, summary: str = None) -> None:
+    """Update title or summary for a book in a series project."""
+    active = get_active_project_dir()
+    if not active:
+        raise ValueError("No active project")
+
+    story_path = active / "story.json"
+    story = load_story_config(story_path) or {}
+
+    books = story.get("books", [])
+    target = next((b for b in books if b.get("id") == book_id), None)
+    if not target:
+        raise ValueError(f"Book with ID {book_id} not found")
+
+    if title is not None:
+        target["title"] = title
+    if summary is not None:
+        target["summary"] = summary
+
+    story_path.write_text(json.dumps(story, indent=2), encoding="utf-8")
+
+
+def read_book_content(book_id: str) -> str:
+    """Read the overall intro/content for a book from its book_content.md."""
+    active = get_active_project_dir()
+    if not active:
+        raise ValueError("No active project")
+
+    b_dir = active / "books" / book_id
+    c_path = b_dir / "book_content.md"
+    if not c_path.exists():
+        return ""
+    return c_path.read_text(encoding="utf-8")
+
+
+def write_book_content(book_id: str, content: str) -> None:
+    """Write the overall intro/content for a book to its book_content.md."""
+    active = get_active_project_dir()
+    if not active:
+        raise ValueError("No active project")
+
+    b_dir = active / "books" / book_id
+    _ensure_dir(b_dir)
+    c_path = b_dir / "book_content.md"
+    c_path.write_text(content, encoding="utf-8")
+
+
+def update_story_metadata(title: str = None, summary: str = None) -> None:
+    """Update general story metadata."""
+    active = get_active_project_dir()
+    if not active:
+        raise ValueError("No active project")
+
+    story_path = active / "story.json"
+    story = load_story_config(story_path) or {}
+
+    if title is not None:
+        story["project_title"] = title
+    if summary is not None:
+        story["story_summary"] = summary
+
+    story_path.write_text(json.dumps(story, indent=2), encoding="utf-8")
+
+
+def read_story_content() -> str:
+    """Read the story-level content/introduction."""
+    active = get_active_project_dir()
+    if not active:
+        raise ValueError("No active project")
+
+    story = load_story_config(active / "story.json") or {}
+    p_type = story.get("project_type", "novel")
+
+    if p_type == "short-story":
+        fn = story.get("content_file", "content.md")
+        c_path = active / fn
+    else:
+        c_path = active / "story_content.md"
+
+    if not c_path.exists():
+        return ""
+    return c_path.read_text(encoding="utf-8")
+
+
+def write_story_content(content: str) -> None:
+    """Write the story-level content/introduction."""
+    active = get_active_project_dir()
+    if not active:
+        raise ValueError("No active project")
+
+    story = load_story_config(active / "story.json") or {}
+    p_type = story.get("project_type", "novel")
+
+    if p_type == "short-story":
+        fn = story.get("content_file", "content.md")
+        c_path = active / fn
+    else:
+        c_path = active / "story_content.md"
+
+    c_path.write_text(content, encoding="utf-8")
 
 
 def change_project_type(new_type: str) -> Tuple[bool, str]:
