@@ -22,6 +22,9 @@ from app.projects import (
     delete_project,
 )
 from app.helpers.project_helpers import _project_overview, _chapter_content_slice
+from app.helpers.chapter_helpers import (
+    _normalize_chapter_entry,
+)
 from app.helpers.story_helpers import (
     _story_generate_summary_helper,
     _story_write_helper,
@@ -716,6 +719,46 @@ STORY_TOOLS = [
                     },
                 },
                 "required": ["filename"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "reorder_chapters",
+            "description": "Reorder chapters in a novel project or within a specific book in a series project.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "chapter_ids": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "description": "List of chapter IDs in the desired order.",
+                    },
+                    "book_id": {
+                        "type": "string",
+                        "description": "Book ID (required for series projects, omit for novel projects).",
+                    },
+                },
+                "required": ["chapter_ids"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "reorder_books",
+            "description": "Reorder books in a series project.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "book_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of book IDs in the desired order.",
+                    },
+                },
+                "required": ["book_ids"],
             },
         },
     },
@@ -1491,52 +1534,126 @@ async def _exec_chat_tool(
                 "name": name,
                 "content": _json.dumps({"ok": ok, "message": msg}),
             }
-            chap_id = args_obj.get("chap_id")
-            confirmed = args_obj.get("confirm", False)
 
-            if not isinstance(chap_id, int):
-                return {
-                    "role": "tool",
-                    "tool_call_id": call_id,
-                    "name": name,
-                    "content": _json.dumps({"error": "chap_id is required"}),
-                }
-            if not confirmed:
-                return {
-                    "role": "tool",
-                    "tool_call_id": call_id,
-                    "name": name,
-                    "content": _json.dumps(
-                        {
-                            "status": "confirmation_required",
-                            "message": "This operation deletes the chapter. Call again with confirm=true to proceed.",
-                        }
-                    ),
-                }
-            active = get_active_project_dir()
-            if not active:
-                return {
-                    "role": "tool",
-                    "tool_call_id": call_id,
-                    "name": name,
-                    "content": _json.dumps({"error": "No active project"}),
-                }
-            from app.helpers.chapter_helpers import (
-                _scan_chapter_files,
-                _normalize_chapter_entry,
-            )
+        if name == "reorder_chapters":
+            chapter_ids = args_obj.get("chapter_ids", [])
+            book_id = args_obj.get("book_id")
 
-            files = _scan_chapter_files()
-            match = next(
-                ((idx, p, i) for i, (idx, p) in enumerate(files) if idx == chap_id),
-                None,
-            )
-            if not match:
+            if not isinstance(chapter_ids, list):
                 return {
                     "role": "tool",
                     "tool_call_id": call_id,
                     "name": name,
-                    "content": _json.dumps({"error": "Chapter not found"}),
+                    "content": _json.dumps({"error": "chapter_ids must be a list"}),
+                }
+
+            try:
+                # Import the reorder API function
+                from app.api.chapters import api_reorder_chapters
+
+                # We need to create a mock request object
+
+                # Create a mock request with the payload
+                payload = {"chapter_ids": chapter_ids}
+                if book_id:
+                    payload["book_id"] = book_id
+
+                class MockRequest:
+                    async def json(self):
+                        return payload
+
+                mock_request = MockRequest()
+                result = await api_reorder_chapters(mock_request)
+
+                if result.status_code == 200:
+                    mutations["story_changed"] = True
+                    return {
+                        "role": "tool",
+                        "tool_call_id": call_id,
+                        "name": name,
+                        "content": _json.dumps(
+                            {"ok": True, "message": "Chapters reordered successfully"}
+                        ),
+                    }
+                else:
+                    return {
+                        "role": "tool",
+                        "tool_call_id": call_id,
+                        "name": name,
+                        "content": _json.dumps(
+                            {
+                                "error": (
+                                    result.body.decode()
+                                    if hasattr(result, "body")
+                                    else "Reorder failed"
+                                )
+                            }
+                        ),
+                    }
+            except Exception as e:
+                return {
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "name": name,
+                    "content": _json.dumps({"error": str(e)}),
+                }
+
+        if name == "reorder_books":
+            book_ids = args_obj.get("book_ids", [])
+
+            if not isinstance(book_ids, list):
+                return {
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "name": name,
+                    "content": _json.dumps({"error": "book_ids must be a list"}),
+                }
+
+            try:
+                # Import the reorder API function
+                from app.api.chapters import api_reorder_books
+
+                # We need to create a mock request object
+
+                # Create a mock request with the payload
+                class MockRequest:
+                    async def json(self):
+                        return {"book_ids": book_ids}
+
+                mock_request = MockRequest()
+                result = await api_reorder_books(mock_request)
+
+                if result.status_code == 200:
+                    mutations["story_changed"] = True
+                    return {
+                        "role": "tool",
+                        "tool_call_id": call_id,
+                        "name": name,
+                        "content": _json.dumps(
+                            {"ok": True, "message": "Books reordered successfully"}
+                        ),
+                    }
+                else:
+                    return {
+                        "role": "tool",
+                        "tool_call_id": call_id,
+                        "name": name,
+                        "content": _json.dumps(
+                            {
+                                "error": (
+                                    result.body.decode()
+                                    if hasattr(result, "body")
+                                    else "Reorder failed"
+                                )
+                            }
+                        ),
+                    }
+            except Exception as e:
+                return {
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "name": name,
+                    "content": _json.dumps({"error": str(e)}),
                 }
             _, path, pos = match
             # Delete the file

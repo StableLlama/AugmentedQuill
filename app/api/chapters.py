@@ -39,40 +39,38 @@ async def api_chapters() -> dict:
         chapters_data = [_normalize_chapter_entry(c) for c in story.get("chapters", [])]
 
     result = []
-    # Note: This assumes 1-to-1 mapping between file scan order and metadata order.
-    # scan_chapters_files for Series iterates books then files.
-    # Metadata iteration above iterates books then chapters.
-    # If a file exists but metadata is missing, we pad.
-    # If metadata exists but file is missing, scan skips file, so we might lose sync if we just zip.
-    # Ideally we should match by filename if possible.
-    # But files return (id, path). Path has filename.
-    # Metadata for Series currently stores filename? create_new_chapter adds "filename".
+    used_metadata_ids = set()
 
     for i, (idx, p) in enumerate(files):
         # Try to find metadata by filename matching if possible
         fname = p.name
         match_data = None
 
-        # Simple heuristic: try index first, checking if filename matches
-        if i < len(chapters_data):
-            candidate = chapters_data[i]
-            # If candidate has filename and it matches
-            if candidate.get("filename") == fname:
-                match_data = candidate
-            elif not candidate.get("filename"):
-                # If metadata has no filename (legacy or manual edit), assume index match
-                match_data = candidate
+        # 1. Try filename match
+        match_data = next(
+            (
+                c
+                for c in chapters_data
+                if c.get("filename") == fname and id(c) not in used_metadata_ids
+            ),
+            None,
+        )
 
-        # If strict index match failed or wasn't trusted, search?
-        # Searching is safer but O(N^2). N is small.
-        if not match_data:
-            match_data = next(
-                (c for c in chapters_data if c.get("filename") == fname), None
-            )
-
-        # Fallback to index if still no match and valid index
+        # 2. Simple heuristic: try index first, checking if filename matches or is empty
         if not match_data and i < len(chapters_data):
-            match_data = chapters_data[i]
+            candidate = chapters_data[i]
+            if id(candidate) not in used_metadata_ids:
+                if candidate.get("filename") == fname or not candidate.get("filename"):
+                    match_data = candidate
+
+        # 3. Fallback to index if still no match and valid index
+        if not match_data and i < len(chapters_data):
+            candidate = chapters_data[i]
+            if id(candidate) not in used_metadata_ids:
+                match_data = candidate
+
+        if match_data:
+            used_metadata_ids.add(id(match_data))
 
         chap_entry = match_data or {"title": "", "summary": ""}
 
@@ -117,11 +115,48 @@ async def api_chapter_content(chap_id: int = FastAPIPath(..., ge=0)) -> dict:
 
     active = get_active_project_dir()
     story = load_story_config((active / "story.json") if active else None) or {}
-    chapters_data = [_normalize_chapter_entry(c) for c in story.get("chapters", [])]
+    p_type = story.get("project_type", "novel")
 
-    chap_entry = (
-        chapters_data[pos] if pos < len(chapters_data) else {"title": "", "summary": ""}
-    )
+    # Robust metadata matching matching api_chapters()
+    chapters_data = []
+    if p_type == "series":
+        for book in story.get("books", []):
+            for c in book.get("chapters", []):
+                chapters_data.append(_normalize_chapter_entry(c))
+    else:
+        chapters_data = [_normalize_chapter_entry(c) for c in story.get("chapters", [])]
+
+    # Find the specific metadata for THIS file using the same logic as the list endpoint
+    used_metadata_ids = set()
+    chap_entry = None
+    for i, (f_idx, f_p) in enumerate(files):
+        fname = f_p.name
+        match_data = next(
+            (
+                c
+                for c in chapters_data
+                if c.get("filename") == fname and id(c) not in used_metadata_ids
+            ),
+            None,
+        )
+        if not match_data and i < len(chapters_data):
+            candidate = chapters_data[i]
+            if id(candidate) not in used_metadata_ids:
+                if candidate.get("filename") == fname or not candidate.get("filename"):
+                    match_data = candidate
+        if not match_data and i < len(chapters_data):
+            candidate = chapters_data[i]
+            if id(candidate) not in used_metadata_ids:
+                match_data = candidate
+
+        if match_data:
+            used_metadata_ids.add(id(match_data))
+
+        if f_idx == chap_id:
+            chap_entry = match_data
+            break
+
+    chap_entry = chap_entry or {"title": "", "summary": ""}
 
     # Consistent fallback logic with the list endpoint
     raw_title = (chap_entry.get("title") or "").strip()
@@ -154,9 +189,7 @@ async def api_chapter_content(chap_id: int = FastAPIPath(..., ge=0)) -> dict:
 async def api_update_chapter_title(
     request: Request, chap_id: int = FastAPIPath(..., ge=0)
 ) -> JSONResponse:
-    """Update the title of a chapter in the active project's story.json.
-    The title positions correspond to the sorted chapter files list.
-    """
+    """Update the title of a chapter in the active project's story.json."""
     active = get_active_project_dir()
     if not active:
         return JSONResponse(
@@ -186,24 +219,106 @@ async def api_update_chapter_title(
 
     story_path = active / "story.json"
     story = load_story_config(story_path) or {}
-    chapters_data = story.get("chapters") or []
+    p_type = story.get("project_type", "novel")
 
-    # Ensure chapters_data is a list of dicts, and pad if necessary
-    count = len(files)
-    chapters_data = [_normalize_chapter_entry(c) for c in chapters_data]
-    if len(chapters_data) < count:
-        chapters_data.extend(
-            [{"title": "", "summary": ""}] * (count - len(chapters_data))
-        )
+    # Find and update the correct entry
+    target_entry = None
+    if p_type == "series":
+        book_id = path.parent.parent.name
+        book = next((b for b in story.get("books", []) if b.get("id") == book_id), None)
+        if not book:
+            return JSONResponse(
+                status_code=404, content={"ok": False, "detail": "Book not found"}
+            )
 
-    # Update title at position
-    if pos < len(chapters_data):
-        chapters_data[pos]["title"] = new_title_str
+        # Consistent matching logic
+        book_chapters = book.get("chapters", [])
+        book_files = [f for f in files if f[1].parent.parent.name == book_id]
+
+        used_ids = set()
+        for i, (f_idx, f_p) in enumerate(book_files):
+            fname = f_p.name
+            curr_match = next(
+                (
+                    c
+                    for c in book_chapters
+                    if isinstance(c, dict)
+                    and c.get("filename") == fname
+                    and id(c) not in used_ids
+                ),
+                None,
+            )
+            if not curr_match and i < len(book_chapters):
+                candidate = book_chapters[i]
+                if id(candidate) not in used_ids:
+                    if (
+                        not isinstance(candidate, dict)
+                        or not candidate.get("filename")
+                        or candidate.get("filename") == fname
+                    ):
+                        curr_match = candidate
+
+            if curr_match:
+                used_ids.add(id(curr_match))
+                if f_idx == chap_id:
+                    if not isinstance(curr_match, dict):
+                        # Convert to dict if it was a string
+                        idx_in_book = book_chapters.index(curr_match)
+                        curr_match = {
+                            "title": str(curr_match),
+                            "summary": "",
+                            "filename": fname,
+                        }
+                        book_chapters[idx_in_book] = curr_match
+                    target_entry = curr_match
+                    break
     else:
-        # This case should ideally not happen if padding is correct
-        chapters_data.append({"title": new_title_str, "summary": ""})
+        chapters_data = story.get("chapters") or []
+        used_ids = set()
+        for i, (f_idx, f_p) in enumerate(files):
+            fname = f_p.name
+            curr_match = next(
+                (
+                    c
+                    for c in chapters_data
+                    if isinstance(c, dict)
+                    and c.get("filename") == fname
+                    and id(c) not in used_ids
+                ),
+                None,
+            )
+            if not curr_match and i < len(chapters_data):
+                candidate = chapters_data[i]
+                if id(candidate) not in used_ids:
+                    if (
+                        not isinstance(candidate, dict)
+                        or not candidate.get("filename")
+                        or candidate.get("filename") == fname
+                    ):
+                        curr_match = candidate
 
-    story["chapters"] = chapters_data
+            if curr_match:
+                used_ids.add(id(curr_match))
+                if f_idx == chap_id:
+                    if not isinstance(curr_match, dict):
+                        idx_in_root = chapters_data.index(curr_match)
+                        curr_match = {
+                            "title": str(curr_match),
+                            "summary": "",
+                            "filename": fname,
+                        }
+                        chapters_data[idx_in_root] = curr_match
+                    target_entry = curr_match
+                    break
+        story["chapters"] = chapters_data
+
+    if target_entry is not None:
+        target_entry["title"] = new_title_str
+    else:
+        # If we reached here, something is out of sync, fallback to creating an entry
+        # or doing nothing if we can't find where to put it.
+        pass
+
     try:
         story_path.write_text(_json.dumps(story, indent=2), encoding="utf-8")
     except Exception as e:
@@ -212,18 +327,15 @@ async def api_update_chapter_title(
             content={"ok": False, "detail": f"Failed to write story.json: {e}"},
         )
 
-    # Respond with updated descriptor
-    # Get the summary for response
-    summary_for_response = chapters_data[pos].get("summary") or ""
     return JSONResponse(
         status_code=200,
         content={
             "ok": True,
             "chapter": {
-                "id": files[pos][0],
+                "id": chap_id,
                 "title": new_title_str or path.name,
                 "filename": path.name,
-                "summary": summary_for_response,
+                "summary": (target_entry.get("summary") or "") if target_entry else "",
             },
         },
     )
@@ -362,23 +474,105 @@ async def api_update_chapter_summary(
     # Load and normalize story.json
     story_path = active / "story.json"
     story = load_story_config(story_path) or {}
-    chapters_data = story.get("chapters") or []
-    chapters_data = [_normalize_chapter_entry(c) for c in chapters_data]
+    p_type = story.get("project_type", "novel")
 
-    # Ensure alignment with number of files
-    count = len(files)
-    if len(chapters_data) < count:
-        chapters_data.extend(
-            [{"title": "", "summary": ""}] * (count - len(chapters_data))
-        )
+    # Find and update the correct entry
+    target_entry = None
+    if p_type == "series":
+        book_id = path.parent.parent.name
+        book = next((b for b in story.get("books", []) if b.get("id") == book_id), None)
+        if not book:
+            return JSONResponse(
+                status_code=404, content={"ok": False, "detail": "Book not found"}
+            )
 
-    # Update summary at position
-    if pos < len(chapters_data):
-        chapters_data[pos]["summary"] = new_summary
+        # Consistent matching logic
+        book_chapters = book.get("chapters", [])
+        book_files = [f for f in files if f[1].parent.parent.name == book_id]
+
+        used_ids = set()
+        for i, (f_idx, f_p) in enumerate(book_files):
+            fname = f_p.name
+            curr_match = next(
+                (
+                    c
+                    for c in book_chapters
+                    if isinstance(c, dict)
+                    and c.get("filename") == fname
+                    and id(c) not in used_ids
+                ),
+                None,
+            )
+            if not curr_match and i < len(book_chapters):
+                candidate = book_chapters[i]
+                if id(candidate) not in used_ids:
+                    if (
+                        not isinstance(candidate, dict)
+                        or not candidate.get("filename")
+                        or candidate.get("filename") == fname
+                    ):
+                        curr_match = candidate
+
+            if curr_match:
+                used_ids.add(id(curr_match))
+                if f_idx == chap_id:
+                    if not isinstance(curr_match, dict):
+                        # Convert to dict if it was a string
+                        idx_in_book = book_chapters.index(curr_match)
+                        curr_match = {
+                            "title": str(curr_match),
+                            "summary": "",
+                            "filename": fname,
+                        }
+                        book_chapters[idx_in_book] = curr_match
+                    target_entry = curr_match
+                    break
     else:
-        chapters_data.append({"title": "", "summary": new_summary})
+        chapters_data = story.get("chapters") or []
+        used_ids = set()
+        for i, (f_idx, f_p) in enumerate(files):
+            fname = f_p.name
+            curr_match = next(
+                (
+                    c
+                    for c in chapters_data
+                    if isinstance(c, dict)
+                    and c.get("filename") == fname
+                    and id(c) not in used_ids
+                ),
+                None,
+            )
+            if not curr_match and i < len(chapters_data):
+                candidate = chapters_data[i]
+                if id(candidate) not in used_ids:
+                    if (
+                        not isinstance(candidate, dict)
+                        or not candidate.get("filename")
+                        or candidate.get("filename") == fname
+                    ):
+                        curr_match = candidate
 
-    story["chapters"] = chapters_data
+            if curr_match:
+                used_ids.add(id(curr_match))
+                if f_idx == chap_id:
+                    if not isinstance(curr_match, dict):
+                        idx_in_root = chapters_data.index(curr_match)
+                        curr_match = {
+                            "title": str(curr_match),
+                            "summary": "",
+                            "filename": fname,
+                        }
+                        chapters_data[idx_in_root] = curr_match
+                    target_entry = curr_match
+                    break
+        story["chapters"] = chapters_data
+
+    if target_entry is not None:
+        target_entry["summary"] = new_summary
+    else:
+        # Fallback if synchronization failed
+        pass
+
     try:
         story_path.write_text(_json.dumps(story, indent=2), encoding="utf-8")
     except Exception as e:
@@ -387,13 +581,15 @@ async def api_update_chapter_summary(
             content={"ok": False, "detail": f"Failed to write story.json: {e}"},
         )
 
-    title_for_response = chapters_data[pos].get("title") or path.name
+    title_for_response = (
+        (target_entry.get("title") or path.name) if target_entry else path.name
+    )
     return JSONResponse(
         status_code=200,
         content={
             "ok": True,
             "chapter": {
-                "id": files[pos][0],
+                "id": chap_id,
                 "title": title_for_response,
                 "filename": path.name,
                 "summary": new_summary,
@@ -430,24 +626,398 @@ async def api_delete_chapter(chap_id: int = FastAPIPath(..., ge=0)) -> JSONRespo
             content={"ok": False, "detail": f"Failed to delete chapter file: {e}"},
         )
 
-    # Update story.json: remove the entry at position
+    # Update story.json
     story_path = active / "story.json"
     story = load_story_config(story_path) or {}
-    chapters_data = story.get("chapters") or []
-    chapters_data = [_normalize_chapter_entry(c) for c in chapters_data]
+    p_type = story.get("project_type", "novel")
 
-    # Ensure alignment with number of files (before deletion)
-    count = len(files)
-    if len(chapters_data) < count:
-        chapters_data.extend(
-            [{"title": "", "summary": ""}] * (count - len(chapters_data))
+    if p_type == "series":
+        book_id = path.parent.parent.name
+        book = next((b for b in story.get("books", []) if b.get("id") == book_id), None)
+        if book:
+            book_chapters = book.get("chapters", [])
+            book_files = [f for f in files if f[1].parent.parent.name == book_id]
+
+            # Find which entry to remove using identity matching
+            target_id = None
+            used_ids = set()
+            for i, (f_idx, f_p) in enumerate(book_files):
+                fname = f_p.name
+                curr_match = next(
+                    (
+                        c
+                        for c in book_chapters
+                        if isinstance(c, dict)
+                        and c.get("filename") == fname
+                        and id(c) not in used_ids
+                    ),
+                    None,
+                )
+                if not curr_match and i < len(book_chapters):
+                    candidate = book_chapters[i]
+                    if id(candidate) not in used_ids:
+                        if (
+                            not isinstance(candidate, dict)
+                            or not candidate.get("filename")
+                            or candidate.get("filename") == fname
+                        ):
+                            curr_match = candidate
+
+                if curr_match:
+                    used_ids.add(id(curr_match))
+                    if f_idx == chap_id:
+                        target_id = id(curr_match)
+                        break
+
+            if target_id:
+                book["chapters"] = [c for c in book_chapters if id(c) != target_id]
+    else:
+        chapters_data = story.get("chapters") or []
+        used_ids = set()
+        target_id = None
+        for i, (f_idx, f_p) in enumerate(files):
+            fname = f_p.name
+            curr_match = next(
+                (
+                    c
+                    for c in chapters_data
+                    if isinstance(c, dict)
+                    and c.get("filename") == fname
+                    and id(c) not in used_ids
+                ),
+                None,
+            )
+            if not curr_match and i < len(chapters_data):
+                candidate = chapters_data[i]
+                if id(candidate) not in used_ids:
+                    if (
+                        not isinstance(candidate, dict)
+                        or not candidate.get("filename")
+                        or candidate.get("filename") == fname
+                    ):
+                        curr_match = candidate
+
+            if curr_match:
+                used_ids.add(id(curr_match))
+                if f_idx == chap_id:
+                    target_id = id(curr_match)
+                    break
+
+        if target_id:
+            story["chapters"] = [c for c in chapters_data if id(c) != target_id]
+
+    try:
+        story_path.write_text(_json.dumps(story, indent=2), encoding="utf-8")
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"ok": False, "detail": f"Failed to update story.json: {e}"},
         )
 
-    # Remove the entry at position
-    if pos < len(chapters_data):
-        chapters_data.pop(pos)
+    return JSONResponse(status_code=200, content={"ok": True})
 
-    story["chapters"] = chapters_data
+
+@router.post("/api/chapters/reorder")
+async def api_reorder_chapters(request: Request) -> JSONResponse:
+    """Reorder chapters in a novel project or within a book in a series project.
+    Body: {"chapter_ids": [id1, id2, ...]} for novel projects
+    Body: {"book_id": "book_id", "chapter_ids": [id1, id2, ...]} for series projects
+    """
+    active = get_active_project_dir()
+    if not active:
+        return JSONResponse(
+            status_code=400, content={"ok": False, "detail": "No active project"}
+        )
+
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+
+    story_path = active / "story.json"
+    story = load_story_config(story_path) or {}
+    p_type = story.get("project_type", "novel")
+
+    if p_type == "series":
+        book_id = payload.get("book_id")
+        if not book_id:
+            return JSONResponse(
+                status_code=400,
+                content={"ok": False, "detail": "book_id required for series projects"},
+            )
+
+        chapter_ids = payload.get("chapter_ids", [])
+        if not isinstance(chapter_ids, list):
+            return JSONResponse(
+                status_code=400,
+                content={"ok": False, "detail": "chapter_ids must be a list"},
+            )
+
+        # Find the book
+        books = story.get("books", [])
+        book = next((b for b in books if b.get("id") == book_id), None)
+        if not book:
+            return JSONResponse(
+                status_code=404, content={"ok": False, "detail": "Book not found"}
+            )
+
+        # Reorder chapters within the book using global IDs
+        from app.helpers.chapter_helpers import _scan_chapter_files
+
+        files = _scan_chapter_files()
+
+        # Get (idx, path) for this book only
+        book_files = [(idx, p) for idx, p in files if p.parent.parent.name == book_id]
+
+        # Correlate files with metadata for THIS book
+        book_chapters = book.get("chapters", [])
+
+        # To match precisely, we'll build a list of (idx, path, metadata)
+        # using the same matching logic as api_chapters() but limited to this book.
+        triplets = []
+        used_metadata_ids = set()  # Track by id() to handle identical-looking dicts
+
+        for i, (idx, p) in enumerate(book_files):
+            fname = p.name
+            match_data = None
+
+            # 1. Try filename match
+            match_data = next(
+                (
+                    c
+                    for c in book_chapters
+                    if c.get("filename") == fname and id(c) not in used_metadata_ids
+                ),
+                None,
+            )
+
+            # 2. Try heuristic (index match if no specific filename assigned or matching)
+            if not match_data and i < len(book_chapters):
+                candidate = book_chapters[i]
+                if id(candidate) not in used_metadata_ids:
+                    if (
+                        not candidate.get("filename")
+                        or candidate.get("filename") == fname
+                    ):
+                        match_data = candidate
+
+            # 3. Fallback to any unused metadata at this index position
+            if not match_data and i < len(book_chapters):
+                candidate = book_chapters[i]
+                if id(candidate) not in used_metadata_ids:
+                    match_data = candidate
+
+            if match_data:
+                used_metadata_ids.add(id(match_data))
+
+            triplets.append(
+                (idx, p, match_data or {"title": "", "summary": "", "filename": fname})
+            )
+
+        # Now sort the triplets according to the provided chapter_ids
+        # Any idx not in chapter_ids stays at the end in its original relative order
+        reordered_triplets = sorted(
+            triplets,
+            key=lambda x: (
+                chapter_ids.index(x[0])
+                if x[0] in chapter_ids
+                else len(chapter_ids) + book_files.index((x[0], x[1]))
+            ),
+        )
+
+        # Build the new reordered_chapters metadata list
+        reordered_chapters = [t[2] for t in reordered_triplets]
+
+        # Add any remaining metadata that wasn't matched to a file (safety)
+        for chap in book_chapters:
+            if not any(chap is t[2] for t in reordered_triplets):
+                reordered_chapters.append(chap)
+
+        # Update filenames and rename files
+        chapters_dir = active / "books" / book_id / "chapters"
+        temp_renames = []
+        final_renames = []
+
+        for i, triplet in enumerate(reordered_triplets):
+            idx, old_path, chap = triplet
+            new_filename = f"{i+1:04d}.txt"
+            chap["filename"] = new_filename
+
+            temp_path = chapters_dir / f"temp_{new_filename}"
+            new_path = chapters_dir / new_filename
+            temp_renames.append((old_path, temp_path))
+            final_renames.append((temp_path, new_path))
+
+        # Execute renames
+        for old_p, temp_p in temp_renames:
+            if old_p.exists():
+                old_p.rename(temp_p)
+        for temp_p, new_p in final_renames:
+            if temp_p.exists():
+                temp_p.rename(new_p)
+
+        book["chapters"] = reordered_chapters
+
+    else:  # novel or short-story
+        chapter_ids = payload.get("chapter_ids", [])
+        if not isinstance(chapter_ids, list):
+            return JSONResponse(
+                status_code=400,
+                content={"ok": False, "detail": "chapter_ids must be a list"},
+            )
+
+        # For novel projects, reorder the chapters array
+        chapters_data = story.get("chapters", [])
+        chapters_data = [_normalize_chapter_entry(c) for c in chapters_data]
+
+        from app.helpers.chapter_helpers import _scan_chapter_files
+
+        files = _scan_chapter_files()
+
+        # Correlate files with metadata using the SAME logic as api_chapters()
+        triplets = []
+        used_metadata_ids = set()
+
+        for i, (idx, p) in enumerate(files):
+            fname = p.name
+            match_data = None
+
+            # 1. Try filename match
+            match_data = next(
+                (
+                    c
+                    for c in chapters_data
+                    if c.get("filename") == fname and id(c) not in used_metadata_ids
+                ),
+                None,
+            )
+
+            # 2. Try heuristic (index match if no specific filename assigned or matching)
+            if not match_data and i < len(chapters_data):
+                candidate = chapters_data[i]
+                if id(candidate) not in used_metadata_ids:
+                    if (
+                        not candidate.get("filename")
+                        or candidate.get("filename") == fname
+                    ):
+                        match_data = candidate
+
+            # 3. Fallback to any unused metadata at this index position
+            if not match_data and i < len(chapters_data):
+                candidate = chapters_data[i]
+                if id(candidate) not in used_metadata_ids:
+                    match_data = candidate
+
+            if match_data:
+                used_metadata_ids.add(id(match_data))
+
+            triplets.append(
+                (idx, p, match_data or {"title": "", "summary": "", "filename": fname})
+            )
+
+        # Reorder based on provided chapter_ids
+        reordered_triplets = sorted(
+            triplets,
+            key=lambda x: (
+                chapter_ids.index(x[0])
+                if x[0] in chapter_ids
+                else len(chapter_ids) + files.index((x[0], x[1]))
+            ),
+        )
+
+        # New reordered metadata list
+        reordered_chapters = [t[2] for t in reordered_triplets]
+
+        # Add any metadata that wasn't matched (safety)
+        for chap in chapters_data:
+            if not any(chap is t[2] for t in reordered_triplets):
+                reordered_chapters.append(chap)
+
+        # Update filenames and rename files
+        chapters_dir = active / "chapters"
+        temp_renames = []
+        final_renames = []
+        for i, triplet in enumerate(reordered_triplets):
+            idx, old_path, chap = triplet
+            new_filename = f"{i+1:04d}.txt"
+            chap["filename"] = new_filename
+
+            temp_path = chapters_dir / f"temp_{new_filename}"
+            new_path = chapters_dir / new_filename
+            temp_renames.append((old_path, temp_path))
+            final_renames.append((temp_path, new_path))
+
+        # Execute renames
+        for old_p, temp_p in temp_renames:
+            if old_p.exists():
+                old_p.rename(temp_p)
+        for temp_p, new_p in final_renames:
+            if temp_p.exists():
+                temp_p.rename(new_p)
+
+        story["chapters"] = reordered_chapters
+
+    # Save the updated story
+    try:
+        story_path.write_text(_json.dumps(story, indent=2), encoding="utf-8")
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"ok": False, "detail": f"Failed to update story.json: {e}"},
+        )
+
+    return JSONResponse(status_code=200, content={"ok": True})
+
+
+@router.post("/api/books/reorder")
+async def api_reorder_books(request: Request) -> JSONResponse:
+    """Reorder books in a series project.
+    Body: {"book_ids": [id1, id2, ...]}
+    """
+    active = get_active_project_dir()
+    if not active:
+        return JSONResponse(
+            status_code=400, content={"ok": False, "detail": "No active project"}
+        )
+
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+
+    book_ids = payload.get("book_ids", [])
+    if not isinstance(book_ids, list):
+        return JSONResponse(
+            status_code=400, content={"ok": False, "detail": "book_ids must be a list"}
+        )
+
+    story_path = active / "story.json"
+    story = load_story_config(story_path) or {}
+    p_type = story.get("project_type", "novel")
+
+    if p_type != "series":
+        return JSONResponse(
+            status_code=400,
+            content={
+                "ok": False,
+                "detail": "Books reordering only available for series projects",
+            },
+        )
+
+    books = story.get("books", [])
+
+    # Create a mapping of book IDs to books
+    book_map = {b.get("id"): b for b in books}
+
+    # Reorder based on provided IDs
+    reordered_books = []
+    for book_id in book_ids:
+        if book_id in book_map:
+            reordered_books.append(book_map[book_id])
+
+    story["books"] = reordered_books
+
+    # Save the updated story
     try:
         story_path.write_text(_json.dumps(story, indent=2), encoding="utf-8")
     except Exception as e:

@@ -313,3 +313,117 @@ class ProjectFeaturesTest(TestCase):
         imported_path = self.projects_root / "API Imported"
         self.assertTrue(imported_path.exists())
         self.assertTrue((imported_path / "story.json").exists())
+
+    def test_reorder_chapters_in_novel(self):
+        """Test reordering chapters in a novel project"""
+        # 1. Create Novel project with multiple chapters
+        create_project("test_reorder_novel", project_type="novel")
+        select_project("test_reorder_novel")
+        active = get_active_project_dir()
+
+        # Create chapters
+        (active / "chapters").mkdir(exist_ok=True)
+        (active / "chapters" / "0001.txt").write_text("Chapter 1", encoding="utf-8")
+        (active / "chapters" / "0002.txt").write_text("Chapter 2", encoding="utf-8")
+        (active / "chapters" / "0003.txt").write_text("Chapter 3", encoding="utf-8")
+
+        # Update story.json with chapter metadata
+        story = load_story_config(active / "story.json")
+        story["chapters"] = [
+            {"title": "Chapter 1", "summary": ""},
+            {"title": "Chapter 2", "summary": ""},
+            {"title": "Chapter 3", "summary": ""},
+        ]
+        (active / "story.json").write_text(json.dumps(story), encoding="utf-8")
+
+        # 2. Test reorder API
+        response = self.client.post(
+            "/api/chapters/reorder", json={"chapter_ids": [3, 1, 2]}
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["ok"])
+
+        # 3. Verify the order changed
+        story = load_story_config(active / "story.json")
+        chapters = story["chapters"]
+        self.assertEqual(len(chapters), 3)
+        self.assertEqual(chapters[0]["title"], "Chapter 3")
+        self.assertEqual(chapters[1]["title"], "Chapter 1")
+        self.assertEqual(chapters[2]["title"], "Chapter 2")
+
+    def test_reorder_chapters_in_series(self):
+        """Test reordering chapters within a book in a series project"""
+        # 1. Create Series project
+        create_project("test_reorder_series_chaps", project_type="series")
+        select_project("test_reorder_series_chaps")
+        active = get_active_project_dir()
+
+        # Create a book
+        from app.projects import create_new_book, create_new_chapter
+
+        book_id = create_new_book("Book 1")
+
+        # Create 3 chapters in that book
+        c1_id = create_new_chapter("Chap 1", book_id=book_id)
+        c2_id = create_new_chapter("Chap 2", book_id=book_id)
+        c3_id = create_new_chapter("Chap 3", book_id=book_id)
+
+        # 2. Reorder them [2, 3, 1]
+        response = self.client.post(
+            "/api/chapters/reorder",
+            json={"book_id": book_id, "chapter_ids": [c2_id, c3_id, c1_id]},
+        )
+        self.assertEqual(response.status_code, 200)
+
+        # 3. Verify order in story.json
+        story = load_story_config(active / "story.json")
+        chaps = story["books"][0]["chapters"]
+        self.assertEqual(len(chaps), 3)
+        self.assertEqual(chaps[0]["title"], "Chap 2")
+        self.assertEqual(chaps[1]["title"], "Chap 3")
+        self.assertEqual(chaps[2]["title"], "Chap 1")
+
+        # 4. Verify files on disk match the new order
+        book_dir = active / "books" / book_id / "chapters"
+        self.assertEqual(
+            (book_dir / "0001.txt").read_text(encoding="utf-8"), ""
+        )  # Newly created chapters are empty
+        # Wait, create_new_chapter might have written content if we passed it.
+        # But we mostly care that the filenames were updated correctly in story.json
+        # and match what api_chapters would return.
+
+        # Check that files were renamed correctly
+        self.assertEqual(chaps[0]["filename"], "0001.txt")
+        self.assertEqual(chaps[1]["filename"], "0002.txt")
+        self.assertEqual(chaps[2]["filename"], "0003.txt")
+
+    def test_reorder_books_in_series(self):
+        """Test reordering books in a series project"""
+        # 1. Create Series project with multiple books
+        create_project("test_reorder_series", project_type="series")
+        select_project("test_reorder_series")
+        active = get_active_project_dir()
+
+        # Create books
+        from app.projects import create_new_book
+
+        book1_id = create_new_book("Book 1")
+        book2_id = create_new_book("Book 2")
+        book3_id = create_new_book("Book 3")
+
+        # 2. Test reorder API
+        response = self.client.post(
+            "/api/books/reorder", json={"book_ids": [book3_id, book1_id, book2_id]}
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["ok"])
+
+        # 3. Verify the order changed
+        story = load_story_config(active / "story.json")
+        books = story["books"]
+        self.assertEqual(len(books), 3)
+        self.assertEqual(books[0]["title"], "Book 3")
+        self.assertEqual(books[1]["title"], "Book 1")
+        self.assertEqual(books[2]["title"], "Book 2")

@@ -104,7 +104,7 @@ export const useStory = () => {
       };
       loadContent();
     }
-  }, [currentChapterId]);
+  }, [currentChapterId, story.lastUpdated]);
 
   const fetchStory = useCallback(async () => {
     if (story.id) return; // Already loaded
@@ -230,6 +230,7 @@ export const useStory = () => {
         ...story,
         chapters: newChapters,
         currentChapterId: newChapter.id,
+        lastUpdated: Date.now(),
       };
       pushState(newState);
     } catch (e) {
@@ -248,6 +249,7 @@ export const useStory = () => {
         ...story,
         chapters: newChapters,
         currentChapterId: newSelection,
+        lastUpdated: Date.now(),
       };
       pushState(newState);
     } catch (e) {

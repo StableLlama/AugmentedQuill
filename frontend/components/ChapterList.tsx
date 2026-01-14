@@ -5,7 +5,7 @@
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Chapter, Book, AppTheme } from '../types';
 import {
   Plus,
@@ -26,6 +26,8 @@ interface ChapterListProps {
   onCreate: (bookId?: string) => void;
   onBookCreate?: (title: string) => void;
   onBookDelete?: (id: string) => void;
+  onReorderChapters?: (chapterIds: number[], bookId?: string) => void;
+  onReorderBooks?: (bookIds: string[]) => void;
   theme?: AppTheme;
   onOpenImages?: () => void;
 }
@@ -40,6 +42,8 @@ export const ChapterList: React.FC<ChapterListProps> = ({
   onCreate,
   onBookCreate,
   onBookDelete,
+  onReorderChapters,
+  onReorderBooks,
   theme = 'mixed',
   onOpenImages,
 }) => {
@@ -47,6 +51,132 @@ export const ChapterList: React.FC<ChapterListProps> = ({
   const [expandedBooks, setExpandedBooks] = useState<Record<string, boolean>>({});
   const [newBookTitle, setNewBookTitle] = useState('');
   const [isCreatingBook, setIsCreatingBook] = useState(false);
+
+  // Drag & drop state
+  const [draggedItem, setDraggedItem] = useState<{
+    type: 'chapter' | 'book';
+    id: string;
+    bookId?: string;
+    originalIndex: number;
+  } | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [optimisticChapters, setOptimisticChapters] = useState<Chapter[] | null>(null);
+  const [optimisticBooks, setOptimisticBooks] = useState<Book[] | null>(null);
+
+  // Clear optimistic state when props update
+  useEffect(() => {
+    setOptimisticChapters(null);
+  }, [chapters]);
+
+  useEffect(() => {
+    setOptimisticBooks(null);
+  }, [books]);
+
+  // Derived reordering for "live" preview
+  const moveInArray = <T,>(arr: T[], from: number, to: number): T[] => {
+    if (from === to || from === -1 || to === -1) return arr;
+    const result = [...arr];
+    const [removed] = result.splice(from, 1);
+    result.splice(to, 0, removed);
+    return result;
+  };
+
+  let displayChapters = optimisticChapters || chapters;
+  let displayBooks = optimisticBooks || books;
+
+  if (draggedItem && dragOverIndex !== null) {
+    if (draggedItem.type === 'chapter') {
+      if (projectType === 'series') {
+        const bookChapters = chapters.filter((c) => c.book_id === draggedItem.bookId);
+        const reordered = moveInArray(
+          bookChapters,
+          draggedItem.originalIndex,
+          dragOverIndex
+        );
+        displayChapters = chapters.map((c) => {
+          if (c.book_id !== draggedItem.bookId) return c;
+          const subIdx = bookChapters.findIndex((sc) => sc.id === c.id);
+          return reordered[subIdx];
+        });
+      } else {
+        displayChapters = moveInArray(
+          chapters,
+          draggedItem.originalIndex,
+          dragOverIndex
+        );
+      }
+    } else if (draggedItem.type === 'book') {
+      displayBooks = moveInArray(books, draggedItem.originalIndex, dragOverIndex);
+    }
+  }
+
+  // Drag & drop handlers
+  const handleDragStart = (
+    e: React.DragEvent,
+    type: 'chapter' | 'book',
+    id: string,
+    index: number,
+    bookId?: string
+  ) => {
+    setDraggedItem({ type, id, bookId, originalIndex: index });
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragEnter = (index: number) => {
+    if (dragOverIndex !== index) {
+      setDragOverIndex(index);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    const targetIdx = dragOverIndex;
+    const dragged = draggedItem;
+
+    if (!dragged || targetIdx === null || targetIdx === dragged.originalIndex) {
+      setDragOverIndex(null);
+      setDraggedItem(null);
+      return;
+    }
+
+    if (dragged.type === 'chapter') {
+      if (projectType === 'series') {
+        if (dragged.bookId && onReorderChapters) {
+          const bookChaptersFinal = displayChapters.filter(
+            (c) => c.book_id === dragged.bookId
+          );
+          const chapterIds = bookChaptersFinal.map((c) => parseInt(c.id));
+          setOptimisticChapters(displayChapters);
+          onReorderChapters(chapterIds, dragged.bookId);
+        }
+      } else {
+        if (onReorderChapters) {
+          const chapterIds = displayChapters.map((c) => parseInt(c.id));
+          setOptimisticChapters(displayChapters);
+          onReorderChapters(chapterIds);
+        }
+      }
+    } else if (dragged.type === 'book') {
+      if (onReorderBooks) {
+        const bookIds = displayBooks.map((b) => b.id);
+        setOptimisticBooks(displayBooks);
+        onReorderBooks(bookIds);
+      }
+    }
+
+    setDragOverIndex(null);
+    setDraggedItem(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedItem(null);
+    setDragOverIndex(null);
+  };
 
   const toggleBook = (id: string) => {
     setExpandedBooks((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -69,39 +199,61 @@ export const ChapterList: React.FC<ChapterListProps> = ({
   const titleActive = isLight ? 'text-brand-700' : 'text-brand-300';
   const titleInactive = isLight ? 'text-brand-gray-700' : 'text-brand-gray-400';
 
-  const renderChapter = (chapter: Chapter) => (
-    <div
-      key={chapter.id}
-      className={`group relative p-3 rounded-lg cursor-pointer transition border ${
-        currentChapterId === chapter.id ? itemActive : itemInactive
-      }`}
-      onClick={() => onSelect(chapter.id)}
-    >
-      <div className="flex justify-between items-start">
-        <h3
-          className={`font-medium text-sm mb-1 ${
-            currentChapterId === chapter.id ? titleActive : titleInactive
-          }`}
-        >
-          {chapter.title || 'Untitled Chapter'}
-        </h3>
-        <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete(chapter.id);
-            }}
-            className="p-1 text-brand-gray-400 hover:text-red-500"
+  const renderChapter = (chapter: Chapter, index: number) => {
+    const isDragging = draggedItem?.type === 'chapter' && draggedItem.id === chapter.id;
+
+    return (
+      <div
+        key={chapter.id}
+        draggable
+        onDragStart={(e) =>
+          handleDragStart(e, 'chapter', chapter.id, index, chapter.book_id)
+        }
+        onDragEnter={() => {
+          if (draggedItem?.type === 'chapter' && !isDragging) {
+            if (projectType === 'series' && draggedItem.bookId !== chapter.book_id)
+              return;
+            handleDragEnter(index);
+          }
+        }}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+        onDragEnd={handleDragEnd}
+        className={`group relative p-3 rounded-lg cursor-pointer transition-all duration-150 border ${
+          currentChapterId === chapter.id ? itemActive : itemInactive
+        } ${
+          isDragging
+            ? 'opacity-20 grayscale border-dashed border-brand-gray-500/50'
+            : 'opacity-100'
+        }`}
+        onClick={() => onSelect(chapter.id)}
+      >
+        <div className="flex justify-between items-start pointer-events-none">
+          <h3
+            className={`font-medium text-sm mb-1 ${
+              currentChapterId === chapter.id ? titleActive : titleInactive
+            }`}
           >
-            <Trash2 size={14} />
-          </button>
+            {chapter.title || 'Untitled Chapter'}
+          </h3>
+          <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-auto">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(chapter.id);
+              }}
+              className="p-1 text-brand-gray-400 hover:text-red-500"
+            >
+              <Trash2 size={14} />
+            </button>
+          </div>
         </div>
+        <p className="text-xs text-brand-gray-500 line-clamp-2 pointer-events-none">
+          {chapter.summary || 'No summary available...'}
+        </p>
       </div>
-      <p className="text-xs text-brand-gray-500 line-clamp-2">
-        {chapter.summary || 'No summary available...'}
-      </p>
-    </div>
-  );
+    );
+  };
 
   return (
     <div className={`flex flex-col flex-1 min-h-0 border-r ${bgClass}`}>
@@ -127,28 +279,43 @@ export const ChapterList: React.FC<ChapterListProps> = ({
       <div className="flex-1 overflow-y-auto p-2 space-y-2">
         {projectType === 'series' ? (
           <div className="space-y-4">
-            {books.map((book) => {
-              const bookChapters = chapters.filter((c) => c.book_id === book.id);
+            {displayBooks.map((book, bIdx) => {
+              const bookChapters = displayChapters.filter((c) => c.book_id === book.id);
               const isExpanded = expandedBooks[book.id] ?? true;
+              const isBookDragging =
+                draggedItem?.type === 'book' && draggedItem.id === book.id;
 
               return (
                 <div key={book.id} className="space-y-1">
                   <div
-                    className={`flex items-center justify-between p-2 rounded cursor-pointer ${
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, 'book', book.id, bIdx)}
+                    onDragEnter={() => {
+                      if (draggedItem?.type === 'book' && !isBookDragging)
+                        handleDragEnter(bIdx);
+                    }}
+                    onDragOver={handleDragOver}
+                    onDrop={handleDrop}
+                    onDragEnd={handleDragEnd}
+                    className={`flex items-center justify-between p-2 rounded cursor-pointer transition-all duration-150 ${
                       isLight
                         ? 'hover:bg-brand-gray-200/50'
                         : 'hover:bg-brand-gray-800/50'
+                    } ${
+                      isBookDragging
+                        ? 'opacity-20 grayscale border-dashed border-brand-gray-500/50'
+                        : 'opacity-100'
                     }`}
                     onClick={() => toggleBook(book.id)}
                   >
-                    <div className="flex items-center space-x-2 font-bold text-sm">
+                    <div className="flex items-center space-x-2 font-bold text-sm pointer-events-none">
                       {isExpanded ? <FolderOpen size={16} /> : <Folder size={16} />}
                       <span>{book.title}</span>
                       <span className="text-xs opacity-50 font-normal">
                         ({bookChapters.length})
                       </span>
                     </div>
-                    <div className="flex items-center">
+                    <div className="flex items-center pointer-events-auto">
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -250,8 +417,8 @@ export const ChapterList: React.FC<ChapterListProps> = ({
         ) : (
           // Medium / Default View
           <>
-            {chapters.map(renderChapter)}
-            {chapters.length === 0 && (
+            {displayChapters.map(renderChapter)}
+            {displayChapters.length === 0 && (
               <div className="text-center py-10 text-brand-gray-500">
                 <FileText className="mx-auto mb-2 opacity-30" size={32} />
                 <p className="text-sm">No chapters yet.</p>

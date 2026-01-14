@@ -1086,6 +1086,26 @@ const App: React.FC = () => {
     }
   };
 
+  const handleReorderChapters = async (chapterIds: number[], bookId?: string) => {
+    try {
+      await api.chapters.reorder(chapterIds, bookId);
+      await refreshStory();
+    } catch (e: any) {
+      console.error(e);
+      alert(`Failed to reorder chapters: ${e.message}`);
+    }
+  };
+
+  const handleReorderBooks = async (bookIds: string[]) => {
+    try {
+      await api.books.reorder(bookIds);
+      await refreshStory();
+    } catch (e: any) {
+      console.error(e);
+      alert(`Failed to reorder books: ${e.message}`);
+    }
+  };
+
   const handleOpenImages = () => {
     if (editorRef.current && editorRef.current.openImageManager) {
       editorRef.current.openImageManager();
@@ -2076,6 +2096,8 @@ const App: React.FC = () => {
             onCreate={(bookId) => addChapter('New Chapter', '', bookId)}
             onBookCreate={handleBookCreate}
             onBookDelete={handleBookDelete}
+            onReorderChapters={handleReorderChapters}
+            onReorderBooks={handleReorderBooks}
             theme={currentTheme}
             onOpenImages={handleOpenImages}
           />
