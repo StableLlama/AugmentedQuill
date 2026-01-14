@@ -13,7 +13,6 @@ import {
   FileText,
   Folder,
   FolderOpen,
-  Image as ImageIcon,
   Book as BookIcon,
 } from 'lucide-react';
 
@@ -87,18 +86,6 @@ export const ChapterList: React.FC<ChapterListProps> = ({
           {chapter.title || 'Untitled Chapter'}
         </h3>
         <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
-          {currentChapterId === chapter.id && onOpenImages && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onOpenImages();
-              }}
-              className="p-1 text-brand-gray-400 hover:text-brand-500 mr-1"
-              title="Manage Images"
-            >
-              <ImageIcon size={14} />
-            </button>
-          )}
           <button
             onClick={(e) => {
               e.stopPropagation();

@@ -881,3 +881,36 @@ async def api_story_title(request: Request) -> JSONResponse:
     story_path.write_text(_json.dumps(story, indent=2), encoding="utf-8")
 
     return JSONResponse(content={"ok": True})
+
+
+@router.post("/api/story/settings")
+async def api_story_settings(request: Request) -> JSONResponse:
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    active = get_active_project_dir()
+    if not active:
+        return JSONResponse(
+            status_code=400, content={"ok": False, "detail": "No active project"}
+        )
+
+    story_path = active / "story.json"
+    story = load_story_config(story_path) or {}
+
+    # Update allowed fields
+    if "image_style" in payload:
+        story["image_style"] = str(payload["image_style"])
+    if "image_additional_info" in payload:
+        story["image_additional_info"] = str(payload["image_additional_info"])
+
+    try:
+        story_path.write_text(_json.dumps(story, indent=2), encoding="utf-8")
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"ok": False, "detail": f"Failed to save settings: {e}"},
+        )
+
+    return JSONResponse(status_code=200, content={"ok": True, "story": story})

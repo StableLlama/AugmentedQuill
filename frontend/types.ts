@@ -24,6 +24,8 @@ export interface Story {
   title: string;
   summary: string;
   styleTags: string[];
+  image_style?: string;
+  image_additional_info?: string;
   chapters: Chapter[];
   projectType: 'small' | 'medium' | 'large';
   books?: Book[];

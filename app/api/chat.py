@@ -1921,15 +1921,21 @@ async def api_chat_stream(request: Request) -> StreamingResponse:
     }
     if isinstance(max_tokens, int):
         body["max_tokens"] = max_tokens
+
     # Pass through OpenAI tool-calling fields if provided
-    # Always include the available tools for the model to use.
     if supports_function_calling:
-        body["tools"] = STORY_TOOLS
         tool_choice = (payload or {}).get("tool_choice")
-        if tool_choice:
-            body["tool_choice"] = tool_choice
+        # If the client explicitly requests "none", do not send tools.
+        # This prevents some models from hallucinating tool usage even when told not to.
+        if tool_choice == "none":
+            pass
+        else:
+            body["tools"] = STORY_TOOLS
+            if tool_choice:
+                body["tool_choice"] = tool_choice
 
     log_entry = create_log_entry(url, "POST", headers, body, streaming=True)
+    log_entry["model_type"] = model_type
     add_llm_log(log_entry)
 
     async def _gen():

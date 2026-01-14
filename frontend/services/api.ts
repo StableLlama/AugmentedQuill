@@ -314,6 +314,18 @@ export const api = {
       if (!res.ok) throw new Error('Failed to update story tags');
       return res.json();
     },
+    updateSettings: async (settings: {
+      image_style?: string;
+      image_additional_info?: string;
+    }) => {
+      const res = await fetch(`${API_BASE}/story/settings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings),
+      });
+      if (!res.ok) throw new Error('Failed to update story settings');
+      return res.json();
+    },
   },
   settings: {
     getPrompts: async (modelName?: string) => {

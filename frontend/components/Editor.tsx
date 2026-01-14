@@ -160,69 +160,13 @@ export const Editor = React.forwardRef<any, EditorProps>(
     const wysiwygRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    const [isImageManagerOpen, setIsImageManagerOpen] = useState(false);
-    const [projectImages, setProjectImages] = useState<
-      {
-        filename: string;
-        url: string | null;
-        description?: string;
-        title?: string;
-        is_placeholder?: boolean;
-      }[]
-    >([]);
-    const [editingImage, setEditingImage] = useState<{
-      filename: string;
-      title: string;
-      description: string;
-    } | null>(null);
     const [isDragging, setIsDragging] = useState(false);
-
-    useEffect(() => {
-      if (isImageManagerOpen) {
-        api.projects
-          .listImages()
-          .then((res) => setProjectImages(res.images || []))
-          .catch(console.error);
-      }
-    }, [isImageManagerOpen]);
-
-    const handleUpdateMetadata = async () => {
-      if (!editingImage) return;
-      try {
-        await api.projects.updateImage(
-          editingImage.filename,
-          editingImage.description,
-          editingImage.title
-        );
-        setEditingImage(null);
-        const res = await api.projects.listImages();
-        setProjectImages(res.images || []);
-      } catch (e) {
-        alert('Failed to update image');
-      }
-    };
-
-    const handleCreatePlaceholder = async () => {
-      const title = prompt('Enter placeholder title:');
-      if (!title) return;
-      try {
-        await api.projects.createImagePlaceholder('', title);
-        const res = await api.projects.listImages();
-        setProjectImages(res.images || []);
-      } catch (e) {
-        alert('Failed to create placeholder');
-      }
-    };
 
     const handleImageUpload = async (file: File) => {
       try {
         const res = await api.projects.uploadImage(file);
         if (res.ok) {
           insertImageMarkdown(res.filename, res.url);
-          if (isImageManagerOpen) {
-            const list = await api.projects.listImages();
-            setProjectImages(list.images || []);
-          }
         }
       } catch (e) {
         console.error(e);
@@ -230,25 +174,25 @@ export const Editor = React.forwardRef<any, EditorProps>(
       }
     };
 
-    const insertImageMarkdown = (filename: string, url: string) => {
+    const insertImageMarkdown = (filename: string, url: string, altText?: string) => {
+      const alt = altText || filename;
       if (viewMode === 'wysiwyg') {
-        const html = `<img src="${url}" alt="${filename}" />`;
+        const html = `<img src="${url}" alt="${alt}" />`;
         if (wysiwygRef.current && wysiwygRef.current.contains(document.activeElement)) {
           document.execCommand('insertHTML', false, html);
           wysiwygRef.current.dispatchEvent(new Event('input', { bubbles: true }));
         } else {
-          const markdown = `\n![${filename}](${url})`;
+          const markdown = `\n![${alt}](${url})`;
           onChange(chapter.id, { content: chapter.content + markdown });
         }
       } else {
-        const markdown = `![${filename}](${url})`;
+        const markdown = `![${alt}](${url})`;
         if (document.activeElement === textareaRef.current) {
           document.execCommand('insertText', false, markdown);
         } else {
           onChange(chapter.id, { content: chapter.content + '\n' + markdown });
         }
       }
-      setIsImageManagerOpen(false);
     };
 
     const handleDragOver = (e: React.DragEvent) => {
@@ -548,7 +492,8 @@ export const Editor = React.forwardRef<any, EditorProps>(
     };
 
     useImperativeHandle(ref, () => ({
-      openImageManager: () => setIsImageManagerOpen(true),
+      insertImage: (filename: string, url: string, altText?: string) =>
+        insertImageMarkdown(filename, url, altText),
       focus: () => {
         if (viewMode === 'wysiwyg') wysiwygRef.current?.focus();
         else textareaRef.current?.focus();
@@ -892,218 +837,10 @@ export const Editor = React.forwardRef<any, EditorProps>(
             </div>
           )}
         </div>
-        {isImageManagerOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-            <div
-              className={`rounded-xl shadow-2xl max-w-2xl w-full max-h-[85vh] flex flex-col border ${
-                settings.theme === 'light'
-                  ? 'bg-white border-brand-gray-200'
-                  : 'bg-brand-gray-900 border-brand-gray-800'
-              }`}
-            >
-              {editingImage ? (
-                <div className="p-6 flex flex-col gap-4">
-                  <h3
-                    className={`text-lg font-bold ${
-                      settings.theme === 'light'
-                        ? 'text-brand-gray-800'
-                        : 'text-brand-gray-100'
-                    }`}
-                  >
-                    Edit Image Metadata
-                  </h3>
-                  <div>
-                    <label
-                      className={`block text-xs font-semibold uppercase mb-1 ${textMuted}`}
-                    >
-                      Title
-                    </label>
-                    <input
-                      className={`w-full p-2 rounded border focus:outline-none focus:ring-2 focus:ring-violet-500 ${inputBg}`}
-                      value={editingImage.title}
-                      onChange={(e) =>
-                        setEditingImage({
-                          ...editingImage,
-                          title: e.target.value,
-                        })
-                      }
-                    />
-                  </div>
-                  <div>
-                    <label
-                      className={`block text-xs font-semibold uppercase mb-1 ${textMuted}`}
-                    >
-                      Description (for AI)
-                    </label>
-                    <textarea
-                      className={`w-full p-2 rounded border focus:outline-none focus:ring-2 focus:ring-violet-500 min-h-[100px] ${inputBg}`}
-                      value={editingImage.description}
-                      onChange={(e) =>
-                        setEditingImage({
-                          ...editingImage,
-                          description: e.target.value,
-                        })
-                      }
-                    />
-                  </div>
-                  <div className="flex justify-end gap-2 mt-2">
-                    <Button variant="secondary" onClick={() => setEditingImage(null)}>
-                      Cancel
-                    </Button>
-                    <Button variant="primary" onClick={handleUpdateMetadata}>
-                      Save Changes
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <div
-                    className={`flex justify-between items-center p-4 border-b ${
-                      settings.theme === 'light'
-                        ? 'border-brand-gray-100 text-brand-gray-800'
-                        : 'border-brand-gray-800 text-brand-gray-100'
-                    }`}
-                  >
-                    <h3 className="text-lg font-bold flex items-center gap-2">
-                      <ImageIcon size={20} /> Image Manager
-                    </h3>
-                    <button
-                      onClick={() => setIsImageManagerOpen(false)}
-                      className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded-full"
-                    >
-                      <X size={20} />
-                    </button>
-                  </div>
 
-                  <div
-                    className={`p-4 border-b grid grid-cols-2 gap-2 ${
-                      settings.theme === 'light'
-                        ? 'border-brand-gray-100 bg-brand-gray-50'
-                        : 'border-brand-gray-800 bg-brand-gray-800/50'
-                    }`}
-                  >
-                    <input
-                      type="file"
-                      ref={fileInputRef}
-                      className="hidden"
-                      onChange={(e) =>
-                        e.target.files?.[0] && handleImageUpload(e.target.files[0])
-                      }
-                      accept="image/*"
-                    />
-                    <Button
-                      onClick={() => fileInputRef.current?.click()}
-                      className="w-full"
-                      variant="primary"
-                    >
-                      <Upload size={16} className="mr-2" /> Upload Image
-                    </Button>
-                    <Button
-                      onClick={handleCreatePlaceholder}
-                      className="w-full"
-                      variant="secondary"
-                    >
-                      <FileEdit size={16} className="mr-2" /> Create Placeholder
-                    </Button>
-                  </div>
-
-                  <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
-                    {projectImages.length === 0 ? (
-                      <div className="text-center py-12 text-brand-gray-400">
-                        <ImageIcon size={48} className="mx-auto mb-4 opacity-20" />
-                        <p>No images in this project yet.</p>
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                        {projectImages.map((img) => (
-                          <div
-                            key={img.filename}
-                            className={`group relative border rounded-lg overflow-hidden aspect-square flex flex-col ${
-                              settings.theme === 'light'
-                                ? 'bg-brand-gray-100 border-brand-gray-200'
-                                : 'bg-brand-gray-950 border-brand-gray-700'
-                            }`}
-                          >
-                            {img.is_placeholder || !img.url ? (
-                              <div className="flex-1 flex flex-col items-center justify-center p-4 bg-violet-900/10 text-violet-500">
-                                <ImageIcon size={32} className="mb-2 opacity-50" />
-                                <span className="text-xs font-mono opacity-70">
-                                  Placeholder
-                                </span>
-                              </div>
-                            ) : (
-                              <img
-                                src={img.url}
-                                alt={img.filename}
-                                className="w-full h-full object-cover"
-                              />
-                            )}
-
-                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-2">
-                              <div className="text-white font-serif text-sm truncate font-bold mb-1">
-                                {img.title || 'Untitled'}
-                              </div>
-                              <div className="text-white/70 text-xs truncate mb-2">
-                                {img.filename}
-                              </div>
-
-                              <div className="flex gap-2 justify-center">
-                                <button
-                                  onClick={() =>
-                                    img.url &&
-                                    insertImageMarkdown(img.filename, img.url)
-                                  }
-                                  disabled={!img.url}
-                                  className="p-1.5 bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white rounded shadow-sm"
-                                  title="Insert"
-                                >
-                                  <Upload size={14} className="rotate-180" />
-                                </button>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setEditingImage({
-                                      filename: img.filename,
-                                      title: img.title || '',
-                                      description: img.description || '',
-                                    });
-                                  }}
-                                  className="p-1.5 bg-violet-500 hover:bg-violet-600 text-white rounded shadow-sm"
-                                  title="Edit Info"
-                                >
-                                  <PenLine size={14} />
-                                </button>
-                                <button
-                                  onClick={async (e) => {
-                                    e.stopPropagation();
-                                    if (!confirm('Delete this image/placeholder?'))
-                                      return;
-                                    try {
-                                      await api.projects.deleteImage(img.filename);
-                                      setProjectImages((prev) =>
-                                        prev.filter((p) => p.filename !== img.filename)
-                                      );
-                                    } catch (err) {
-                                      console.error(err);
-                                    }
-                                  }}
-                                  className="p-1.5 bg-red-500 hover:bg-red-600 text-white rounded shadow-sm"
-                                  title="Delete"
-                                >
-                                  <Trash2 size={14} />
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        )}
+        <div className="fixed bottom-4 right-4 text-xs opacity-30 pointer-events-none">
+          {/* Debug or Status info could go here */}
+        </div>
       </div>
     );
   }

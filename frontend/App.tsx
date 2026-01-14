@@ -97,6 +97,7 @@ const App: React.FC = () => {
     currentChapterId,
     selectChapter,
     updateStoryMetadata,
+    updateStoryImageSettings,
     updateChapter,
     addChapter,
     deleteChapter,
@@ -1138,6 +1139,15 @@ const App: React.FC = () => {
         theme={currentTheme}
         settings={appSettings}
         prompts={prompts}
+        imageStyle={story.image_style}
+        imageAdditionalInfo={story.image_additional_info}
+        onUpdateSettings={updateStoryImageSettings}
+        onInsert={(filename, url, altText) => {
+          if (url && editorRef.current) {
+            editorRef.current.insertImage(filename, url, altText);
+            setIsImagesOpen(false);
+          }
+        }}
       />
 
       <CreateProjectDialog

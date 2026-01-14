@@ -16,6 +16,13 @@ import {
   RefreshCw,
   Loader2,
   Trash2,
+  Plus,
+  TextCursor,
+  Sparkles,
+  Copy,
+  Check,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { generateSimpleContent } from '../services/openaiService';
@@ -39,6 +46,10 @@ interface ProjectImagesProps {
     system_messages: Record<string, string>;
     user_prompts: Record<string, string>;
   };
+  imageStyle?: string;
+  imageAdditionalInfo?: string;
+  onUpdateSettings?: (style: string, info: string) => void;
+  onInsert?: (filename: string, url: string | null, altText?: string) => void;
 }
 
 export const ProjectImages: React.FC<ProjectImagesProps> = ({
@@ -47,6 +58,10 @@ export const ProjectImages: React.FC<ProjectImagesProps> = ({
   theme = 'mixed',
   settings,
   prompts,
+  imageStyle = '',
+  imageAdditionalInfo = '',
+  onUpdateSettings,
+  onInsert,
 }) => {
   const [images, setImages] = useState<ImageEntry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -60,6 +75,13 @@ export const ProjectImages: React.FC<ProjectImagesProps> = ({
   const [selectedImage, setSelectedImage] = useState<ImageEntry | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [dragTarget, setDragTarget] = useState<string | null>(null);
+  const [promptPopup, setPromptPopup] = useState<{
+    isOpen: boolean;
+    content: string;
+    loading: boolean;
+  }>({ isOpen: false, content: '', loading: false });
+  const [copied, setCopied] = useState(false);
+  const [showImageSettings, setShowImageSettings] = useState(false);
 
   const isLight = theme === 'light';
   const bgClass = isLight ? 'bg-white' : 'bg-brand-gray-900';
@@ -156,7 +178,8 @@ export const ProjectImages: React.FC<ProjectImagesProps> = ({
         prompt,
         system,
         activeProvider,
-        'CHAT'
+        'EDITING',
+        { tool_choice: 'none' }
       );
 
       if (result) {
@@ -166,6 +189,109 @@ export const ProjectImages: React.FC<ProjectImagesProps> = ({
       setError('Generation failed: ' + err.message);
     } finally {
       setGenerating(null);
+    }
+  };
+
+  const handleCreatePrompt = async (img: ImageEntry) => {
+    if (!img.description) return;
+
+    setPromptPopup({ isOpen: true, content: '', loading: true });
+
+    try {
+      const activeProvider = settings.providers.find(
+        (p) => p.id === settings.activeChatProviderId
+      );
+
+      if (!activeProvider) throw new Error('No active chat provider configured');
+
+      const system = prompts?.system_messages?.image_prompt_generator || '';
+      const userContentArray = [];
+      if (img.title) {
+        userContentArray.push(`Title:\n${img.title}`);
+      }
+      if (img.description) {
+        userContentArray.push(`Description:\n${img.description}`);
+      }
+      if (imageStyle) {
+        userContentArray.push(`Project image style:\n${imageStyle}`);
+      }
+      if (imageAdditionalInfo) {
+        userContentArray.push(`Additional information:\n${imageAdditionalInfo}`);
+      }
+      const userContent = userContentArray.join('\n\n');
+
+      await generateSimpleContent(userContent, system, activeProvider, 'EDITING', {
+        tool_choice: 'none',
+        onUpdate: (text) => {
+          const clean = text.replace(/^"|"$/g, '');
+          setPromptPopup((prev) => ({ ...prev, content: clean }));
+        },
+      });
+
+      setPromptPopup((prev) => {
+        const clean = prev.content.replace(/^"|"$/g, '');
+        return { ...prev, content: clean, loading: false };
+      });
+    } catch (err: any) {
+      setPromptPopup((prev) => ({
+        ...prev,
+        content: 'Error creating prompt: ' + err.message,
+        loading: false,
+      }));
+    }
+  };
+
+  const handleGenerateAllPrompts = async () => {
+    const placeholders = images.filter((i) => i.is_placeholder);
+    if (placeholders.length === 0) return;
+
+    // Clear content before starting
+    setPromptPopup({ isOpen: true, content: '', loading: true });
+
+    try {
+      const activeProvider = settings.providers.find(
+        (p) => p.id === settings.activeChatProviderId
+      );
+      if (!activeProvider) throw new Error('No active chat provider configured');
+
+      let completedOutput = '';
+
+      for (const img of placeholders) {
+        if (!img.description) continue;
+
+        const userContent = `Title: ${img.title || 'Untitled'}\nDescription: ${img.description}\nProject Image Style: ${imageStyle || 'Not specified'}\nAdditional Information: ${imageAdditionalInfo || 'None'}`;
+        const system = prompts?.system_messages?.image_prompt_generator || '';
+
+        let currentItemText = '';
+        await generateSimpleContent(userContent, system, activeProvider, 'EDITING', {
+          tool_choice: 'none',
+          onUpdate: (text) => {
+            // Strip quotes and flatten text to single line
+            const clean = text.replace(/^"|"$/g, '');
+            currentItemText = clean.replace(/[\r\n]+/g, ' ');
+            setPromptPopup((prev) => ({
+              ...prev,
+              content: completedOutput + currentItemText,
+            }));
+          },
+        });
+        // Ensure final cleanup
+        currentItemText = currentItemText.replace(/^"|"$/g, '');
+        completedOutput += currentItemText + '\n';
+        setPromptPopup((prev) => ({ ...prev, content: completedOutput }));
+      }
+      // Trim the final newline
+      setPromptPopup((prev) => ({
+        ...prev,
+        content: prev.content.trimEnd(),
+        loading: false,
+      }));
+    } catch (err: any) {
+      setPromptPopup((prev) => ({
+        ...prev,
+        content: prev.content + '\nError: ' + err.message,
+        loading: false,
+      }));
     }
   };
 
@@ -222,6 +348,15 @@ export const ProjectImages: React.FC<ProjectImagesProps> = ({
       setImages((prev) => prev.filter((i) => i.filename !== filename));
     } catch (err: any) {
       setError('Delete failed: ' + err.message);
+    }
+  };
+
+  const handleCreatePlaceholder = async () => {
+    try {
+      await api.projects.createImagePlaceholder('', ''); // Empty description and title
+      await loadImages();
+    } catch (e: any) {
+      setError('Failed to create placeholder: ' + e.message);
     }
   };
 
@@ -303,11 +438,82 @@ export const ProjectImages: React.FC<ProjectImagesProps> = ({
             </div>
           )}
 
-          <div className="flex justify-end mb-4">
+          <div
+            className={`mb-4 rounded border overflow-hidden ${
+              isLight
+                ? 'bg-brand-gray-100 border-brand-gray-200'
+                : 'bg-brand-gray-800 border-brand-gray-700'
+            }`}
+          >
+            <button
+              className="w-full flex items-center justify-between p-3 text-left focus:outline-none"
+              onClick={() => setShowImageSettings(!showImageSettings)}
+            >
+              <span className="text-sm font-semibold opacity-80">
+                Project Image Settings
+              </span>
+              {showImageSettings ? (
+                <ChevronDown className="w-4 h-4 opacity-50" />
+              ) : (
+                <ChevronRight className="w-4 h-4 opacity-50" />
+              )}
+            </button>
+
+            {showImageSettings && (
+              <div className="p-3 pt-0 flex flex-col gap-3">
+                <div>
+                  <label className="block text-xs font-medium opacity-70 mb-1">
+                    Global Style (e.g. "watercolor", "charcoal sketch")
+                  </label>
+                  <input
+                    type="text"
+                    className={`w-full text-sm p-2 rounded border ${borderClass} bg-transparent outline-none focus:ring-1 ring-brand-blue-500`}
+                    placeholder="Generic style for all images..."
+                    value={imageStyle}
+                    onChange={(e) =>
+                      onUpdateSettings?.(e.target.value, imageAdditionalInfo)
+                    }
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium opacity-70 mb-1">
+                    Additional Information (e.g. LoRA triggers, specific negative
+                    prompts)
+                  </label>
+                  <textarea
+                    className={`w-full text-sm p-2 rounded border ${borderClass} bg-transparent outline-none focus:ring-1 ring-brand-blue-500 min-h-[60px] resize-y`}
+                    placeholder="Extra details passed to the prompt generator..."
+                    value={imageAdditionalInfo}
+                    onChange={(e) => onUpdateSettings?.(imageStyle, e.target.value)}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="flex justify-end mb-4 gap-2 flex-wrap">
+            <Button
+              variant="secondary"
+              onClick={handleGenerateAllPrompts}
+              icon={<Sparkles className="w-4 h-4" />}
+              title="Generate prompts for all placeholders"
+              className="whitespace-nowrap"
+            >
+              Generate Placeholder Prompts
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={handleCreatePlaceholder}
+              icon={<Plus className="w-4 h-4" />}
+              className="whitespace-nowrap"
+            >
+              Create Placeholder
+            </Button>
             <Button
               variant="primary"
               onClick={() => handleUploadClick()}
               icon={<Upload className="w-4 h-4" />}
+              className="whitespace-nowrap"
             >
               Upload New Image
             </Button>
@@ -441,11 +647,23 @@ export const ProjectImages: React.FC<ProjectImagesProps> = ({
                       }
                       disabled={generating === img.filename}
                     />
-                    <div className="flex justify-between items-center gap-2">
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {onInsert && (
+                        <Button
+                          size="xs"
+                          variant="secondary"
+                          className="whitespace-nowrap flex-grow sm:flex-grow-0"
+                          onClick={() => onInsert(img.filename, img.url, img.title)}
+                          icon={<TextCursor className="w-3 h-3" />}
+                          title="Insert at cursor"
+                        >
+                          Insert
+                        </Button>
+                      )}
                       <Button
                         size="xs"
-                        variant="ghost"
-                        className="text-brand-purple-500 hover:text-brand-purple-600"
+                        variant="secondary"
+                        className="whitespace-nowrap flex-grow sm:flex-grow-0"
                         onClick={() => handleGenerateDescription(img)}
                         disabled={!!generating}
                         icon={<Wand2 className="w-3 h-3" />}
@@ -454,13 +672,25 @@ export const ProjectImages: React.FC<ProjectImagesProps> = ({
                           ? 'Update description'
                           : 'Generate description'}
                       </Button>
+                      <Button
+                        size="xs"
+                        variant="secondary"
+                        className="whitespace-nowrap flex-grow sm:flex-grow-0"
+                        onClick={() => handleCreatePrompt(img)}
+                        disabled={!img.description}
+                        icon={<Sparkles className="w-3 h-3" />}
+                        title="Create image generation prompt"
+                      >
+                        Create prompt
+                      </Button>
 
                       {edits[img.filename] &&
                         (edits[img.filename].description !== undefined ||
                           edits[img.filename].title !== undefined) && (
                           <Button
-                            size="sm"
+                            size="xs"
                             variant="primary"
+                            className="whitespace-nowrap ml-auto"
                             onClick={() => handleSaveMetadata(img.filename)}
                             icon={<Save className="w-3 h-3" />}
                           >
@@ -512,6 +742,65 @@ export const ProjectImages: React.FC<ProjectImagesProps> = ({
                   {selectedImage.description}
                 </span>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {promptPopup.isOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div
+            className={`${bgClass} ${textClass} rounded-lg shadow-xl w-full max-w-[90vw] h-[90vh] border ${borderClass} flex flex-col`}
+          >
+            <div className="flex items-center justify-between p-4 border-b border-brand-gray-200 dark:border-brand-gray-700 flex-shrink-0">
+              <h3 className="font-semibold flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-brand-purple-500" />
+                Generated Prompt
+              </h3>
+              <button
+                onClick={() => setPromptPopup({ ...promptPopup, isOpen: false })}
+                className="hover:bg-black/10 rounded-full p-1"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-4 flex-1 flex flex-col min-h-0">
+              <div className="relative flex-1 flex flex-col min-h-0">
+                <textarea
+                  readOnly
+                  className={`w-full flex-1 p-3 text-sm rounded border ${borderClass} bg-black/5 dark:bg-white/5 resize-none focus:outline-none font-mono tracking-tight`}
+                  value={promptPopup.content}
+                  placeholder="Generating..."
+                />
+                {promptPopup.loading && (
+                  <div className="absolute bottom-2 right-2 text-xs text-brand-purple-500 flex items-center gap-1 bg-white/90 dark:bg-black/80 px-2 py-1.5 rounded-full shadow-sm border border-brand-purple-200">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    Generating...
+                  </div>
+                )}
+              </div>
+              <div className="flex justify-end mt-4 flex-shrink-0">
+                <Button
+                  variant="primary"
+                  size="sm"
+                  icon={
+                    copied ? (
+                      <Check className="w-4 h-4" />
+                    ) : (
+                      <Copy className="w-4 h-4" />
+                    )
+                  }
+                  onClick={() => {
+                    navigator.clipboard.writeText(promptPopup.content);
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 2000);
+                  }}
+                  disabled={!promptPopup.content}
+                >
+                  {copied ? 'Copied!' : 'Copy to Clipboard'}
+                </Button>
+              </div>
             </div>
           </div>
         </div>
