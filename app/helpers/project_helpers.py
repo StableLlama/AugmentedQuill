@@ -18,14 +18,14 @@ def _project_overview() -> dict:
     """Return project title and a list of chapters with id, filename, title, summary."""
     active = get_active_project_dir()
     story = load_story_config((active / "story.json") if active else None) or {}
-    p_type = story.get("project_type", "medium")
+    p_type = story.get("project_type", "novel")
 
     base_info = {
         "project_title": story.get("project_title") or (active.name if active else ""),
         "project_type": p_type,
     }
 
-    if p_type == "small":
+    if p_type == "short-story":
         fn = story.get("content_file", "content.md")
 
         # Use metadata from story.json if available
@@ -56,22 +56,66 @@ def _project_overview() -> dict:
             ],
         }
 
-    if p_type == "large":
+    if p_type == "series":
         files = _scan_chapter_files()
         books = story.get("books", [])
         enriched_books = []
+
+        # Build ID -> Metadata mapping for series
+        all_meta = []
+        for b in books:
+            bid = b.get("id")
+            for c in b.get("chapters", []):
+                norm = _normalize_chapter_entry(c)
+                norm["_parent_book_id"] = bid
+                all_meta.append(norm)
+
+        id_to_meta = {}
+        used_m_ids = set()
+        for bid in [b.get("id") for b in books]:
+            book_files = [(idx, p) for (idx, p) in files if p.parent.parent.name == bid]
+            book_meta = [m for m in all_meta if m.get("_parent_book_id") == bid]
+
+            for i, (idx, p) in enumerate(book_files):
+                fname = p.name
+                match = next(
+                    (
+                        c
+                        for c in book_meta
+                        if c.get("filename") == fname and id(c) not in used_m_ids
+                    ),
+                    None,
+                )
+                if not match and i < len(book_meta):
+                    cand = book_meta[i]
+                    if not cand.get("filename") and id(cand) not in used_m_ids:
+                        match = cand
+
+                if match:
+                    used_m_ids.add(id(match))
+                    id_to_meta[idx] = match
+
         for b in books:
             bid = b.get("id")
             b_chapters = []
-            # Find chapters belonging to this book
             for vid, path in files:
-                # Naive path check for book ID in path
-                # Path should be .../books/<BID>/chapters/...
                 if f"books/{bid}/" in str(path):
-                    # Could also extract title/summary from b.get("chapters") if we synced it
-                    # For now just list IDs and filenames
-                    b_chapters.append({"id": vid, "filename": path.name})
-            enriched_books.append({**b, "active_chapters": b_chapters})
+                    meta = id_to_meta.get(vid, {})
+                    b_chapters.append(
+                        {
+                            "id": vid,
+                            "filename": path.name,
+                            "title": meta.get("title") or path.stem,
+                            "summary": meta.get("summary") or "",
+                        }
+                    )
+            enriched_books.append(
+                {
+                    "id": bid,
+                    "title": b.get("title", ""),
+                    "chapters": b_chapters,
+                }
+            )
         return {**base_info, "books": enriched_books}
 
     chapters_meta = [_normalize_chapter_entry(c) for c in (story.get("chapters") or [])]

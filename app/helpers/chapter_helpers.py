@@ -34,13 +34,13 @@ def _scan_chapter_files() -> List[Tuple[str, Path]]:
         return []
 
     story = load_story_config(active / "story.json") or {}
-    p_type = story.get("project_type", "medium")
+    p_type = story.get("project_type", "novel")
 
-    if p_type == "small":
+    if p_type == "short-story":
         p = active / "content.md"
         return [(1, p)]
 
-    if p_type == "large":
+    if p_type == "series":
         books = story.get("books", [])
         items = []
         global_idx = 1
@@ -116,26 +116,23 @@ def _load_chapter_titles(count: int) -> List[str]:
     return titles[:count]
 
 
-def _normalize_chapter_entry(entry: Any) -> Dict[str, str]:
+def _normalize_chapter_entry(entry: Any) -> Dict[str, Any]:
     """Ensures a chapter entry is a dict with 'title', 'summary', 'filename'.
-
-    Additionally sanitizes the common bogus string "[object Object]" that can
-    arrive from UI mishaps, treating it as empty so filename fallbacks apply.
+    Preserves other existing keys. Handles JS '[object Object]' leak.
     """
 
     def _sanitize_text(val: Any) -> str:
         s = str(val if val is not None else "").strip()
-        # Treat JS's default object toString leak as empty
         if s.lower() == "[object object]":
             return ""
         return s
 
     if isinstance(entry, dict):
-        return {
-            "title": _sanitize_text(entry.get("title", "")),
-            "summary": _sanitize_text(entry.get("summary", "")),
-            "filename": _sanitize_text(entry.get("filename", "")),
-        }
+        res = entry.copy()
+        res["title"] = _sanitize_text(res.get("title", ""))
+        res["summary"] = _sanitize_text(res.get("summary", ""))
+        res["filename"] = _sanitize_text(res.get("filename", ""))
+        return res
     elif isinstance(entry, (str, int, float)):
         return {"title": _sanitize_text(entry), "summary": "", "filename": ""}
     return {"title": "", "summary": "", "filename": ""}
@@ -147,5 +144,102 @@ def _chapter_by_id_or_404(chap_id: int) -> tuple[Path, int, int]:
         ((idx, p, i) for i, (idx, p) in enumerate(files) if idx == chap_id), None
     )
     if not match:
-        raise HTTPException(status_code=404, detail="Chapter not found")
+        available = [f[0] for f in files]
+        raise HTTPException(
+            status_code=404,
+            detail=f"Chapter with ID {chap_id} not found. Available chapter IDs: {available}. "
+            f"Please call get_project_overview to refresh your knowledge of chapter IDs.",
+        )
     return match  # (idx, path, pos)
+
+
+def _get_chapter_metadata_entry(
+    story: dict, chap_id: int, path: Path, files: list = None
+) -> dict | None:
+    """Find the specific metadata entry in story.json for a given chapter global ID.
+    Handles 'novel', 'short-story', and 'series' project types consistently.
+    Returns the dict entry by reference if found.
+    """
+    if files is None:
+        files = _scan_chapter_files()
+
+    p_type = story.get("project_type", "novel")
+    if p_type == "series":
+        book_id = path.parent.parent.name
+        books = story.get("books", [])
+        book = next((b for b in books if b.get("id") == book_id), None)
+        if not book:
+            return None
+        book_chapters = book.setdefault("chapters", [])
+        book_files = [f for f in files if f[1].parent.parent.name == book_id]
+        used_ids = set()
+        for i, (f_idx, f_p) in enumerate(book_files):
+            fname = f_p.name
+            curr_match = next(
+                (
+                    c
+                    for c in book_chapters
+                    if isinstance(c, dict)
+                    and c.get("filename") == fname
+                    and id(c) not in used_ids
+                ),
+                None,
+            )
+            if not curr_match and i < len(book_chapters):
+                candidate = book_chapters[i]
+                if id(candidate) not in used_ids:
+                    if (
+                        not isinstance(candidate, dict)
+                        or not candidate.get("filename")
+                        or candidate.get("filename") == fname
+                    ):
+                        curr_match = candidate
+            if curr_match:
+                used_ids.add(id(curr_match))
+                if f_idx == chap_id:
+                    if not isinstance(curr_match, dict):
+                        idx_in_book = book_chapters.index(curr_match)
+                        curr_match = {
+                            "title": str(curr_match),
+                            "summary": "",
+                            "filename": fname,
+                        }
+                        book_chapters[idx_in_book] = curr_match
+                    return curr_match
+    else:
+        chapters_data = story.setdefault("chapters", [])
+        used_ids = set()
+        for i, (f_idx, f_p) in enumerate(files):
+            fname = f_p.name
+            curr_match = next(
+                (
+                    c
+                    for c in chapters_data
+                    if isinstance(c, dict)
+                    and c.get("filename") == fname
+                    and id(c) not in used_ids
+                ),
+                None,
+            )
+            if not curr_match and i < len(chapters_data):
+                candidate = chapters_data[i]
+                if id(candidate) not in used_ids:
+                    if (
+                        not isinstance(candidate, dict)
+                        or not candidate.get("filename")
+                        or candidate.get("filename") == fname
+                    ):
+                        curr_match = candidate
+            if curr_match:
+                used_ids.add(id(curr_match))
+                if f_idx == chap_id:
+                    if not isinstance(curr_match, dict):
+                        idx_in_root = chapters_data.index(curr_match)
+                        curr_match = {
+                            "title": str(curr_match),
+                            "summary": "",
+                            "filename": fname,
+                        }
+                        chapters_data[idx_in_root] = curr_match
+                    return curr_match
+    return None

@@ -224,6 +224,7 @@ const App: React.FC = () => {
 
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isChatLoading, setIsChatLoading] = useState(false);
+  const stopSignalRef = useRef(false);
   const [isAiActionLoading, setIsAiActionLoading] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -302,7 +303,7 @@ const App: React.FC = () => {
             data.available.map((p: any) => ({
               id: p.name,
               title: p.title || p.name,
-              type: p.type || 'medium',
+              type: p.type || 'novel',
               updatedAt: Date.now(),
             }))
           );
@@ -414,7 +415,7 @@ const App: React.FC = () => {
             available.map((p: any) => ({
               id: p.name,
               title: p.title || p.name,
-              type: p.type || 'medium',
+              type: p.type || 'novel',
               updatedAt: Date.now(),
             }))
           );
@@ -454,7 +455,7 @@ const App: React.FC = () => {
             id: name, // Vital: Use the directory name as ID for subsequent API calls
             title: result.story.project_title || name,
             summary: result.story.story_summary || '',
-            projectType: result.story.project_type || 'medium',
+            projectType: result.story.project_type || 'novel',
             styleTags: result.story.tags || [],
             chapters: (result.story.chapters || []).map((c: any, i: number) => ({
               id: String(i + 1),
@@ -466,9 +467,9 @@ const App: React.FC = () => {
             lastUpdated: Date.now(),
           };
 
-          // For small projects (empty chapters in JSON), add the virtual chapter manually
+          // For short-story projects (empty chapters in JSON), add the virtual chapter manually
           // so the UI doesn't look empty before fetchStory kicks in
-          if (type === 'small' && mappedStory.chapters.length === 0) {
+          if (type === 'short-story' && mappedStory.chapters.length === 0) {
             mappedStory.chapters = [
               {
                 id: '1',
@@ -541,6 +542,7 @@ const App: React.FC = () => {
 
   const executeChatRequest = async (userText: string, history: ChatMessage[]) => {
     setIsChatLoading(true);
+    stopSignalRef.current = false;
     try {
       let currentHistory = [...history];
       const session = createChatSession(
@@ -556,6 +558,7 @@ const App: React.FC = () => {
         msgId: string,
         update: { text?: string; thinking?: string; traceback?: string }
       ) => {
+        if (stopSignalRef.current) return;
         setChatMessages((prev) => {
           const idx = prev.findIndex((m) => m.id === msgId);
           if (idx !== -1) {
@@ -588,6 +591,8 @@ const App: React.FC = () => {
       );
 
       while (result.functionCalls && result.functionCalls.length > 0) {
+        if (stopSignalRef.current) break;
+
         // 1. Update assistant message with tool calls in history
         const assistantMsg: ChatMessage = {
           id: currentMsgId,
@@ -628,6 +633,8 @@ const App: React.FC = () => {
           active_chapter_id: currentChapterId ? Number(currentChapterId) : undefined,
         });
 
+        if (stopSignalRef.current) break;
+
         if (toolResponse.ok) {
           // 3. Add tool results to history
           for (const msg of toolResponse.appended_messages) {
@@ -644,6 +651,8 @@ const App: React.FC = () => {
           if (toolResponse.mutations?.story_changed) {
             await refreshStory();
           }
+
+          if (stopSignalRef.current) break;
 
           // 4. Call LLM again with tool results
           // We create a new session with updated history
@@ -665,43 +674,50 @@ const App: React.FC = () => {
         }
       }
 
-      // Final message update
-      const botMessage: ChatMessage = {
-        id: currentMsgId,
-        role: 'model',
-        text: result.text || '',
-        thinking: result.thinking,
-        tool_calls: result.functionCalls, // Ensure tool calls are preserved in final state
-      };
-      setChatMessages((prev) => {
-        const idx = prev.findIndex((m) => m.id === currentMsgId);
-        if (idx !== -1) {
-          const newMsgs = [...prev];
-          newMsgs[idx] = botMessage;
-          return newMsgs;
-        }
-        return [...prev, botMessage];
-      });
-    } catch (error: any) {
-      let errorText = `AI Error: ${error.message || 'An unexpected error occurred'}`;
-      if (error.data) {
-        const detail =
-          typeof error.data === 'string'
-            ? error.data
-            : JSON.stringify(error.data, null, 2);
-        errorText += `\n\n**Details:**\n${detail}`;
+      if (!stopSignalRef.current) {
+        // Final message update
+        const botMessage: ChatMessage = {
+          id: currentMsgId,
+          role: 'model',
+          text: result.text || '',
+          thinking: result.thinking,
+          tool_calls: result.functionCalls, // Ensure tool calls are preserved in final state
+        };
+        setChatMessages((prev) => {
+          const idx = prev.findIndex((m) => m.id === currentMsgId);
+          if (idx !== -1) {
+            const newMsgs = [...prev];
+            newMsgs[idx] = botMessage;
+            return newMsgs;
+          }
+          return [...prev, botMessage];
+        });
       }
+    } catch (error: any) {
+      if (stopSignalRef.current && error.name === 'AbortError') {
+        // Ignored
+      } else {
+        let errorText = `AI Error: ${error.message || 'An unexpected error occurred'}`;
+        if (error.data) {
+          const detail =
+            typeof error.data === 'string'
+              ? error.data
+              : JSON.stringify(error.data, null, 2);
+          errorText += `\n\n**Details:**\n${detail}`;
+        }
 
-      const errorMessage: ChatMessage = {
-        id: uuidv4(),
-        role: 'model',
-        text: errorText,
-        isError: true,
-        traceback: error.traceback,
-      };
-      setChatMessages((prev) => [...prev, errorMessage]);
+        const errorMessage: ChatMessage = {
+          id: uuidv4(),
+          role: 'model',
+          text: errorText,
+          isError: true,
+          traceback: error.traceback,
+        };
+        setChatMessages((prev) => [...prev, errorMessage]);
+      }
     } finally {
       setIsChatLoading(false);
+      stopSignalRef.current = false;
     }
   };
 
@@ -709,7 +725,12 @@ const App: React.FC = () => {
     const newMessage: ChatMessage = { id: uuidv4(), role: 'user', text };
     const newHistory = [...chatMessages, newMessage];
     setChatMessages(newHistory);
-    await executeChatRequest(text, chatMessages);
+    await executeChatRequest(text, newHistory);
+  };
+
+  const handleStopChat = () => {
+    stopSignalRef.current = true;
+    setIsChatLoading(false);
   };
 
   const handleRegenerate = async () => {
@@ -1083,6 +1104,26 @@ const App: React.FC = () => {
     } catch (e: any) {
       console.error(e);
       alert(`Failed to delete book: ${e.message}`);
+    }
+  };
+
+  const handleReorderChapters = async (chapterIds: number[], bookId?: string) => {
+    try {
+      await api.chapters.reorder(chapterIds, bookId);
+      await refreshStory();
+    } catch (e: any) {
+      console.error(e);
+      alert(`Failed to reorder chapters: ${e.message}`);
+    }
+  };
+
+  const handleReorderBooks = async (bookIds: string[]) => {
+    try {
+      await api.books.reorder(bookIds);
+      await refreshStory();
+    } catch (e: any) {
+      console.error(e);
+      alert(`Failed to reorder books: ${e.message}`);
     }
   };
 
@@ -2076,6 +2117,8 @@ const App: React.FC = () => {
             onCreate={(bookId) => addChapter('New Chapter', '', bookId)}
             onBookCreate={handleBookCreate}
             onBookDelete={handleBookDelete}
+            onReorderChapters={handleReorderChapters}
+            onReorderBooks={handleReorderBooks}
             theme={currentTheme}
             onOpenImages={handleOpenImages}
           />
@@ -2126,6 +2169,7 @@ const App: React.FC = () => {
               isLoading={isChatLoading}
               systemPrompt={systemPrompt}
               onSendMessage={handleSendMessage}
+              onStop={handleStopChat}
               onRegenerate={handleRegenerate}
               onEditMessage={handleEditMessage}
               onDeleteMessage={handleDeleteMessage}

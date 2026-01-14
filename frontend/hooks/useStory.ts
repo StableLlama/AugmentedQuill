@@ -17,7 +17,7 @@ const INITIAL_STORY: StoryState = {
   image_style: '',
   image_additional_info: '',
   chapters: [],
-  projectType: 'medium',
+  projectType: 'novel',
   books: [],
   currentChapterId: null,
   lastUpdated: Date.now(),
@@ -51,7 +51,7 @@ export const useStory = () => {
       const res = await api.projects.select(currentProject);
       if (res.ok && res.story) {
         const chaptersRes = await api.chapters.list();
-        const chapters = chaptersRes.chapters.map((c: any) => ({
+        const chapters: Chapter[] = chaptersRes.chapters.map((c: any) => ({
           id: String(c.id),
           title: c.title,
           summary: c.summary,
@@ -59,6 +59,20 @@ export const useStory = () => {
           filename: c.filename,
           book_id: c.book_id,
         }));
+
+        // Re-anchor selection based on filename/book_id if IDs shifted
+        let newSelection = currentChapterId;
+        if (currentChapterId) {
+          const oldChap = story.chapters.find((c) => c.id === currentChapterId);
+          if (oldChap) {
+            const matching = chapters.find(
+              (c) => c.filename === oldChap.filename && c.book_id === oldChap.book_id
+            );
+            if (matching) {
+              newSelection = matching.id;
+            }
+          }
+        }
 
         const newStory: StoryState = {
           id: currentProject,
@@ -68,10 +82,10 @@ export const useStory = () => {
           image_style: res.story.image_style || '',
           image_additional_info: res.story.image_additional_info || '',
           chapters: chapters,
-          projectType: res.story.project_type || 'medium',
+          projectType: res.story.project_type || 'novel',
           books: res.story.books || [],
           llm_prefs: res.story.llm_prefs,
-          currentChapterId: currentChapterId,
+          currentChapterId: newSelection,
           lastUpdated: Date.now(),
         };
 
@@ -104,7 +118,7 @@ export const useStory = () => {
       };
       loadContent();
     }
-  }, [currentChapterId]);
+  }, [currentChapterId, story.lastUpdated]);
 
   const fetchStory = useCallback(async () => {
     if (story.id) return; // Already loaded
@@ -131,7 +145,7 @@ export const useStory = () => {
             image_style: res.story.image_style || '',
             image_additional_info: res.story.image_additional_info || '',
             chapters: chapters,
-            projectType: res.story.project_type || 'medium',
+            projectType: res.story.project_type || 'novel',
             books: res.story.books || [],
             llm_prefs: res.story.llm_prefs,
             currentChapterId: chapters.length > 0 ? chapters[0].id : null,
@@ -213,9 +227,9 @@ export const useStory = () => {
     bookId?: string
   ) => {
     try {
-      await api.chapters.create(title, '', bookId);
+      const res = await api.chapters.create(title, '', bookId);
       const chaptersRes = await api.chapters.list();
-      const newChapters = chaptersRes.chapters.map((c: any) => ({
+      const newChapters: Chapter[] = chaptersRes.chapters.map((c: any) => ({
         id: String(c.id),
         title: c.title,
         summary: c.summary,
@@ -224,12 +238,16 @@ export const useStory = () => {
         book_id: c.book_id,
       }));
 
-      const newChapter = newChapters[newChapters.length - 1];
+      // Find the new chapter in the list by the ID returned from creation
+      const newChapter =
+        newChapters.find((c) => c.id === String(res.id)) ||
+        newChapters[newChapters.length - 1];
 
-      const newState = {
+      const newState: StoryState = {
         ...story,
         chapters: newChapters,
         currentChapterId: newChapter.id,
+        lastUpdated: Date.now(),
       };
       pushState(newState);
     } catch (e) {
@@ -239,15 +257,47 @@ export const useStory = () => {
 
   const deleteChapter = async (id: string) => {
     try {
-      await api.chapters.delete(Number(id));
-      const newChapters = story.chapters.filter((ch) => ch.id !== id);
-      const newSelection =
-        currentChapterId === id ? newChapters[0]?.id || null : currentChapterId;
+      const deletedChapter = story.chapters.find((c) => c.id === id);
+      const currentChap = story.chapters.find((c) => c.id === currentChapterId);
 
-      const newState = {
+      await api.chapters.delete(Number(id));
+
+      // Refresh the chapter list from the backend since IDs are positional
+      // and deleting one shifts subsequent IDs in Series projects.
+      const chaptersRes = await api.chapters.list();
+      const newChapters: Chapter[] = chaptersRes.chapters.map((c: any) => ({
+        id: String(c.id),
+        title: c.title,
+        summary: c.summary,
+        content: '',
+        filename: c.filename,
+        book_id: c.book_id,
+      }));
+
+      // Re-anchor selection based on filename/book_id since IDs may have shifted
+      let newSelection = null;
+      if (currentChapterId !== id && currentChap) {
+        const matching = newChapters.find(
+          (c) =>
+            c.filename === currentChap.filename && c.book_id === currentChap.book_id
+        );
+        if (matching) {
+          newSelection = matching.id;
+        }
+      }
+
+      // If we deleted the active chapter or couldn't find it, pick a neighbor
+      if (!newSelection && newChapters.length > 0) {
+        const oldIndex = story.chapters.findIndex((c) => c.id === id);
+        newSelection =
+          newChapters[oldIndex]?.id || newChapters[newChapters.length - 1].id;
+      }
+
+      const newState: StoryState = {
         ...story,
         chapters: newChapters,
         currentChapterId: newSelection,
+        lastUpdated: Date.now(),
       };
       pushState(newState);
     } catch (e) {

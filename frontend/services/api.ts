@@ -230,6 +230,15 @@ export const api = {
       if (!res.ok) throw new Error('Failed to delete image');
       return res.json();
     },
+    reorder: async (bookIds: string[]) => {
+      const res = await fetch(`${API_BASE}/books/reorder`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ book_ids: bookIds }),
+      });
+      if (!res.ok) throw new Error('Failed to reorder books');
+      return res.json();
+    },
   },
   chapters: {
     list: async () => {
@@ -283,6 +292,19 @@ export const api = {
         method: 'DELETE',
       });
       if (!res.ok) throw new Error('Failed to delete chapter');
+      return res.json();
+    },
+    reorder: async (chapterIds: number[], bookId?: string) => {
+      const res = await fetch(`${API_BASE}/chapters/reorder`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(
+          bookId
+            ? { book_id: bookId, chapter_ids: chapterIds }
+            : { chapter_ids: chapterIds }
+        ),
+      });
+      if (!res.ok) throw new Error('Failed to reorder chapters');
       return res.json();
     },
   },

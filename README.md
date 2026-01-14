@@ -22,6 +22,16 @@ It is designed for writers who want to maintain creative control while using AI 
 - **Visual Helpers**: Toggle whitespace characters to spot layout issues.
 - **Dark/Light Mode**: Fully themable UI.
 
+## Project Types
+
+AugmentedQuill supports three project types to accommodate different writing needs:
+
+- **Short Story**: No chapters - perfect for short stories, poems, or notes. Content is stored in a single file.
+- **Novel**: Multiple chapters - standard novel structure with sequential chapters.
+- **Series**: Multiple books - epic sagas organized into multiple books, each containing chapters.
+
+You can convert between project types in the Settings panel, with validation to prevent data loss (e.g., you cannot convert a multi-chapter novel to a short story).
+
 ## Architecture
 
 The application follows a modular FastAPI architecture:

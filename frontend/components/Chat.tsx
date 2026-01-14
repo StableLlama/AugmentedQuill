@@ -57,6 +57,7 @@ interface ChatProps {
   isLoading: boolean;
   systemPrompt: string;
   onSendMessage: (text: string) => void;
+  onStop?: () => void;
   onRegenerate: () => void;
   onEditMessage: (id: string, newText: string) => void;
   onDeleteMessage: (id: string) => void;
@@ -69,6 +70,7 @@ export const Chat: React.FC<ChatProps> = ({
   isLoading,
   systemPrompt,
   onSendMessage,
+  onStop,
   onRegenerate,
   onEditMessage,
   onDeleteMessage,
@@ -322,11 +324,13 @@ export const Chat: React.FC<ChatProps> = ({
                                 key={i}
                                 className="p-2 rounded bg-black/5 dark:bg-black/20 border border-black/10 dark:border-white/10 text-[10px] font-mono"
                               >
-                                <div className="text-blue-600 dark:text-blue-400 font-bold">
+                                <div className="text-blue-600 dark:text-blue-400 font-bold mb-1">
                                   Call: {tc.name}
                                 </div>
-                                <div className="opacity-60 truncate">
-                                  {JSON.stringify(tc.args)}
+                                <div className="whitespace-pre-wrap break-all opacity-80 max-h-[300px] overflow-y-auto custom-scrollbar">
+                                  {typeof tc.args === 'string'
+                                    ? tc.args
+                                    : JSON.stringify(tc.args, null, 2)}
                                 </div>
                               </div>
                             ))}
@@ -392,19 +396,33 @@ export const Chat: React.FC<ChatProps> = ({
       </div>
 
       <div className={`p-4 border-t ${bgMain} ${borderMain}`}>
-        {canRegenerate && (
+        {(canRegenerate || isLoading) && (
           <div className="flex justify-center mb-4">
-            <Button
-              theme={theme}
-              size="sm"
-              variant="secondary"
-              onClick={onRegenerate}
-              icon={<RefreshCw size={12} />}
-              className="text-xs py-1 h-7 border-dashed"
-              title="Regenerate last response (CHAT model)"
-            >
-              Regenerate last response
-            </Button>
+            {isLoading ? (
+              <Button
+                theme={theme}
+                size="sm"
+                variant="secondary"
+                onClick={onStop}
+                icon={<X size={12} />}
+                className="text-xs py-1 h-7 border-dashed border-red-500/50 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20"
+                title="Stop generation"
+              >
+                Stop generation
+              </Button>
+            ) : (
+              <Button
+                theme={theme}
+                size="sm"
+                variant="secondary"
+                onClick={onRegenerate}
+                icon={<RefreshCw size={12} />}
+                className="text-xs py-1 h-7 border-dashed"
+                title="Regenerate last response (CHAT model)"
+              >
+                Regenerate last response
+              </Button>
+            )}
           </div>
         )}
 

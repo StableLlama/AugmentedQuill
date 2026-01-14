@@ -27,7 +27,7 @@ export interface Story {
   image_style?: string;
   image_additional_info?: string;
   chapters: Chapter[];
-  projectType: 'small' | 'medium' | 'large';
+  projectType: 'short-story' | 'novel' | 'series';
   books?: Book[];
   llm_prefs?: {
     prompt_overrides?: Record<string, string>;
@@ -93,7 +93,7 @@ export interface AppSettings {
 export interface ProjectMetadata {
   id: string;
   title: string;
-  type: 'small' | 'medium' | 'large';
+  type: 'short-story' | 'novel' | 'series';
   updatedAt: number;
 }
 
