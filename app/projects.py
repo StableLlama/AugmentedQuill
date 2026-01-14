@@ -596,6 +596,25 @@ def change_project_type(new_type: str) -> Tuple[bool, str]:
     if old_type == new_type:
         return True, "Already this type"
 
+    # Handle multi-step conversions
+    # Short Story -> Series: Short Story -> Novel -> Series
+    if old_type == "short-story" and new_type == "series":
+        # First convert to novel
+        ok, msg = change_project_type("novel")
+        if not ok:
+            return ok, msg
+        # Then convert to series
+        return change_project_type("series")
+
+    # Series -> Short Story: Series -> Novel -> Short Story
+    if old_type == "series" and new_type == "short-story":
+        # First convert to novel
+        ok, msg = change_project_type("novel")
+        if not ok:
+            return ok, msg
+        # Then convert to short-story
+        return change_project_type("short-story")
+
     # Short Story -> Novel
     if old_type == "short-story" and new_type == "novel":
         content_path = active / "content.md"

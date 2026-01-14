@@ -101,6 +101,99 @@ class ProjectFeaturesTest(TestCase):
         self.assertFalse(ok)
         self.assertIn("multiple chapters", msg.lower())
 
+    def test_convert_short_story_to_series(self):
+        """Test multi-step conversion: Short Story -> Novel -> Series"""
+        # 1. Create Short Story project
+        create_project("test_sm_to_series", project_type="short-story")
+        select_project("test_sm_to_series")
+        active = get_active_project_dir()
+
+        # Write content
+        (active / "content.md").write_text("Short Story Content", encoding="utf-8")
+
+        # 2. Convert directly to Series (should go through Novel)
+        ok, msg = change_project_type("series")
+        self.assertTrue(ok, msg)
+
+        # 3. Verify final state is Series
+        story = load_story_config(active / "story.json")
+        self.assertEqual(story["project_type"], "series")
+        self.assertIn("books", story)
+        self.assertEqual(len(story["books"]), 1)
+
+        # Check that content was moved to the book
+        book_id = story["books"][0]["id"]
+        book_dir = active / "books" / book_id
+        self.assertTrue((book_dir / "chapters" / "0001.txt").exists())
+        text = (book_dir / "chapters" / "0001.txt").read_text(encoding="utf-8")
+        self.assertEqual(text, "Short Story Content")
+
+    def test_convert_series_to_short_story_success(self):
+        """Test multi-step conversion: Series -> Novel -> Short Story (when possible)"""
+        # 1. Create Series project with one book and one chapter
+        create_project("test_series_to_sm", project_type="series")
+        select_project("test_series_to_sm")
+        active = get_active_project_dir()
+
+        # Create a book with one chapter
+        from app.projects import create_new_book
+
+        book_id = create_new_book("Book 1")
+        book_dir = active / "books" / book_id
+        (book_dir / "chapters" / "0001.txt").write_text(
+            "Chapter Content", encoding="utf-8"
+        )
+
+        # Update story.json to reflect the chapter
+        story = load_story_config(active / "story.json")
+        story["books"][0]["chapters"] = [{"title": "Chapter 1", "summary": ""}]
+        (active / "story.json").write_text(json.dumps(story), encoding="utf-8")
+
+        # 2. Convert directly to Short Story (should go through Novel)
+        ok, msg = change_project_type("short-story")
+        self.assertTrue(ok, msg)
+
+        # 3. Verify final state is Short Story
+        story = load_story_config(active / "story.json")
+        self.assertEqual(story["project_type"], "short-story")
+        self.assertTrue((active / "content.md").exists())
+        self.assertFalse((active / "books").exists())
+        text = (active / "content.md").read_text(encoding="utf-8")
+        self.assertEqual(text, "Chapter Content")
+
+    def test_convert_series_to_short_story_fails_if_multiple_books(self):
+        """Test that Series -> Short Story fails if multiple books"""
+        create_project("test_series_multi_books", project_type="series")
+        select_project("test_series_multi_books")
+
+        # Create two books
+        from app.projects import create_new_book
+
+        create_new_book("Book 1")
+        create_new_book("Book 2")
+
+        ok, msg = change_project_type("short-story")
+        self.assertFalse(ok)
+        self.assertIn("multiple books", msg.lower())
+
+    def test_convert_series_to_short_story_fails_if_multiple_chapters(self):
+        """Test that Series -> Short Story fails if book has multiple chapters"""
+        create_project("test_series_multi_chapters", project_type="series")
+        select_project("test_series_multi_chapters")
+        active = get_active_project_dir()
+
+        # Create one book with two chapters
+        from app.projects import create_new_book
+
+        book_id = create_new_book("Book 1")
+        book_dir = active / "books" / book_id
+        (book_dir / "chapters" / "0001.txt").write_text("Chapter 1", encoding="utf-8")
+        (book_dir / "chapters" / "0002.txt").write_text("Chapter 2", encoding="utf-8")
+
+        ok, msg = change_project_type("short-story")
+        self.assertFalse(ok)
+        self.assertIn("multiple chapters", msg.lower())
+
     def test_short_story_project_overview_with_metadata(self):
         """Test the regression fix: Short Story project using story.json metadata for title/summary."""
         create_project("test_sm_meta", project_type="short-story")
