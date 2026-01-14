@@ -394,9 +394,25 @@ async def api_machine_test_model(request: Request) -> JSONResponse:
         )
 
     model_id_str = str(model_id or "").strip()
+    # Perform dynamic capability verification
+    from app.helpers.llm_utils import verify_model_capabilities
+
+    caps = await verify_model_capabilities(
+        base_url=str(base_url),
+        api_key=str(api_key) if api_key else None,
+        model_id=model_id_str,
+        timeout_s=timeout_s,
+    )
+
     if model_id_str and model_id_str in set(models):
         return JSONResponse(
-            status_code=200, content={"ok": True, "model_ok": True, "models": models}
+            status_code=200,
+            content={
+                "ok": True,
+                "model_ok": True,
+                "models": models,
+                "capabilities": caps,
+            },
         )
 
     model_ok, model_detail = await _remote_model_exists(
@@ -411,7 +427,8 @@ async def api_machine_test_model(request: Request) -> JSONResponse:
             "ok": True,
             "model_ok": bool(model_ok),
             "models": models,
-            **({"detail": model_detail} if model_detail else {}),
+            "detail": model_detail,
+            "capabilities": caps if model_ok else {},
         },
     )
 
@@ -490,6 +507,8 @@ async def api_machine_put(request: Request) -> JSONResponse:
                 "api_key": api_key,
                 "timeout_s": timeout_s_int,
                 "model": model,
+                "is_multimodal": m.get("is_multimodal"),
+                "supports_function_calling": m.get("supports_function_calling"),
                 "prompt_overrides": prompt_overrides,
             }
         )

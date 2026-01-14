@@ -59,6 +59,10 @@ export const api = {
         model_ok: boolean;
         models: string[];
         detail?: string;
+        capabilities?: {
+          is_multimodal: boolean;
+          supports_function_calling: boolean;
+        };
       }>;
     },
   },
@@ -132,14 +136,36 @@ export const api = {
       }
       return res.json();
     },
-    uploadImage: async (file: File) => {
+    uploadImage: async (file: File, targetName?: string) => {
       const formData = new FormData();
       formData.append('file', file);
-      const res = await fetch(`${API_BASE}/projects/images/upload`, {
+      const url = targetName
+        ? `${API_BASE}/projects/images/upload?target_name=${encodeURIComponent(targetName)}`
+        : `${API_BASE}/projects/images/upload`;
+
+      const res = await fetch(url, {
         method: 'POST',
         body: formData,
       });
       if (!res.ok) throw new Error('Failed to upload image');
+      return res.json();
+    },
+    updateImage: async (filename: string, description?: string, title?: string) => {
+      const res = await fetch(`${API_BASE}/projects/images/update_description`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename, description, title }),
+      });
+      if (!res.ok) throw new Error('Failed to update image metadata');
+      return res.json();
+    },
+    createImagePlaceholder: async (description: string, title?: string) => {
+      const res = await fetch(`${API_BASE}/projects/images/create_placeholder`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description, title }),
+      });
+      if (!res.ok) throw new Error('Failed to create placeholder');
       return res.json();
     },
     listImages: async () => {
@@ -286,6 +312,18 @@ export const api = {
         body: JSON.stringify({ tags }),
       });
       if (!res.ok) throw new Error('Failed to update story tags');
+      return res.json();
+    },
+    updateSettings: async (settings: {
+      image_style?: string;
+      image_additional_info?: string;
+    }) => {
+      const res = await fetch(`${API_BASE}/story/settings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings),
+      });
+      if (!res.ok) throw new Error('Failed to update story settings');
       return res.json();
     },
   },

@@ -1,5 +1,7 @@
 # AugmentedQuill
 
+**NOTE:** This project is under heavy development. Do not try to use it for any productive work.
+
 <img src="static/images/logo_2048.png" alt="Augmented Quill - Your Words, Amplified" width="1024">
 
 **AugmentedQuill** is a modern, web-based GUI for AI-assisted prose writing. It leverages Large Language Models (LLMs) via the OpenAI-compatible API to act as a writing partner, editor, and continuation engine.
@@ -135,3 +137,16 @@ Notes:
 This project is licensed under the GNU General Public License v3.0 (GPLv3). See the [LICENSE](LICENSE) file for details.
 
 Copyright (C) 2026 StableLlama
+
+## Project Image Settings
+
+AugmentedQuill allows you to manage reference images for your story. You can upload images, generate descriptions for them using Vision models, and create highly optimized art prompts for generation.
+
+To maintain visual consistency across your project, you can configure **Project Image Settings**:
+
+1.  Open the **Images** panel (Image icon in the sidebar).
+2.  Expand the **Project Image Settings** section at the top.
+3.  **Global Style**: Define a consistent art style (e.g., "Cyberpunk", "Oil Painting", "Watercolor"). This style will be prioritized in all generated prompts.
+4.  **Additional Information**: Add specific technical parameters or LoRA triggers (e.g., "<lora:my_style:0.8>, dark lighting, no humans"). These details are appended to the generation prompt to ensure your specific generation pipeline rules are followed.
+
+When you click "Create Prompt" for an image, the AI will intelligently fuse your image's specific description with your global style and additional parameters into a single, optimized prompt line.

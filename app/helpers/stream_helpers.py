@@ -21,7 +21,11 @@ class ChannelFilter:
             r"<\|start\|>assistant.*?<\|message\|>|"
             r"<\|end\|>|"
             r"<(thought|thinking)>|"
-            r"</(thought|thinking)>)",
+            r"</(thought|thinking)>|"
+            r"\[TOOL_CALL\]|"
+            r"\[/TOOL_CALL\]|"
+            r"<tool_call>|"
+            r"</tool_call>)",
             re.IGNORECASE | re.DOTALL,
         )
 
@@ -36,7 +40,14 @@ class ChannelFilter:
                 # No complete tag found.
                 # We should yield everything that is definitely not part of a tag.
                 # Tags start with '<'.
-                first_bracket = self.buffer.find("<")
+                check_chars = ["<", "["]
+                first_bracket = -1
+                for char in check_chars:
+                    idx = self.buffer.find(char)
+                    if idx != -1:
+                        if first_bracket == -1 or idx < first_bracket:
+                            first_bracket = idx
+
                 if first_bracket == -1:
                     # No bracket at all, safe to yield everything
                     if self.buffer:
@@ -54,24 +65,15 @@ class ChannelFilter:
                     )
                     self.buffer = self.buffer[first_bracket:]
 
-                # Now the buffer starts with '<' (or is empty).
+                # Now the buffer starts with '<' or '[' (or is empty).
                 # If it's getting too long, it's probably not a tag we recognize.
                 if len(self.buffer) > 150:
                     # Yield everything up to the next bracket or everything if no more brackets.
-                    next_bracket = self.buffer.find("<", 1)
-                    if next_bracket != -1:
-                        results.append(
-                            {
-                                "channel": self.current_channel,
-                                "content": self.buffer[:next_bracket],
-                            }
-                        )
-                        self.buffer = self.buffer[next_bracket:]
-                    else:
-                        results.append(
-                            {"channel": self.current_channel, "content": self.buffer}
-                        )
-                        self.buffer = ""
+                    # Simplified: just yield one char and continue, buffer logic handles rest eventually
+                    results.append(
+                        {"channel": self.current_channel, "content": self.buffer[0]}
+                    )
+                    self.buffer = self.buffer[1:]
                 break
             else:
                 # Yield content before the tag
@@ -91,6 +93,12 @@ class ChannelFilter:
                     self.current_channel = "thought"
                 # Check for closing thought tags
                 elif re.match(r"</(thought|thinking)>", tag_text, re.IGNORECASE):
+                    self.current_channel = "final"
+                # Check for opening tool call tags
+                elif re.match(r"\[TOOL_CALL\]|<tool_call>", tag_text, re.IGNORECASE):
+                    self.current_channel = "tool_def"
+                # Check for closing tool call tags
+                elif re.match(r"\[/TOOL_CALL\]|</tool_call>", tag_text, re.IGNORECASE):
                     self.current_channel = "final"
                 # Check for special channel tags
                 elif tag_text.startswith("<|channel|>"):
@@ -113,4 +121,12 @@ class ChannelFilter:
                 # Advance buffer past the tag
                 self.buffer = self.buffer[end:]
 
+        return results
+
+    def flush(self) -> List[Dict[str, str]]:
+        """Flush the buffer and return any remaining content."""
+        results = []
+        if self.buffer:
+            results.append({"channel": self.current_channel, "content": self.buffer})
+            self.buffer = ""
         return results

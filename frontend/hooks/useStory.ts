@@ -14,6 +14,8 @@ const INITIAL_STORY: StoryState = {
   title: '',
   summary: '',
   styleTags: [],
+  image_style: '',
+  image_additional_info: '',
   chapters: [],
   projectType: 'medium',
   books: [],
@@ -63,6 +65,8 @@ export const useStory = () => {
           title: res.story.project_title || currentProject,
           summary: res.story.story_summary || '',
           styleTags: res.story.tags || [],
+          image_style: res.story.image_style || '',
+          image_additional_info: res.story.image_additional_info || '',
           chapters: chapters,
           projectType: res.story.project_type || 'medium',
           books: res.story.books || [],
@@ -124,6 +128,8 @@ export const useStory = () => {
             title: res.story.project_title || projects.current,
             summary: res.story.story_summary || '',
             styleTags: res.story.tags || [],
+            image_style: res.story.image_style || '',
+            image_additional_info: res.story.image_additional_info || '',
             chapters: chapters,
             projectType: res.story.project_type || 'medium',
             books: res.story.books || [],
@@ -165,6 +171,19 @@ export const useStory = () => {
       await api.story.updateTags(tags);
     } catch (e) {
       console.error('Failed to update story metadata', e);
+    }
+  };
+
+  const updateStoryImageSettings = async (style: string, info: string) => {
+    const newState = { ...story, image_style: style, image_additional_info: info };
+    pushState(newState);
+    try {
+      await api.story.updateSettings({
+        image_style: style,
+        image_additional_info: info,
+      });
+    } catch (e) {
+      console.error('Failed to update story image settings', e);
     }
   };
 
@@ -286,6 +305,7 @@ export const useStory = () => {
     currentChapterId,
     selectChapter: (id: string) => selectChapter(id),
     updateStoryMetadata,
+    updateStoryImageSettings,
     updateChapter,
     addChapter,
     deleteChapter,

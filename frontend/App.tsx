@@ -12,10 +12,12 @@ import { StoryMetadata } from './components/StoryMetadata';
 import { ChapterList } from './components/ChapterList';
 import { Editor } from './components/Editor';
 import { Chat } from './components/Chat';
+import { ProjectImages } from './components/ProjectImages';
 import { DebugLogs } from './components/DebugLogs';
 import { Button } from './components/Button';
 import { SettingsDialog } from './components/SettingsDialog';
 import { CreateProjectDialog } from './components/CreateProjectDialog';
+import { ModelSelector } from './components/ModelSelector';
 import {
   ChatMessage,
   Chapter,
@@ -95,6 +97,7 @@ const App: React.FC = () => {
     currentChapterId,
     selectChapter,
     updateStoryMetadata,
+    updateStoryImageSettings,
     updateChapter,
     addChapter,
     deleteChapter,
@@ -141,6 +144,77 @@ const App: React.FC = () => {
     return DEFAULT_APP_SETTINGS;
   });
 
+  const [modelConnectionStatus, setModelConnectionStatus] = useState<
+    Record<string, 'idle' | 'success' | 'error' | 'loading'>
+  >({});
+  const [detectedCapabilities, setDetectedCapabilities] = useState<
+    Record<string, { is_multimodal: boolean; supports_function_calling: boolean }>
+  >({});
+
+  useEffect(() => {
+    let cancelled = false;
+    const checkProviders = async () => {
+      // Check active providers first, or all. Checking all might be slow if many.
+      // Let's check unique active providers.
+      const activeIds = new Set([
+        appSettings.activeChatProviderId,
+        appSettings.activeWritingProviderId,
+        appSettings.activeEditingProviderId,
+      ]);
+
+      const providersToCheck = appSettings.providers.filter((p) => activeIds.has(p.id));
+
+      for (const p of providersToCheck) {
+        if (cancelled) return;
+        // Don't re-check if already success? User says "currently working or not", implying live check on load.
+        // We will check.
+        setModelConnectionStatus((prev) => ({ ...prev, [p.id]: 'loading' }));
+
+        try {
+          // 1. Connection check
+          const modelId = p.modelId || '';
+          if (!modelId) {
+            setModelConnectionStatus((prev) => ({ ...prev, [p.id]: 'idle' }));
+            continue;
+          }
+
+          const res = await api.machine.testModel({
+            base_url: p.baseUrl,
+            api_key: p.apiKey,
+            timeout_s: Math.round((p.timeout || 10000) / 1000),
+            model_id: modelId,
+          });
+
+          if (cancelled) return;
+
+          if (res.model_ok && res.capabilities) {
+            setDetectedCapabilities((prev) => ({ ...prev, [p.id]: res.capabilities! }));
+          }
+
+          setModelConnectionStatus((prev) => ({
+            ...prev,
+            [p.id]: res.model_ok ? 'success' : 'error',
+          }));
+        } catch (e) {
+          if (cancelled) return;
+          setModelConnectionStatus((prev) => ({ ...prev, [p.id]: 'error' }));
+        }
+      }
+    };
+
+    // Simple debounce/dedupe: only run if providers change or IDs change
+    checkProviders();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    appSettings.providers,
+    appSettings.activeChatProviderId,
+    appSettings.activeEditingProviderId,
+    appSettings.activeWritingProviderId,
+  ]);
+
   const [projects, setProjects] = useState<ProjectMetadata[]>(() => {
     const saved = localStorage.getItem('augmentedquill_projects_meta');
     return saved
@@ -174,6 +248,7 @@ const App: React.FC = () => {
   }, [isAppearanceOpen]);
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isImagesOpen, setIsImagesOpen] = useState(false);
   const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
   const [isDebugLogsOpen, setIsDebugLogsOpen] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('raw');
@@ -379,6 +454,7 @@ const App: React.FC = () => {
             id: name, // Vital: Use the directory name as ID for subsequent API calls
             title: result.story.project_title || name,
             summary: result.story.story_summary || '',
+            projectType: result.story.project_type || 'medium',
             styleTags: result.story.tags || [],
             chapters: (result.story.chapters || []).map((c: any, i: number) => ({
               id: String(i + 1),
@@ -454,17 +530,7 @@ const App: React.FC = () => {
     appSettings.providers[0];
 
   const getSystemPrompt = () => {
-    return (
-      prompts.system_messages.chat_llm ||
-      `You are a professional creative writing partner and editor.
-You are helping the user write a story titled "${story.title}".
-Story Summary: ${story.summary}
-Style Tags: ${story.styleTags.join(', ')}
-
-Your goal is to assist with writing, editing, brainstorming, and structuring.
-You have tools to directly modify the story content if the user explicitly asks.
-Always prioritize the user's creative vision.`
-    );
+    return prompts.system_messages.chat_llm || '';
   };
 
   const [systemPrompt, setSystemPrompt] = useState(getSystemPrompt());
@@ -485,17 +551,6 @@ Always prioritize the user's creative vision.`
       );
 
       let promptWithContext = userText;
-      if (currentChapter) {
-        const template =
-          prompts.user_prompts.chat_user_context ||
-          '[Current Chapter Context: ID={chapter_id}, Title="{chapter_title}"]\n[Current Content Start]\n{chapter_content}\n[Current Content End]\n\nUser Request: {user_text}';
-
-        promptWithContext = template
-          .replace('{chapter_id}', String(currentChapter.id))
-          .replace('{chapter_title}', currentChapter.title)
-          .replace('{chapter_content}', currentChapter.content.slice(0, 5000))
-          .replace('{user_text}', userText);
-      }
 
       const updateMessage = (
         msgId: string,
@@ -1076,6 +1131,23 @@ Always prioritize the user's creative vision.`
         }}
         theme={currentTheme}
         defaultPrompts={prompts}
+      />
+
+      <ProjectImages
+        isOpen={isImagesOpen}
+        onClose={() => setIsImagesOpen(false)}
+        theme={currentTheme}
+        settings={appSettings}
+        prompts={prompts}
+        imageStyle={story.image_style}
+        imageAdditionalInfo={story.image_additional_info}
+        onUpdateSettings={updateStoryImageSettings}
+        onInsert={(filename, url, altText) => {
+          if (url && editorRef.current) {
+            editorRef.current.insertImage(filename, url, altText);
+            setIsImagesOpen(false);
+          }
+        }}
       />
 
       <CreateProjectDialog
@@ -1667,119 +1739,66 @@ Always prioritize the user's creative vision.`
               isLight ? 'border-brand-gray-200' : 'border-brand-gray-800'
             }`}
           >
-            <div className="flex flex-col justify-center">
-              <label
-                className={`text-[8px] font-bold uppercase leading-none mb-0.5 ${
-                  isLight ? 'text-fuchsia-600' : 'text-fuchsia-400'
-                }`}
-              >
-                Editing
-              </label>
-              <select
-                className={`text-[10px] bg-transparent border-none p-0 focus:ring-0 cursor-pointer w-24 truncate font-medium ${
-                  isLight ? 'text-brand-gray-600' : 'text-brand-gray-300'
-                }`}
-                value={appSettings.activeEditingProviderId}
-                onChange={(e) =>
-                  setAppSettings((prev) => ({
-                    ...prev,
-                    activeEditingProviderId: e.target.value,
-                  }))
-                }
-                title="Active Editing Model"
-              >
-                {appSettings.providers.map((p) => (
-                  <option
-                    key={p.id}
-                    value={p.id}
-                    className={
-                      isLight
-                        ? 'bg-white text-brand-gray-900'
-                        : 'bg-brand-gray-900 text-brand-gray-100'
-                    }
-                  >
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="flex flex-col justify-center">
-              <label
-                className={`text-[8px] font-bold uppercase leading-none mb-0.5 ${
-                  isLight ? 'text-violet-600' : 'text-violet-400'
-                }`}
-              >
-                Writing
-              </label>
-              <select
-                className={`text-[10px] bg-transparent border-none p-0 focus:ring-0 cursor-pointer w-24 truncate font-medium ${
-                  isLight ? 'text-brand-gray-600' : 'text-brand-gray-300'
-                }`}
-                value={appSettings.activeWritingProviderId}
-                onChange={(e) =>
-                  setAppSettings((prev) => ({
-                    ...prev,
-                    activeWritingProviderId: e.target.value,
-                  }))
-                }
-                title="Active Writing Model"
-              >
-                {appSettings.providers.map((p) => (
-                  <option
-                    key={p.id}
-                    value={p.id}
-                    className={
-                      isLight
-                        ? 'bg-white text-brand-gray-900'
-                        : 'bg-brand-gray-900 text-brand-gray-100'
-                    }
-                  >
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="flex flex-col justify-center">
-              <label
-                className={`text-[8px] font-bold uppercase leading-none mb-0.5 ${
-                  isLight ? 'text-blue-600' : 'text-blue-400'
-                }`}
-              >
-                Chat
-              </label>
-              <select
-                className={`text-[10px] bg-transparent border-none p-0 focus:ring-0 cursor-pointer w-24 truncate font-medium ${
-                  isLight ? 'text-brand-gray-600' : 'text-brand-gray-300'
-                }`}
-                value={appSettings.activeChatProviderId}
-                onChange={(e) =>
-                  setAppSettings((prev) => ({
-                    ...prev,
-                    activeChatProviderId: e.target.value,
-                  }))
-                }
-                title="Active Chat Model"
-              >
-                {appSettings.providers.map((p) => (
-                  <option
-                    key={p.id}
-                    value={p.id}
-                    className={
-                      isLight
-                        ? 'bg-white text-brand-gray-900'
-                        : 'bg-brand-gray-900 text-brand-gray-100'
-                    }
-                  >
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <ModelSelector
+              label="Editing"
+              value={appSettings.activeEditingProviderId}
+              onChange={(v) =>
+                setAppSettings((prev) => ({
+                  ...prev,
+                  activeEditingProviderId: v,
+                }))
+              }
+              options={appSettings.providers}
+              theme={currentTheme}
+              connectionStatus={modelConnectionStatus}
+              detectedCapabilities={detectedCapabilities}
+              labelColorClass={isLight ? 'text-fuchsia-600' : 'text-fuchsia-400'}
+            />
+            <ModelSelector
+              label="Writing"
+              value={appSettings.activeWritingProviderId}
+              onChange={(v) =>
+                setAppSettings((prev) => ({
+                  ...prev,
+                  activeWritingProviderId: v,
+                }))
+              }
+              options={appSettings.providers}
+              theme={currentTheme}
+              connectionStatus={modelConnectionStatus}
+              detectedCapabilities={detectedCapabilities}
+              labelColorClass={isLight ? 'text-violet-600' : 'text-violet-400'}
+            />
+            <ModelSelector
+              label="Chat"
+              value={appSettings.activeChatProviderId}
+              onChange={(v) =>
+                setAppSettings((prev) => ({
+                  ...prev,
+                  activeChatProviderId: v,
+                }))
+              }
+              options={appSettings.providers}
+              theme={currentTheme}
+              connectionStatus={modelConnectionStatus}
+              detectedCapabilities={detectedCapabilities}
+              labelColorClass={isLight ? 'text-blue-600' : 'text-blue-400'}
+            />
           </div>
         </div>
 
         {/* Right: Settings & Panels */}
         <div className="flex items-center space-x-2 shrink-0">
+          <Button
+            theme={currentTheme}
+            variant="ghost"
+            size="sm"
+            onClick={() => setIsImagesOpen(true)}
+            title="Images"
+            className="hidden sm:inline-flex mr-1"
+          >
+            <ImageIcon size={18} />
+          </Button>
           <Button
             theme={currentTheme}
             variant="ghost"

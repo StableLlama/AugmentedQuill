@@ -90,6 +90,9 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
     [key: string]: 'idle' | 'success' | 'error' | 'loading';
   }>({});
   const [modelLists, setModelLists] = useState<Record<string, string[]>>({});
+  const [detectedCapabilities, setDetectedCapabilities] = useState<
+    Record<string, { is_multimodal: boolean; supports_function_calling: boolean }>
+  >({});
   const [saveError, setSaveError] = useState<string>('');
   const [saveLoading, setSaveLoading] = useState<boolean>(false);
 
@@ -133,6 +136,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                   ? Math.max(1, timeoutS) * 1000
                   : 60000,
                 modelId: String(m.model || '').trim(),
+                isMultimodal: m.is_multimodal,
+                supportsFunctionCalling: m.supports_function_calling,
                 prompts: m.prompt_overrides || {},
               };
             });
@@ -316,6 +321,12 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
           if (Array.isArray(res?.models)) {
             setModelLists((prev) => ({ ...prev, [providerId]: res.models }));
           }
+          if (res?.capabilities) {
+            setDetectedCapabilities((prev) => ({
+              ...prev,
+              [providerId]: res.capabilities!,
+            }));
+          }
           setModelStatus((s) => ({
             ...s,
             [providerId]: res?.ok && res?.model_ok ? 'success' : 'error',
@@ -370,6 +381,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
             api_key: p.apiKey || '',
             timeout_s: Math.max(1, Math.round((p.timeout || 10000) / 1000)),
             model: (p.modelId || '').trim(),
+            is_multimodal: p.isMultimodal,
+            supports_function_calling: p.supportsFunctionCalling,
             prompt_overrides: p.prompts || {},
           })),
         },
@@ -552,6 +565,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                 setEditingProviderId={setEditingProviderId}
                 connectionStatus={connectionStatus}
                 modelStatus={modelStatus}
+                detectedCapabilities={detectedCapabilities}
                 modelLists={modelLists}
                 theme={theme}
                 defaultPrompts={defaultPrompts}

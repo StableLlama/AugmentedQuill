@@ -24,6 +24,8 @@ export interface Story {
   title: string;
   summary: string;
   styleTags: string[];
+  image_style?: string;
+  image_additional_info?: string;
   chapters: Chapter[];
   projectType: 'small' | 'medium' | 'large';
   books?: Book[];
@@ -72,6 +74,8 @@ export interface LLMConfig {
   modelId: string;
   temperature?: number;
   topP?: number;
+  isMultimodal?: boolean | null; // null/undefined = auto-detect
+  supportsFunctionCalling?: boolean | null; // null/undefined = auto-detect
   prompts: {
     system: string;
     continuation: string;

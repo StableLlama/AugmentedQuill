@@ -274,7 +274,11 @@ export const generateSimpleContent = async (
   prompt: string,
   systemInstruction: string,
   config: LLMConfig,
-  modelType?: 'CHAT' | 'WRITING' | 'EDITING'
+  modelType?: 'CHAT' | 'WRITING' | 'EDITING',
+  options?: {
+    tool_choice?: string;
+    onUpdate?: (partialText: string) => void;
+  }
 ) => {
   const messages = [
     { role: 'system', content: systemInstruction },
@@ -285,7 +289,11 @@ export const generateSimpleContent = async (
     const res = await fetch('/api/chat/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages, model_type: modelType }),
+      body: JSON.stringify({
+        messages,
+        model_type: modelType,
+        tool_choice: options?.tool_choice,
+      }),
     });
 
     if (!res.ok) throw new Error('Generation failed');
@@ -293,7 +301,11 @@ export const generateSimpleContent = async (
     const reader = res.body?.getReader();
     if (!reader) return '';
 
-    return await readSSEStream(reader);
+    let accumulated = '';
+    return await readSSEStream(reader, undefined, undefined, (delta) => {
+      accumulated += delta;
+      options?.onUpdate?.(accumulated);
+    });
   } catch (e: any) {
     // Re-throw so the caller can handle it and show it to the user
     throw e;

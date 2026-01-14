@@ -15,6 +15,8 @@ import {
   Key,
   ChevronDown,
   Plus,
+  Eye,
+  Wand2,
 } from 'lucide-react';
 import { AppTheme, AppSettings, LLMConfig } from '../../types';
 import { Button } from '../Button';
@@ -27,6 +29,10 @@ interface SettingsMachineProps {
   setEditingProviderId: React.Dispatch<React.SetStateAction<string | null>>;
   connectionStatus: { [key: string]: 'idle' | 'success' | 'error' | 'loading' };
   modelStatus: { [key: string]: 'idle' | 'success' | 'error' | 'loading' };
+  detectedCapabilities: Record<
+    string,
+    { is_multimodal: boolean; supports_function_calling: boolean }
+  >;
   modelLists: Record<string, string[]>;
   theme: AppTheme;
   defaultPrompts: {
@@ -45,6 +51,7 @@ export const SettingsMachine: React.FC<SettingsMachineProps> = ({
   setEditingProviderId,
   connectionStatus,
   modelStatus,
+  detectedCapabilities,
   modelLists,
   theme,
   defaultPrompts,
@@ -111,6 +118,29 @@ export const SettingsMachine: React.FC<SettingsMachineProps> = ({
                   </div>
                 </div>
                 <div className="flex items-center space-x-1">
+                  {(p.isMultimodal === true ||
+                    ((p.isMultimodal === null || p.isMultimodal === undefined) &&
+                      detectedCapabilities[p.id]?.is_multimodal)) && (
+                    <Eye
+                      size={12}
+                      className={
+                        isLight ? 'text-brand-gray-500' : 'text-brand-gray-400'
+                      }
+                      title="Multimodal (Vision)"
+                    />
+                  )}
+                  {(p.supportsFunctionCalling === true ||
+                    ((p.supportsFunctionCalling === null ||
+                      p.supportsFunctionCalling === undefined) &&
+                      detectedCapabilities[p.id]?.supports_function_calling)) && (
+                    <Wand2
+                      size={12}
+                      className={
+                        isLight ? 'text-brand-gray-500' : 'text-brand-gray-400'
+                      }
+                      title="Function Calling"
+                    />
+                  )}
                   <span
                     className={`h-2.5 w-2.5 rounded-full border ${
                       connectionStatus[p.id] === 'success'
@@ -495,6 +525,89 @@ export const SettingsMachine: React.FC<SettingsMachineProps> = ({
                         : 'bg-brand-gray-950 border-brand-gray-700 text-brand-gray-300'
                     }`}
                   />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-brand-gray-500 uppercase">
+                    Multimodal (Vision)
+                  </label>
+                  <select
+                    value={
+                      activeProvider.isMultimodal === true
+                        ? 'true'
+                        : activeProvider.isMultimodal === false
+                          ? 'false'
+                          : 'auto'
+                    }
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      onUpdateProvider(activeProvider.id, {
+                        isMultimodal: val === 'auto' ? null : val === 'true',
+                      });
+                    }}
+                    className={`w-full border rounded p-2 text-sm focus:border-brand-500 focus:outline-none ${
+                      isLight
+                        ? 'bg-brand-gray-50 border-brand-gray-300 text-brand-gray-800'
+                        : 'bg-brand-gray-950 border-brand-gray-700 text-brand-gray-300'
+                    }`}
+                  >
+                    <option value="auto">
+                      Auto
+                      {detectedCapabilities[activeProvider.id]?.is_multimodal !==
+                      undefined
+                        ? ` (${
+                            detectedCapabilities[activeProvider.id].is_multimodal
+                              ? 'Yes'
+                              : 'No'
+                          })`
+                        : ''}
+                    </option>
+                    <option value="true">Supported</option>
+                    <option value="false">Unsupported</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-brand-gray-500 uppercase">
+                    Function Calling
+                  </label>
+                  <select
+                    value={
+                      activeProvider.supportsFunctionCalling === true
+                        ? 'true'
+                        : activeProvider.supportsFunctionCalling === false
+                          ? 'false'
+                          : 'auto'
+                    }
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      onUpdateProvider(activeProvider.id, {
+                        supportsFunctionCalling: val === 'auto' ? null : val === 'true',
+                      });
+                    }}
+                    className={`w-full border rounded p-2 text-sm focus:border-brand-500 focus:outline-none ${
+                      isLight
+                        ? 'bg-brand-gray-50 border-brand-gray-300 text-brand-gray-800'
+                        : 'bg-brand-gray-950 border-brand-gray-700 text-brand-gray-300'
+                    }`}
+                  >
+                    <option value="auto">
+                      Auto
+                      {detectedCapabilities[activeProvider.id]
+                        ?.supports_function_calling !== undefined
+                        ? ` (${
+                            detectedCapabilities[activeProvider.id]
+                              .supports_function_calling
+                              ? 'Yes'
+                              : 'No'
+                          })`
+                        : ''}
+                    </option>
+                    <option value="true">Supported</option>
+                    <option value="false">Unsupported</option>
+                  </select>
                 </div>
               </div>
 

@@ -27,6 +27,7 @@ interface DebugLogsProps {
 
 interface LogEntry {
   id: string;
+  model_type?: string;
   timestamp_start: string;
   timestamp_end: string | null;
   request: {
@@ -65,7 +66,7 @@ const JsonView: React.FC<{
     if (typeof data === 'undefined')
       return <span className="text-brand-gray-600">undefined</span>;
     if (typeof data === 'string')
-      return <span className="text-green-500">"{data}"</span>;
+      return <span className="text-green-500 whitespace-pre-wrap">"{data}"</span>;
     if (typeof data === 'number')
       return <span className="text-orange-500">{data}</span>;
     if (typeof data === 'boolean')
@@ -296,6 +297,19 @@ export const DebugLogs: React.FC<DebugLogsProps> = ({ isOpen, onClose, theme }) 
                         >
                           {log.request.method}
                         </span>
+                        {log.model_type && (
+                          <span
+                            className={`text-xs font-bold px-1.5 py-0.5 rounded border ${
+                              log.model_type === 'EDITING'
+                                ? 'bg-purple-500/10 text-purple-500 border-purple-500/20'
+                                : log.model_type === 'WRITING'
+                                  ? 'bg-blue-500/10 text-blue-500 border-blue-500/20'
+                                  : 'bg-orange-500/10 text-orange-500 border-orange-500/20'
+                            }`}
+                          >
+                            {log.model_type}
+                          </span>
+                        )}
                         <span className={`text-sm font-medium truncate ${textMain}`}>
                           {log.request.url.split('/').pop()}
                         </span>
