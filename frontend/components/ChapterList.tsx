@@ -60,6 +60,7 @@ export const ChapterList: React.FC<ChapterListProps> = ({
     originalIndex: number;
   } | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [dragOverBookId, setDragOverBookId] = useState<string | null>(null);
   const [optimisticChapters, setOptimisticChapters] = useState<Chapter[] | null>(null);
   const [optimisticBooks, setOptimisticBooks] = useState<Book[] | null>(null);
 
@@ -87,17 +88,46 @@ export const ChapterList: React.FC<ChapterListProps> = ({
   if (draggedItem && dragOverIndex !== null) {
     if (draggedItem.type === 'chapter') {
       if (projectType === 'series') {
-        const bookChapters = chapters.filter((c) => c.book_id === draggedItem.bookId);
-        const reordered = moveInArray(
-          bookChapters,
-          draggedItem.originalIndex,
-          dragOverIndex
-        );
-        displayChapters = chapters.map((c) => {
-          if (c.book_id !== draggedItem.bookId) return c;
-          const subIdx = bookChapters.findIndex((sc) => sc.id === c.id);
-          return reordered[subIdx];
-        });
+        const targetBookId = dragOverBookId || draggedItem.bookId;
+        if (targetBookId === draggedItem.bookId) {
+          const bookChapters = chapters.filter((c) => c.book_id === draggedItem.bookId);
+          const reordered = moveInArray(
+            bookChapters,
+            draggedItem.originalIndex,
+            dragOverIndex
+          );
+          displayChapters = chapters.map((c) => {
+            if (c.book_id !== draggedItem.bookId) return c;
+            const subIdx = bookChapters.findIndex((sc) => sc.id === c.id);
+            return reordered[subIdx];
+          });
+        } else {
+          // Cross-book move
+          const sourceChapters = chapters.filter(
+            (c) => c.book_id === draggedItem.bookId
+          );
+          const targetChapters = chapters.filter((c) => c.book_id === targetBookId);
+
+          const movingChapter = sourceChapters[draggedItem.originalIndex];
+
+          if (movingChapter) {
+            const newSourceChapters = [...sourceChapters];
+            newSourceChapters.splice(draggedItem.originalIndex, 1);
+
+            const newTargetChapters = [...targetChapters];
+            newTargetChapters.splice(dragOverIndex, 0, {
+              ...movingChapter,
+              book_id: targetBookId,
+            });
+
+            displayChapters = chapters
+              .filter(
+                (c) => c.book_id !== draggedItem.bookId && c.book_id !== targetBookId
+              )
+              .concat(newSourceChapters)
+              .concat(newTargetChapters);
+          }
+        }
       } else {
         displayChapters = moveInArray(
           chapters,
@@ -122,9 +152,10 @@ export const ChapterList: React.FC<ChapterListProps> = ({
     e.dataTransfer.effectAllowed = 'move';
   };
 
-  const handleDragEnter = (index: number) => {
-    if (dragOverIndex !== index) {
+  const handleDragEnter = (index: number, bookId?: string) => {
+    if (dragOverIndex !== index || (bookId && dragOverBookId !== bookId)) {
       setDragOverIndex(index);
+      if (bookId) setDragOverBookId(bookId);
     }
   };
 
@@ -138,7 +169,7 @@ export const ChapterList: React.FC<ChapterListProps> = ({
     const targetIdx = dragOverIndex;
     const dragged = draggedItem;
 
-    if (!dragged || targetIdx === null || targetIdx === dragged.originalIndex) {
+    if (!dragged || targetIdx === null) {
       setDragOverIndex(null);
       setDraggedItem(null);
       return;
@@ -146,13 +177,23 @@ export const ChapterList: React.FC<ChapterListProps> = ({
 
     if (dragged.type === 'chapter') {
       if (projectType === 'series') {
-        if (dragged.bookId && onReorderChapters) {
+        const targetBookId = dragOverBookId || dragged.bookId;
+
+        // Only skip if same book AND same index
+        if (targetBookId === dragged.bookId && targetIdx === dragged.originalIndex) {
+          setDragOverIndex(null);
+          setDraggedItem(null);
+          setDragOverBookId(null);
+          return;
+        }
+
+        if (targetBookId && onReorderChapters) {
           const bookChaptersFinal = displayChapters.filter(
-            (c) => c.book_id === dragged.bookId
+            (c) => c.book_id === targetBookId
           );
           const chapterIds = bookChaptersFinal.map((c) => parseInt(c.id));
           setOptimisticChapters(displayChapters);
-          onReorderChapters(chapterIds, dragged.bookId);
+          onReorderChapters(chapterIds, targetBookId);
         }
       } else {
         if (onReorderChapters) {
@@ -170,12 +211,14 @@ export const ChapterList: React.FC<ChapterListProps> = ({
     }
 
     setDragOverIndex(null);
+    setDragOverBookId(null);
     setDraggedItem(null);
   };
 
   const handleDragEnd = () => {
     setDraggedItem(null);
     setDragOverIndex(null);
+    setDragOverBookId(null);
   };
 
   const toggleBook = (id: string) => {
@@ -211,9 +254,7 @@ export const ChapterList: React.FC<ChapterListProps> = ({
         }
         onDragEnter={() => {
           if (draggedItem?.type === 'chapter' && !isDragging) {
-            if (projectType === 'series' && draggedItem.bookId !== chapter.book_id)
-              return;
-            handleDragEnter(index);
+            handleDragEnter(index, chapter.book_id);
           }
         }}
         onDragOver={handleDragOver}
@@ -291,8 +332,11 @@ export const ChapterList: React.FC<ChapterListProps> = ({
                     draggable
                     onDragStart={(e) => handleDragStart(e, 'book', book.id, bIdx)}
                     onDragEnter={() => {
-                      if (draggedItem?.type === 'book' && !isBookDragging)
+                      if (draggedItem?.type === 'book' && !isBookDragging) {
                         handleDragEnter(bIdx);
+                      } else if (draggedItem?.type === 'chapter') {
+                        handleDragEnter(0, book.id);
+                      }
                     }}
                     onDragOver={handleDragOver}
                     onDrop={handleDrop}

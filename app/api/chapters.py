@@ -121,8 +121,11 @@ async def api_chapter_content(chap_id: int = FastAPIPath(..., ge=0)) -> dict:
     chapters_data = []
     if p_type == "series":
         for book in story.get("books", []):
+            bid = book.get("id")
             for c in book.get("chapters", []):
-                chapters_data.append(_normalize_chapter_entry(c))
+                norm = _normalize_chapter_entry(c)
+                norm["book_id"] = bid
+                chapters_data.append(norm)
     else:
         chapters_data = [_normalize_chapter_entry(c) for c in story.get("chapters", [])]
 
@@ -753,110 +756,162 @@ async def api_reorder_chapters(request: Request) -> JSONResponse:
                 content={"ok": False, "detail": "chapter_ids must be a list"},
             )
 
-        # Find the book
-        books = story.get("books", [])
-        book = next((b for b in books if b.get("id") == book_id), None)
-        if not book:
-            return JSONResponse(
-                status_code=404, content={"ok": False, "detail": "Book not found"}
-            )
-
-        # Reorder chapters within the book using global IDs
+        # 1. Identify all requested chapters across the project
         from app.helpers.chapter_helpers import _scan_chapter_files
 
-        files = _scan_chapter_files()
+        all_files = _scan_chapter_files()
 
-        # Get (idx, path) for this book only
-        book_files = [(idx, p) for idx, p in files if p.parent.parent.name == book_id]
+        # Build global ID -> (path, metadata) mapping
+        # First, collect all metadata from all books
+        all_metadata = []
+        for b in story.get("books", []):
+            bid = b.get("id")
+            for c in b.get("chapters", []):
+                norm = _normalize_chapter_entry(c)
+                norm["_parent_book_id"] = bid
+                norm["_original_object"] = c
+                all_metadata.append(norm)
 
-        # Correlate files with metadata for THIS book
-        book_chapters = book.get("chapters", [])
-
-        # To match precisely, we'll build a list of (idx, path, metadata)
-        # using the same matching logic as api_chapters() but limited to this book.
-        triplets = []
-        used_metadata_ids = set()  # Track by id() to handle identical-looking dicts
-
-        for i, (idx, p) in enumerate(book_files):
+        id_to_data = {}
+        used_m_ids = set()
+        for i, (idx, p) in enumerate(all_files):
             fname = p.name
-            match_data = None
+            # p is books/<book_id>/chapters/<num>.txt
+            f_bid = p.parent.parent.name
 
-            # 1. Try filename match
-            match_data = next(
+            # 1. Try exact match: filename AND book_id
+            match = next(
                 (
                     c
-                    for c in book_chapters
-                    if c.get("filename") == fname and id(c) not in used_metadata_ids
+                    for c in all_metadata
+                    if c.get("filename") == fname
+                    and c.get("_parent_book_id") == f_bid
+                    and id(c) not in used_m_ids
                 ),
                 None,
             )
 
-            # 2. Try heuristic (index match if no specific filename assigned or matching)
-            if not match_data and i < len(book_chapters):
-                candidate = book_chapters[i]
-                if id(candidate) not in used_metadata_ids:
-                    if (
-                        not candidate.get("filename")
-                        or candidate.get("filename") == fname
+            # 2. Heuristic: match by filename only (if move happened but book_id shifted in metadata?)
+            if not match:
+                match = next(
+                    (
+                        c
+                        for c in all_metadata
+                        if c.get("filename") == fname and id(c) not in used_m_ids
+                    ),
+                    None,
+                )
+
+            # 3. Positional fallback within the SAME book if possible
+            if not match:
+                # Find all metadata for this specific book
+                book_m = [c for c in all_metadata if c.get("_parent_book_id") == f_bid]
+                # Find index of this file within its book
+                book_files = [f for f in all_files if f[1].parent.parent.name == f_bid]
+                f_pos = next(
+                    (pos for pos, f in enumerate(book_files) if f[0] == idx), 0
+                )
+
+                if f_pos < len(book_m):
+                    cand = book_m[f_pos]
+                    if id(cand) not in used_m_ids and (
+                        not cand.get("filename") or cand.get("filename") == fname
                     ):
-                        match_data = candidate
+                        match = cand
 
-            # 3. Fallback to any unused metadata at this index position
-            if not match_data and i < len(book_chapters):
-                candidate = book_chapters[i]
-                if id(candidate) not in used_metadata_ids:
-                    match_data = candidate
+            # 4. Global positional fallback
+            if not match and i < len(all_metadata):
+                cand = all_metadata[i]
+                if id(cand) not in used_m_ids:
+                    match = cand
 
-            if match_data:
-                used_metadata_ids.add(id(match_data))
+            if match:
+                used_m_ids.add(id(match))
 
-            triplets.append(
-                (idx, p, match_data or {"title": "", "summary": "", "filename": fname})
+            id_to_data[idx] = (
+                p,
+                match or {"title": "", "summary": "", "filename": fname},
             )
 
-        # Now sort the triplets according to the provided chapter_ids
-        # Any idx not in chapter_ids stays at the end in its original relative order
-        reordered_triplets = sorted(
-            triplets,
-            key=lambda x: (
-                chapter_ids.index(x[0])
-                if x[0] in chapter_ids
-                else len(chapter_ids) + book_files.index((x[0], x[1]))
-            ),
+        # 2. Find target book
+        target_book = next(
+            (b for b in story.get("books", []) if b.get("id") == book_id), None
         )
+        if not target_book:
+            return JSONResponse(
+                status_code=404, content={"ok": False, "detail": "Book not found"}
+            )
 
-        # Build the new reordered_chapters metadata list
-        reordered_chapters = [t[2] for t in reordered_triplets]
+        # Get existing chapter IDs in this book to preserve those not in payload
+        existing_ids = [
+            idx for idx, (p, m) in id_to_data.items() if p.parent.parent.name == book_id
+        ]
 
-        # Add any remaining metadata that wasn't matched to a file (safety)
-        for chap in book_chapters:
-            if not any(chap is t[2] for t in reordered_triplets):
-                reordered_chapters.append(chap)
+        # Final IDs order: requested first, then remaining existing
+        final_ids = []
+        for cid in chapter_ids:
+            if cid in id_to_data:
+                final_ids.append(cid)
+        for cid in existing_ids:
+            if cid not in final_ids:
+                final_ids.append(cid)
 
-        # Update filenames and rename files
-        chapters_dir = active / "books" / book_id / "chapters"
+        # 3. Handle data structures and moves
+        target_dir = active / "books" / book_id / "chapters"
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        triplets = []  # (old_path, metadata)
+        for cid in final_ids:
+            path, metadata = id_to_data[cid]
+            triplets.append((path, metadata))
+
+            # If it's coming from another book, remove it from that book's metadata
+            original_bid = metadata.get("_parent_book_id")
+            if original_bid and original_bid != book_id:
+                orig_book = next(
+                    (b for b in story.get("books", []) if b.get("id") == original_bid),
+                    None,
+                )
+                if orig_book:
+                    orig_book["chapters"] = [
+                        c
+                        for c in orig_book.get("chapters", [])
+                        if id(c) != id(metadata.get("_original_object"))
+                    ]
+
+        # 4. Perform reordering and renames in target book
         temp_renames = []
         final_renames = []
+        new_chapters_metadata = []
 
-        for i, triplet in enumerate(reordered_triplets):
-            idx, old_path, chap = triplet
+        for i, (old_path, metadata) in enumerate(triplets):
             new_filename = f"{i+1:04d}.txt"
-            chap["filename"] = new_filename
+            # Extract actual metadata object for cleaner update
+            clean_metadata = metadata.get("_original_object")
+            if clean_metadata is None:
+                clean_metadata = {
+                    "title": metadata.get("title", ""),
+                    "summary": metadata.get("summary", ""),
+                }
+            clean_metadata["filename"] = new_filename
+            new_chapters_metadata.append(clean_metadata)
 
-            temp_path = chapters_dir / f"temp_{new_filename}"
-            new_path = chapters_dir / new_filename
+            temp_path = target_dir / f"temp_{new_filename}"
+            final_path = target_dir / new_filename
             temp_renames.append((old_path, temp_path))
-            final_renames.append((temp_path, new_path))
+            final_renames.append((temp_path, final_path))
 
         # Execute renames
         for old_p, temp_p in temp_renames:
             if old_p.exists():
                 old_p.rename(temp_p)
-        for temp_p, new_p in final_renames:
+        for temp_p, final_p in final_renames:
             if temp_p.exists():
-                temp_p.rename(new_p)
+                if final_p.exists():
+                    final_p.unlink()
+                temp_p.rename(final_p)
 
-        book["chapters"] = reordered_chapters
+        target_book["chapters"] = new_chapters_metadata
 
     else:  # novel or short-story
         chapter_ids = payload.get("chapter_ids", [])
