@@ -51,6 +51,10 @@ async def api_chapters() -> dict:
                 title = stem.replace("_", " ").replace("-", " ").title()
 
         summary = (chap_entry.get("summary") or "").strip()
+        notes = (chap_entry.get("notes") or "").strip()
+        private_notes = (chap_entry.get("private_notes") or "").strip()
+        conflicts = chap_entry.get("conflicts") or []
+
         book_id = chap_entry.get("book_id", chap_entry.get("_parent_book_id"))
         if not book_id and story.get("project_type") == "series":
             # Parent of chapters/ is the book folder
@@ -62,6 +66,9 @@ async def api_chapters() -> dict:
                 "title": title,
                 "filename": p.name,
                 "summary": summary,
+                "notes": notes,
+                "private_notes": private_notes,
+                "conflicts": conflicts,
                 "book_id": book_id,
             }
         )
@@ -93,6 +100,9 @@ async def api_chapter_content(chap_id: int = FastAPIPath(..., ge=0)) -> dict:
             title = stem.replace("_", " ").replace("-", " ").title()
 
     summary = (chap_entry.get("summary") or "").strip()
+    notes = (chap_entry.get("notes") or "").strip()
+    private_notes = (chap_entry.get("private_notes") or "").strip()
+    conflicts = chap_entry.get("conflicts") or []
 
     try:
         content = path.read_text(encoding="utf-8")
@@ -104,7 +114,79 @@ async def api_chapter_content(chap_id: int = FastAPIPath(..., ge=0)) -> dict:
         "filename": path.name,
         "content": content,
         "summary": summary,
+        "notes": notes,
+        "private_notes": private_notes,
+        "conflicts": conflicts,
     }
+
+
+@router.put("/api/chapters/{chap_id}/metadata")
+async def api_update_chapter_metadata(
+    request: Request, chap_id: int = FastAPIPath(..., ge=0)
+) -> JSONResponse:
+    """Update metadata (summary, notes, private_notes, conflicts) of a chapter.
+    Body: {"summary": str, "notes": str, "private_notes": str, "conflicts": list}
+    Any field omitted will be left unchanged.
+    """
+    active = get_active_project_dir()
+    if not active:
+        return JSONResponse(
+            status_code=400, content={"ok": False, "detail": "No active project"}
+        )
+
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    if not isinstance(payload, dict):
+        return JSONResponse(
+            status_code=400, content={"ok": False, "detail": "Invalid payload"}
+        )
+
+    # Extract fields (None means not provided -> do not update)
+    summary = payload.get("summary")
+    notes = payload.get("notes")
+    private_notes = payload.get("private_notes")
+    conflicts = payload.get("conflicts")
+
+    if summary is not None:
+        summary = str(summary).strip()
+    if notes is not None:
+        notes = str(notes)
+    if private_notes is not None:
+        private_notes = str(private_notes)
+    if conflicts is not None:
+        if not isinstance(conflicts, list):
+            return JSONResponse(
+                status_code=400,
+                content={"ok": False, "detail": "conflicts must be a list"},
+            )
+        # normalize conflicts just in case (e.g. ensure they are dicts)
+
+    from app.projects import update_chapter_metadata
+
+    try:
+        update_chapter_metadata(
+            chap_id,
+            summary=summary,
+            notes=notes,
+            private_notes=private_notes,
+            conflicts=conflicts,
+        )
+    except ValueError as e:
+        return JSONResponse(status_code=404, content={"ok": False, "detail": str(e)})
+
+    # Re-fetch for response logic could be added here if needed,
+    # but for now just return success + updated fields for confirmation
+    return JSONResponse(
+        status_code=200,
+        content={
+            "ok": True,
+            "id": chap_id,
+            "message": "Metadata updated",
+        },
+    )
 
 
 @router.put("/api/chapters/{chap_id}/title")

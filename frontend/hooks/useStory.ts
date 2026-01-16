@@ -174,14 +174,41 @@ export const useStory = () => {
   const updateStoryMetadata = async (
     title: string,
     summary: string,
-    tags: string[]
+    tags: string[],
+    notes?: string,
+    private_notes?: string
   ) => {
-    const newState = { ...story, title, summary, styleTags: tags };
+    const newState = {
+      ...story,
+      title,
+      summary,
+      styleTags: tags,
+      notes,
+      private_notes,
+    };
     pushState(newState);
 
     try {
-      await api.story.updateTitle(title);
-      await api.story.updateSummary(summary);
+      if (story.title !== title) await api.story.updateTitle(title);
+      if (story.summary !== summary) await api.story.updateSummary(summary);
+      if (story.styleTags.join(',') !== tags.join(','))
+        await api.story.updateTags(tags);
+      // New generic metadata update if needed, but App.tsx calls api.story.updateMetadata which handles all
+      // Actually `useStory` logic for `updateStoryMetadata` was used in `StoryMetadata` via props,
+      // but `StoryMetadata.tsx` handles valid API calls now via `api.story.updateMetadata` internally?
+      // No, `StoryMetadata` in `App.tsx` calls `updateStoryMetadata` (from hook) in `onUpdate`.
+      // The `StoryMetadata` component calls `api.story.updateMetadata` AND calls `onUpdate`.
+      // So this hook function is just for updating local state mostly?
+      // Wait, the previous implementation in `useStory` called individual API endpoints.
+      // But `StoryMetadata` component was updated to call `api.story.updateMetadata` itself.
+      // So here in hook, we can skip API calls if they are redundant, OR ensure we use the new API.
+      // Ideally, the hook should manage the API call to keep logic centralized.
+      // But `StoryMetadata.tsx` does `await api.story.updateMetadata(...)` then `onUpdate(...)`.
+      // So `onUpdate` here should just update state.
+      // However to be safe and backward compatible with other calls, let's just leave state update.
+      // If we want this function to ALSO save, we should use the new endpoint.
+
+      await api.story.updateMetadata({ title, summary, notes, private_notes });
       await api.story.updateTags(tags);
     } catch (e) {
       console.error('Failed to update story metadata', e);
@@ -216,9 +243,20 @@ export const useStory = () => {
         await api.chapters.updateTitle(numId, partial.title);
       if (partial.summary !== undefined)
         await api.chapters.updateSummary(numId, partial.summary);
+      // For metadata (notes, private_notes, conflicts), typically updateMetadata is used by caller
+      // but if we wanted to support it here we could add it.
     } catch (e) {
       console.error('Failed to update chapter', e);
     }
+  };
+
+  const updateBook = async (id: string, partial: any) => {
+    const newBooks =
+      story.books?.map((b) => (b.id === id ? { ...b, ...partial } : b)) || [];
+    const newState = { ...story, books: newBooks };
+    pushState(newState);
+    // Note: API calls for books are handled by the caller (MetadataEditorDialog/ChapterList usually)
+    // or we could move them here.
   };
 
   const addChapter = async (
@@ -359,6 +397,7 @@ export const useStory = () => {
     updateChapter,
     addChapter,
     deleteChapter,
+    updateBook,
     loadStory,
     refreshStory,
     undo,

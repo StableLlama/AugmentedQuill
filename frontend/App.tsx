@@ -99,6 +99,7 @@ const App: React.FC = () => {
     updateStoryMetadata,
     updateStoryImageSettings,
     updateChapter,
+    updateBook,
     addChapter,
     deleteChapter,
     loadStory,
@@ -254,7 +255,6 @@ const App: React.FC = () => {
   const [isDebugLogsOpen, setIsDebugLogsOpen] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('raw');
   const [showWhitespace, setShowWhitespace] = useState<boolean>(false);
-  const [isSummaryOpen, setIsSummaryOpen] = useState(false);
   const [activeFormats, setActiveFormats] = useState<string[]>([]);
 
   // UI State for Header Dropdowns
@@ -996,7 +996,9 @@ const App: React.FC = () => {
     try {
       const modelType = target === 'summary' ? 'EDITING' : 'WRITING';
       const config = target === 'summary' ? activeEditingConfig : activeWritingConfig;
-      const result = await generateSimpleContent(prompt, sysMsg, config, modelType);
+      const result = await generateSimpleContent(prompt, sysMsg, config, modelType, {
+        tool_choice: 'none',
+      });
 
       if (target === 'summary') {
         updateChapter(currentChapter.id, { summary: result });
@@ -1021,6 +1023,88 @@ const App: React.FC = () => {
         isError: true,
       };
       setChatMessages((prev) => [...prev, errorMessage]);
+    } finally {
+      setIsAiActionLoading(false);
+    }
+  };
+
+  const handleSidebarAiAction = async (
+    type: 'chapter' | 'book',
+    id: string,
+    action: 'write' | 'update' | 'rewrite',
+    onProgress?: (text: string) => void
+  ): Promise<string | undefined> => {
+    setIsAiActionLoading(true);
+    try {
+      let prompt = '';
+      let sysMsg = '';
+
+      let currentSummary = '';
+      let contentContext = '';
+
+      if (type === 'chapter') {
+        const ch = story.chapters.find((c) => c.id === id);
+        if (!ch) return;
+        currentSummary = ch.summary;
+        contentContext = ch.content || '';
+      } else {
+        const bk = story.books.find((b) => b.id === id);
+        if (!bk) return;
+        currentSummary = bk.summary || '';
+
+        // Aggregate chapter summaries
+        const bookChapters = story.chapters.filter((c) => c.book_id === id);
+        const chaptersText = bookChapters
+          .map((c) => `Chapter: ${c.title}\nSummary: ${c.summary || 'No summary'}`)
+          .join('\n\n');
+        contentContext = `Book Title: ${bk.title}\n\nChapters:\n${chaptersText}`;
+      }
+
+      // Force 'write' mode if we are trying to update but have no summary
+      if (action === 'update' && !currentSummary.trim()) {
+        action = 'write';
+      }
+
+      const modelType = 'EDITING';
+      const config = activeEditingConfig;
+
+      if (action === 'update') {
+        sysMsg = prompts.system_messages.ai_action_summary_update || systemPrompt;
+        const template =
+          prompts.user_prompts.ai_action_summary_update_user ||
+          'Current Summary: {current_summary}\n\nContent:\n{chapter_content}';
+
+        prompt = template
+          .replace('{current_summary}', currentSummary)
+          .replace('{chapter_content}', contentContext);
+      } else {
+        // write or rewrite - treat as fresh generation from content
+        sysMsg = prompts.system_messages.ai_action_summary_rewrite || systemPrompt;
+        const template =
+          prompts.user_prompts.ai_action_summary_rewrite_user ||
+          'Content:\n{chapter_content}';
+        prompt = template.replace('{chapter_content}', contentContext);
+      }
+
+      // Helper to strip artifacts from the stream
+      const cleanText = (t: string) => {
+        // Remove common prefixes: "Summary:", "Updated Summary:", "**Summary:**", etc.
+        return t.replace(/^(\*\*?|##\s*)?(Updated )?Summary:?\**\s*/i, '');
+      };
+
+      const result = await generateSimpleContent(prompt, sysMsg, config, modelType, {
+        tool_choice: 'none',
+        onUpdate: onProgress
+          ? (partial) => {
+              onProgress(cleanText(partial));
+            }
+          : undefined,
+      });
+
+      return cleanText(result);
+    } catch (e: any) {
+      console.error(e);
+      alert(`AI Action Failed: ${e.message}`);
     } finally {
       setIsAiActionLoading(false);
     }
@@ -1262,23 +1346,6 @@ const App: React.FC = () => {
               title="Redo"
             >
               <Redo size={16} />
-            </Button>
-          </div>
-
-          <div
-            className={`hidden xl:flex items-center animate-in fade-in pl-2 border-l ${
-              isLight ? 'border-brand-gray-200' : 'border-brand-gray-800'
-            }`}
-          >
-            <Button
-              theme={currentTheme}
-              variant={isSummaryOpen ? 'primary' : 'secondary'}
-              size="sm"
-              onClick={() => setIsSummaryOpen(!isSummaryOpen)}
-              icon={<BookOpen size={14} />}
-              className="text-xs h-7"
-            >
-              {isSummaryOpen ? 'Hide' : 'Edit Summary'}
             </Button>
           </div>
         </div>
@@ -2104,6 +2171,8 @@ const App: React.FC = () => {
             title={story.title}
             summary={story.summary}
             tags={story.styleTags}
+            notes={story.notes}
+            private_notes={story.private_notes}
             onUpdate={updateStoryMetadata}
             theme={currentTheme}
           />
@@ -2114,11 +2183,14 @@ const App: React.FC = () => {
             currentChapterId={currentChapterId}
             onSelect={handleChapterSelect}
             onDelete={deleteChapter}
+            onUpdateChapter={updateChapter}
+            onUpdateBook={updateBook}
             onCreate={(bookId) => addChapter('New Chapter', '', bookId)}
             onBookCreate={handleBookCreate}
             onBookDelete={handleBookDelete}
             onReorderChapters={handleReorderChapters}
             onReorderBooks={handleReorderBooks}
+            onAiAction={handleSidebarAiAction}
             theme={currentTheme}
             onOpenImages={handleOpenImages}
           />
@@ -2142,8 +2214,6 @@ const App: React.FC = () => {
                 onKeyboardSuggestionAction={handleKeyboardSuggestionAction}
                 onAiAction={handleAiAction}
                 isAiLoading={isAiActionLoading}
-                isSummaryOpen={isSummaryOpen}
-                onToggleSummary={() => setIsSummaryOpen(!isSummaryOpen)}
                 onContextChange={setActiveFormats}
                 showWhitespace={showWhitespace}
                 onToggleShowWhitespace={() => setShowWhitespace((s) => !s)}

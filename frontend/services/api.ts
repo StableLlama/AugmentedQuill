@@ -239,6 +239,23 @@ export const api = {
       if (!res.ok) throw new Error('Failed to reorder books');
       return res.json();
     },
+    updateBookMetadata: async (
+      bookId: string,
+      data: {
+        title?: string;
+        summary?: string;
+        notes?: string;
+        private_notes?: string;
+      }
+    ) => {
+      const res = await fetch(`${API_BASE}/books/${bookId}/metadata`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error('Failed to update book metadata');
+      return res.json();
+    },
   },
   chapters: {
     list: async () => {
@@ -285,6 +302,23 @@ export const api = {
         body: JSON.stringify({ summary }),
       });
       if (!res.ok) throw new Error('Failed to update chapter summary');
+      return res.json();
+    },
+    updateMetadata: async (
+      id: number,
+      data: {
+        summary?: string;
+        notes?: string;
+        private_notes?: string;
+        conflicts?: any[];
+      }
+    ) => {
+      const res = await fetch(`${API_BASE}/chapters/${id}/metadata`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error('Failed to update chapter metadata');
       return res.json();
     },
     delete: async (id: number) => {
@@ -346,6 +380,21 @@ export const api = {
         body: JSON.stringify(settings),
       });
       if (!res.ok) throw new Error('Failed to update story settings');
+      return res.json();
+    },
+    updateMetadata: async (data: {
+      title?: string;
+      summary?: string;
+      tags?: string[];
+      notes?: string;
+      private_notes?: string;
+    }) => {
+      const res = await fetch(`${API_BASE}/story/metadata`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error('Failed to update story metadata');
       return res.json();
     },
   },

@@ -42,6 +42,14 @@ def _project_overview() -> dict:
                 s = c0.get("summary")
                 if s and str(s).strip():
                     summary = str(s).strip()
+                notes = c0.get("notes", "")
+                conflicts = c0.get("conflicts", [])
+            else:
+                notes = ""
+                conflicts = []
+        else:
+            notes = ""
+            conflicts = []
 
         return {
             **base_info,
@@ -52,6 +60,8 @@ def _project_overview() -> dict:
                     "filename": fn,
                     "title": title,
                     "summary": summary,
+                    "notes": notes,
+                    "conflicts": conflicts,
                 }
             ],
         }
@@ -107,6 +117,8 @@ def _project_overview() -> dict:
                             "filename": path.name,
                             "title": meta.get("title") or path.stem,
                             "summary": meta.get("summary") or "",
+                            "notes": meta.get("notes") or "",
+                            "conflicts": meta.get("conflicts") or [],
                         }
                     )
             enriched_books.append(
@@ -125,9 +137,13 @@ def _project_overview() -> dict:
         pos = next((i for i, (cid, _) in enumerate(files) if cid == idx), None)
         title = None
         summary = ""
+        notes = ""
+        conflicts = []
         if isinstance(pos, int) and pos < len(chapters_meta):
             title = chapters_meta[pos].get("title")
             summary = chapters_meta[pos].get("summary") or ""
+            notes = chapters_meta[pos].get("notes") or ""
+            conflicts = chapters_meta[pos].get("conflicts") or []
         if not title or str(title).strip() in ("[object Object]", "object Object"):
             title = path.name
         out.append(
@@ -136,6 +152,8 @@ def _project_overview() -> dict:
                 "filename": path.name,
                 "title": title,
                 "summary": summary,
+                "notes": notes,
+                "conflicts": conflicts,
             }
         )
     return {**base_info, "chapters": out}

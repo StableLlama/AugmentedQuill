@@ -5,6 +5,12 @@
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 
+export interface Conflict {
+  id: string; // or something simple
+  description: string;
+  resolution: string;
+}
+
 export interface Chapter {
   id: string;
   title: string;
@@ -12,17 +18,25 @@ export interface Chapter {
   content: string;
   filename?: string;
   book_id?: string;
+  notes?: string;
+  private_notes?: string;
+  conflicts?: Conflict[];
 }
 
 export interface Book {
   id: string;
   title: string;
   chapters: Chapter[];
+  summary?: string;
+  notes?: string;
+  private_notes?: string;
 }
 
 export interface Story {
   title: string;
   summary: string;
+  notes?: string;
+  private_notes?: string;
   styleTags: string[];
   image_style?: string;
   image_additional_info?: string;

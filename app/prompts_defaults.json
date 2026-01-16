@@ -11,7 +11,9 @@
     "ai_action_chapter_rewrite": "WRITING",
     "editing_llm": "EDITING",
     "image_describer": "EDITING",
-    "image_prompt_generator": "EDITING"
+    "image_prompt_generator": "EDITING",
+    "ai_action_summary_update_user": "EDITING",
+    "ai_action_summary_rewrite_user": "EDITING"
   },
   "system_messages": {
     "story_writer": [
@@ -60,6 +62,7 @@
       "Your goal is to assist with brainstorming, structuring, and coordinating the writing process.",
       "You have tools to directly modify the story content or request summaries from the editor.",
       "You can manage project images: list them, generate descriptions, or create placeholders.",
+      "You can manage project metadata, including notes and chapter conflicts.",
       "Always prioritize the user's creative vision.",
       "",
       "IDENTITY POLICY:",
@@ -101,6 +104,16 @@
     "ai_action_chapter_rewrite": [
       "You are a skilled novelist.",
       "Rewrite the FULL content for this chapter based strictly on the following summary."
+    ],
+    "ai_action_summary_update": [
+      "You are an expert story editor.",
+      "Update the summary to accurately reflect the chapter content provided.",
+      "Start your response with 'Summary:' followed immediately by the plain text, do not use any highlighting, Markdown or labels."
+    ],
+    "ai_action_summary_rewrite": [
+      "You are an expert story editor.",
+      "Write a concise, accurate summary of the chapter content provided.",
+      "Start your response with 'Summary:' followed immediately by the plain text, do not use any highlighting, Markdown or labels."
     ]
   },
   "user_prompts": {

@@ -6,7 +6,7 @@
 # (at your option) any later version.
 
 import asyncio
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, Request, HTTPException, Path as FastAPIPath
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.projects import get_active_project_dir
@@ -914,3 +914,86 @@ async def api_story_settings(request: Request) -> JSONResponse:
         )
 
     return JSONResponse(status_code=200, content={"ok": True, "story": story})
+
+
+@router.post("/api/story/metadata")
+async def api_story_metadata(request: Request) -> JSONResponse:
+    """Update general story metadata (title, summary, notes, private_notes)."""
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    active = get_active_project_dir()
+    if not active:
+        return JSONResponse(
+            status_code=400, content={"ok": False, "detail": "No active project"}
+        )
+
+    title = payload.get("title")
+    summary = payload.get("summary")
+    tags = payload.get("tags")
+    notes = payload.get("notes")
+    private_notes = payload.get("private_notes")
+
+    from app.projects import update_story_metadata
+
+    try:
+        update_story_metadata(
+            title=title,
+            summary=summary,
+            tags=tags,
+            notes=notes,
+            private_notes=private_notes,
+        )
+    except ValueError as e:
+        return JSONResponse(status_code=400, content={"ok": False, "detail": str(e)})
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"ok": False, "detail": f"Failed to update metadata: {e}"},
+        )
+
+    return JSONResponse(content={"ok": True})
+
+
+@router.post("/api/books/{book_id}/metadata")
+async def api_book_metadata(
+    request: Request, book_id: str = FastAPIPath(...)
+) -> JSONResponse:
+    """Update metadata for a book (title, summary, notes, private_notes)."""
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    active = get_active_project_dir()
+    if not active:
+        return JSONResponse(
+            status_code=400, content={"ok": False, "detail": "No active project"}
+        )
+
+    title = payload.get("title")
+    summary = payload.get("summary")
+    notes = payload.get("notes")
+    private_notes = payload.get("private_notes")
+
+    from app.projects import update_book_metadata
+
+    try:
+        update_book_metadata(
+            book_id,
+            title=title,
+            summary=summary,
+            notes=notes,
+            private_notes=private_notes,
+        )
+    except ValueError as e:
+        return JSONResponse(status_code=404, content={"ok": False, "detail": str(e)})
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"ok": False, "detail": f"Failed to update book metadata: {e}"},
+        )
+
+    return JSONResponse(content={"ok": True})

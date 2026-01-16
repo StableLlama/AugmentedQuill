@@ -75,8 +75,16 @@ class ImageFeaturesTest(TestCase):
         meta_file = self.images_dir / "metadata.json"
         self.assertTrue(meta_file.exists())
         meta = json.loads(meta_file.read_text())
-        self.assertEqual(meta["test1.png"]["description"], "A nice test image")
-        self.assertEqual(meta["test1.png"]["title"], "My Title")
+
+        # Determine format (the code now saves versioned, so we expect versioned)
+        if "version" in meta:
+            self.assertEqual(meta["version"], 1)
+            items = meta["items"]
+        else:
+            items = meta
+
+        self.assertEqual(items["test1.png"]["description"], "A nice test image")
+        self.assertEqual(items["test1.png"]["title"], "My Title")
 
         # Check list again
         imgs = get_project_images()

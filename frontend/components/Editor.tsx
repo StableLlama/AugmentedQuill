@@ -55,8 +55,6 @@ interface EditorProps {
     action: 'update' | 'rewrite' | 'extend'
   ) => void;
   isAiLoading: boolean;
-  isSummaryOpen: boolean;
-  onToggleSummary: () => void;
   onContextChange?: (formats: string[]) => void;
 }
 
@@ -150,8 +148,6 @@ export const Editor = React.forwardRef<any, EditorProps>(
       onKeyboardSuggestionAction,
       onAiAction,
       isAiLoading,
-      isSummaryOpen,
-      onToggleSummary,
       onContextChange,
     },
     ref
@@ -561,20 +557,10 @@ export const Editor = React.forwardRef<any, EditorProps>(
       <div
         className={`flex flex-col h-full w-full overflow-hidden relative ${editorContainerBg}`}
       >
-        {/* Mobile Toolbar */}
         <div className={`flex-none z-20 xl:hidden ${toolbarBg}`}>
           <div className="h-14 flex items-center justify-between px-4">
             <div className="flex items-center space-x-3">
-              <Button
-                theme={settings.theme}
-                variant={isSummaryOpen ? 'primary' : 'secondary'}
-                size="sm"
-                onClick={onToggleSummary}
-                icon={<BookOpen size={14} />}
-                className="text-xs"
-              >
-                {isSummaryOpen ? 'Hide Summary' : 'Edit Summary'}
-              </Button>
+              {/* Mobile Toolbar Left Items */}
             </div>
             <div className="flex items-center space-x-2">
               <div
@@ -620,55 +606,6 @@ export const Editor = React.forwardRef<any, EditorProps>(
             </div>
           </div>
         </div>
-
-        {/* Collapsible Summary Panel */}
-        {isSummaryOpen && (
-          <div
-            className={`flex-none p-4 animate-in slide-in-from-top-2 z-10 shadow-lg ${summaryBg}`}
-          >
-            <div className="max-w-4xl mx-auto">
-              <div className="flex justify-between items-center mb-2">
-                <label
-                  className={`text-xs font-bold uppercase tracking-wider ${textMuted}`}
-                >
-                  Chapter Summary
-                </label>
-                <div className="flex space-x-2">
-                  <Button
-                    theme={settings.theme}
-                    size="sm"
-                    variant="secondary"
-                    className="text-xs h-6 py-0 px-2"
-                    onClick={() => onAiAction('summary', 'update')}
-                    disabled={isAiLoading}
-                    icon={<RefreshCw size={10} />}
-                    title="Update Summary (EDITING model)"
-                  >
-                    AI Update
-                  </Button>
-                  <Button
-                    theme={settings.theme}
-                    size="sm"
-                    variant="secondary"
-                    className="text-xs h-6 py-0 px-2"
-                    onClick={() => onAiAction('summary', 'rewrite')}
-                    disabled={isAiLoading}
-                    icon={<PenLine size={10} />}
-                    title="Rewrite Summary (EDITING model)"
-                  >
-                    AI Rewrite
-                  </Button>
-                </div>
-              </div>
-              <textarea
-                value={chapter.summary}
-                onChange={(e) => onChange(chapter.id, { summary: e.target.value })}
-                className={`w-full text-sm font-sans rounded p-3 focus:outline-none resize-y min-h-[80px] border ${inputBg} focus:border-brand-500`}
-                placeholder="Write a brief summary of this chapter (used by AI for context)..."
-              />
-            </div>
-          </div>
-        )}
 
         {/* Main Scrollable Content Area */}
         <div

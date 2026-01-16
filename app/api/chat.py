@@ -267,7 +267,7 @@ STORY_TOOLS = [
         "type": "function",
         "function": {
             "name": "update_story_metadata",
-            "description": "Update the story title or summary.",
+            "description": "Update the story title, summary, or notes.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -275,6 +275,10 @@ STORY_TOOLS = [
                     "summary": {
                         "type": "string",
                         "description": "The new story summary.",
+                    },
+                    "notes": {
+                        "type": "string",
+                        "description": "General notes for the story, visible to the AI.",
                     },
                 },
                 "required": [],
@@ -327,7 +331,7 @@ STORY_TOOLS = [
         "type": "function",
         "function": {
             "name": "update_book_metadata",
-            "description": "Update the title or summary of a specific book.",
+            "description": "Update the title, summary, or notes of a specific book.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -339,6 +343,10 @@ STORY_TOOLS = [
                     "summary": {
                         "type": "string",
                         "description": "The new book summary.",
+                    },
+                    "notes": {
+                        "type": "string",
+                        "description": "Notes for the book, visible to the AI.",
                     },
                 },
                 "required": ["book_id"],
@@ -404,7 +412,7 @@ STORY_TOOLS = [
         "type": "function",
         "function": {
             "name": "update_chapter_metadata",
-            "description": "Update the title or summary of a specific chapter.",
+            "description": "Update the title, summary, notes, or conflicts of a specific chapter.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -419,6 +427,22 @@ STORY_TOOLS = [
                     "summary": {
                         "type": "string",
                         "description": "The new chapter summary.",
+                    },
+                    "notes": {
+                        "type": "string",
+                        "description": "Notes for the chapter, visible to the AI.",
+                    },
+                    "conflicts": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {"type": "string"},
+                                "description": {"type": "string"},
+                                "resolution": {"type": "string"},
+                            },
+                        },
+                        "description": "List of conflicts in the chapter. Each has id (optional), description, and resolution (optional).",
                     },
                 },
                 "required": ["chap_id"],
@@ -932,24 +956,25 @@ async def _exec_chat_tool(
         if name == "get_story_metadata":
             active = get_active_project_dir()
             story = load_story_config((active / "story.json") if active else None) or {}
+            val = {
+                "title": story.get("project_title", ""),
+                "summary": story.get("story_summary", ""),
+                "notes": story.get("notes", ""),
+            }
             return {
                 "role": "tool",
                 "tool_call_id": call_id,
                 "name": name,
-                "content": _json.dumps(
-                    {
-                        "title": story.get("project_title", ""),
-                        "summary": story.get("story_summary", ""),
-                    }
-                ),
+                "content": _json.dumps(val),
             }
 
         if name == "update_story_metadata":
             title = args_obj.get("title")
             summary = args_obj.get("summary")
+            notes = args_obj.get("notes")
 
             try:
-                update_story_metadata(title=title, summary=summary)
+                update_story_metadata(title=title, summary=summary, notes=notes)
                 mutations["story_changed"] = True
                 return {
                     "role": "tool",
@@ -1023,6 +1048,7 @@ async def _exec_chat_tool(
                     {
                         "title": target.get("title", ""),
                         "summary": target.get("summary", ""),
+                        "notes": target.get("notes", ""),
                     }
                 ),
             }
@@ -1031,9 +1057,10 @@ async def _exec_chat_tool(
             book_id = args_obj.get("book_id")
             title = args_obj.get("title")
             summary = args_obj.get("summary")
+            notes = args_obj.get("notes")
 
             try:
-                update_book_metadata(book_id, title=title, summary=summary)
+                update_book_metadata(book_id, title=title, summary=summary, notes=notes)
                 mutations["story_changed"] = True
                 return {
                     "role": "tool",
@@ -1112,6 +1139,8 @@ async def _exec_chat_tool(
                     {
                         "title": meta.get("title", "") or path.name,
                         "summary": meta.get("summary", ""),
+                        "notes": meta.get("notes", ""),
+                        "conflicts": meta.get("conflicts") or [],
                     }
                 ),
             }
@@ -1120,6 +1149,9 @@ async def _exec_chat_tool(
             chap_id = args_obj.get("chap_id")
             title = args_obj.get("title")
             summary = args_obj.get("summary")
+            notes = args_obj.get("notes")
+            conflicts = args_obj.get("conflicts")
+
             if not isinstance(chap_id, int):
                 return {
                     "role": "tool",
@@ -1129,10 +1161,15 @@ async def _exec_chat_tool(
                 }
 
             try:
-                if title is not None:
-                    write_chapter_title(chap_id, title)
-                if summary is not None:
-                    write_chapter_summary(chap_id, summary)
+                from app.projects import update_chapter_metadata
+
+                update_chapter_metadata(
+                    chap_id,
+                    title=title,
+                    summary=summary,
+                    notes=notes,
+                    conflicts=conflicts,
+                )
                 mutations["story_changed"] = True
                 return {
                     "role": "tool",

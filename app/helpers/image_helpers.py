@@ -24,7 +24,11 @@ def load_image_metadata() -> dict:
     meta_file = d / "metadata.json"
     if meta_file.exists():
         try:
-            return json.loads(meta_file.read_text("utf-8"))
+            data = json.loads(meta_file.read_text("utf-8"))
+            # Check for versioned format
+            if "version" in data and isinstance(data["version"], int):
+                return data.get("items", {})
+            return data
         except Exception:
             return {}
     return {}
@@ -34,7 +38,8 @@ def save_image_metadata(data: dict):
     d = get_images_dir()
     if d:
         d.mkdir(parents=True, exist_ok=True)
-        (d / "metadata.json").write_text(json.dumps(data, indent=2), "utf-8")
+        payload = {"version": 1, "items": data}
+        (d / "metadata.json").write_text(json.dumps(payload, indent=2), "utf-8")
 
 
 def get_image_entry(filename: str) -> dict:
