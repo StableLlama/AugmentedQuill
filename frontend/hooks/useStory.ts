@@ -19,6 +19,7 @@ const INITIAL_STORY: StoryState = {
   chapters: [],
   projectType: 'novel',
   books: [],
+  sourcebook: [],
   currentChapterId: null,
   lastUpdated: Date.now(),
 };
@@ -84,6 +85,7 @@ export const useStory = () => {
           chapters: chapters,
           projectType: res.story.project_type || 'novel',
           books: res.story.books || [],
+          sourcebook: res.story.sourcebook || [],
           llm_prefs: res.story.llm_prefs,
           currentChapterId: newSelection,
           lastUpdated: Date.now(),

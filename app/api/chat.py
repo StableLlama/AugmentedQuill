@@ -38,6 +38,13 @@ from app.helpers.story_helpers import (
     _story_write_helper,
     _story_continue_helper,
 )
+from app.helpers.sourcebook_helpers import (
+    sb_search,
+    sb_get,
+    sb_create,
+    sb_delete,
+    sb_update,
+)
 from app.prompts import get_system_message, load_model_prompt_overrides
 from app.llm import add_llm_log, create_log_entry
 import json as _json
@@ -863,6 +870,115 @@ STORY_TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_sourcebook",
+            "description": "Search the sourcebook (facts, background info) by query. Searches names, synonyms, and descriptions.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "The search query."}
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_sourcebook_entry",
+            "description": "Get a specific sourcebook entry by unique ID (preferred) or name (case-insensitive).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name_or_id": {
+                        "type": "string",
+                        "description": "The ID or name of the entry.",
+                    }
+                },
+                "required": ["name_or_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_sourcebook_entry",
+            "description": "Create a new sourcebook entry.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "The name of the entry (not unique).",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "The description/content of the entry.",
+                    },
+                    "category": {
+                        "type": "string",
+                        "description": "Category (e.g. Character, Location, Item).",
+                    },
+                    "synonyms": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional list of synonyms or nicknames.",
+                    },
+                },
+                "required": ["name", "description", "category"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_sourcebook_entry",
+            "description": "Update an existing sourcebook entry.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name_or_id": {
+                        "type": "string",
+                        "description": "The ID (preferred) or name of the entry to update.",
+                    },
+                    "name": {"type": "string", "description": "New name (optional)."},
+                    "description": {
+                        "type": "string",
+                        "description": "New description (optional).",
+                    },
+                    "category": {
+                        "type": "string",
+                        "description": "New category (optional).",
+                    },
+                    "synonyms": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "New list of synonyms (optional, replaces old).",
+                    },
+                },
+                "required": ["name_or_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_sourcebook_entry",
+            "description": "Delete a sourcebook entry by ID or name.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name_or_id": {
+                        "type": "string",
+                        "description": "The ID or name to delete.",
+                    }
+                },
+                "required": ["name_or_id"],
+            },
+        },
+    },
 ]
 
 
@@ -1115,6 +1231,84 @@ async def _exec_chat_tool(
                     "name": name,
                     "content": _json.dumps({"error": str(e)}),
                 }
+
+        if name == "search_sourcebook":
+            query = args_obj.get("query", "")
+            results = sb_search(query)
+            return {
+                "role": "tool",
+                "tool_call_id": call_id,
+                "name": name,
+                "content": _json.dumps(results),
+            }
+
+        if name == "get_sourcebook_entry":
+            name_or_id = args_obj.get("name_or_id", "")
+            entry = sb_get(name_or_id)
+            if not entry:
+                return {
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "name": name,
+                    "content": _json.dumps({"error": "Not found"}),
+                }
+            return {
+                "role": "tool",
+                "tool_call_id": call_id,
+                "name": name,
+                "content": _json.dumps(entry),
+            }
+
+        if name == "create_sourcebook_entry":
+            new_entry = sb_create(
+                name=args_obj.get("name"),
+                description=args_obj.get("description"),
+                category=args_obj.get("category"),
+                synonyms=args_obj.get("synonyms", []),
+            )
+            if "error" not in new_entry:
+                mutations["story_changed"] = True
+            return {
+                "role": "tool",
+                "tool_call_id": call_id,
+                "name": name,
+                "content": _json.dumps(new_entry),
+            }
+
+        if name == "update_sourcebook_entry":
+            result = sb_update(
+                name_or_id=args_obj.get("name_or_id"),
+                name=args_obj.get("name"),
+                description=args_obj.get("description"),
+                category=args_obj.get("category"),
+                synonyms=args_obj.get("synonyms"),
+            )
+            if "error" not in result:
+                mutations["story_changed"] = True
+            return {
+                "role": "tool",
+                "tool_call_id": call_id,
+                "name": name,
+                "content": _json.dumps(result),
+            }
+
+        if name == "delete_sourcebook_entry":
+            name_or_id = args_obj.get("name_or_id")
+            deleted = sb_delete(name_or_id)
+            if deleted:
+                mutations["story_changed"] = True
+                return {
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "name": name,
+                    "content": _json.dumps({"ok": True}),
+                }
+            return {
+                "role": "tool",
+                "tool_call_id": call_id,
+                "name": name,
+                "content": _json.dumps({"error": "Not found"}),
+            }
 
         if name == "get_chapter_metadata":
             chap_id = args_obj.get("chap_id")

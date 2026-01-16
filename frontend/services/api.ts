@@ -427,6 +427,38 @@ export const api = {
       return res.json();
     },
   },
+  sourcebook: {
+    list: async () => {
+      const res = await fetch(`${API_BASE}/sourcebook`);
+      if (!res.ok) throw new Error('Failed to load sourcebook');
+      return res.json();
+    },
+    create: async (entry: any) => {
+      const res = await fetch(`${API_BASE}/sourcebook`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(entry),
+      });
+      if (!res.ok) throw new Error('Failed to create entry');
+      return res.json();
+    },
+    update: async (id: string, updates: any) => {
+      const res = await fetch(`${API_BASE}/sourcebook/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      });
+      if (!res.ok) throw new Error('Failed to update entry');
+      return res.json();
+    },
+    delete: async (id: string) => {
+      const res = await fetch(`${API_BASE}/sourcebook/${id}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) throw new Error('Failed to delete entry');
+      return res.json();
+    },
+  },
   debug: {
     getLogs: async () => {
       const res = await fetch(`${API_BASE}/debug/llm_logs`);

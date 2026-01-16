@@ -26,6 +26,7 @@ from app.api.chapters import router as chapters_router  # noqa: E402
 from app.api.story import router as story_router  # noqa: E402
 from app.api.chat import router as chat_router  # noqa: E402
 from app.api.debug import router as debug_router  # noqa: E402
+from app.api.sourcebook import router as sourcebook_router  # noqa: E402
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "static"
@@ -60,6 +61,7 @@ def create_app() -> FastAPI:
     app.include_router(story_router)
     app.include_router(chat_router)
     app.include_router(debug_router)
+    app.include_router(sourcebook_router)
 
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(request: Request, exc: StarletteHTTPException):

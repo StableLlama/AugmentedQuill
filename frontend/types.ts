@@ -32,6 +32,15 @@ export interface Book {
   private_notes?: string;
 }
 
+export interface SourcebookEntry {
+  id: string;
+  name: string;
+  synonyms: string[];
+  category?: string;
+  description: string;
+  images: string[];
+}
+
 export interface Story {
   title: string;
   summary: string;
@@ -43,6 +52,7 @@ export interface Story {
   chapters: Chapter[];
   projectType: 'short-story' | 'novel' | 'series';
   books?: Book[];
+  sourcebook?: SourcebookEntry[];
   llm_prefs?: {
     prompt_overrides?: Record<string, string>;
   };

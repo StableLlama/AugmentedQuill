@@ -13,6 +13,7 @@ import { ChapterList } from './components/ChapterList';
 import { Editor } from './components/Editor';
 import { Chat } from './components/Chat';
 import { ProjectImages } from './components/ProjectImages';
+import { SourcebookList } from './components/SourcebookList';
 import { DebugLogs } from './components/DebugLogs';
 import { Button } from './components/Button';
 import { SettingsDialog } from './components/SettingsDialog';
@@ -2194,6 +2195,7 @@ const App: React.FC = () => {
             theme={currentTheme}
             onOpenImages={handleOpenImages}
           />
+          <SourcebookList theme={currentTheme} />
         </div>
         <div
           className={`flex-1 flex flex-col relative overflow-hidden w-full h-full ${bgMain}`}

@@ -148,3 +148,11 @@ def load_story_config(
         raise ValueError(f"Invalid story config at {path}: 'tags' must be an array")
 
     return merged
+
+
+def save_story_config(path: os.PathLike[str] | str, config: Dict[str, Any]) -> None:
+    p = Path(path)
+    if not p.parent.exists():
+        p.parent.mkdir(parents=True)
+    with p.open("w", encoding="utf-8") as f:
+        json.dump(config, f, indent=2)
