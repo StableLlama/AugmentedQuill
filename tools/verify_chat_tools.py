@@ -8,7 +8,7 @@ import sys
 import types
 
 # Ensure the project root is in sys.path
-BASE_DIR = Path("/home/cm/devel/github/AugmentedQuill").resolve()
+BASE_DIR = Path("../../AugmentedQuill").resolve()
 sys.path.insert(0, str(BASE_DIR))
 
 # Mock modules that might fail on import during script execution
