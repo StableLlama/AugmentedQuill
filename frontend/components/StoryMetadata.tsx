@@ -13,7 +13,7 @@ import {
   hasUnsupportedSummaryMarkdown,
   SummaryWarning,
 } from './MarkdownView';
-import { AppTheme, Story } from '../types';
+import { AppTheme, Story, Conflict } from '../types';
 import { MetadataEditorDialog } from './MetadataEditorDialog';
 import { api } from '../services/api';
 
@@ -23,12 +23,14 @@ interface StoryMetadataProps {
   tags: string[];
   notes?: string;
   private_notes?: string;
+  conflicts?: Conflict[];
   onUpdate: (
     title: string,
     summary: string,
     tags: string[],
     notes?: string,
-    private_notes?: string
+    private_notes?: string,
+    conflicts?: Conflict[]
   ) => void;
   theme?: AppTheme;
 }
@@ -39,6 +41,7 @@ export const StoryMetadata: React.FC<StoryMetadataProps> = ({
   tags,
   notes,
   private_notes,
+  conflicts,
   onUpdate,
   theme = 'mixed',
 }) => {
@@ -61,13 +64,15 @@ export const StoryMetadata: React.FC<StoryMetadataProps> = ({
         tags: data.tags,
         notes: data.notes,
         private_notes: data.private_notes,
+        conflicts: data.conflicts,
       });
       onUpdate(
         data.title,
         data.summary,
         data.tags || [],
         data.notes,
-        data.private_notes
+        data.private_notes,
+        data.conflicts
       );
       // Do NOT close on save - this is called by autosave
     } catch (e) {
@@ -88,6 +93,7 @@ export const StoryMetadata: React.FC<StoryMetadataProps> = ({
             tags,
             notes,
             private_notes,
+            conflicts,
           }}
           onSave={handleMetadataSave}
           onClose={() => setMetadataModalOpen(false)}

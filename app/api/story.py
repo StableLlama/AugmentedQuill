@@ -10,11 +10,11 @@ from fastapi import APIRouter, Request, HTTPException, Path as FastAPIPath
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.projects import get_active_project_dir
-from app.config import load_story_config, load_machine_config
+from app.config import load_story_config, load_machine_config, save_story_config
 from app.helpers.chapter_helpers import _chapter_by_id_or_404, _normalize_chapter_entry
+from app.helpers.project_helpers import normalize_story_for_frontend
 from app import llm
 from app.prompts import get_system_message, get_user_prompt, load_model_prompt_overrides
-import json as _json
 from pathlib import Path
 
 router = APIRouter()
@@ -116,7 +116,7 @@ async def api_story_story_summary(request: Request) -> JSONResponse:
     # Persist to story.json
     story["story_summary"] = new_summary
     try:
-        story_path.write_text(_json.dumps(story, indent=2), encoding="utf-8")
+        save_story_config(story_path, story)
     except Exception as e:
         return JSONResponse(
             status_code=500,
@@ -232,7 +232,7 @@ async def api_story_summary(request: Request) -> JSONResponse:
     chapters_data[pos]["summary"] = new_summary
     story["chapters"] = chapters_data
     try:
-        story_path.write_text(_json.dumps(story, indent=2), encoding="utf-8")
+        save_story_config(story_path, story)
     except Exception as e:
         return JSONResponse(
             status_code=500,
@@ -613,7 +613,7 @@ async def api_story_summary_stream(request: Request):
             new_summary = "".join(buf)
             chapters_data[pos]["summary"] = new_summary
             story["chapters"] = chapters_data
-            story_path.write_text(_json.dumps(story, indent=2), encoding="utf-8")
+            save_story_config(story_path, story)
         except Exception:
             pass
 
@@ -844,7 +844,7 @@ async def api_story_story_summary_stream(request: Request):
         try:
             new_summary = "".join(buf)
             story["story_summary"] = new_summary
-            story_path.write_text(_json.dumps(story, indent=2), encoding="utf-8")
+            save_story_config(story_path, story)
         except Exception:
             pass
 
@@ -878,7 +878,7 @@ async def api_story_title(request: Request) -> JSONResponse:
     story_path = active / "story.json"
     story = load_story_config(story_path) or {}
     story["project_title"] = title
-    story_path.write_text(_json.dumps(story, indent=2), encoding="utf-8")
+    save_story_config(story_path, story)
 
     return JSONResponse(content={"ok": True})
 
@@ -906,14 +906,17 @@ async def api_story_settings(request: Request) -> JSONResponse:
         story["image_additional_info"] = str(payload["image_additional_info"])
 
     try:
-        story_path.write_text(_json.dumps(story, indent=2), encoding="utf-8")
+        save_story_config(story_path, story)
     except Exception as e:
         return JSONResponse(
             status_code=500,
             content={"ok": False, "detail": f"Failed to save settings: {e}"},
         )
 
-    return JSONResponse(status_code=200, content={"ok": True, "story": story})
+    return JSONResponse(
+        status_code=200,
+        content={"ok": True, "story": normalize_story_for_frontend(story)},
+    )
 
 
 @router.post("/api/story/metadata")
@@ -935,6 +938,7 @@ async def api_story_metadata(request: Request) -> JSONResponse:
     tags = payload.get("tags")
     notes = payload.get("notes")
     private_notes = payload.get("private_notes")
+    conflicts = payload.get("conflicts")
 
     from app.projects import update_story_metadata
 
@@ -945,6 +949,7 @@ async def api_story_metadata(request: Request) -> JSONResponse:
             tags=tags,
             notes=notes,
             private_notes=private_notes,
+            conflicts=conflicts,
         )
     except ValueError as e:
         return JSONResponse(status_code=400, content={"ok": False, "detail": str(e)})

@@ -95,11 +95,9 @@ def _scan_chapter_files() -> List[Tuple[str, Path]]:
             continue
     items.sort(key=lambda t: t[0])
 
-    # Remap to linear 1-based index to be safe?
-    # Current system relies on ID matching filename for writes.
-    # But `write_chapter_content` uses this scan function to find path.
-    # So if we return `(idx, p)` where idx is from filename, it works for Medium.
-    return items
+    # Remap to linear 1-based index to be consistent with large projects and
+    # satisfy the expectation of 1-based indices in recent versions.
+    return [(i + 1, p) for i, (_, p) in enumerate(items)]
 
 
 def _load_chapter_titles(count: int) -> List[str]:

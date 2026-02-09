@@ -2185,6 +2185,7 @@ const App: React.FC = () => {
             tags={story.styleTags}
             notes={story.notes}
             private_notes={story.private_notes}
+            conflicts={story.conflicts}
             onUpdate={updateStoryMetadata}
             theme={currentTheme}
           />

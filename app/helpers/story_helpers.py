@@ -5,7 +5,6 @@
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 
-import json as _json
 from pathlib import Path
 from fastapi import HTTPException
 
@@ -94,7 +93,9 @@ async def _story_generate_summary_helper(*, chap_id: int, mode: str = "") -> dic
     if target_entry is not None:
         target_entry["summary"] = new_summary
 
-    story_path.write_text(_json.dumps(story, indent=2), encoding="utf-8")
+    from app.config import save_story_config
+
+    save_story_config(story_path, story)
     title_for_response = (
         target_entry.get("title") if target_entry else None
     ) or path.name
@@ -315,5 +316,7 @@ async def _story_generate_story_summary_helper(*, mode: str = "") -> dict:
             new_summary = _llm.strip_thinking_tags(new_summary)
 
     story["story_summary"] = new_summary
-    story_path.write_text(_json.dumps(story, indent=2), encoding="utf-8")
+    from app.config import save_story_config
+
+    save_story_config(story_path, story)
     return {"ok": True, "summary": new_summary}

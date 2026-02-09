@@ -62,6 +62,7 @@ export interface StoryState extends Story {
   id: string; // Added ID for project management
   currentChapterId: string | null;
   lastUpdated?: number;
+  conflicts?: Conflict[];
 }
 
 export interface ChatMessage {

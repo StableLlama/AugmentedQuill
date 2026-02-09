@@ -7,7 +7,6 @@
 
 from fastapi import APIRouter, Request, HTTPException, Path as FastAPIPath
 from fastapi.responses import JSONResponse
-import json as _json
 
 from app.projects import get_active_project_dir
 from app.config import load_story_config
@@ -54,6 +53,10 @@ async def api_chapters() -> dict:
         notes = (chap_entry.get("notes") or "").strip()
         private_notes = (chap_entry.get("private_notes") or "").strip()
         conflicts = chap_entry.get("conflicts") or []
+        # Inject synthetic IDs if missing from disk
+        for i, c in enumerate(conflicts):
+            if isinstance(c, dict) and "id" not in c:
+                c["id"] = f"conf_{i}"
 
         book_id = chap_entry.get("book_id", chap_entry.get("_parent_book_id"))
         if not book_id and story.get("project_type") == "series":
@@ -103,6 +106,10 @@ async def api_chapter_content(chap_id: int = FastAPIPath(..., ge=0)) -> dict:
     notes = (chap_entry.get("notes") or "").strip()
     private_notes = (chap_entry.get("private_notes") or "").strip()
     conflicts = chap_entry.get("conflicts") or []
+    # Inject synthetic IDs if missing from disk
+    for i, c in enumerate(conflicts):
+        if isinstance(c, dict) and "id" not in c:
+            c["id"] = f"conf_{i}"
 
     try:
         content = path.read_text(encoding="utf-8")
@@ -145,11 +152,14 @@ async def api_update_chapter_metadata(
         )
 
     # Extract fields (None means not provided -> do not update)
+    title = payload.get("title")
     summary = payload.get("summary")
     notes = payload.get("notes")
     private_notes = payload.get("private_notes")
     conflicts = payload.get("conflicts")
 
+    if title is not None:
+        title = str(title).strip()
     if summary is not None:
         summary = str(summary).strip()
     if notes is not None:
@@ -169,11 +179,13 @@ async def api_update_chapter_metadata(
     try:
         update_chapter_metadata(
             chap_id,
+            title=title,
             summary=summary,
             notes=notes,
             private_notes=private_notes,
             conflicts=conflicts,
         )
+
     except ValueError as e:
         return JSONResponse(status_code=404, content={"ok": False, "detail": str(e)})
 
@@ -504,7 +516,12 @@ async def api_reorder_chapters(request: Request) -> JSONResponse:
 
         # 2. Find target book
         target_book = next(
-            (b for b in story.get("books", []) if b.get("id") == book_id), None
+            (
+                b
+                for b in story.get("books", [])
+                if (b.get("id") == book_id or b.get("folder") == book_id)
+            ),
+            None,
         )
         if not target_book:
             return JSONResponse(
@@ -550,7 +567,14 @@ async def api_reorder_chapters(request: Request) -> JSONResponse:
             original_bid = metadata.get("_parent_book_id")
             if original_bid and original_bid != book_id:
                 orig_book = next(
-                    (b for b in story.get("books", []) if b.get("id") == original_bid),
+                    (
+                        b
+                        for b in story.get("books", [])
+                        if (
+                            b.get("id") == original_bid
+                            or b.get("folder") == original_bid
+                        )
+                    ),
                     None,
                 )
                 if orig_book:
@@ -707,7 +731,9 @@ async def api_reorder_chapters(request: Request) -> JSONResponse:
 
     # Save the updated story
     try:
-        story_path.write_text(_json.dumps(story, indent=2), encoding="utf-8")
+        from app.config import save_story_config
+
+        save_story_config(story_path, story)
     except Exception as e:
         return JSONResponse(
             status_code=500,
@@ -755,7 +781,7 @@ async def api_reorder_books(request: Request) -> JSONResponse:
     books = story.get("books", [])
 
     # Create a mapping of book IDs to books
-    book_map = {b.get("id"): b for b in books}
+    book_map = {(b.get("id") or b.get("folder")): b for b in books}
 
     # Reorder based on provided IDs
     reordered_books = []
@@ -767,7 +793,9 @@ async def api_reorder_books(request: Request) -> JSONResponse:
 
     # Save the updated story
     try:
-        story_path.write_text(_json.dumps(story, indent=2), encoding="utf-8")
+        from app.config import save_story_config
+
+        save_story_config(story_path, story)
     except Exception as e:
         return JSONResponse(
             status_code=500,

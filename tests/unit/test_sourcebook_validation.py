@@ -28,7 +28,7 @@ class SourcebookValidationTest(TestCase):
         # Create test project
         self.pdir = self.projects_root / "test_proj"
         self.pdir.mkdir(parents=True, exist_ok=True)
-        (self.pdir / "story.json").write_text('{"sourcebook": []}')
+        (self.pdir / "story.json").write_text('{"sourcebook": {}}')
 
         # Select it (creates registry entry)
         select_project("test_proj")
@@ -129,7 +129,8 @@ class SourcebookValidationTest(TestCase):
 
         # Check persistence
         entries = self._get_entries()
-        saved = next(e for e in entries if e["id"] == eid)
+        new_eid = updated["id"]
+        saved = next(e for e in entries if e["id"] == new_eid)
         self.assertEqual(saved["name"], "NewName")
 
     def test_update_with_invalid_id_returns_error(self):
@@ -142,7 +143,9 @@ class SourcebookValidationTest(TestCase):
         eid = entry["id"]
 
         # Valid update
-        self.assertNotIn("error", sb_update(eid, name="Valid"))
+        updated = sb_update(eid, name="Valid")
+        self.assertNotIn("error", updated)
+        eid = updated["id"]
 
         # Invalid name
         self.assertIn("error", sb_update(eid, name=""))
@@ -160,4 +163,8 @@ class SourcebookValidationTest(TestCase):
     def _get_entries(self):
         story_path = self.pdir / "story.json"
         story = json.loads(story_path.read_text())
-        return story.get("sourcebook", [])
+        sb = story.get("sourcebook", {})
+        if isinstance(sb, dict):
+            # Convert to list for tests that expect it
+            return [{"id": name, "name": name, **data} for name, data in sb.items()]
+        return sb

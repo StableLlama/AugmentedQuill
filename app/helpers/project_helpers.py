@@ -14,10 +14,86 @@ from .chapter_helpers import (
 )
 
 
+def normalize_story_for_frontend(story: dict) -> dict:
+    """Prepare story data for the frontend by converting internal storage formats
+    (like dict-based sourcebook) back into frontend-friendly formats (like sorted lists).
+    Also ensures missing internal IDs (which are not stored on disk) are injected
+    using stable filesystem-based identifiers where possible.
+    """
+    if not story:
+        return {}
+    res = story.copy()
+
+    # 1. Sourcebook: Dict -> Sorted List
+    sb = res.get("sourcebook", {})
+    if isinstance(sb, dict):
+        new_sb = []
+        # Sort alphabetically by name (the key)
+        for name, data in sorted(sb.items(), key=lambda x: x[0].lower()):
+            # Inject name and id (name is the ID)
+            new_sb.append({"id": name, "name": name, **data})
+        res["sourcebook"] = new_sb
+    elif not isinstance(sb, list):
+        res["sourcebook"] = []
+
+    # 2. Books (for Series): Inject IDs from folder names if missing
+    if res.get("project_type") == "series" and "books" in res:
+        books = res["books"]
+        if isinstance(books, list):
+            from app.projects import get_active_project_dir
+
+            active = get_active_project_dir()
+            if active:
+                books_dir = active / "books"
+                if books_dir.exists():
+                    # Map existing folders
+                    folders = sorted(
+                        [d.name for d in books_dir.iterdir() if d.is_dir()]
+                    )
+
+                    new_books = []
+                    for i, book in enumerate(books):
+                        if isinstance(book, dict):
+                            b_copy = book.copy()
+                            # If ID is missing, try folder, then try to find it
+                            if not b_copy.get("id"):
+                                b_copy["id"] = b_copy.get("folder")
+
+                            if not b_copy.get("id"):
+                                # This is tricky. If we just use index, it's fragile.
+                                # But if we rename folders to titles, it's stable.
+                                if i < len(folders):
+                                    b_copy["id"] = folders[i]
+                            new_books.append(b_copy)
+                    res["books"] = new_books
+
+    # 3. Chapters and Conflicts: Inject IDs for conflicts if missing
+    def _handle_chapters(chapters):
+        if not isinstance(chapters, list):
+            return
+        for chap in chapters:
+            if isinstance(chap, dict) and "conflicts" in chap:
+                conflicts = chap["conflicts"]
+                if isinstance(conflicts, list):
+                    for i, conflict in enumerate(conflicts):
+                        if isinstance(conflict, dict) and "id" not in conflict:
+                            conflict["id"] = f"conf_{i}"
+
+    if res.get("project_type") == "series" and "books" in res:
+        for book in res["books"]:
+            if isinstance(book, dict):
+                _handle_chapters(book.get("chapters", []))
+    else:
+        _handle_chapters(res.get("chapters", []))
+
+    return res
+
+
 def _project_overview() -> dict:
     """Return project title and a list of chapters with id, filename, title, summary."""
     active = get_active_project_dir()
-    story = load_story_config((active / "story.json") if active else None) or {}
+    raw_story = load_story_config((active / "story.json") if active else None) or {}
+    story = normalize_story_for_frontend(raw_story)
     p_type = story.get("project_type", "novel")
 
     base_info = {
@@ -74,7 +150,7 @@ def _project_overview() -> dict:
         # Build ID -> Metadata mapping for series
         all_meta = []
         for b in books:
-            bid = b.get("id")
+            bid = b.get("id") or b.get("folder")
             for c in b.get("chapters", []):
                 norm = _normalize_chapter_entry(c)
                 norm["_parent_book_id"] = bid
@@ -82,7 +158,8 @@ def _project_overview() -> dict:
 
         id_to_meta = {}
         used_m_ids = set()
-        for bid in [b.get("id") for b in books]:
+        for b in books:
+            bid = b.get("id") or b.get("folder")
             book_files = [(idx, p) for (idx, p) in files if p.parent.parent.name == bid]
             book_meta = [m for m in all_meta if m.get("_parent_book_id") == bid]
 
@@ -106,7 +183,7 @@ def _project_overview() -> dict:
                     id_to_meta[idx] = match
 
         for b in books:
-            bid = b.get("id")
+            bid = b.get("id") or b.get("folder")
             b_chapters = []
             for vid, path in files:
                 if f"books/{bid}/" in str(path):

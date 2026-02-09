@@ -20,6 +20,7 @@ const INITIAL_STORY: StoryState = {
   projectType: 'novel',
   books: [],
   sourcebook: [],
+  conflicts: [],
   currentChapterId: null,
   lastUpdated: Date.now(),
 };
@@ -59,6 +60,9 @@ export const useStory = () => {
           content: '',
           filename: c.filename,
           book_id: c.book_id,
+          notes: c.notes,
+          private_notes: c.private_notes,
+          conflicts: c.conflicts,
         }));
 
         // Re-anchor selection based on filename/book_id if IDs shifted
@@ -90,6 +94,7 @@ export const useStory = () => {
           projectType: res.story.project_type || 'novel',
           books: res.story.books || [],
           sourcebook: res.story.sourcebook || [],
+          conflicts: res.story.conflicts || [],
           llm_prefs: res.story.llm_prefs,
           currentChapterId: newSelection,
           lastUpdated: Date.now(),
@@ -115,7 +120,17 @@ export const useStory = () => {
           const res = await api.chapters.get(Number(currentChapterId));
           setStory((prev) => {
             const updatedChapters = prev.chapters.map((c) =>
-              c.id === currentChapterId ? { ...c, content: res.content } : c
+              c.id === currentChapterId
+                ? {
+                    ...c,
+                    content: res.content,
+                    notes: res.notes,
+                    private_notes: res.private_notes,
+                    conflicts: res.conflicts,
+                    title: res.title,
+                    summary: res.summary,
+                  }
+                : c
             );
             return { ...prev, chapters: updatedChapters };
           });
@@ -142,6 +157,9 @@ export const useStory = () => {
             content: '',
             filename: c.filename,
             book_id: c.book_id,
+            notes: c.notes,
+            private_notes: c.private_notes,
+            conflicts: c.conflicts,
           }));
 
           const newStory: StoryState = {
@@ -154,7 +172,8 @@ export const useStory = () => {
             chapters: chapters,
             projectType: res.story.project_type || 'novel',
             books: res.story.books || [],
-            llm_prefs: res.story.llm_prefs,
+            sourcebook: res.story.sourcebook || [],
+            conflicts: res.story.conflicts || [],
             currentChapterId: chapters.length > 0 ? chapters[0].id : null,
             lastUpdated: Date.now(),
           };
@@ -183,7 +202,8 @@ export const useStory = () => {
     summary: string,
     tags: string[],
     notes?: string,
-    private_notes?: string
+    private_notes?: string,
+    conflicts?: any[]
   ) => {
     const newState = {
       ...story,
@@ -192,30 +212,19 @@ export const useStory = () => {
       styleTags: tags,
       notes,
       private_notes,
+      conflicts,
     };
     pushState(newState);
 
     try {
-      if (story.title !== title) await api.story.updateTitle(title);
-      if (story.summary !== summary) await api.story.updateSummary(summary);
-      if (story.styleTags.join(',') !== tags.join(','))
-        await api.story.updateTags(tags);
-      // New generic metadata update if needed, but App.tsx calls api.story.updateMetadata which handles all
-      // Actually `useStory` logic for `updateStoryMetadata` was used in `StoryMetadata` via props,
-      // but `StoryMetadata.tsx` handles valid API calls now via `api.story.updateMetadata` internally?
-      // No, `StoryMetadata` in `App.tsx` calls `updateStoryMetadata` (from hook) in `onUpdate`.
-      // The `StoryMetadata` component calls `api.story.updateMetadata` AND calls `onUpdate`.
-      // So this hook function is just for updating local state mostly?
-      // Wait, the previous implementation in `useStory` called individual API endpoints.
-      // But `StoryMetadata` component was updated to call `api.story.updateMetadata` itself.
-      // So here in hook, we can skip API calls if they are redundant, OR ensure we use the new API.
-      // Ideally, the hook should manage the API call to keep logic centralized.
-      // But `StoryMetadata.tsx` does `await api.story.updateMetadata(...)` then `onUpdate(...)`.
-      // So `onUpdate` here should just update state.
-      // However to be safe and backward compatible with other calls, let's just leave state update.
-      // If we want this function to ALSO save, we should use the new endpoint.
-
-      await api.story.updateMetadata({ title, summary, notes, private_notes });
+      await api.story.updateMetadata({
+        title,
+        summary,
+        tags,
+        notes,
+        private_notes,
+        conflicts,
+      });
       await api.story.updateTags(tags);
     } catch (e) {
       console.error('Failed to update story metadata', e);

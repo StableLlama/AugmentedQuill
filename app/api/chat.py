@@ -12,7 +12,7 @@ import base64
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from app.config import load_machine_config, load_story_config
+from app.config import load_machine_config, load_story_config, save_story_config
 from app.projects import (
     get_active_project_dir,
     write_chapter_content,
@@ -30,7 +30,6 @@ from app.projects import (
 )
 from app.helpers.project_helpers import _project_overview, _chapter_content_slice
 from app.helpers.chapter_helpers import (
-    _normalize_chapter_entry,
     _chapter_by_id_or_404,
 )
 from app.helpers.story_helpers import (
@@ -258,15 +257,15 @@ STORY_TOOLS = [
         "type": "function",
         "function": {
             "name": "get_project_overview",
-            "description": "Get project title, type, and a structured list of all books (for series) or chapters (for novels). Use this to find the correct NUMERIC chapter IDs and UUID book IDs. Never assume an ID based on a title.",
+            "description": "Get project title, type, and list of all chapters (novels) or books (series). Use this to find numeric chapter IDs and UUID book IDs. Never assume an ID.",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
     {
         "type": "function",
         "function": {
-            "name": "get_story_metadata",
-            "description": "Get the overall story title and summary.",
+            "name": "get_story_summary",
+            "description": "Get the overall story title, summary, notes, and tags.",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
@@ -274,18 +273,39 @@ STORY_TOOLS = [
         "type": "function",
         "function": {
             "name": "update_story_metadata",
-            "description": "Update the story title, summary, or notes.",
+            "description": "Update the story title, summary, notes, tags, or conflicts.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "title": {"type": "string", "description": "The new story title."},
-                    "summary": {
+                    "title": {"type": "string", "description": "New story title."},
+                    "summary": {"type": "string", "description": "New story summary."},
+                    "notes": {"type": "string", "description": "New story notes."},
+                    "private_notes": {
                         "type": "string",
-                        "description": "The new story summary.",
+                        "description": "New private/internal notes.",
                     },
-                    "notes": {
-                        "type": "string",
-                        "description": "General notes for the story, visible to the AI.",
+                    "tags": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "New style tags.",
+                    },
+                    "conflicts": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "description": {
+                                    "type": "string",
+                                    "description": "Description of the conflict.",
+                                },
+                                "resolution": {
+                                    "type": "string",
+                                    "description": "Planned resolution for the conflict.",
+                                },
+                            },
+                            "required": ["description", "resolution"],
+                        },
+                        "description": "List of story-level conflicts.",
                     },
                 },
                 "required": [],
@@ -295,120 +315,14 @@ STORY_TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "read_story_content",
-            "description": "Read the story-level introduction or content file.",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "write_story_content",
-            "description": "Update the story-level introduction or content file.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "content": {
-                        "type": "string",
-                        "description": "The new content for the story.",
-                    }
-                },
-                "required": ["content"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_book_metadata",
-            "description": "Get the title and summary of a specific book (only for series projects).",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "book_id": {
-                        "type": "string",
-                        "description": "The UUID of the book.",
-                    }
-                },
-                "required": ["book_id"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "update_book_metadata",
-            "description": "Update the title, summary, or notes of a specific book.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "book_id": {
-                        "type": "string",
-                        "description": "The UUID of the book.",
-                    },
-                    "title": {"type": "string", "description": "The new book title."},
-                    "summary": {
-                        "type": "string",
-                        "description": "The new book summary.",
-                    },
-                    "notes": {
-                        "type": "string",
-                        "description": "Notes for the book, visible to the AI.",
-                    },
-                },
-                "required": ["book_id"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "read_book_content",
-            "description": "Read the global introduction or content for a specific book.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "book_id": {
-                        "type": "string",
-                        "description": "The UUID of the book.",
-                    }
-                },
-                "required": ["book_id"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "write_book_content",
-            "description": "Update the global introduction or content for a specific book.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "book_id": {
-                        "type": "string",
-                        "description": "The UUID of the book.",
-                    },
-                    "content": {
-                        "type": "string",
-                        "description": "The new content for the book.",
-                    },
-                },
-                "required": ["book_id", "content"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "get_chapter_metadata",
-            "description": "Get the title and summary of a specific chapter.",
+            "description": "Get the title, summary, notes, and conflicts of a chapter.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "chap_id": {
                         "type": "integer",
-                        "description": "The numeric ID of the chapter.",
+                        "description": "Numeric chapter ID.",
                     }
                 },
                 "required": ["chap_id"],
@@ -419,37 +333,41 @@ STORY_TOOLS = [
         "type": "function",
         "function": {
             "name": "update_chapter_metadata",
-            "description": "Update the title, summary, notes, or conflicts of a specific chapter.",
+            "description": "Update the title, summary, notes, or conflicts of a chapter.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "chap_id": {
                         "type": "integer",
-                        "description": "The numeric ID of the chapter.",
+                        "description": "Numeric chapter ID.",
                     },
-                    "title": {
-                        "type": "string",
-                        "description": "The new chapter title.",
-                    },
+                    "title": {"type": "string", "description": "New chapter title."},
                     "summary": {
                         "type": "string",
-                        "description": "The new chapter summary.",
+                        "description": "New chapter summary.",
                     },
-                    "notes": {
+                    "notes": {"type": "string", "description": "AI-visible notes."},
+                    "private_notes": {
                         "type": "string",
-                        "description": "Notes for the chapter, visible to the AI.",
+                        "description": "Internal (private) notes.",
                     },
                     "conflicts": {
                         "type": "array",
                         "items": {
                             "type": "object",
                             "properties": {
-                                "id": {"type": "string"},
-                                "description": {"type": "string"},
-                                "resolution": {"type": "string"},
+                                "description": {
+                                    "type": "string",
+                                    "description": "Description of the conflict.",
+                                },
+                                "resolution": {
+                                    "type": "string",
+                                    "description": "How the conflict is resolved or planned to be resolved.",
+                                },
                             },
+                            "required": ["description", "resolution"],
                         },
-                        "description": "List of conflicts in the chapter. Each has id (optional), description, and resolution (optional).",
+                        "description": "List of conflicts for the chapter.",
                     },
                 },
                 "required": ["chap_id"],
@@ -459,34 +377,8 @@ STORY_TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "get_story_tags",
-            "description": "Get the story tags that define the style.",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "set_story_tags",
-            "description": "Set or update the story tags that define the style. This is a destructive action that overwrites existing tags.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "tags": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "The new tags for the story, as an array of strings.",
-                    },
-                },
-                "required": ["tags"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "get_chapter_summaries",
-            "description": "Get summaries of all chapters.",
+            "description": "Get summaries of all chapters in the project.",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
@@ -494,24 +386,24 @@ STORY_TOOLS = [
         "type": "function",
         "function": {
             "name": "get_chapter_content",
-            "description": "Get a slice of a chapter's content. ALWAYS use the numeric 'chap_id' from get_project_overview. Never guess.",
+            "description": "Read a slice of a chapter's content.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "chap_id": {
                         "type": "integer",
-                        "description": "The numeric ID of the chapter to read.",
+                        "description": "Numeric chapter ID.",
                     },
                     "start": {
                         "type": "integer",
-                        "description": "The starting character index. Default 0.",
+                        "description": "Start index (default 0).",
                     },
                     "max_chars": {
                         "type": "integer",
-                        "description": "Max characters to read. Default 8000, max 8000.",
+                        "description": "Max chars (max 8000).",
                     },
                 },
-                "required": [],
+                "required": ["chap_id"],
             },
         },
     },
@@ -519,18 +411,15 @@ STORY_TOOLS = [
         "type": "function",
         "function": {
             "name": "write_chapter_content",
-            "description": "Set the content of a chapter. You MUST use the numeric ID retrieved from get_project_overview.",
+            "description": "Set the full content of a chapter.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "chap_id": {
                         "type": "integer",
-                        "description": "Chapter numeric id (global index from project overview).",
+                        "description": "Numeric chapter ID.",
                     },
-                    "content": {
-                        "type": "string",
-                        "description": "New content for the chapter.",
-                    },
+                    "content": {"type": "string", "description": "New content."},
                 },
                 "required": ["chap_id", "content"],
             },
@@ -539,55 +428,12 @@ STORY_TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "sync_summary",
-            "description": "Generate and save a new summary for a chapter, or update its existing summary based on the content of the chapter. This is a destructive action. You MUST use the numeric chapter ID.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "chap_id": {
-                        "type": "integer",
-                        "description": "The numeric ID of the chapter to summarize.",
-                    },
-                    "mode": {
-                        "type": "string",
-                        "description": "If 'discard', generate a new summary from scratch. If 'update' or empty, refine the existing one.",
-                        "enum": ["discard", "update"],
-                    },
-                },
-                "required": ["chap_id"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "sync_story_summary",
-            "description": "Generate and save a new overall story summary based on chapter summaries, or update the existing one. This is a destructive action.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "mode": {
-                        "type": "string",
-                        "description": "If 'discard', generate a new summary from scratch. If 'update' or empty, refine the existing one.",
-                        "enum": ["discard", "update"],
-                    },
-                },
-                "required": [],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "create_new_chapter",
-            "description": "Create a new chapter with an optional title.",
+            "description": "Create a new chapter.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "title": {
-                        "type": "string",
-                        "description": "The title for the new chapter.",
-                    }
+                    "title": {"type": "string", "description": "Optional title."},
                 },
                 "required": [],
             },
@@ -596,166 +442,47 @@ STORY_TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "write_chapter",
-            "description": "Write the entire content of a chapter from its summary. This overwrites any existing content.",
+            "name": "read_story_content",
+            "description": "Read the story introductory content.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "write_story_content",
+            "description": "Update the story introductory content.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "content": {"type": "string", "description": "New content."},
+                },
+                "required": ["content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_images",
+            "description": "List all project images.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "sync_summary",
+            "description": "Auto-generate a summary for a chapter from its content.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "chap_id": {
                         "type": "integer",
-                        "description": "The ID of the chapter to write.",
-                    }
-                },
-                "required": ["chap_id"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "continue_chapter",
-            "description": "Append new content to a chapter, continuing from where it left off. This does not modify existing text.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "chap_id": {
-                        "type": "integer",
-                        "description": "The ID of the chapter to continue.",
-                    }
-                },
-                "required": ["chap_id"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "create_project",
-            "description": "Create a new project.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "name": {
-                        "type": "string",
-                        "description": "The name of the project.",
-                    },
-                    "project_type": {
-                        "type": "string",
-                        "enum": ["short-story", "novel", "series"],
-                        "description": "The type of project: short-story (single file), novel (chapters), series (books).",
-                    },
-                },
-                "required": ["name"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "list_projects",
-            "description": "List all available projects.",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "required": [],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "delete_project",
-            "description": "Delete a project. Requires confirmation.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "name": {
-                        "type": "string",
-                        "description": "The name of the project to delete.",
-                    },
-                    "confirm": {
-                        "type": "boolean",
-                        "description": "Set to true to confirm deletion.",
-                    },
-                },
-                "required": ["name"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "delete_book",
-            "description": "Delete a book from a series project. Requires confirmation. Use the book UUID.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "book_id": {
-                        "type": "string",
-                        "description": "The UUID of the book to delete.",
-                    },
-                    "confirm": {
-                        "type": "boolean",
-                        "description": "Set to true to confirm deletion.",
-                    },
-                },
-                "required": ["book_id"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "delete_chapter",
-            "description": "Delete a chapter by its ID. Requires confirmation.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "chap_id": {
-                        "type": "integer",
-                        "description": "The ID of the chapter to delete.",
-                    },
-                    "confirm": {
-                        "type": "boolean",
-                        "description": "Set to true to confirm deletion.",
+                        "description": "Numeric chapter ID.",
                     },
                 },
                 "required": ["chap_id"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "create_new_book",
-            "description": "Create a new book in a Series project.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "title": {
-                        "type": "string",
-                        "description": "The title of the new book.",
-                    },
-                },
-                "required": ["title"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "change_project_type",
-            "description": "Convert the active project to a new type (short-story, novel, series).",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "new_type": {
-                        "type": "string",
-                        "enum": ["short-story", "novel", "series"],
-                        "description": "The new project type.",
-                    }
-                },
-                "required": ["new_type"],
             },
         },
     },
@@ -763,14 +490,11 @@ STORY_TOOLS = [
         "type": "function",
         "function": {
             "name": "generate_image_description",
-            "description": "Generate a description for an existing image using the EDIT LLM.",
+            "description": "Generate a detailed description for an existing image.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "filename": {
-                        "type": "string",
-                        "description": "The filename of the image.",
-                    },
+                    "filename": {"type": "string", "description": "The image filename."}
                 },
                 "required": ["filename"],
             },
@@ -779,27 +503,16 @@ STORY_TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "list_images",
-            "description": "List all images including placeholders, with their descriptions and titles.",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "create_image_placeholder",
-            "description": "Create a new placeholder image with a description and optional title.",
+            "description": "Create a new image placeholder with a description.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "description": {
                         "type": "string",
-                        "description": "Description of the image content.",
+                        "description": "Image subject and style.",
                     },
-                    "title": {
-                        "type": "string",
-                        "description": "Title for the image.",
-                    },
+                    "title": {"type": "string", "description": "Short title."},
                 },
                 "required": ["description"],
             },
@@ -809,173 +522,18 @@ STORY_TOOLS = [
         "type": "function",
         "function": {
             "name": "set_image_metadata",
-            "description": "Update the title or description of an image or placeholder.",
+            "description": "Update an image title or description.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "filename": {
-                        "type": "string",
-                        "description": "The filename of the image.",
-                    },
-                    "title": {
-                        "type": "string",
-                        "description": "The new title.",
-                    },
+                    "filename": {"type": "string", "description": "Image filename."},
+                    "title": {"type": "string", "description": "New title."},
                     "description": {
                         "type": "string",
-                        "description": "The new description.",
+                        "description": "New description.",
                     },
                 },
                 "required": ["filename"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "reorder_chapters",
-            "description": "Reorder chapters in a novel project or within a specific book in a series project. To move a chapter between books, provide the chapter ID in the list for the target book. ONLY use numeric chapter IDs and UUID book IDs.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "chapter_ids": {
-                        "type": "array",
-                        "items": {"type": "integer"},
-                        "description": "List of numeric chapter IDs in the desired order.",
-                    },
-                    "book_id": {
-                        "type": "string",
-                        "description": "The UUID of the book (required for series projects, omit for novel projects).",
-                    },
-                },
-                "required": ["chapter_ids"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "reorder_books",
-            "description": "Reorder books in a series project. Use the UUIDs for each book.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "book_ids": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "List of book UUIDs in the desired order.",
-                    },
-                },
-                "required": ["book_ids"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "search_sourcebook",
-            "description": "Search the sourcebook (facts, background info) by query. Searches names, synonyms, and descriptions.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "The search query."}
-                },
-                "required": ["query"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_sourcebook_entry",
-            "description": "Get a specific sourcebook entry by unique ID (preferred) or name (case-insensitive).",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "name_or_id": {
-                        "type": "string",
-                        "description": "The ID or name of the entry.",
-                    }
-                },
-                "required": ["name_or_id"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "create_sourcebook_entry",
-            "description": "Create a new sourcebook entry.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "name": {
-                        "type": "string",
-                        "description": "The name of the entry (not unique).",
-                    },
-                    "description": {
-                        "type": "string",
-                        "description": "The description/content of the entry.",
-                    },
-                    "category": {
-                        "type": "string",
-                        "description": "Category (e.g. Character, Location, Item).",
-                    },
-                    "synonyms": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Optional list of synonyms or nicknames.",
-                    },
-                },
-                "required": ["name", "description", "category"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "update_sourcebook_entry",
-            "description": "Update an existing sourcebook entry.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "name_or_id": {
-                        "type": "string",
-                        "description": "The ID (preferred) or name of the entry to update.",
-                    },
-                    "name": {"type": "string", "description": "New name (optional)."},
-                    "description": {
-                        "type": "string",
-                        "description": "New description (optional).",
-                    },
-                    "category": {
-                        "type": "string",
-                        "description": "New category (optional).",
-                    },
-                    "synonyms": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "New list of synonyms (optional, replaces old).",
-                    },
-                },
-                "required": ["name_or_id"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "delete_sourcebook_entry",
-            "description": "Delete a sourcebook entry by ID or name.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "name_or_id": {
-                        "type": "string",
-                        "description": "The ID or name to delete.",
-                    }
-                },
-                "required": ["name_or_id"],
             },
         },
     },
@@ -1069,13 +627,16 @@ async def _exec_chat_tool(
                 "content": _json.dumps(data),
             }
 
-        if name == "get_story_metadata":
+        if name == "get_story_summary" or name == "get_story_metadata":
             active = get_active_project_dir()
             story = load_story_config((active / "story.json") if active else None) or {}
             val = {
                 "title": story.get("project_title", ""),
                 "summary": story.get("story_summary", ""),
                 "notes": story.get("notes", ""),
+                "private_notes": story.get("private_notes", ""),
+                "tags": story.get("tags", []),
+                "project_type": story.get("project_type", "novel"),
             }
             return {
                 "role": "tool",
@@ -1084,13 +645,23 @@ async def _exec_chat_tool(
                 "content": _json.dumps(val),
             }
 
-        if name == "update_story_metadata":
+        if name == "update_story_summary" or name == "update_story_metadata":
             title = args_obj.get("title")
             summary = args_obj.get("summary")
             notes = args_obj.get("notes")
+            private_notes = args_obj.get("private_notes")
+            tags = args_obj.get("tags")
+            conflicts = args_obj.get("conflicts")
 
             try:
-                update_story_metadata(title=title, summary=summary, notes=notes)
+                update_story_metadata(
+                    title=title,
+                    summary=summary,
+                    notes=notes,
+                    private_notes=private_notes,
+                    tags=tags,
+                    conflicts=conflicts,
+                )
                 mutations["story_changed"] = True
                 return {
                     "role": "tool",
@@ -1148,7 +719,14 @@ async def _exec_chat_tool(
             active = get_active_project_dir()
             story = load_story_config((active / "story.json") if active else None) or {}
             books = story.get("books", [])
-            target = next((b for b in books if b.get("id") == book_id), None)
+            target = next(
+                (
+                    b
+                    for b in books
+                    if (b.get("id") == book_id or b.get("folder") == book_id)
+                ),
+                None,
+            )
             if not target:
                 return {
                     "role": "tool",
@@ -1344,7 +922,14 @@ async def _exec_chat_tool(
             title = args_obj.get("title")
             summary = args_obj.get("summary")
             notes = args_obj.get("notes")
+            private_notes = args_obj.get("private_notes")
             conflicts = args_obj.get("conflicts")
+
+            if isinstance(conflicts, str):
+                try:
+                    conflicts = _json.loads(conflicts)
+                except Exception:
+                    pass
 
             if not isinstance(chap_id, int):
                 return {
@@ -1362,6 +947,7 @@ async def _exec_chat_tool(
                     title=title,
                     summary=summary,
                     notes=notes,
+                    private_notes=private_notes,
                     conflicts=conflicts,
                 )
                 mutations["story_changed"] = True
@@ -1371,6 +957,7 @@ async def _exec_chat_tool(
                     "name": name,
                     "content": _json.dumps({"ok": True}),
                 }
+
             except Exception as e:
                 return {
                     "role": "tool",
@@ -1481,8 +1068,7 @@ async def _exec_chat_tool(
             story_path = active / "story.json"
             story = load_story_config(story_path) or {}
             story["tags"] = tags
-            with open(story_path, "w", encoding="utf-8") as f:
-                _json.dump(story, f, indent=2, ensure_ascii=False)
+            save_story_config(story_path, story)
             mutations["story_changed"] = True
             return {
                 "role": "tool",
@@ -1694,8 +1280,7 @@ async def _exec_chat_tool(
             story_path = active / "story.json"
             story = load_story_config(story_path) or {}
             story["story_summary"] = summary
-            with open(story_path, "w", encoding="utf-8") as f:
-                _json.dump(story, f, indent=2, ensure_ascii=False)
+            save_story_config(story_path, story)
             mutations["story_changed"] = True
             return {
                 "role": "tool",
@@ -1924,13 +1509,7 @@ async def _exec_chat_tool(
                 }
 
             story["books"] = new_books
-            # Also logic to remove chapters associated with book?
-            # Assuming chapters list needs cleanup too if I track BookID in chapters.
-            # For now, just removing book entry. user can delete chapters separately or I'd need complex logic.
-            # "Short Story" - just remove metadata.
-
-            with open(story_path, "w", encoding="utf-8") as f:
-                _json.dump(story, f, indent=2, ensure_ascii=False)
+            save_story_config(story_path, story)
             mutations["story_changed"] = True
             return {
                 "role": "tool",
@@ -2002,8 +1581,7 @@ async def _exec_chat_tool(
                 if 0 <= idx_to_remove < len(chapters):
                     chapters.pop(idx_to_remove)
                     story["chapters"] = chapters
-                    with open(story_path, "w", encoding="utf-8") as f:
-                        _json.dump(story, f, indent=2, ensure_ascii=False)
+                    save_story_config(story_path, story)
 
             mutations["story_changed"] = True
             return {
@@ -2183,53 +1761,7 @@ async def _exec_chat_tool(
                     "name": name,
                     "content": _json.dumps({"error": str(e)}),
                 }
-            _, path, pos = match
-            # Delete the file
-            try:
-                path.unlink()
-            except Exception as e:
-                return {
-                    "role": "tool",
-                    "tool_call_id": call_id,
-                    "name": name,
-                    "content": _json.dumps(
-                        {"error": f"Failed to delete chapter file: {e}"}
-                    ),
-                }
-            # Update story.json
-            story_path = active / "story.json"
-            story = load_story_config(story_path) or {}
-            chapters_data = story.get("chapters") or []
-            chapters_data = [_normalize_chapter_entry(c) for c in chapters_data]
-            count = len(files)
-            if len(chapters_data) < count:
-                chapters_data.extend(
-                    [{"title": "", "summary": ""}] * (count - len(chapters_data))
-                )
-            if pos < len(chapters_data):
-                chapters_data.pop(pos)
-            story["chapters"] = chapters_data
-            try:
-                with open(story_path, "w", encoding="utf-8") as f:
-                    _json.dump(story, f, indent=2, ensure_ascii=False)
-            except Exception as e:
-                return {
-                    "role": "tool",
-                    "tool_call_id": call_id,
-                    "name": name,
-                    "content": _json.dumps(
-                        {"error": f"Failed to update story.json: {e}"}
-                    ),
-                }
-            mutations["story_changed"] = True
-            return {
-                "role": "tool",
-                "tool_call_id": call_id,
-                "name": name,
-                "content": _json.dumps(
-                    {"message": f"Chapter {chap_id} deleted successfully"}
-                ),
-            }
+
         return {
             "role": "tool",
             "tool_call_id": call_id,
@@ -2502,6 +2034,19 @@ async def api_chat_stream(request: Request) -> StreamingResponse:
         api_key = chosen.get("api_key") or api_key
         model_id = chosen.get("model") or model_id
         timeout_s = chosen.get("timeout_s", 60) or timeout_s
+
+    # Match selected model to config to get capabilities
+    chosen = None
+    supports_function_calling = True
+    if models:
+        allowed_models = models
+        if selected_name:
+            for m in allowed_models:
+                if isinstance(m, dict) and (m.get("name") == selected_name):
+                    chosen = m
+                    break
+        if chosen is None:
+            chosen = allowed_models[0]
 
     # Capability checks
     # Default to True/Auto unless explicitly disabled

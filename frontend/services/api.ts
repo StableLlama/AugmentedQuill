@@ -388,6 +388,7 @@ export const api = {
       tags?: string[];
       notes?: string;
       private_notes?: string;
+      conflicts?: any[];
     }) => {
       const res = await fetch(`${API_BASE}/story/metadata`, {
         method: 'POST',

@@ -45,59 +45,72 @@ class ChatToolsTest(TestCase):
             encoding="utf-8",
         )
 
-    def test_tools_execute_overview_and_content(self):
+    def test_update_metadata_and_aliases(self):
         self._bootstrap_project()
 
-        # Simulate assistant instructing two tool calls in one turn
+        # 1. Test update_chapter_metadata with new fields
         body = {
-            "model_name": None,
             "messages": [
-                {
-                    "role": "user",
-                    "content": "What chapters exist and what's in the first?",
-                },
                 {
                     "role": "assistant",
                     "content": None,
                     "tool_calls": [
                         {
-                            "id": "call_overview",
+                            "id": "u1",
                             "type": "function",
                             "function": {
-                                "name": "get_project_overview",
+                                "name": "update_chapter_metadata",
+                                "arguments": json.dumps(
+                                    {
+                                        "chap_id": 1,
+                                        "notes": "New note",
+                                        "private_notes": "Secret info",
+                                        "conflicts": json.dumps(
+                                            [{"id": "c1", "description": "Fight!"}]
+                                        ),
+                                    }
+                                ),
+                            },
+                        }
+                    ],
+                }
+            ]
+        }
+        r = self.client.post("/api/chat/tools", json=body)
+        self.assertEqual(r.status_code, 200)
+
+        # Verify persistence
+        pdir = self.projects_root / "demo"
+        with open(pdir / "story.json", "r") as f:
+            story = json.load(f)
+        chap1 = story["chapters"][0]
+        self.assertEqual(chap1.get("notes"), "New note")
+        self.assertEqual(chap1.get("private_notes"), "Secret info")
+        self.assertEqual(len(chap1.get("conflicts", [])), 1)
+
+        # 2. Test aliases for story summary
+        body_alias = {
+            "messages": [
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "a1",
+                            "type": "function",
+                            "function": {
+                                "name": "get_story_metadata",
                                 "arguments": "{}",
                             },
-                        },
-                        {
-                            "id": "call_content",
-                            "type": "function",
-                            "function": {
-                                "name": "get_chapter_content",
-                                "arguments": '{"chap_id":1,"start":0,"max_chars":200}',
-                            },
-                        },
+                        }
                     ],
-                },
-            ],
-            "active_chapter_id": 1,
+                }
+            ]
         }
-
-        r = self.client.post("/api/chat/tools", json=body)
-        self.assertEqual(r.status_code, 200, r.text)
+        r = self.client.post("/api/chat/tools", json=body_alias)
+        self.assertEqual(r.status_code, 200)
         data = r.json()
-        self.assertTrue(data.get("ok"))
-        app = data.get("appended_messages") or []
-        self.assertEqual(len(app), 2)
-        # Validate first tool is overview JSON with chapters
-        t1 = app[0]
-        self.assertEqual(t1.get("role"), "tool")
-        self.assertEqual(t1.get("name"), "get_project_overview")
-        # content is JSON string; must include project_title
-        self.assertIn("project_title", t1.get("content", ""))
-        # Validate second tool returns content for chap 1
-        t2 = app[1]
-        self.assertEqual(t2.get("name"), "get_chapter_content")
-        self.assertIn('"id": 1', t2.get("content", ""))
+        self.assertIn("Demo", data["appended_messages"][0]["content"])
 
     def test_tools_execute_write_functions(self):
         self._bootstrap_project()

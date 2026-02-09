@@ -5,7 +5,7 @@
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Chapter, Book, AppTheme } from '../types';
 import { MetadataEditorDialog } from './MetadataEditorDialog';
 import { api } from '../services/api';
@@ -258,24 +258,33 @@ export const ChapterList: React.FC<ChapterListProps> = ({
 
   const [editingMetadata, setEditingMetadata] = useState<{
     type: 'chapter' | 'book';
-    data: any;
+    id: string;
   } | null>(null);
+
+  const activeEditingData = useMemo(() => {
+    if (!editingMetadata) return null;
+    if (editingMetadata.type === 'chapter') {
+      return displayChapters.find((c) => c.id === editingMetadata.id);
+    } else {
+      return displayBooks.find((b) => b.id === editingMetadata.id);
+    }
+  }, [editingMetadata, displayChapters, displayBooks]);
 
   const handleEditChapterMetadata = (e: React.MouseEvent, chapter: Chapter) => {
     e.stopPropagation();
-    setEditingMetadata({ type: 'chapter', data: chapter });
+    setEditingMetadata({ type: 'chapter', id: chapter.id });
   };
 
   const handleEditBookMetadata = (e: React.MouseEvent, book: Book) => {
     e.stopPropagation();
-    setEditingMetadata({ type: 'book', data: book });
+    setEditingMetadata({ type: 'book', id: book.id });
   };
 
   const saveMetadata = async (data: any) => {
-    if (!editingMetadata) return;
+    if (!editingMetadata || !activeEditingData) return;
     try {
       if (editingMetadata.type === 'chapter') {
-        const id = parseInt(editingMetadata.data.id, 10);
+        const id = parseInt(editingMetadata.id, 10);
         await api.chapters.updateMetadata(id, {
           summary: data.summary,
           notes: data.notes,
@@ -284,14 +293,14 @@ export const ChapterList: React.FC<ChapterListProps> = ({
         });
 
         if (onUpdateChapter) {
-          onUpdateChapter(editingMetadata.data.id, data);
+          onUpdateChapter(editingMetadata.id, data);
         } else {
-          if (data.title !== editingMetadata.data.title) {
+          if (data.title !== activeEditingData.title) {
             await api.chapters.updateTitle(id, data.title || '');
           }
         }
       } else {
-        const id = editingMetadata.data.id;
+        const id = editingMetadata.id;
         await api.books.updateBookMetadata(id, {
           title: data.title,
           summary: data.summary,
@@ -333,13 +342,20 @@ export const ChapterList: React.FC<ChapterListProps> = ({
         onClick={() => onSelect(chapter.id)}
       >
         <div className="flex justify-between items-start pointer-events-none">
-          <h3
-            className={`font-medium text-sm mb-1 ${
-              currentChapterId === chapter.id ? titleActive : titleInactive
-            }`}
-          >
-            {chapter.title || 'Untitled Chapter'}
-          </h3>
+          <div className="flex items-center gap-2">
+            <h3
+              className={`font-medium text-sm mb-1 ${
+                currentChapterId === chapter.id ? titleActive : titleInactive
+              }`}
+            >
+              {chapter.title || 'Untitled Chapter'}
+            </h3>
+            {chapter.conflicts && chapter.conflicts.length > 0 && (
+              <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-[10px] font-bold">
+                {chapter.conflicts.length}
+              </span>
+            )}
+          </div>
           <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-auto">
             <button
               onClick={(e) => handleEditChapterMetadata(e, chapter)}
@@ -368,13 +384,13 @@ export const ChapterList: React.FC<ChapterListProps> = ({
 
   return (
     <div className={`flex flex-col flex-1 min-h-0 border-r relative ${bgClass}`}>
-      {editingMetadata && (
+      {editingMetadata && activeEditingData && (
         <MetadataEditorDialog
           type={editingMetadata.type}
           title={`Edit ${
             editingMetadata.type === 'chapter' ? 'Chapter' : 'Book'
-          }: ${editingMetadata.data.title}`}
-          initialData={editingMetadata.data}
+          }: ${activeEditingData.title}`}
+          initialData={activeEditingData}
           onSave={saveMetadata}
           onClose={() => setEditingMetadata(null)}
           theme={theme}
@@ -383,7 +399,7 @@ export const ChapterList: React.FC<ChapterListProps> = ({
               ? (action, onProgress) =>
                   onAiAction(
                     editingMetadata.type,
-                    editingMetadata.data.id,
+                    editingMetadata.id,
                     action,
                     onProgress
                   )

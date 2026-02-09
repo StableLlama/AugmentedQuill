@@ -67,8 +67,78 @@ export function MetadataEditorDialog({
   const onSaveRef = useRef(onSave);
   const isFirstRun = useRef(true);
 
-  // For Conflicts
-  const [conflicts, setConflicts] = useState<Conflict[]>(initialData.conflicts || []);
+  // For Conflicts - normalize to object format if they are strings
+  const [conflicts, setConflicts] = useState<Conflict[]>(
+    (initialData.conflicts || []).map((c: any) => {
+      if (typeof c === 'string') {
+        return { id: crypto.randomUUID(), description: c, resolution: '' };
+      }
+      return {
+        id: c.id || crypto.randomUUID(),
+        description: c.description || '',
+        resolution: c.resolution || '',
+      };
+    })
+  );
+
+  // Sync with prop changes (e.g. AI updates in background)
+  useEffect(() => {
+    // Determine if conflicts actually changed (ignoring IDs if they are newly generated)
+    const normalizedPropConflicts = (initialData.conflicts || []).map((c: any) =>
+      typeof c === 'string'
+        ? { description: c, resolution: 'TBD' }
+        : { description: c.description || '', resolution: c.resolution || 'TBD' }
+    );
+    const normalizedLocalConflicts = conflicts.map((c) => ({
+      description: c.description,
+      resolution: c.resolution,
+    }));
+
+    const hasConflictsChanged =
+      JSON.stringify(normalizedPropConflicts) !==
+      JSON.stringify(normalizedLocalConflicts);
+
+    if (hasConflictsChanged && saveStatus !== 'saving') {
+      setConflicts(
+        initialData.conflicts!.map((c: any) => {
+          if (typeof c === 'string') {
+            return { id: crypto.randomUUID(), description: c, resolution: 'TBD' };
+          }
+          return {
+            id: c.id || crypto.randomUUID(),
+            description: c.description || '',
+            resolution: c.resolution || 'TBD',
+          };
+        })
+      );
+    }
+
+    // Sync other fields if they changed in prop but are empty locally,
+    // or if the whole data changed (e.g. background update)
+    if (saveStatus !== 'saving') {
+      const hasTitleChanged = (initialData.title || '') !== (data.title || '');
+      const hasSummaryChanged = (initialData.summary || '') !== (data.summary || '');
+      const hasNotesChanged = (initialData.notes || '') !== (data.notes || '');
+      const hasPrivateNotesChanged =
+        (initialData.private_notes || '') !== (data.private_notes || '');
+
+      if (
+        hasTitleChanged ||
+        hasSummaryChanged ||
+        hasNotesChanged ||
+        hasPrivateNotesChanged
+      ) {
+        setData((prev) => ({
+          ...prev,
+          title: initialData.title || prev.title || '',
+          summary: initialData.summary || prev.summary || '',
+          notes: initialData.notes || prev.notes || '',
+          private_notes: initialData.private_notes || prev.private_notes || '',
+          tags: prev.tags && prev.tags.length > 0 ? prev.tags : initialData.tags || [],
+        }));
+      }
+    }
+  }, [initialData]);
 
   useEffect(() => {
     onSaveRef.current = onSave;
@@ -87,6 +157,27 @@ export function MetadataEditorDialog({
 
     setSaveStatus('saving');
     const timer = setTimeout(async () => {
+      // Check if data is actually different from initialData before saving
+      const isTitleSame = (data.title || '') === (initialData.title || '');
+      const isSummarySame = (data.summary || '') === (initialData.summary || '');
+      const isNotesSame = (data.notes || '') === (initialData.notes || '');
+      const isPrivateNotesSame =
+        (data.private_notes || '') === (initialData.private_notes || '');
+      const isConflictsSame =
+        JSON.stringify(data.conflicts || []) ===
+        JSON.stringify(initialData.conflicts || []);
+
+      if (
+        isTitleSame &&
+        isSummarySame &&
+        isNotesSame &&
+        isPrivateNotesSame &&
+        isConflictsSame
+      ) {
+        setSaveStatus('saved');
+        return;
+      }
+
       try {
         await onSaveRef.current(data);
         setSaveStatus('saved');
@@ -240,21 +331,25 @@ export function MetadataEditorDialog({
                 className="w-full p-2 border rounded dark:bg-brand-gray-950 dark:border-brand-gray-800 text-brand-gray-900 dark:text-brand-gray-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 font-sans text-sm"
               />
 
-              <label className="block text-sm font-medium dark:text-brand-gray-400 mt-3">
-                Style Tags
-              </label>
-              <input
-                value={data.tags ? data.tags.join(', ') : ''}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  // Allow typing trailing comma by not filtering empty strings immediately if needed,
-                  // but simple split is fine for now.
-                  const tags = val.split(',').map((s) => s.trimStart());
-                  setData({ ...data, tags: tags });
-                }}
-                className="w-full p-2 border rounded dark:bg-brand-gray-950 dark:border-brand-gray-800 text-brand-gray-900 dark:text-brand-gray-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 font-sans text-sm"
-                placeholder="e.g. Noir, Sci-Fi, First-Person"
-              />
+              {type === 'story' && (
+                <>
+                  <label className="block text-sm font-medium dark:text-brand-gray-400 mt-3">
+                    Style Tags
+                  </label>
+                  <input
+                    value={data.tags ? data.tags.join(', ') : ''}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      // Allow typing trailing comma by not filtering empty strings immediately if needed,
+                      // but simple split is fine for now.
+                      const tags = val.split(',').map((s) => s.trimStart());
+                      setData({ ...data, tags: tags });
+                    }}
+                    className="w-full p-2 border rounded dark:bg-brand-gray-950 dark:border-brand-gray-800 text-brand-gray-900 dark:text-brand-gray-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 font-sans text-sm"
+                    placeholder="e.g. Noir, Sci-Fi, First-Person"
+                  />
+                </>
+              )}
             </div>
 
             {/* Tabs */}

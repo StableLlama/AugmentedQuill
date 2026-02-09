@@ -6,7 +6,6 @@
 # (at your option) any later version.
 
 from typing import List, Optional, Dict
-import uuid
 from app.projects import get_active_project_dir
 from app.config import load_story_config, save_story_config
 
@@ -17,6 +16,22 @@ def _get_story_data():
         return None, None
     story_path = active / "story.json"
     story = load_story_config(story_path) or {}
+
+    # Migrate from list to dict if needed
+    if "sourcebook" in story and isinstance(story["sourcebook"], list):
+        old_sb = story["sourcebook"]
+        new_sb = {}
+        for entry in old_sb:
+            if isinstance(entry, dict) and "name" in entry:
+                entry_copy = entry.copy()
+                name = entry_copy.pop("name")
+                entry_copy.pop("id", None)
+                new_sb[name] = entry_copy
+        story["sourcebook"] = new_sb
+        # We don't save here to avoid side effects in a helper,
+        # but the story dict is now updated in memory.
+        # Actually it's probably better to return it and let caller save if they want.
+
     return story, story_path
 
 
@@ -24,14 +39,15 @@ def sb_search(query: str) -> List[Dict]:
     story, _ = _get_story_data()
     if not story:
         return []
-    entries = story.get("sourcebook", [])
+    sb_dict = story.get("sourcebook", {})
 
     query = query.lower()
     results = []
 
-    for e in entries:
+    for name, e_data in sb_dict.items():
+        e = {"id": name, "name": name, **e_data}
         # Search in name
-        if query in e.get("name", "").lower():
+        if query in name.lower():
             results.append(e)
             continue
 
@@ -55,17 +71,15 @@ def sb_get(name_or_id: str) -> Optional[Dict]:
     story, _ = _get_story_data()
     if not story:
         return None
-    entries = story.get("sourcebook", [])
+    sb_dict = story.get("sourcebook", {})
 
+    # Case-insensitive name lookup
     target = name_or_id.lower()
-
-    for e in entries:
-        if e.get("id") == name_or_id:
-            return e
-        if e.get("name", "").lower() == target:
-            return e
-        if any(target == s.lower() for s in e.get("synonyms", [])):
-            return e
+    for name, e_data in sb_dict.items():
+        if name.lower() == target:
+            return {"id": name, "name": name, **e_data}
+        if any(target == s.lower() for s in e_data.get("synonyms", [])):
+            return {"id": name, "name": name, **e_data}
 
     return None
 
@@ -89,21 +103,23 @@ def sb_create(
     if not story:
         return {"error": "No active project"}
 
-    entries = story.get("sourcebook", [])
+    sb_dict = story.get("sourcebook", {})
 
-    new_entry = {
-        "id": str(uuid.uuid4()),
-        "name": name,
+    if name in sb_dict:
+        # Check if it was because of migration
+        pass
+
+    new_entry_data = {
         "description": description,
         "category": category,
         "synonyms": synonyms,
         "images": [],
     }
 
-    entries.append(new_entry)
-    story["sourcebook"] = entries
+    sb_dict[name] = new_entry_data
+    story["sourcebook"] = sb_dict
     save_story_config(story_path, story)
-    return new_entry
+    return {"id": name, "name": name, **new_entry_data}
 
 
 def sb_delete(name_or_id: str) -> bool:
@@ -113,33 +129,23 @@ def sb_delete(name_or_id: str) -> bool:
     story, story_path = _get_story_data()
     if not story:
         return False
-    entries = story.get("sourcebook", [])
+    sb_dict = story.get("sourcebook", {})
 
     target = name_or_id.lower()
-    # If using ID, exact match
-    # If using name, case insensitive match on name or synonyms? Usually delete by name is risky if duplicates.
-    # The requirement says "create and delete an entry".
 
-    new_entries = []
-    deleted = False
+    found_key = None
+    for name in sb_dict:
+        if name.lower() == target:
+            found_key = name
+            break
 
-    for e in entries:
-        match = False
-        if e.get("id") == name_or_id:
-            match = True
-        elif e.get("name", "").lower() == target:
-            match = True
-
-        if match:
-            deleted = True
-        else:
-            new_entries.append(e)
-
-    if deleted:
-        story["sourcebook"] = new_entries
+    if found_key:
+        del sb_dict[found_key]
+        story["sourcebook"] = sb_dict
         save_story_config(story_path, story)
+        return True
 
-    return deleted
+    return False
 
 
 def sb_update(
@@ -156,46 +162,50 @@ def sb_update(
     if not story:
         return {"error": "No active project"}
 
-    entries = story.get("sourcebook", [])
+    sb_dict = story.get("sourcebook", {})
     target = name_or_id.lower()
 
-    found_idx = -1
-    for i, e in enumerate(entries):
-        if e.get("id") == name_or_id:
-            found_idx = i
-            break
-        if e.get("name", "").lower() == target:
-            found_idx = i
+    found_key = None
+    for k in sb_dict:
+        if k.lower() == target:
+            found_key = k
             break
 
-    if found_idx == -1:
+    if found_key is None:
         return {"error": "Entry not found."}
 
-    entry = entries[found_idx]
+    entry_data = sb_dict[found_key]
+
+    # Handle rename
+    new_name = name
+    if new_name is not None:
+        if not isinstance(new_name, str) or not new_name.strip():
+            return {"error": "Invalid name: Name must be a non-empty string."}
+
+        if new_name != found_key:
+            if new_name in sb_dict:
+                return {"error": f"Entry '{new_name}' already exists."}
+            del sb_dict[found_key]
+            found_key = new_name
 
     # Validation for updates
-    if name is not None:
-        if not isinstance(name, str) or not name.strip():
-            return {"error": "Invalid name: Name must be a non-empty string."}
-        entry["name"] = name
-
     if description is not None:
         if not isinstance(description, str):
             return {"error": "Invalid description: Description must be a string."}
-        entry["description"] = description
+        entry_data["description"] = description
 
     if category is not None:
         if not isinstance(category, str):
             return {"error": "Invalid category: Category must be a string."}
-        entry["category"] = category
+        entry_data["category"] = category
 
     if synonyms is not None:
         if not isinstance(synonyms, list):
             return {"error": "Invalid synonyms: Synonyms must be a list of strings."}
-        entry["synonyms"] = synonyms
+        entry_data["synonyms"] = synonyms
 
-    entries[found_idx] = entry
-    story["sourcebook"] = entries
+    sb_dict[found_key] = entry_data
+    story["sourcebook"] = sb_dict
     save_story_config(story_path, story)
 
-    return entry
+    return {"id": found_key, "name": found_key, **entry_data}

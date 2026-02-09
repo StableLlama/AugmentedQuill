@@ -263,7 +263,9 @@ async def api_settings_post(request: Request) -> JSONResponse:
         machine_path = CONFIG_DIR / "machine.json"
         _ensure_parent_dir(story_path)
         _ensure_parent_dir(machine_path)
-        story_path.write_text(_json.dumps(story_cfg, indent=2), encoding="utf-8")
+        from app.config import save_story_config
+
+        save_story_config(story_path, story_cfg)
         machine_path.write_text(_json.dumps(machine_cfg, indent=2), encoding="utf-8")
     except Exception as e:
         return JSONResponse(
@@ -558,7 +560,9 @@ async def api_story_summary_put(request: Request) -> JSONResponse:
         story = load_story_config(story_path) or {}
         story["story_summary"] = summary
         _ensure_parent_dir(story_path)
-        story_path.write_text(_json.dumps(story, indent=2), encoding="utf-8")
+        from app.config import save_story_config
+
+        save_story_config(story_path, story)
     except Exception as e:
         return JSONResponse(
             status_code=500,
@@ -589,7 +593,9 @@ async def api_story_tags_put(request: Request) -> JSONResponse:
         story = load_story_config(story_path) or {}
         story["tags"] = tags
         _ensure_parent_dir(story_path)
-        story_path.write_text(_json.dumps(story, indent=2), encoding="utf-8")
+        from app.config import save_story_config
+
+        save_story_config(story_path, story)
     except Exception as e:
         return JSONResponse(
             status_code=500,

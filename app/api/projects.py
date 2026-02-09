@@ -28,6 +28,7 @@ from app.helpers.image_helpers import (
     delete_image_metadata,
     get_project_images,
 )
+from app.helpers.project_helpers import normalize_story_for_frontend
 
 router = APIRouter()
 
@@ -98,7 +99,7 @@ async def api_projects_select(request: Request) -> JSONResponse:
             "ok": True,
             "message": msg,
             "registry": normalized_reg,
-            "story": story,
+            "story": normalize_story_for_frontend(story),
         },
     )
 
@@ -128,7 +129,7 @@ async def api_projects_create(request: Request) -> JSONResponse:
             "ok": True,
             "message": msg,
             "registry": normalized_reg,
-            "story": story,
+            "story": normalize_story_for_frontend(story),
         },
     )
 
@@ -159,7 +160,7 @@ async def api_projects_convert(request: Request) -> JSONResponse:
         content={
             "ok": True,
             "message": msg,
-            "story": story,
+            "story": normalize_story_for_frontend(story),
         },
     )
 
@@ -189,7 +190,7 @@ async def api_books_create(request: Request) -> JSONResponse:
                 "ok": True,
                 "message": "Book created",
                 "book_id": bid,
-                "story": story,
+                "story": normalize_story_for_frontend(story),
             },
         )
     except ValueError as e:
@@ -224,10 +225,9 @@ async def api_books_delete(request: Request) -> JSONResponse:
     new_books = [b for b in books if str(b.get("id")) != str(book_id)]
     story["books"] = new_books
 
-    import json
+    from app.config import save_story_config
 
-    with open(story_path, "w", encoding="utf-8") as f:
-        json.dump(story, f, indent=2, ensure_ascii=False)
+    save_story_config(story_path, story)
 
     # Also delete directory?
     # Ideally yes.
@@ -236,7 +236,12 @@ async def api_books_delete(request: Request) -> JSONResponse:
         shutil.rmtree(book_dir)
 
     return JSONResponse(
-        status_code=200, content={"ok": True, "message": "Book deleted", "story": story}
+        status_code=200,
+        content={
+            "ok": True,
+            "message": "Book deleted",
+            "story": normalize_story_for_frontend(story),
+        },
     )
 
 
