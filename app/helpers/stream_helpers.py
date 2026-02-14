@@ -108,8 +108,19 @@ class ChannelFilter:
                     # Group 1 is the whole match. Group 2 is (.*?) inside.
                     channel_name = match.group(2)
                     if channel_name:
+                        if "<|constrain|>" in channel_name:
+                            channel_name = channel_name.split("<|constrain|>", 1)[0]
                         # Normalize or use as is. Usually 'thought' or 'final'
                         self.current_channel = channel_name.strip()
+                elif (
+                    tag_text.startswith("<|start|>assistant")
+                    and "<|channel|>" in tag_text
+                ):
+                    channel_name = tag_text.split("<|channel|>", 1)[1]
+                    channel_name = channel_name.split("<|message|>", 1)[0]
+                    if "<|constrain|>" in channel_name:
+                        channel_name = channel_name.split("<|constrain|>", 1)[0]
+                    self.current_channel = channel_name.strip()
                 elif "<|message|>" in tag_text:
                     # This might be part of the channel tag, handled above or just switching context
                     # If we just switch to message, usually implies back to main/final logic unless specialized

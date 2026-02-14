@@ -6,7 +6,7 @@
       "type": "debugpy",
       "request": "launch",
       "module": "app.main",
-      "args": ["--host", "127.0.0.1", "--port", "28000", "--reload"],
+      "args": ["--host", "127.0.0.1", "--port", "28000", "--reload", "--llm-dump"],
       "console": "integratedTerminal",
       "justMyCode": true
     },

@@ -395,6 +395,127 @@ class TestChatStreamCoverage(TestCase):
             any(tc["function"]["name"] == "list_images" for tc in tool_calls)
         )
 
+    @patch("app.api.chat.httpx.AsyncClient")
+    def test_stream_commentary_tool_call_suppresses_json(self, MockClientClass):
+        """Commentary/tool-call output should emit tool_calls and no user-visible JSON."""
+        mock_client_instance = MagicMock()
+        MockClientClass.return_value = mock_client_instance
+        mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
+        mock_client_instance.__aexit__ = AsyncMock()
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.headers = {"content-type": "text/event-stream"}
+
+        mock_stream_ctx = MagicMock()
+        mock_stream_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_stream_ctx.__aexit__ = AsyncMock()
+        mock_client_instance.stream.return_value = mock_stream_ctx
+
+        async def fake_aiter_lines():
+            yield "data: " + json.dumps(
+                {
+                    "choices": [
+                        {
+                            "delta": {
+                                "content": "<|channel|>analysis<|message|>We need to get metadata."  # noqa: E501
+                            }
+                        }
+                    ]
+                }
+            ) + "\n\n"
+            yield "data: " + json.dumps(
+                {
+                    "choices": [
+                        {
+                            "delta": {
+                                "content": '<|end|><|start|>assistant<|channel|>commentary to=functions.get_chapter_metadata <|constrain|>json<|message|>{\\"chap_id\\": 2}'
+                            }
+                        }
+                    ]
+                }
+            ) + "\n\n"
+            yield "data: [DONE]\n\n"
+
+        mock_response.aiter_lines.side_effect = fake_aiter_lines
+
+        payload = {
+            "messages": [{"role": "user", "content": "Chapter 2 conflicts?"}],
+            "model_type": "CHAT",
+        }
+
+        response = self.client.post("/api/chat/stream", json=payload)
+        self.assertEqual(response.status_code, 200, response.text)
+
+        events = self._parse_sse_events(response.text)
+        content_text = ""
+        tool_calls = []
+        for evt in events:
+            if "content" in evt:
+                content_text += evt["content"]
+            if "tool_calls" in evt:
+                tool_calls.extend(evt["tool_calls"])
+
+        self.assertNotIn("chap_id", content_text)
+        self.assertNotIn("analysis", content_text)
+        self.assertTrue(
+            any(tc["function"]["name"] == "get_chapter_metadata" for tc in tool_calls)
+        )
+
+    @patch("app.api.chat.httpx.AsyncClient")
+    def test_sanitizes_assistant_tool_content(self, MockClientClass):
+        """Assistant messages with tool_calls should not send tool args as content."""
+        mock_client_instance = MagicMock()
+        MockClientClass.return_value = mock_client_instance
+        mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
+        mock_client_instance.__aexit__ = AsyncMock()
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.headers = {"content-type": "text/event-stream"}
+
+        mock_stream_ctx = MagicMock()
+        mock_stream_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_stream_ctx.__aexit__ = AsyncMock()
+        mock_client_instance.stream.return_value = mock_stream_ctx
+
+        async def fake_aiter_lines():
+            yield "data: [DONE]\n\n"
+
+        mock_response.aiter_lines.side_effect = fake_aiter_lines
+
+        payload = {
+            "messages": [
+                {"role": "user", "content": "Conflicts?"},
+                {
+                    "role": "assistant",
+                    "content": 'chap_id":2',
+                    "tool_calls": [
+                        {
+                            "id": "call_get_chapter_metadata",
+                            "type": "function",
+                            "function": {
+                                "name": "get_chapter_metadata",
+                                "arguments": '{\\"chap_id\\":2}',
+                            },
+                        }
+                    ],
+                },
+            ],
+            "model_type": "CHAT",
+        }
+
+        response = self.client.post("/api/chat/stream", json=payload)
+        self.assertEqual(response.status_code, 200, response.text)
+
+        _, call_kwargs = mock_client_instance.stream.call_args
+        upstream_messages = call_kwargs["json"]["messages"]
+        assistant_msgs = [m for m in upstream_messages if m.get("role") == "assistant"]
+        self.assertTrue(assistant_msgs)
+        for msg in assistant_msgs:
+            if msg.get("tool_calls"):
+                self.assertIsNone(msg.get("content"))
+
     def _parse_sse_events(self, text):
         events = []
         for line in text.splitlines():

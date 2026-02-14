@@ -45,7 +45,7 @@ from app.helpers.sourcebook_helpers import (
     sb_update,
 )
 from app.prompts import get_system_message, load_model_prompt_overrides
-from app.llm import add_llm_log, create_log_entry
+from app.llm import add_llm_log, create_log_entry, finalize_llm_log_entry
 import json as _json
 from typing import Any, Dict
 
@@ -71,6 +71,13 @@ def _load_machine_config(path):
     if _app_main and hasattr(_app_main, "load_machine_config"):
         return _app_main.load_machine_config(path)
     return load_machine_config(path)
+
+
+def _normalize_tool_name(name: str) -> str:
+    cleaned = name.strip()
+    if cleaned.startswith("functions."):
+        cleaned = cleaned.split("functions.", 1)[1]
+    return cleaned
 
 
 def _parse_tool_calls_from_content(content: str) -> list[dict] | None:
@@ -249,7 +256,138 @@ def _parse_tool_calls_from_content(content: str) -> list[dict] | None:
             }
         )
 
+    # 5. Look for assistantcommentary tool-call text variants
+    pattern5 = (
+        r"(?:\b\w+\.)?assistantcommentary\s+to=functions\.(\w+)" r"\s+json\s*(\{.*\})"
+    )
+    matches5 = re.finditer(pattern5, content, re.IGNORECASE | re.DOTALL)
+
+    for m in matches5:
+        name = m.group(1)
+        args_str = m.group(2).strip() if m.group(2) else "{}"
+        try:
+            args_obj = _json.loads(args_str)
+        except Exception:
+            args_obj = {}
+
+        call_id = f"call_{name}"
+        if any(c["id"] == call_id for c in calls):
+            call_id = f"{call_id}_{len(calls)}"
+
+        calls.append(
+            {
+                "id": call_id,
+                "type": "function",
+                "function": {"name": name, "arguments": _json.dumps(args_obj)},
+                "original_text": m.group(0),
+            }
+        )
+
     return calls if calls else None
+
+
+def _sanitize_analysis_prefix(content: str) -> str:
+    if not content:
+        return content
+    stripped = content.lstrip()
+    if not stripped:
+        return content
+    lowered = stripped.lower()
+    if lowered.startswith("analysis"):
+        remainder = lowered[len("analysis") :]
+        remainder_raw = stripped[len("analysis") :]
+        looks_like_prefix = not remainder or remainder[0] in (":", " ", "\n", "\t")
+        glued_prefix = (
+            remainder_raw and remainder_raw[0].isalpha() and remainder_raw[0].isupper()
+        )
+        if looks_like_prefix or glued_prefix:
+            if re.search(
+                r"\b(the user|we need|use|get_|tool|call|should|need to)\b",
+                lowered,
+            ):
+                return stripped[len("analysis") :].lstrip(" :\n\t")
+    return content
+
+
+def _parse_tool_syntax(content: str) -> tuple[str, list[dict] | None]:
+    if not content:
+        return content, None
+
+    content_lower = content.lower()
+    has_tool_syntax = (
+        "<tool_call" in content_lower
+        or "[tool_call" in content_lower
+        or content_lower.startswith("tool:")
+        or "commentary to=functions." in content_lower
+        or "assistantcommentary to=functions." in content_lower
+        or ".assistantcommentary to=functions." in content_lower
+        or "<|channel|>commentary" in content_lower
+    )
+
+    parsed_tool_calls = (
+        _parse_tool_calls_from_content(content) if has_tool_syntax else None
+    )
+
+    if not has_tool_syntax:
+        return _sanitize_analysis_prefix(content), parsed_tool_calls
+
+    clean_content = re.sub(
+        r"<tool_call>(.*?)</tool_call>",
+        "",
+        content,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    clean_content = re.sub(
+        r"<tool_call[^>]*>",
+        "",
+        clean_content,
+        flags=re.IGNORECASE,
+    )
+    clean_content = re.sub(
+        r"</tool_call>",
+        "",
+        clean_content,
+        flags=re.IGNORECASE,
+    )
+    clean_content = re.sub(
+        r"\[TOOL_CALL\](.*?)\[/TOOL_CALL\]",
+        "",
+        clean_content,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    clean_content = re.sub(
+        r"^Tool:\s*(\w+)(?:\(([^)]*)\))?",
+        "",
+        clean_content,
+        flags=re.IGNORECASE | re.MULTILINE,
+    )
+    clean_content = re.sub(
+        r"<tool_call[^>]*$",
+        "",
+        clean_content,
+        flags=re.IGNORECASE,
+    )
+    clean_content = re.sub(
+        r"\[TOOL_CALL\][^\[]*$",
+        "",
+        clean_content,
+        flags=re.IGNORECASE,
+    )
+    clean_content = re.sub(
+        r"(?:\b\w+\.)?assistantcommentary\s+to=functions\.\w+\s+json\s*\{.*\}",
+        "",
+        clean_content,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    clean_content = clean_content.strip()
+    if (
+        "commentary to=functions." in content_lower
+        or "assistantcommentary to=functions." in content_lower
+        or ".assistantcommentary to=functions." in content_lower
+    ):
+        clean_content = ""
+
+    return _sanitize_analysis_prefix(clean_content), parsed_tool_calls
 
 
 STORY_TOOLS = [
@@ -1982,6 +2120,7 @@ async def api_chat_tools(request: Request) -> JSONResponse:
         log_entry["response"]["body"] = {"appended_messages": appended}
         log_entry["timestamp_end"] = datetime.datetime.now().isoformat()
         add_llm_log(log_entry)
+        finalize_llm_log_entry(log_entry)
 
     return JSONResponse(
         status_code=200,
@@ -2096,6 +2235,8 @@ async def api_chat_stream(request: Request) -> StreamingResponse:
             tcs = m.get("tool_calls")
             if isinstance(tcs, list) and tcs:
                 msg["tool_calls"] = tcs
+                if role == "assistant":
+                    msg["content"] = None
             out.append(msg)
         return out
 
@@ -2232,214 +2373,200 @@ async def api_chat_stream(request: Request) -> StreamingResponse:
     add_llm_log(log_entry)
 
     async def _gen():
-        # Retry loop for fallback (tool choice error)
-        attempts = 2 if supports_function_calling else 1
+        try:
+            # Retry loop for fallback (tool choice error)
+            attempts = 2 if supports_function_calling else 1
 
-        for attempt in range(attempts):
-            is_fallback = attempt == 1
+            for attempt in range(attempts):
+                is_fallback = attempt == 1
 
-            # Prepare logic variables
-            channel_filter = ChannelFilter()
-            has_tool_syntax = False
-            content = ""
-            chunk_content = ""
+                # Prepare logic variables
+                channel_filter = ChannelFilter()
+                content = ""
+                chunk_content = ""
 
-            # Prepare body
-            current_body = body.copy()
+                # Prepare body
+                current_body = body.copy()
 
-            if is_fallback:
-                current_body.pop("tools", None)
-                current_body.pop("tool_choice", None)
+                if is_fallback:
+                    current_body.pop("tools", None)
+                    current_body.pop("tool_choice", None)
 
-                # Clone messages to avoid modifying the original list/dicts
-                if "messages" in current_body:
-                    new_msgs = []
-                    for m in current_body["messages"]:
-                        new_msgs.append(m.copy())
-                    current_body["messages"] = new_msgs
+                    # Clone messages to avoid modifying the original list/dicts
+                    if "messages" in current_body:
+                        new_msgs = []
+                        for m in current_body["messages"]:
+                            new_msgs.append(m.copy())
+                        current_body["messages"] = new_msgs
 
-                    # Inject fallback instructions into the system prompt
-                    found_system = False
-                    for m in current_body["messages"]:
-                        if m.get("role") == "system":
-                            content = m.get("content", "") or ""
-                            # Append explicit instruction for text-based tool calling
-                            # Construct a list of available tools
-                            tools_desc = "\nAvailable Tools:\n"
-                            for t in STORY_TOOLS:
-                                f = t.get("function", {})
-                                name = f.get("name")
-                                desc = f.get("description", "")
-                                if name:
-                                    tools_desc += f"- {name}: {desc}\n"
+                        # Inject fallback instructions into the system prompt
+                        found_system = False
+                        for m in current_body["messages"]:
+                            if m.get("role") == "system":
+                                content = m.get("content", "") or ""
+                                # Append explicit instruction for text-based tool calling
+                                # Construct a list of available tools
+                                tools_desc = "\nAvailable Tools:\n"
+                                for t in STORY_TOOLS:
+                                    f = t.get("function", {})
+                                    name = f.get("name")
+                                    desc = f.get("description", "")
+                                    if name:
+                                        tools_desc += f"- {name}: {desc}\n"
 
-                            fallback_instr = (
-                                "\n\n[SYSTEM NOTICE: Native tool calling is unavailable. "
-                                "To use tools, you MUST output the tool call strictly using this format:]\n"
-                                '[TOOL_CALL]tool_name({"arg": "value"})[/TOOL_CALL]\n'
-                                f"{tools_desc}\n"
-                            )
-                            m["content"] = content + fallback_instr
-                            found_system = True
-                            break
-
-                    # If no system prompt found, prepend one
-                    if not found_system:
-                        current_body["messages"].insert(
-                            0,
-                            {
-                                "role": "system",
-                                "content": 'You are a helpful assistant.\n\n[SYSTEM NOTICE: Native tool calling is unavailable. To use tools, you MUST output the tool call strictly using this format:]\n[TOOL_CALL]tool_name({"arg": "value"})[/TOOL_CALL]',
-                            },
-                        )
-
-            try:
-                async with httpx.AsyncClient(
-                    timeout=httpx.Timeout(float(timeout_s or 60))
-                ) as client:
-                    async with client.stream(
-                        "POST", url, headers=headers, json=current_body
-                    ) as resp:
-                        log_entry["response"]["status_code"] = resp.status_code
-                        if resp.status_code >= 400:
-                            error_content = await resp.aread()
-
-                            # Fallback check
-                            if not is_fallback and supports_function_calling:
-                                try:
-                                    err_text_check = error_content.decode(
-                                        "utf-8", errors="ignore"
-                                    )
-                                except Exception:
-                                    err_text_check = str(error_content)
-                                if "tool choice requires" in err_text_check:
-                                    # Retry loop
-                                    continue
-
-                            log_entry["timestamp_end"] = (
-                                datetime.datetime.now().isoformat()
-                            )
-                            try:
-                                error_data = _json.loads(error_content)
-                                log_entry["response"]["error"] = error_data
-                                yield f'data: {{"error": "Upstream error", "status": {resp.status_code}, "data": {_json.dumps(error_data)}}}\n\n'
-                            except Exception:
-                                err_text = error_content.decode(
-                                    "utf-8", errors="ignore"
+                                fallback_instr = (
+                                    "\n\n[SYSTEM NOTICE: Native tool calling is unavailable. "
+                                    "To use tools, you MUST output the tool call strictly using this format:]\n"
+                                    '[TOOL_CALL]tool_name({"arg": "value"})[/TOOL_CALL]\n'
+                                    f"{tools_desc}\n"
                                 )
-                                log_entry["response"]["error"] = err_text
-                                yield f'data: {{"error": "Upstream error", "status": {resp.status_code}, "data": {_json.dumps(err_text)}}}\n\n'
-                            return
+                                m["content"] = content + fallback_instr
+                                found_system = True
+                                break
 
-                        # Check if response is SSE or regular JSON
-                        content_type = resp.headers.get("content-type", "")
-                        if "text/event-stream" not in content_type:
-                            # Not SSE, treat as regular JSON response
-                            try:
-                                response_data = await resp.json()
-                                log_entry["response"]["body"] = response_data
+                        # If no system prompt found, prepend one
+                        if not found_system:
+                            current_body["messages"].insert(
+                                0,
+                                {
+                                    "role": "system",
+                                    "content": 'You are a helpful assistant.\n\n[SYSTEM NOTICE: Native tool calling is unavailable. To use tools, you MUST output the tool call strictly using this format:]\n[TOOL_CALL]tool_name({"arg": "value"})[/TOOL_CALL]',
+                                },
+                            )
+
+                try:
+                    async with httpx.AsyncClient(
+                        timeout=httpx.Timeout(float(timeout_s or 60))
+                    ) as client:
+                        async with client.stream(
+                            "POST", url, headers=headers, json=current_body
+                        ) as resp:
+                            log_entry["response"]["status_code"] = resp.status_code
+                            if resp.status_code >= 400:
+                                error_content = await resp.aread()
+
+                                # Fallback check
+                                if not is_fallback and supports_function_calling:
+                                    try:
+                                        err_text_check = error_content.decode(
+                                            "utf-8", errors="ignore"
+                                        )
+                                    except Exception:
+                                        err_text_check = str(error_content)
+                                    if "tool choice requires" in err_text_check:
+                                        # Retry loop
+                                        continue
+
                                 log_entry["timestamp_end"] = (
                                     datetime.datetime.now().isoformat()
                                 )
-                                if (
-                                    "choices" in response_data
-                                    and response_data["choices"]
-                                ):
-                                    choice = response_data["choices"][0]
+                                try:
+                                    error_data = _json.loads(error_content)
+                                    log_entry["response"]["error"] = error_data
+                                    yield f'data: {{"error": "Upstream error", "status": {resp.status_code}, "data": {_json.dumps(error_data)}}}\n\n'
+                                except Exception:
+                                    err_text = error_content.decode(
+                                        "utf-8", errors="ignore"
+                                    )
+                                    log_entry["response"]["error"] = err_text
+                                    yield f'data: {{"error": "Upstream error", "status": {resp.status_code}, "data": {_json.dumps(err_text)}}}\n\n'
+                                finalize_llm_log_entry(log_entry)
+                                return
+
+                            # Check if response is SSE or regular JSON
+                            content_type = resp.headers.get("content-type", "")
+                            if "text/event-stream" not in content_type:
+                                # Not SSE, treat as regular JSON response
+                                try:
+                                    response_data = await resp.json()
+                                    log_entry["response"]["body"] = response_data
+                                    log_entry["timestamp_end"] = (
+                                        datetime.datetime.now().isoformat()
+                                    )
                                     if (
-                                        "message" in choice
-                                        and "content" in choice["message"]
+                                        "choices" in response_data
+                                        and response_data["choices"]
                                     ):
-                                        content = choice["message"]["content"]
-                                        if content:
-                                            # Separate thinking from final content
-                                            filtered_results = channel_filter.feed(
-                                                content
-                                            )
-                                            filtered_results += channel_filter.flush()
+                                        choice = response_data["choices"][0]
+                                        if (
+                                            "message" in choice
+                                            and "content" in choice["message"]
+                                        ):
+                                            content = choice["message"]["content"]
+                                            if content:
+                                                # Separate thinking from final content
+                                                filtered_results = channel_filter.feed(
+                                                    content
+                                                )
+                                                filtered_results += (
+                                                    channel_filter.flush()
+                                                )
 
-                                            for res in filtered_results:
-                                                if res["channel"] == "thinking":
-                                                    yield f'data: {{"thinking": {_json.dumps(res["content"])}}}\n\n'
-                                                elif res["channel"].startswith("call:"):
-                                                    func_name = res["channel"][5:]
-                                                    tool_call = {
-                                                        "id": f"call_{func_name}",
-                                                        "type": "function",
-                                                        "function": {
-                                                            "name": func_name,
-                                                            "arguments": res["content"],
-                                                        },
-                                                    }
-                                                    yield f'data: {{"tool_calls": [{_json.dumps(tool_call)}]}}\n\n'
-                                                    # Update aggregated for logging
-                                                    if (
-                                                        "tool_calls"
-                                                        not in log_entry["response"]
+                                                for res in filtered_results:
+                                                    if res["channel"] in (
+                                                        "thinking",
+                                                        "analysis",
                                                     ):
-                                                        log_entry["response"][
-                                                            "tool_calls"
-                                                        ] = []
-                                                    log_entry["response"][
-                                                        "tool_calls"
-                                                    ].append(tool_call)
-                                                elif res["channel"] == "tool_def":
-                                                    inner = res["content"].strip()
-                                                    import re
-
-                                                    # Try JSON parsing first
-                                                    func_name = None
-                                                    args_raw = "{}"
-
-                                                    if inner.startswith("{"):
-                                                        try:
-                                                            jobj = _json.loads(inner)
-                                                            if "name" in jobj:
-                                                                func_name = jobj["name"]
-                                                                # Arguments can be dict or string in JSON tool call
-                                                                args_val = jobj.get(
-                                                                    "arguments", {}
-                                                                )
-                                                                if isinstance(
-                                                                    args_val, str
-                                                                ):
-                                                                    args_raw = args_val
-                                                                else:
-                                                                    args_raw = (
-                                                                        _json.dumps(
-                                                                            args_val
-                                                                        )
-                                                                    )
-                                                        except Exception:
-                                                            pass
-
-                                                    if not func_name:
-                                                        func_match = re.match(
-                                                            r"(\w+)(?:\((.*)\))?",
-                                                            inner,
-                                                            re.DOTALL,
+                                                        if res["channel"] == "thinking":
+                                                            yield f'data: {{"thinking": {_json.dumps(res["content"])}}}\n\n'
+                                                        continue
+                                                    if res["channel"].startswith(
+                                                        "commentary to="
+                                                    ):
+                                                        func_name = (
+                                                            _normalize_tool_name(
+                                                                res["channel"]
+                                                                .split(
+                                                                    "commentary to=", 1
+                                                                )[1]
+                                                                .strip()
+                                                            )
                                                         )
-                                                        if func_match:
-                                                            func_name = (
-                                                                func_match.group(1)
+                                                        if func_name:
+                                                            tool_call = {
+                                                                "id": f"call_{func_name}",
+                                                                "type": "function",
+                                                                "function": {
+                                                                    "name": func_name,
+                                                                    "arguments": res[
+                                                                        "content"
+                                                                    ],
+                                                                },
+                                                            }
+                                                            yield f'data: {{"tool_calls": [{_json.dumps(tool_call)}]}}\n\n'
+                                                            if (
+                                                                "tool_calls"
+                                                                not in log_entry[
+                                                                    "response"
+                                                                ]
+                                                            ):
+                                                                log_entry["response"][
+                                                                    "tool_calls"
+                                                                ] = []
+                                                            log_entry["response"][
+                                                                "tool_calls"
+                                                            ].append(tool_call)
+                                                        continue
+                                                    elif res["channel"].startswith(
+                                                        "call:"
+                                                    ):
+                                                        func_name = (
+                                                            _normalize_tool_name(
+                                                                res["channel"][5:]
                                                             )
-                                                            args_raw = (
-                                                                func_match.group(2)
-                                                                or "{}"
-                                                            )
-                                                            if not args_raw.strip():
-                                                                args_raw = "{}"
-
-                                                    if func_name:
+                                                        )
                                                         tool_call = {
                                                             "id": f"call_{func_name}",
                                                             "type": "function",
                                                             "function": {
                                                                 "name": func_name,
-                                                                "arguments": args_raw,
+                                                                "arguments": res[
+                                                                    "content"
+                                                                ],
                                                             },
                                                         }
                                                         yield f'data: {{"tool_calls": [{_json.dumps(tool_call)}]}}\n\n'
+                                                        # Update aggregated for logging
                                                         if (
                                                             "tool_calls"
                                                             not in log_entry["response"]
@@ -2450,316 +2577,427 @@ async def api_chat_stream(request: Request) -> StreamingResponse:
                                                         log_entry["response"][
                                                             "tool_calls"
                                                         ].append(tool_call)
-                                                else:
-                                                    # Process final content for tool calls
-                                                    content = res["content"]
-                                                    if not content:
-                                                        continue
+                                                    elif res["channel"] == "tool_def":
+                                                        inner = res["content"].strip()
+                                                        import re
 
-                                                    # Check if content contains tool call syntax and parse tool calls
-                                                    import re
+                                                        # Try JSON parsing first
+                                                        func_name = None
+                                                        args_raw = "{}"
 
-                                                    content_lower = content.lower()
-                                                    has_tool_syntax = (
-                                                        "<tool_call" in content_lower
-                                                        or "[tool_call" in content_lower
-                                                        or content_lower.startswith(
-                                                            "tool:"
+                                                        if inner.startswith("{"):
+                                                            try:
+                                                                jobj = _json.loads(
+                                                                    inner
+                                                                )
+                                                                if "name" in jobj:
+                                                                    func_name = jobj[
+                                                                        "name"
+                                                                    ]
+                                                                    # Arguments can be dict or string in JSON tool call
+                                                                    args_val = jobj.get(
+                                                                        "arguments", {}
+                                                                    )
+                                                                    if isinstance(
+                                                                        args_val, str
+                                                                    ):
+                                                                        args_raw = (
+                                                                            args_val
+                                                                        )
+                                                                    else:
+                                                                        args_raw = (
+                                                                            _json.dumps(
+                                                                                args_val
+                                                                            )
+                                                                        )
+                                                            except Exception:
+                                                                pass
+
+                                                        if not func_name:
+                                                            func_match = re.match(
+                                                                r"(\w+)(?:\((.*)\))?",
+                                                                inner,
+                                                                re.DOTALL,
+                                                            )
+                                                            if func_match:
+                                                                func_name = (
+                                                                    func_match.group(1)
+                                                                )
+                                                                args_raw = (
+                                                                    func_match.group(2)
+                                                                    or "{}"
+                                                                )
+                                                                if not args_raw.strip():
+                                                                    args_raw = "{}"
+
+                                                        if func_name:
+                                                            tool_call = {
+                                                                "id": f"call_{func_name}",
+                                                                "type": "function",
+                                                                "function": {
+                                                                    "name": func_name,
+                                                                    "arguments": args_raw,
+                                                                },
+                                                            }
+                                                            yield f'data: {{"tool_calls": [{_json.dumps(tool_call)}]}}\n\n'
+                                                            if (
+                                                                "tool_calls"
+                                                                not in log_entry[
+                                                                    "response"
+                                                                ]
+                                                            ):
+                                                                log_entry["response"][
+                                                                    "tool_calls"
+                                                                ] = []
+                                                            log_entry["response"][
+                                                                "tool_calls"
+                                                            ].append(tool_call)
+                                                    else:
+                                                        # Process final content for tool calls
+                                                        content = res["content"]
+                                                        if not content:
+                                                            continue
+
+                                                        (
+                                                            clean_content,
+                                                            parsed_tool_calls,
+                                                        ) = _parse_tool_syntax(content)
+                                                        if parsed_tool_calls:
+                                                            yield f'data: {{"tool_calls": {_json.dumps(parsed_tool_calls)}}}\n\n'
+                                                        if clean_content:
+                                                            yield f'data: {{"content": {_json.dumps(clean_content)}}}\n\n'
+
+                                        # Handle tool_calls in the final message
+                                        message = choice.get("message", {})
+                                        if (
+                                            "tool_calls" in message
+                                            and message["tool_calls"]
+                                        ):
+                                            yield f'data: {{"tool_calls": {_json.dumps(message["tool_calls"])}}}\n\n'
+                                    yield 'data: {"done": true}\n\n'
+                                    finalize_llm_log_entry(log_entry)
+                                except Exception as e:
+                                    import traceback
+
+                                    tb = traceback.format_exc()
+                                    log_entry["response"]["error"] = f"{str(e)}\n\n{tb}"
+                                    yield f'data: {{"error": "Failed to parse response", "message": {_json.dumps(str(e))}, "traceback": {_json.dumps(tb)}}}\n\n'
+                                    finalize_llm_log_entry(log_entry)
+
+                                # Success, break retry loop
+                                break
+
+                            buffer = ""
+                            sent_tool_call_ids = set()
+                            aggregated_tool_calls = []
+                            async for line in resp.aiter_lines():
+                                if line.strip():
+                                    if line.startswith("data: "):
+                                        data_str = line[6:]  # Remove "data: " prefix
+                                        if data_str.strip() == "[DONE]":
+                                            # Final check for text-based tool calls
+                                            final_content = log_entry["response"].get(
+                                                "full_content", ""
+                                            )
+                                            if final_content:
+                                                parsed_tool_calls = (
+                                                    _parse_tool_calls_from_content(
+                                                        final_content
+                                                    )
+                                                )
+                                                if parsed_tool_calls:
+                                                    new_calls = [
+                                                        c
+                                                        for c in parsed_tool_calls
+                                                        if c["id"]
+                                                        not in sent_tool_call_ids
+                                                    ]
+                                                    if new_calls:
+                                                        for c in new_calls:
+                                                            sent_tool_call_ids.add(
+                                                                c["id"]
+                                                            )
+                                                            aggregated_tool_calls.append(
+                                                                c
+                                                            )
+                                                        yield f'data: {{"tool_calls": {_json.dumps(new_calls)}}}\n\n'
+
+                                            log_entry["response"][
+                                                "tool_calls"
+                                            ] = aggregated_tool_calls
+
+                                            # Flush remaining content from channel filter
+                                            for res in channel_filter.flush():
+                                                if res["channel"] in (
+                                                    "thinking",
+                                                    "analysis",
+                                                ):
+                                                    if res["channel"] == "thinking":
+                                                        yield f'data: {{"thinking": {_json.dumps(res["content"])}}}\n\n'
+                                                    continue
+                                                if res["channel"].startswith(
+                                                    "commentary to="
+                                                ):
+                                                    func_name = _normalize_tool_name(
+                                                        res["channel"]
+                                                        .split("commentary to=", 1)[1]
+                                                        .strip()
+                                                    )
+                                                    if func_name:
+                                                        call_id = f"call_{func_name}"
+                                                        if (
+                                                            call_id
+                                                            in sent_tool_call_ids
+                                                        ):
+                                                            i = 1
+                                                            while (
+                                                                f"{call_id}_{i}"
+                                                                in sent_tool_call_ids
+                                                            ):
+                                                                i += 1
+                                                            call_id = f"{call_id}_{i}"
+                                                        if (
+                                                            call_id
+                                                            not in sent_tool_call_ids
+                                                        ):
+                                                            sent_tool_call_ids.add(
+                                                                call_id
+                                                            )
+                                                            aggregated_tool_calls.append(
+                                                                {
+                                                                    "id": call_id,
+                                                                    "type": "function",
+                                                                    "function": {
+                                                                        "name": func_name,
+                                                                        "arguments": "",
+                                                                    },
+                                                                }
+                                                            )
+                                                        yield f'data: {{"tool_calls": [{{"index": 0, "id": "{call_id}", "function": {{"name": "{func_name}", "arguments": {_json.dumps(res["content"])}}}}}]}}\n\n'
+                                                    continue
+                                                elif res["channel"].startswith("call:"):
+                                                    func_name = _normalize_tool_name(
+                                                        res["channel"][5:]
+                                                    )
+                                                    call_id = f"call_{func_name}"
+                                                    # Check if we already sent this ID, if so, append index
+                                                    if call_id in sent_tool_call_ids:
+                                                        i = 1
+                                                        while (
+                                                            f"{call_id}_{i}"
+                                                            in sent_tool_call_ids
+                                                        ):
+                                                            i += 1
+                                                        call_id = f"{call_id}_{i}"
+
+                                                    if (
+                                                        call_id
+                                                        not in sent_tool_call_ids
+                                                    ):
+                                                        sent_tool_call_ids.add(call_id)
+                                                        yield f'data: {{"tool_calls": [{{"index": 0, "id": "{call_id}", "function": {{"name": "{func_name}", "arguments": ""}}}}]}}\n\n'
+
+                                                    if res["content"]:
+                                                        yield f'data: {{"tool_calls": [{{"index": 0, "function": {{"arguments": {_json.dumps(res["content"])} }}}}]}}\n\n'
+                                                elif res["content"]:
+                                                    clean_content, parsed_tool_calls = (
+                                                        _parse_tool_syntax(
+                                                            res["content"]
                                                         )
                                                     )
-                                                    if has_tool_syntax:
-                                                        # Parse tool calls from content
-                                                        parsed_tool_calls = _parse_tool_calls_from_content(
-                                                            content
-                                                        )
-                                                        if parsed_tool_calls:
-                                                            # Send parsed tool calls
-                                                            yield f'data: {{"tool_calls": {_json.dumps(parsed_tool_calls)}}}\n\n'
-
-                                                    # Clean content of tool call syntax only if it contains tool call patterns
-                                                    if has_tool_syntax:
-
-                                                        def _get_tool_name(inner):
-                                                            inner = inner.strip()
-                                                            xml_m = re.search(
-                                                                r"<function=(\w+)>",
-                                                                inner,
-                                                                re.I,
-                                                            )
-                                                            if xml_m:
-                                                                return xml_m.group(1)
-                                                            name_m = re.match(
-                                                                r"(\w+)", inner
-                                                            )
-                                                            if name_m:
-                                                                return name_m.group(1)
-                                                            return "tool"
-
-                                                        clean_content = re.sub(
-                                                            r"<tool_call>(.*?)</tool_call>",
-                                                            lambda m: "",
-                                                            content,
-                                                            flags=re.IGNORECASE
-                                                            | re.DOTALL,
-                                                        )
-                                                        clean_content = re.sub(
-                                                            r"<tool_call[^>]*>",
-                                                            "",
-                                                            clean_content,
-                                                            flags=re.IGNORECASE,
-                                                        )
-                                                        clean_content = re.sub(
-                                                            r"</tool_call>",
-                                                            "",
-                                                            clean_content,
-                                                            flags=re.IGNORECASE,
-                                                        )
-                                                        clean_content = re.sub(
-                                                            r"\[TOOL_CALL\](.*?)\[/TOOL_CALL\]",
-                                                            lambda m: "",
-                                                            clean_content,
-                                                            flags=re.IGNORECASE
-                                                            | re.DOTALL,
-                                                        )
-                                                        clean_content = re.sub(
-                                                            r"^Tool:\s*(\w+)(?:\(([^)]*)\))?",
-                                                            lambda m: "",
-                                                            clean_content,
-                                                            flags=re.IGNORECASE
-                                                            | re.MULTILINE,
-                                                        )
-                                                        clean_content = re.sub(
-                                                            r"<tool_call[^>]*$",
-                                                            "",
-                                                            clean_content,
-                                                            flags=re.IGNORECASE,
-                                                        )
-                                                        clean_content = re.sub(
-                                                            r"\[TOOL_CALL\][^\[]*$",
-                                                            "",
-                                                            clean_content,
-                                                            flags=re.IGNORECASE,
-                                                        )
-                                                        clean_content = (
-                                                            clean_content.strip()
-                                                        )
-                                                    else:
-                                                        clean_content = content
-
+                                                    if parsed_tool_calls:
+                                                        new_calls = [
+                                                            c
+                                                            for c in parsed_tool_calls
+                                                            if c["id"]
+                                                            not in sent_tool_call_ids
+                                                        ]
+                                                        if new_calls:
+                                                            for c in new_calls:
+                                                                sent_tool_call_ids.add(
+                                                                    c["id"]
+                                                                )
+                                                                aggregated_tool_calls.append(
+                                                                    c
+                                                                )
+                                                            yield f'data: {{"tool_calls": {_json.dumps(new_calls)}}}\n\n'
                                                     if clean_content:
                                                         yield f'data: {{"content": {_json.dumps(clean_content)}}}\n\n'
 
-                                    # Handle tool_calls in the final message
-                                    message = choice.get("message", {})
-                                    if (
-                                        "tool_calls" in message
-                                        and message["tool_calls"]
-                                    ):
-                                        yield f'data: {{"tool_calls": {_json.dumps(message["tool_calls"])}}}\n\n'
-                                yield 'data: {"done": true}\n\n'
-                            except Exception as e:
-                                import traceback
-
-                                tb = traceback.format_exc()
-                                log_entry["response"]["error"] = f"{str(e)}\n\n{tb}"
-                                yield f'data: {{"error": "Failed to parse response", "message": {_json.dumps(str(e))}, "traceback": {_json.dumps(tb)}}}\n\n'
-
-                            # Success, break retry loop
-                            break
-
-                        buffer = ""
-                        sent_tool_call_ids = set()
-                        aggregated_tool_calls = []
-                        async for line in resp.aiter_lines():
-                            if line.strip():
-                                if line.startswith("data: "):
-                                    data_str = line[6:]  # Remove "data: " prefix
-                                    if data_str.strip() == "[DONE]":
-                                        # Final check for text-based tool calls
-                                        final_content = log_entry["response"].get(
-                                            "full_content", ""
-                                        )
-                                        if final_content:
-                                            parsed_tool_calls = (
-                                                _parse_tool_calls_from_content(
-                                                    final_content
-                                                )
+                                            yield 'data: {"done": true}\n\n'
+                                            log_entry["timestamp_end"] = (
+                                                datetime.datetime.now().isoformat()
                                             )
-                                            if parsed_tool_calls:
-                                                new_calls = [
-                                                    c
-                                                    for c in parsed_tool_calls
-                                                    if c["id"] not in sent_tool_call_ids
-                                                ]
-                                                if new_calls:
-                                                    for c in new_calls:
-                                                        sent_tool_call_ids.add(c["id"])
-                                                        aggregated_tool_calls.append(c)
-                                                    yield f'data: {{"tool_calls": {_json.dumps(new_calls)}}}\n\n'
+                                            finalize_llm_log_entry(log_entry)
+                                            break
+                                        try:
+                                            chunk = _json.loads(data_str)
+                                            log_entry["response"]["chunks"].append(
+                                                chunk
+                                            )
+                                            # Extract content from the chunk
+                                            if "choices" in chunk and chunk["choices"]:
+                                                choice = chunk["choices"][0]
+                                                if "delta" in choice:
+                                                    delta = choice["delta"]
+                                                    # Handle reasoning_content (e.g. DeepSeek-R1)
+                                                    if "reasoning_content" in delta:
+                                                        reasoning = delta[
+                                                            "reasoning_content"
+                                                        ]
+                                                        if reasoning:
+                                                            yield f'data: {{"thinking": {_json.dumps(reasoning)}}}\n\n'
 
-                                        log_entry["response"][
-                                            "tool_calls"
-                                        ] = aggregated_tool_calls
+                                                    # Handle content
+                                                    if "content" in delta:
+                                                        chunk_content = delta["content"]
+                                                        if chunk_content:
+                                                            log_entry["response"][
+                                                                "full_content"
+                                                            ] += chunk_content
 
-                                        # Flush remaining content from channel filter
-                                        for res in channel_filter.flush():
-                                            if res["channel"] == "thinking":
-                                                yield f'data: {{"thinking": {_json.dumps(res["content"])}}}\n\n'
-                                            elif res["channel"].startswith("call:"):
-                                                func_name = res["channel"][5:]
-                                                call_id = f"call_{func_name}"
-                                                # Check if we already sent this ID, if so, append index
-                                                if call_id in sent_tool_call_ids:
-                                                    i = 1
-                                                    while (
-                                                        f"{call_id}_{i}"
-                                                        in sent_tool_call_ids
-                                                    ):
-                                                        i += 1
-                                                    call_id = f"{call_id}_{i}"
+                                                            # Filter channels (thinking vs final)
+                                                            filtered_results = (
+                                                                channel_filter.feed(
+                                                                    chunk_content
+                                                                )
+                                                            )
+                                                            for res in filtered_results:
+                                                                if res["channel"] in (
+                                                                    "thinking",
+                                                                    "analysis",
+                                                                ):
+                                                                    if (
+                                                                        res["channel"]
+                                                                        == "thinking"
+                                                                    ):
+                                                                        yield f'data: {{"thinking": {_json.dumps(res["content"])}}}\n\n'
+                                                                    continue
 
-                                                if call_id not in sent_tool_call_ids:
-                                                    sent_tool_call_ids.add(call_id)
-                                                    yield f'data: {{"tool_calls": [{{"index": 0, "id": "{call_id}", "function": {{"name": "{func_name}", "arguments": ""}}}}]}}\n\n'
-
-                                                if res["content"]:
-                                                    yield f'data: {{"tool_calls": [{{"index": 0, "function": {{"arguments": {_json.dumps(res["content"])}}}}}]}}\n\n'
-                                            elif res["content"]:
-                                                yield f'data: {{"content": {_json.dumps(res["content"])}}}\n\n'
-
-                                        yield 'data: {"done": true}\n\n'
-                                        break
-                                    try:
-                                        chunk = _json.loads(data_str)
-                                        log_entry["response"]["chunks"].append(chunk)
-                                        # Extract content from the chunk
-                                        if "choices" in chunk and chunk["choices"]:
-                                            choice = chunk["choices"][0]
-                                            if "delta" in choice:
-                                                delta = choice["delta"]
-                                                # Handle reasoning_content (e.g. DeepSeek-R1)
-                                                if "reasoning_content" in delta:
-                                                    reasoning = delta[
-                                                        "reasoning_content"
-                                                    ]
-                                                    if reasoning:
-                                                        yield f'data: {{"thinking": {_json.dumps(reasoning)}}}\n\n'
-
-                                                # Handle content
-                                                if "content" in delta:
-                                                    chunk_content = delta[
-                                                        "content"
-                                                    ]  # RENAMED LOCAL VAR TO chunk_content here
-                                                    if chunk_content:  # RENAMED
-                                                        log_entry["response"][
-                                                            "full_content"
-                                                        ] += chunk_content  # RENAMED
-
-                                                        # Filter channels (thinking vs final)
-                                                        filtered_results = (
-                                                            channel_filter.feed(
-                                                                chunk_content
-                                                            )  # RENAMED
-                                                        )
-                                                        for res in filtered_results:
-                                                            if (
-                                                                res["channel"]
-                                                                == "thinking"
-                                                            ):
-                                                                yield f'data: {{"thinking": {_json.dumps(res["content"])}}}\n\n'
-                                                                continue
-
-                                                            if (
-                                                                res["channel"]
-                                                                == "tool_def"
-                                                            ):
-                                                                continue
-
-                                                            if res[
-                                                                "channel"
-                                                            ].startswith("call:"):
-                                                                func_name = res[
+                                                                if res[
                                                                     "channel"
-                                                                ][5:]
-                                                                call_id = (
-                                                                    f"call_{func_name}"
-                                                                )
-
-                                                                # Check if we already sent this ID, if so, append index
-                                                                # This handles multiple calls to same function in one response
-                                                                if (
-                                                                    call_id
-                                                                    in sent_tool_call_ids
+                                                                ].startswith(
+                                                                    "commentary to="
                                                                 ):
-                                                                    pass
-
-                                                                if (
-                                                                    call_id
-                                                                    not in sent_tool_call_ids
-                                                                ):
-                                                                    sent_tool_call_ids.add(
-                                                                        call_id
+                                                                    func_name = _normalize_tool_name(
+                                                                        res["channel"]
+                                                                        .split(
+                                                                            "commentary to=",
+                                                                            1,
+                                                                        )[1]
+                                                                        .strip()
                                                                     )
-                                                                    # Initial call with name
-                                                                    yield f'data: {{"tool_calls": [{{"index": 0, "id": "{call_id}", "function": {{"name": "{func_name}", "arguments": ""}}}}]}}\n\n'
-                                                                    # Add to aggregated for logging
-                                                                    aggregated_tool_calls.append(
-                                                                        {
-                                                                            "id": call_id,
-                                                                            "type": "function",
-                                                                            "function": {
-                                                                                "name": func_name,
-                                                                                "arguments": "",
-                                                                            },
-                                                                        }
-                                                                    )
-
-                                                                # Send arguments chunk
-                                                                if res["content"]:
-                                                                    yield f'data: {{"tool_calls": [{{"index": 0, "function": {{"arguments": {_json.dumps(res["content"])}}}}}]}}\n\n'
-                                                                    # Update aggregated arguments
-                                                                    for (
-                                                                        tc
-                                                                    ) in aggregated_tool_calls:
+                                                                    if func_name:
+                                                                        call_id = f"call_{func_name}"
                                                                         if (
-                                                                            tc.get("id")
-                                                                            == call_id
+                                                                            call_id
+                                                                            in sent_tool_call_ids
                                                                         ):
-                                                                            tc[
-                                                                                "function"
-                                                                            ][
-                                                                                "arguments"
-                                                                            ] += res[
-                                                                                "content"
-                                                                            ]
-                                                                            break
-                                                                continue
+                                                                            i = 1
+                                                                            while (
+                                                                                f"{call_id}_{i}"
+                                                                                in sent_tool_call_ids
+                                                                            ):
+                                                                                i += 1
+                                                                            call_id = f"{call_id}_{i}"
+                                                                        if (
+                                                                            call_id
+                                                                            not in sent_tool_call_ids
+                                                                        ):
+                                                                            sent_tool_call_ids.add(
+                                                                                call_id
+                                                                            )
+                                                                            aggregated_tool_calls.append(
+                                                                                {
+                                                                                    "id": call_id,
+                                                                                    "type": "function",
+                                                                                    "function": {
+                                                                                        "name": func_name,
+                                                                                        "arguments": "",
+                                                                                    },
+                                                                                }
+                                                                            )
+                                                                        yield f'data: {{"tool_calls": [{{"index": 0, "id": "{call_id}", "function": {{"name": "{func_name}", "arguments": {_json.dumps(res["content"])} }}}}]}}\n\n'
+                                                                    continue
 
-                                                            # Final content - check for tool calls
-                                                            chunk_content = res[
-                                                                "content"
-                                                            ]
-                                                            if not chunk_content:
-                                                                continue
+                                                                if (
+                                                                    res["channel"]
+                                                                    == "tool_def"
+                                                                ):
+                                                                    continue
 
-                                                            # Check if content contains tool call syntax and parse tool calls
-                                                            import re
+                                                                if res[
+                                                                    "channel"
+                                                                ].startswith("call:"):
+                                                                    func_name = _normalize_tool_name(
+                                                                        res["channel"][
+                                                                            5:
+                                                                        ]
+                                                                    )
+                                                                    call_id = f"call_{func_name}"
 
-                                                            content_lower = (
-                                                                chunk_content.lower()
-                                                            )
-                                                            has_tool_syntax = (
-                                                                "<tool_call"
-                                                                in content_lower
-                                                                or "[tool_call"
-                                                                in content_lower
-                                                                or content_lower.startswith(
-                                                                    "tool:"
-                                                                )
-                                                            )
-                                                            if has_tool_syntax:
-                                                                # Parse tool calls from content
-                                                                parsed_tool_calls = _parse_tool_calls_from_content(
+                                                                    # Check if we already sent this ID, if so, append index
+                                                                    # This handles multiple calls to same function in one response
+                                                                    if (
+                                                                        call_id
+                                                                        in sent_tool_call_ids
+                                                                    ):
+                                                                        pass
+
+                                                                    if (
+                                                                        call_id
+                                                                        not in sent_tool_call_ids
+                                                                    ):
+                                                                        sent_tool_call_ids.add(
+                                                                            call_id
+                                                                        )
+                                                                        # Initial call with name
+                                                                        yield f'data: {{"tool_calls": [{{"index": 0, "id": "{call_id}", "function": {{"name": "{func_name}", "arguments": ""}}}}]}}\n\n'
+                                                                        # Add to aggregated for logging
+                                                                        aggregated_tool_calls.append(
+                                                                            {
+                                                                                "id": call_id,
+                                                                                "type": "function",
+                                                                                "function": {
+                                                                                    "name": func_name,
+                                                                                    "arguments": "",
+                                                                                },
+                                                                            }
+                                                                        )
+
+                                                                    # Send arguments chunk
+                                                                    if res["content"]:
+                                                                        yield f'data: {{"tool_calls": [{{"index": 0, "function": {{"arguments": {_json.dumps(res["content"])}}}}}]}}\n\n'
+                                                                        # Update aggregated arguments
+                                                                        for (
+                                                                            tc
+                                                                        ) in aggregated_tool_calls:
+                                                                            if (
+                                                                                tc.get(
+                                                                                    "id"
+                                                                                )
+                                                                                == call_id
+                                                                            ):
+                                                                                tc[
+                                                                                    "function"
+                                                                                ][
+                                                                                    "arguments"
+                                                                                ] += res[
+                                                                                    "content"
+                                                                                ]
+                                                                                break
+                                                                    continue
+
+                                                                chunk_content = res[
+                                                                    "content"
+                                                                ]
+                                                                if not chunk_content:
+                                                                    continue
+
+                                                                (
+                                                                    clean_content,
+                                                                    parsed_tool_calls,
+                                                                ) = _parse_tool_syntax(
                                                                     chunk_content
                                                                 )
                                                                 if parsed_tool_calls:
@@ -2779,193 +3017,119 @@ async def api_chat_stream(request: Request) -> StreamingResponse:
                                                                             aggregated_tool_calls.append(
                                                                                 c
                                                                             )
-                                                                        # Send parsed tool calls
                                                                         yield f'data: {{"tool_calls": {_json.dumps(new_calls)}}}\n\n'
 
-                                                            # Clean content of tool call syntax only if it contains tool call patterns
-                                                            if has_tool_syntax:
-
-                                                                def _get_tool_name(
-                                                                    inner,
-                                                                ):
-                                                                    inner = (
-                                                                        inner.strip()
+                                                                if clean_content:
+                                                                    buffer += (
+                                                                        clean_content
                                                                     )
-                                                                    xml_m = re.search(
-                                                                        r"<function=(\w+)>",
-                                                                        inner,
-                                                                        re.I,
-                                                                    )
-                                                                    if xml_m:
-                                                                        return (
-                                                                            xml_m.group(
-                                                                                1
-                                                                            )
-                                                                        )
-                                                                    name_m = re.match(
-                                                                        r"(\w+)", inner
-                                                                    )
-                                                                    if name_m:
-                                                                        return name_m.group(
-                                                                            1
-                                                                        )
-                                                                    return "tool"
-
-                                                                clean_content = re.sub(
-                                                                    r"<tool_call>(.*?)</tool_call>",
-                                                                    lambda m: "",
-                                                                    chunk_content,  # USE chunk_content, NOT content (which was confusingly named in outer scope)
-                                                                    flags=re.IGNORECASE
-                                                                    | re.DOTALL,
+                                                                    yield f'data: {{"content": {_json.dumps(clean_content)}}}\n\n'
+                                                    # Handle tool calls
+                                                    if (
+                                                        "tool_calls" in delta
+                                                        and delta["tool_calls"]
+                                                    ):
+                                                        # Aggregate tool calls for logging
+                                                        for tc in delta["tool_calls"]:
+                                                            idx = tc.get("index", 0)
+                                                            while (
+                                                                len(
+                                                                    aggregated_tool_calls
                                                                 )
-                                                                clean_content = re.sub(
-                                                                    r"<tool_call[^>]*>",
-                                                                    "",
-                                                                    clean_content,
-                                                                    flags=re.IGNORECASE,
-                                                                )
-                                                                clean_content = re.sub(
-                                                                    r"</tool_call>",
-                                                                    "",
-                                                                    clean_content,
-                                                                    flags=re.IGNORECASE,
-                                                                )
-                                                                clean_content = re.sub(
-                                                                    r"\[TOOL_CALL\](.*?)\[/TOOL_CALL\]",
-                                                                    lambda m: "",
-                                                                    clean_content,
-                                                                    flags=re.IGNORECASE
-                                                                    | re.DOTALL,
-                                                                )
-                                                                clean_content = re.sub(
-                                                                    r"^Tool:\s*(\w+)(?:\(([^)]*)\))?",
-                                                                    lambda m: "",
-                                                                    clean_content,
-                                                                    flags=re.IGNORECASE
-                                                                    | re.MULTILINE,
-                                                                )
-                                                                clean_content = re.sub(
-                                                                    r"<tool_call[^>]*$",
-                                                                    "",
-                                                                    clean_content,
-                                                                    flags=re.IGNORECASE,
-                                                                )
-                                                                clean_content = re.sub(
-                                                                    r"\[TOOL_CALL\][^\[]*$",
-                                                                    "",
-                                                                    clean_content,
-                                                                    flags=re.IGNORECASE,
-                                                                )
-                                                                clean_content = (
-                                                                    clean_content.strip()
-                                                                )
-                                                            else:
-                                                                clean_content = (
-                                                                    chunk_content
+                                                                <= idx
+                                                            ):
+                                                                aggregated_tool_calls.append(
+                                                                    {
+                                                                        "id": "",
+                                                                        "type": "function",
+                                                                        "function": {
+                                                                            "name": "",
+                                                                            "arguments": "",
+                                                                        },
+                                                                    }
                                                                 )
 
-                                                            if clean_content:
-                                                                buffer += clean_content
-                                                                # Send incremental cleaned content chunk
-                                                                yield f'data: {{"content": {_json.dumps(clean_content)}}}\n\n'
-                                                # Handle tool calls
-                                                if (
-                                                    "tool_calls" in delta
-                                                    and delta["tool_calls"]
-                                                ):
-                                                    # Aggregate tool calls for logging
-                                                    for tc in delta["tool_calls"]:
-                                                        idx = tc.get("index", 0)
-                                                        while (
-                                                            len(aggregated_tool_calls)
-                                                            <= idx
-                                                        ):
-                                                            aggregated_tool_calls.append(
-                                                                {
-                                                                    "id": "",
-                                                                    "type": "function",
-                                                                    "function": {
-                                                                        "name": "",
-                                                                        "arguments": "",
-                                                                    },
-                                                                }
+                                                            target = (
+                                                                aggregated_tool_calls[
+                                                                    idx
+                                                                ]
                                                             )
+                                                            if tc.get("id"):
+                                                                target["id"] = tc["id"]
+                                                            if tc.get("function"):
+                                                                f = tc["function"]
+                                                                if f.get("name"):
+                                                                    target["function"][
+                                                                        "name"
+                                                                    ] += f["name"]
+                                                                if f.get("arguments"):
+                                                                    target["function"][
+                                                                        "arguments"
+                                                                    ] += f["arguments"]
 
-                                                        target = aggregated_tool_calls[
-                                                            idx
-                                                        ]
-                                                        if tc.get("id"):
-                                                            target["id"] = tc["id"]
-                                                        if tc.get("function"):
-                                                            f = tc["function"]
-                                                            if f.get("name"):
-                                                                target["function"][
-                                                                    "name"
-                                                                ] += f["name"]
-                                                            if f.get("arguments"):
-                                                                target["function"][
-                                                                    "arguments"
-                                                                ] += f["arguments"]
-
-                                                    # Send tool calls chunk
-                                                    yield f'data: {{"tool_calls": {_json.dumps(delta["tool_calls"])}}}\n\n'
-                                            # Check for finish_reason to end streaming
-                                            if (
-                                                "finish_reason" in choice
-                                                and choice["finish_reason"]
-                                            ):
-                                                # Final check for text-based tool calls
-                                                final_content = log_entry[
-                                                    "response"
-                                                ].get("full_content", "")
-                                                if final_content:
-                                                    parsed_tool_calls = (
-                                                        _parse_tool_calls_from_content(
+                                                        # Send tool calls chunk
+                                                        yield f'data: {{"tool_calls": {_json.dumps(delta["tool_calls"])}}}\n\n'
+                                                # Check for finish_reason to end streaming
+                                                if (
+                                                    "finish_reason" in choice
+                                                    and choice["finish_reason"]
+                                                ):
+                                                    # Final check for text-based tool calls
+                                                    final_content = log_entry[
+                                                        "response"
+                                                    ].get("full_content", "")
+                                                    if final_content:
+                                                        parsed_tool_calls = _parse_tool_calls_from_content(
                                                             final_content
                                                         )
-                                                    )
-                                                    if parsed_tool_calls:
-                                                        new_calls = [
-                                                            c
-                                                            for c in parsed_tool_calls
-                                                            if c["id"]
-                                                            not in sent_tool_call_ids
-                                                        ]
-                                                        if new_calls:
-                                                            for c in new_calls:
-                                                                sent_tool_call_ids.add(
-                                                                    c["id"]
-                                                                )
-                                                                aggregated_tool_calls.append(
-                                                                    c
-                                                                )
-                                                            yield f'data: {{"tool_calls": {_json.dumps(new_calls)}}}\n\n'
+                                                        if parsed_tool_calls:
+                                                            new_calls = [
+                                                                c
+                                                                for c in parsed_tool_calls
+                                                                if c["id"]
+                                                                not in sent_tool_call_ids
+                                                            ]
+                                                            if new_calls:
+                                                                for c in new_calls:
+                                                                    sent_tool_call_ids.add(
+                                                                        c["id"]
+                                                                    )
+                                                                    aggregated_tool_calls.append(
+                                                                        c
+                                                                    )
+                                                                yield f'data: {{"tool_calls": {_json.dumps(new_calls)}}}\n\n'
 
-                                                log_entry["response"][
-                                                    "tool_calls"
-                                                ] = aggregated_tool_calls
-                                                yield 'data: {"done": true}\n\n'
-                                                break
-                                    except _json.JSONDecodeError:
-                                        continue
+                                                    log_entry["response"][
+                                                        "tool_calls"
+                                                    ] = aggregated_tool_calls
+                                                    yield 'data: {"done": true}\n\n'
+                                                    break
+                                        except _json.JSONDecodeError:
+                                            continue
 
-                        # Break outer retry loop if success
-                        break
+                            # Break outer retry loop if success
+                            break
 
-            except Exception as e:
-                import traceback
+                except Exception as e:
+                    import traceback
 
-                # Check for retry allowance
-                if is_fallback or attempt == attempts - 1:
-                    tb = traceback.format_exc()
-                    log_entry["response"]["error"] = f"{str(e)}\n\n{tb}"
-                    yield f'data: {{"error": "Request failed", "message": {_json.dumps(str(e))}, "traceback": {_json.dumps(tb)}}}\n\n'
+                    # Check for retry allowance
+                    if is_fallback or attempt == attempts - 1:
+                        tb = traceback.format_exc()
+                        log_entry["response"]["error"] = f"{str(e)}\n\n{tb}"
+                        yield f'data: {{"error": "Request failed", "message": {_json.dumps(str(e))}, "traceback": {_json.dumps(tb)}}}\n\n'
+                        finalize_llm_log_entry(log_entry)
 
-                # If valid retry, loop continues
+                    # If valid retry, loop continues
 
-            finally:
-                if is_fallback or attempt == attempts - 1:
-                    log_entry["timestamp_end"] = datetime.datetime.now().isoformat()
+                finally:
+                    if is_fallback or attempt == attempts - 1:
+                        log_entry["timestamp_end"] = datetime.datetime.now().isoformat()
+                        finalize_llm_log_entry(log_entry)
+        finally:
+            if log_entry.get("timestamp_end") is None:
+                log_entry["timestamp_end"] = datetime.datetime.now().isoformat()
+            finalize_llm_log_entry(log_entry)
 
     return StreamingResponse(_gen(), media_type="text/event-stream")
 
@@ -3023,3 +3187,5 @@ async def proxy_list_models(request: Request) -> JSONResponse:
             return JSONResponse(status_code=200, content=content)
     except httpx.HTTPError as e:
         raise HTTPException(status_code=502, detail=f"Upstream request failed: {e}")
+    finally:
+        finalize_llm_log_entry(log_entry)

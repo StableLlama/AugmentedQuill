@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 from typing import Optional
+import os
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
@@ -132,6 +133,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
         choices=["critical", "error", "warning", "info", "debug", "trace"],
         help="Log level for the server (default: info)",
     )
+    parser.add_argument(
+        "--llm-dump",
+        action="store_true",
+        help="Dump raw LLM request/response data to a file",
+    )
+    parser.add_argument(
+        "--llm-dump-path",
+        default=None,
+        help="Path for raw LLM dump file (overrides default)",
+    )
     return parser
 
 
@@ -144,6 +155,11 @@ def main(argv: Optional[list[str]] = None) -> None:
     """
     parser = build_arg_parser()
     args = parser.parse_args(argv)
+
+    if args.llm_dump:
+        os.environ["AUGQ_LLM_DUMP"] = "1"
+    if args.llm_dump_path:
+        os.environ["AUGQ_LLM_DUMP_PATH"] = args.llm_dump_path
 
     # Import uvicorn lazily so that importing this module doesn't require it for tests/tools
     import uvicorn  # type: ignore
