@@ -75,20 +75,14 @@ async def _story_generate_summary_helper(*, chap_id: int, mode: str = "") -> dic
         )
     messages = [sys_msg, {"role": "user", "content": user_prompt}]
 
-    data = await _llm.openai_chat_complete(
+    data = await _llm.unified_chat_complete(
         messages=messages,
         base_url=base_url,
         api_key=api_key,
         model_id=model_id,
         timeout_s=timeout_s,
     )
-    choices = (data or {}).get("choices") or []
-    new_summary = ""
-    if choices:
-        msg = choices[0].get("message") if isinstance(choices[0], dict) else None
-        if isinstance(msg, dict):
-            new_summary = msg.get("content", "") or ""
-            new_summary = _llm.strip_thinking_tags(new_summary)
+    new_summary = data.get("content", "")
 
     if target_entry is not None:
         target_entry["summary"] = new_summary
@@ -149,20 +143,14 @@ async def _story_write_helper(*, chap_id: int) -> dict:
         chapter_summary=summary,
         user_prompt_overrides=model_overrides,
     )
-    data = await _llm.openai_chat_complete(
+    data = await _llm.unified_chat_complete(
         messages=[sys_msg, {"role": "user", "content": user_prompt}],
         base_url=base_url,
         api_key=api_key,
         model_id=model_id,
         timeout_s=timeout_s,
     )
-    choices = (data or {}).get("choices") or []
-    content = ""
-    if choices:
-        msg = choices[0].get("message") if isinstance(choices[0], dict) else None
-        if isinstance(msg, dict):
-            content = msg.get("content", "") or ""
-            content = _llm.strip_thinking_tags(content)
+    content = data.get("content", "")
     path.write_text(content, encoding="utf-8")
     return {
         "ok": True,
@@ -210,20 +198,14 @@ async def _story_continue_helper(*, chap_id: int) -> dict:
         existing_text=current,
         user_prompt_overrides=model_overrides,
     )
-    data = await _llm.openai_chat_complete(
+    data = await _llm.unified_chat_complete(
         messages=[sys_msg, {"role": "user", "content": user_prompt}],
         base_url=base_url,
         api_key=api_key,
         model_id=model_id,
         timeout_s=timeout_s,
     )
-    choices = (data or {}).get("choices") or []
-    add = ""
-    if choices:
-        msg = choices[0].get("message") if isinstance(choices[0], dict) else None
-        if isinstance(msg, dict):
-            add = msg.get("content", "") or ""
-            add = _llm.strip_thinking_tags(add)
+    add = data.get("content", "")
     new_content = (
         current + ("\n\n" if current and not current.endswith("\n\n") else "") + add
     ).strip("\n") + "\n"
@@ -300,20 +282,14 @@ async def _story_generate_story_summary_helper(*, mode: str = "") -> dict:
         )
     messages = [sys_msg, {"role": "user", "content": user_prompt}]
 
-    data = await _llm.openai_chat_complete(
+    data = await _llm.unified_chat_complete(
         messages=messages,
         base_url=base_url,
         api_key=api_key,
         model_id=model_id,
         timeout_s=timeout_s,
     )
-    choices = (data or {}).get("choices") or []
-    new_summary = ""
-    if choices:
-        msg = choices[0].get("message") if isinstance(choices[0], dict) else None
-        if isinstance(msg, dict):
-            new_summary = msg.get("content", "") or ""
-            new_summary = _llm.strip_thinking_tags(new_summary)
+    new_summary = data.get("content", "")
 
     story["story_summary"] = new_summary
     from app.config import save_story_config

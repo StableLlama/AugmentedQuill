@@ -205,9 +205,9 @@ class ImageFeaturesTest(TestCase):
         img_path.write_bytes(b"content")
 
         # Mock LLM response
-        mock_resp = {"choices": [{"message": {"content": "A beautiful sunset."}}]}
+        mock_resp = {"content": "A beautiful sunset.", "tool_calls": [], "thinking": ""}
 
-        with patch("app.llm.openai_chat_complete", new_callable=AsyncMock) as mock_llm:
+        with patch("app.llm.unified_chat_complete", new_callable=AsyncMock) as mock_llm:
             mock_llm.return_value = mock_resp
 
             payload = {"messages": [], "model_name": "gpt-4o"}

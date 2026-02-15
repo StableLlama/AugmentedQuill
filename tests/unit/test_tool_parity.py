@@ -274,15 +274,14 @@ class ToolParityTest(TestCase):
         self.assertTrue(found)
 
     def test_sync_summary(self):
-        # We need to mock the LLM for sync_summary because it calls openai_chat_complete
+        # We need to mock the LLM for sync_summary because it calls unified_chat_complete
         from unittest.mock import patch, AsyncMock
 
-        with patch("app.llm.openai_chat_complete", new_callable=AsyncMock) as mock_llm:
+        with patch("app.llm.unified_chat_complete", new_callable=AsyncMock) as mock_llm:
             mock_llm.return_value = {
-                "choices": [
-                    {"message": {"content": "Synced summary"}},
-                    {"message": {"content": "Title"}},
-                ]
+                "content": "Synced summary",
+                "tool_calls": [],
+                "thinking": "",
             }
 
             # This tool uses payload["messages"] to get the content of the chapter usually?
@@ -294,9 +293,11 @@ class ToolParityTest(TestCase):
     def test_sync_story_summary(self):
         from unittest.mock import patch, AsyncMock
 
-        with patch("app.llm.openai_chat_complete", new_callable=AsyncMock) as mock_llm:
+        with patch("app.llm.unified_chat_complete", new_callable=AsyncMock) as mock_llm:
             mock_llm.return_value = {
-                "choices": [{"message": {"content": "Synced story summary"}}]
+                "content": "Synced story summary",
+                "tool_calls": [],
+                "thinking": "",
             }
             res = self._call_tool("sync_story_summary", {})
             self.assertTrue("summary" in res)

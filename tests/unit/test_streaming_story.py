@@ -49,22 +49,22 @@ class StreamingStoryTest(TestCase):
     def _patch_stream(self):
         # Patch credential resolver to avoid needing config
         self._orig_resolve = llm.resolve_openai_credentials
-        self._orig_stream = llm.openai_chat_complete_stream
+        self._orig_unified = llm.unified_chat_stream
 
         def fake_resolve(payload, **kwargs):  # type: ignore
             return ("https://fake/v1", None, "fake-model", 5)
 
-        async def fake_stream(**kwargs):  # type: ignore
+        async def fake_unified(**kwargs):  # type: ignore
             # Yield three chunks to simulate SSE deltas
             for part in ("A", "B", "C"):
-                yield part
+                yield {"content": part}
 
         llm.resolve_openai_credentials = fake_resolve  # type: ignore
-        llm.openai_chat_complete_stream = fake_stream  # type: ignore
+        llm.unified_chat_stream = fake_unified  # type: ignore
 
         def _undo():
             llm.resolve_openai_credentials = self._orig_resolve  # type: ignore
-            llm.openai_chat_complete_stream = self._orig_stream  # type: ignore
+            llm.unified_chat_stream = self._orig_unified  # type: ignore
 
         self.addCleanup(_undo)
 

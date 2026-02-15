@@ -94,24 +94,17 @@ async def api_story_story_summary(request: Request) -> JSONResponse:
     messages = [sys_msg, {"role": "user", "content": user_prompt}]
 
     try:
-        data = await llm.openai_chat_complete(
+        data = await llm.unified_chat_complete(
             messages=messages,
             base_url=base_url,
             api_key=api_key,
             model_id=model_id,
             timeout_s=timeout_s,
         )
-    except HTTPException as e:
-        return JSONResponse(
-            status_code=e.status_code, content={"ok": False, "detail": e.detail}
-        )
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"ok": False, "detail": str(e)})
 
-    choices = (data or {}).get("choices") or []
-    new_summary = ""
-    if choices:
-        msg = choices[0].get("message") if isinstance(choices[0], dict) else None
-        if isinstance(msg, dict):
-            new_summary = msg.get("content", "") or ""
+    new_summary = data.get("content", "")
 
     # Persist to story.json
     story["story_summary"] = new_summary
@@ -208,25 +201,18 @@ async def api_story_summary(request: Request) -> JSONResponse:
     messages = [sys_msg, {"role": "user", "content": user_prompt}]
 
     try:
-        data = await llm.openai_chat_complete(
+        data = await llm.unified_chat_complete(
             messages=messages,
             base_url=base_url,
             api_key=api_key,
             model_id=model_id,
             timeout_s=timeout_s,
         )
-    except HTTPException as e:
-        return JSONResponse(
-            status_code=e.status_code, content={"ok": False, "detail": e.detail}
-        )
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"ok": False, "detail": str(e)})
 
     # Extract content OpenAI-style
-    choices = (data or {}).get("choices") or []
-    new_summary = ""
-    if choices:
-        msg = choices[0].get("message") if isinstance(choices[0], dict) else None
-        if isinstance(msg, dict):
-            new_summary = msg.get("content", "") or ""
+    new_summary = data.get("content", "")
 
     # Persist to story.json
     chapters_data[pos]["summary"] = new_summary
@@ -311,24 +297,17 @@ async def api_story_write(request: Request) -> JSONResponse:
     messages = [sys_msg, {"role": "user", "content": user_prompt}]
 
     try:
-        data = await llm.openai_chat_complete(
+        data = await llm.unified_chat_complete(
             messages=messages,
             base_url=base_url,
             api_key=api_key,
             model_id=model_id,
             timeout_s=timeout_s,
         )
-    except HTTPException as e:
-        return JSONResponse(
-            status_code=e.status_code, content={"ok": False, "detail": e.detail}
-        )
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"ok": False, "detail": str(e)})
 
-    choices = (data or {}).get("choices") or []
-    content = ""
-    if choices:
-        msg = choices[0].get("message") if isinstance(choices[0], dict) else None
-        if isinstance(msg, dict):
-            content = msg.get("content", "") or ""
+    content = data.get("content", "")
 
     try:
         path.write_text(content, encoding="utf-8")
@@ -402,24 +381,17 @@ async def api_story_continue(request: Request) -> JSONResponse:
     messages = [sys_msg, {"role": "user", "content": user_prompt}]
 
     try:
-        data = await llm.openai_chat_complete(
+        data = await llm.unified_chat_complete(
             messages=messages,
             base_url=base_url,
             api_key=api_key,
             model_id=model_id,
             timeout_s=timeout_s,
         )
-    except HTTPException as e:
-        return JSONResponse(
-            status_code=e.status_code, content={"ok": False, "detail": e.detail}
-        )
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"ok": False, "detail": str(e)})
 
-    choices = (data or {}).get("choices") or []
-    appended = ""
-    if choices:
-        msg = choices[0].get("message") if isinstance(choices[0], dict) else None
-        if isinstance(msg, dict):
-            appended = msg.get("content", "") or ""
+    appended = data.get("content", "")
 
     new_content = (
         existing + ("\n" if existing and not existing.endswith("\n") else "") + appended
@@ -596,15 +568,17 @@ async def api_story_summary_stream(request: Request):
     async def _gen():
         buf = []
         try:
-            async for chunk in llm.openai_chat_complete_stream(
+            async for chunk_dict in llm.unified_chat_stream(
                 messages=messages,
                 base_url=base_url,
                 api_key=api_key,
                 model_id=model_id,
                 timeout_s=timeout_s,
             ):
-                buf.append(chunk)
-                yield chunk
+                chunk = chunk_dict.get("content", "")
+                if chunk:
+                    buf.append(chunk)
+                    yield chunk
         except asyncio.CancelledError:
             # Do not persist on cancel
             return
@@ -668,15 +642,17 @@ async def api_story_write_stream(request: Request):
     async def _gen():
         buf = []
         try:
-            async for chunk in llm.openai_chat_complete_stream(
+            async for chunk_dict in llm.unified_chat_stream(
                 messages=messages,
                 base_url=base_url,
                 api_key=api_key,
                 model_id=model_id,
                 timeout_s=timeout_s,
             ):
-                buf.append(chunk)
-                yield chunk
+                chunk = chunk_dict.get("content", "")
+                if chunk:
+                    buf.append(chunk)
+                    yield chunk
         except asyncio.CancelledError:
             return
         # Persist full overwrite on completion
@@ -742,15 +718,17 @@ async def api_story_continue_stream(request: Request):
     async def _gen():
         buf = []
         try:
-            async for chunk in llm.openai_chat_complete_stream(
+            async for chunk_dict in llm.unified_chat_stream(
                 messages=messages,
                 base_url=base_url,
                 api_key=api_key,
                 model_id=model_id,
                 timeout_s=timeout_s,
             ):
-                buf.append(chunk)
-                yield chunk
+                chunk = chunk_dict.get("content", "")
+                if chunk:
+                    buf.append(chunk)
+                    yield chunk
         except asyncio.CancelledError:
             return
         # Persist appended content on completion
@@ -829,15 +807,17 @@ async def api_story_story_summary_stream(request: Request):
     async def _gen():
         buf = []
         try:
-            async for chunk in llm.openai_chat_complete_stream(
+            async for chunk_dict in llm.unified_chat_stream(
                 messages=messages,
                 base_url=base_url,
                 api_key=api_key,
                 model_id=model_id,
                 timeout_s=timeout_s,
             ):
-                buf.append(chunk)
-                yield chunk
+                chunk = chunk_dict.get("content", "")
+                if chunk:
+                    buf.append(chunk)
+                    yield chunk
         except asyncio.CancelledError:
             return
         # Persist on normal completion

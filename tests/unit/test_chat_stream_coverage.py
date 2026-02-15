@@ -56,7 +56,7 @@ class TestChatStreamCoverage(TestCase):
         }
         self.addCleanup(self.patcher_config.stop)
 
-    @patch("app.api.chat.httpx.AsyncClient")
+    @patch("app.llm.httpx.AsyncClient")
     def test_streaming_tool_call_hidden_text(self, MockClientClass):
         mock_client_instance = MagicMock()
         MockClientClass.return_value = mock_client_instance
@@ -118,7 +118,7 @@ class TestChatStreamCoverage(TestCase):
         found_tool = any(tc["function"]["name"] == "list_images" for tc in tool_calls)
         self.assertTrue(found_tool, "Did not find list_images tool call")
 
-    @patch("app.api.chat.httpx.AsyncClient")
+    @patch("app.llm.httpx.AsyncClient")
     def test_editing_model_tools(self, MockClientClass):
         mock_client_instance = MagicMock()
         MockClientClass.return_value = mock_client_instance
@@ -176,7 +176,7 @@ class TestChatStreamCoverage(TestCase):
         self.assertIn("Edit start", content_text)
         self.assertIn("Edit end", content_text)
 
-    @patch("app.api.chat.httpx.AsyncClient")
+    @patch("app.llm.httpx.AsyncClient")
     def test_non_streaming_json_response(self, MockClientClass):
         mock_client_instance = MagicMock()
         MockClientClass.return_value = mock_client_instance
@@ -229,7 +229,7 @@ class TestChatStreamCoverage(TestCase):
             "Tool call not found in parsed non-streaming response",
         )
 
-    @patch("app.api.chat.httpx.AsyncClient")
+    @patch("app.llm.httpx.AsyncClient")
     def test_native_tool_calling_stream(self, MockClientClass):
         """Test modern models that return tool_calls in stream chunks natively."""
         mock_client_instance = MagicMock()
@@ -336,7 +336,7 @@ class TestChatStreamCoverage(TestCase):
         # If it finds them, it re-emits them.
         self.assertTrue(found_tool, f"Native tool calls not emitted. Events: {events}")
 
-    @patch("app.api.chat.httpx.AsyncClient")
+    @patch("app.llm.httpx.AsyncClient")
     def test_native_tool_calling_non_stream(self, MockClientClass):
         """Test modern models that return tool_calls in a single JSON response."""
         mock_client_instance = MagicMock()

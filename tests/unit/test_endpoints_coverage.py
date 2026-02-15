@@ -54,8 +54,8 @@ class EndpointsCoverageTest(TestCase):
 
         # Patch LLM module to deterministic fakes to avoid network calls
         self._orig_resolve = llm.resolve_openai_credentials
-        self._orig_complete = llm.openai_chat_complete
-        self._orig_complete_stream = llm.openai_chat_complete_stream
+        self._orig_unified_complete = llm.unified_chat_complete
+        self._orig_unified_stream = llm.unified_chat_stream
         self._orig_completions_stream = llm.openai_completions_stream
 
         llm.resolve_openai_credentials = lambda payload: (
@@ -66,17 +66,17 @@ class EndpointsCoverageTest(TestCase):
         )  # type: ignore
 
         async def fake_complete(**kwargs):
-            return {"choices": [{"message": {"role": "assistant", "content": "ok"}}]}
+            return {"content": "ok", "tool_calls": [], "thinking": ""}
 
-        async def fake_complete_stream(**kwargs):
+        async def fake_stream(**kwargs):
             for c in ("o", "k"):
-                yield c
+                yield {"content": c}
 
         async def fake_completions_stream(**kwargs):
             yield "suggestion chunk"
 
-        llm.openai_chat_complete = fake_complete  # type: ignore
-        llm.openai_chat_complete_stream = fake_complete_stream  # type: ignore
+        llm.unified_chat_complete = fake_complete  # type: ignore
+        llm.unified_chat_stream = fake_stream  # type: ignore
         llm.openai_completions_stream = fake_completions_stream  # type: ignore
 
         self.addCleanup(self._undo_patches)
@@ -85,8 +85,8 @@ class EndpointsCoverageTest(TestCase):
 
     def _undo_patches(self):
         llm.resolve_openai_credentials = self._orig_resolve  # type: ignore
-        llm.openai_chat_complete = self._orig_complete  # type: ignore
-        llm.openai_chat_complete_stream = self._orig_complete_stream  # type: ignore
+        llm.unified_chat_complete = self._orig_unified_complete  # type: ignore
+        llm.unified_chat_stream = self._orig_unified_stream  # type: ignore
         llm.openai_completions_stream = self._orig_completions_stream  # type: ignore
 
     def test_all_registered_routes_have_methods(self):

@@ -69,10 +69,10 @@ class StoryEndpointsTest(TestCase):
     def _patch_llm(self):
         # Patch credentials and completion in app.llm
         self._orig_resolve = llm.resolve_openai_credentials
-        self._orig_complete = llm.openai_chat_complete
+        self._orig_unified = llm.unified_chat_complete
 
         async def fake_complete(**kwargs):  # type: ignore
-            # Return a minimal OpenAI-like response
+            # Return a minimal response
             content = kwargs.get("messages", [{}])[-1].get("content", "")
             # If asked to write chapter, return a known text
             if "Task: Write the full chapter" in content:
@@ -81,7 +81,7 @@ class StoryEndpointsTest(TestCase):
                 txt = "AI continuation"
             else:
                 txt = "AI summary"
-            return {"choices": [{"message": {"role": "assistant", "content": txt}}]}
+            return {"content": txt, "tool_calls": [], "thinking": ""}
 
         llm.resolve_openai_credentials = lambda payload, **kwargs: (
             "https://fake.local/v1",
@@ -89,11 +89,11 @@ class StoryEndpointsTest(TestCase):
             "fake-model",
             5,
         )  # type: ignore
-        llm.openai_chat_complete = fake_complete  # type: ignore
+        llm.unified_chat_complete = fake_complete  # type: ignore
 
         def _undo():
             llm.resolve_openai_credentials = self._orig_resolve  # type: ignore
-            llm.openai_chat_complete = self._orig_complete  # type: ignore
+            llm.unified_chat_complete = self._orig_unified  # type: ignore
 
         self.addCleanup(_undo)
 

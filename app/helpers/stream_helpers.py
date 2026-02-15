@@ -22,8 +22,8 @@ class ChannelFilter:
             r"<\|end\|>|"
             r"<(thought|thinking)>|"
             r"</(thought|thinking)>|"
-            r"\[TOOL_CALL\]|"
-            r"\[/TOOL_CALL\]|"
+            r"\[TOOL_CALL\]\s*|"
+            r"\s*\[/TOOL_CALL\]|"
             r"<tool_call>|"
             r"</tool_call>)",
             re.IGNORECASE | re.DOTALL,
@@ -95,7 +95,7 @@ class ChannelFilter:
                 elif re.match(r"</(thought|thinking)>", tag_text, re.IGNORECASE):
                     self.current_channel = "final"
                 # Check for opening tool call tags
-                elif re.match(r"\[TOOL_CALL\]|<tool_call>", tag_text, re.IGNORECASE):
+                elif re.match(r"\[TOOL_CALL\]\s*|<tool_call>", tag_text, re.IGNORECASE):
                     self.current_channel = "tool_def"
                 # Check for closing tool call tags
                 elif re.match(r"\[/TOOL_CALL\]|</tool_call>", tag_text, re.IGNORECASE):

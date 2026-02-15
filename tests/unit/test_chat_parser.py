@@ -6,7 +6,7 @@
 # (at your option) any later version.
 
 import unittest
-from app.api.chat import _parse_tool_calls_from_content
+from app.llm import parse_tool_calls_from_content as _parse_tool_calls_from_content
 import json
 
 
