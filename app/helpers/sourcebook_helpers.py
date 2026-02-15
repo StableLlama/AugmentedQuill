@@ -9,7 +9,6 @@ from typing import List, Optional, Dict
 from app.projects import get_active_project_dir
 from app.config import load_story_config, save_story_config
 
-
 _UNSET = object()
 
 
