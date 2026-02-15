@@ -19,7 +19,12 @@ It is designed for writers who want to maintain creative control while using AI 
 - **Smart Editing Tools**:
   - **Text Generation**: Continue writing from where you left off.
   - **Prompt Overrides**: Customize system prompts for different AI personas (Editor, Writer, Chat).
+- **Sourcebook Management**: Maintain a knowledge base of characters, locations, lore, items, organizations, and events with rich metadata, synonyms, and image associations.
+- **Chat Session Management**: Save, load, and organize your conversations with the AI. Includes incognito mode for private chats that aren't saved to disk.
+- **Web Search Integration**: Enable the AI to search the web for real-time information during conversations to enhance research and world-building.
+- **Enhanced Metadata**: Track chapter conflicts, detailed notes, private notes, and comprehensive project information with advanced editing tools.
 - **Visual Helpers**: Toggle whitespace characters to spot layout issues.
+- **LLM Request Logging**: Debug and monitor AI interactions with detailed request/response logging (optional, for development).
 - **Dark/Light Mode**: Fully themable UI.
 
 ## Project Types
@@ -38,7 +43,7 @@ The application follows a modular FastAPI architecture:
 
 - **Backend**: FastAPI with modular routers for different API endpoints (Python 3.11+).
 - **Frontend**: React SPA served by FastAPI (built with Vite, TypeScript).
-- **Configuration**: JSON-based config files with environment variable support.
+- **Configuration**: JSON-based config files with environment variable support, versioning, and schema validation.
 - **LLM Integration**: Client-side integration with OpenAI-compatible APIs (OpenAI, local models like Ollama/vLLM).
 
 ## Quickstart
@@ -70,10 +75,18 @@ The application follows a modular FastAPI architecture:
     This generates the static SPA bundle in `static/dist`.
 
 3.  **Run the Application**:
+
     ```bash
     augmentedquill --host 127.0.0.1 --port 8000
     ```
+
     Open http://127.0.0.1:8000 in your browser.
+
+    Optional: Enable LLM request/response logging for debugging:
+
+    ```bash
+    augmentedquill --host 127.0.0.1 --port 8000 --llm-dump
+    ```
 
 ### Development Workflow
 
