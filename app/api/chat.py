@@ -5,26 +5,32 @@
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 
-import httpx
 import datetime
 import base64
 import app.llm as llm
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from app.config import load_machine_config, load_story_config
+from app.config import load_machine_config
 import app.config as _app_config
-from app.projects import (
-    get_active_project_dir,
-    list_chats,
-    load_chat,
-    save_chat,
-    delete_chat,
-)
-from app.prompts import get_system_message, load_model_prompt_overrides
+from app.projects import get_active_project_dir
 from app.llm import add_llm_log, create_log_entry
 from app.helpers.chat_tool_dispatcher import _exec_chat_tool
 from app.helpers.chat_tools_schema import STORY_TOOLS as CHAT_STORY_TOOLS
+from app.helpers.chat_api_stream_ops import (
+    normalize_chat_messages,
+    resolve_stream_model_context,
+    ensure_system_message_if_missing,
+    resolve_story_llm_prefs,
+)
+from app.helpers.chat_api_session_ops import (
+    list_active_chats,
+    load_active_chat,
+    save_active_chat,
+    delete_active_chat,
+    delete_all_active_chats,
+)
+import app.helpers.chat_api_proxy_ops as _chat_api_proxy_ops
 import json as _json
 from typing import Any, Dict
 
@@ -34,6 +40,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 CONFIG_DIR = BASE_DIR / "config"
 
 router = APIRouter()
+
+proxy_openai_models = _chat_api_proxy_ops.proxy_openai_models
+httpx = _chat_api_proxy_ops.httpx
 
 # Prefer using `app.main.load_machine_config` when available so tests can monkeypatch it.
 try:
@@ -288,104 +297,33 @@ async def api_chat_stream(request: Request) -> StreamingResponse:
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON body")
 
-    def _normalize_chat_messages(val: Any) -> list[dict]:
-        """Preserve OpenAI message fields including tool calls.
-
-        Keeps: role, content (may be None), name, tool_call_id, tool_calls.
-        """
-        arr = val if isinstance(val, list) else []
-        out: list[dict] = []
-        for m in arr:
-            if not isinstance(m, dict):
-                continue
-            role = str(m.get("role", "")).strip().lower() or "user"
-            msg: dict = {"role": role}
-            # content can be None (e.g., assistant with tool_calls)
-            if "content" in m:
-                c = m.get("content")
-                msg["content"] = None if c is None else str(c)
-            # pass-through optional tool fields
-            name = m.get("name")
-            if isinstance(name, str) and name:
-                msg["name"] = name
-            tcid = m.get("tool_call_id")
-            if isinstance(tcid, str) and tcid:
-                msg["tool_call_id"] = tcid
-            tcs = m.get("tool_calls")
-            if isinstance(tcs, list) and tcs:
-                msg["tool_calls"] = tcs
-                if role == "assistant":
-                    msg["content"] = None
-            out.append(msg)
-        return out
-
-    req_messages = _normalize_chat_messages((payload or {}).get("messages"))
+    req_messages = normalize_chat_messages((payload or {}).get("messages"))
     if not req_messages:
         raise HTTPException(status_code=400, detail="messages array is required")
 
     # Load config to determine model capabilities and overrides
     machine = _load_machine_config(CONFIG_DIR / "machine.json") or {}
-    openai_cfg: Dict[str, Any] = machine.get("openai") or {}
-
-    model_type = (payload or {}).get("model_type") or "CHAT"
-    # Resolve selected name
-    selected_name = (
-        (payload or {}).get("model_name")
-        or openai_cfg.get(f"selected_{model_type.lower()}")
-        or openai_cfg.get("selected")
-    )
-
-    base_url = (payload or {}).get("base_url")
-    api_key = (payload or {}).get("api_key")
-    model_id = (payload or {}).get("model")
-    timeout_s = (payload or {}).get("timeout_s")
-
-    # Resolve actual model entry
-    chosen = None
-    models = openai_cfg.get("models") if isinstance(openai_cfg, dict) else None
-    if isinstance(models, list) and models:
-        allowed_models = models
-        if selected_name:
-            for m in allowed_models:
-                if isinstance(m, dict) and (m.get("name") == selected_name):
-                    chosen = m
-                    break
-        if chosen is None:
-            chosen = allowed_models[0]
-
-        base_url = chosen.get("base_url") or base_url
-        api_key = chosen.get("api_key") or api_key
-        model_id = chosen.get("model") or model_id
-        timeout_s = chosen.get("timeout_s", 60) or timeout_s
-
-    # Capability checks
-    # Default to True/Auto unless explicitly disabled
-    is_multimodal = True
-    supports_function_calling = True
-    if chosen:
-        if chosen.get("is_multimodal") is False:
-            is_multimodal = False
-        if chosen.get("supports_function_calling") is False:
-            supports_function_calling = False
+    stream_ctx = resolve_stream_model_context(payload, machine)
+    model_type = stream_ctx["model_type"]
+    selected_name = stream_ctx["selected_name"]
+    base_url = stream_ctx["base_url"]
+    api_key = stream_ctx["api_key"]
+    model_id = stream_ctx["model_id"]
+    timeout_s = stream_ctx["timeout_s"]
+    is_multimodal = stream_ctx["is_multimodal"]
+    supports_function_calling = stream_ctx["supports_function_calling"]
 
     # Inject images if referenced in the last user message and supported
     if is_multimodal:
         await _inject_project_images(req_messages)
 
     # Prepend system message if not present
-    has_system = any(msg.get("role") == "system" for msg in req_messages)
-    if not has_system:
-        # Map model_type to system message key
-        sys_msg_key = "chat_llm"
-        if model_type == "WRITING":
-            sys_msg_key = "writing_llm"
-        elif model_type == "EDITING":
-            sys_msg_key = "editing_llm"
-
-        model_overrides = load_model_prompt_overrides(machine, selected_name)
-
-        system_content = get_system_message(sys_msg_key, model_overrides)
-        req_messages.insert(0, {"role": "system", "content": system_content})
+    ensure_system_message_if_missing(
+        req_messages,
+        model_type=model_type,
+        machine=machine,
+        selected_name=selected_name,
+    )
 
     if not base_url or not model_id:
         raise HTTPException(
@@ -397,21 +335,10 @@ async def api_chat_stream(request: Request) -> StreamingResponse:
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
 
-    # Pull llm preferences for sensible defaults
-    story = (
-        load_story_config((get_active_project_dir() or CONFIG_DIR) / "story.json") or {}
+    temperature, max_tokens = resolve_story_llm_prefs(
+        config_dir=CONFIG_DIR,
+        active_project_dir=get_active_project_dir(),
     )
-    prefs = (story.get("llm_prefs") or {}) if isinstance(story, dict) else {}
-    temperature = (
-        float(prefs.get("temperature", 0.7))
-        if isinstance(prefs.get("temperature", 0.7), (int, float, str))
-        else 0.7
-    )
-    try:
-        temperature = float(temperature)
-    except Exception:
-        temperature = 0.7
-    max_tokens = prefs.get("max_tokens", None)
 
     body: Dict[str, Any] = {
         "model": model_id,
@@ -423,6 +350,7 @@ async def api_chat_stream(request: Request) -> StreamingResponse:
         body["max_tokens"] = max_tokens
 
     # Pass through OpenAI tool-calling fields if provided
+    tool_choice = None
     if supports_function_calling:
         tool_choice = (payload or {}).get("tool_choice")
         # If the client explicitly requests "none", do not send tools.
@@ -465,55 +393,33 @@ async def api_chat_stream(request: Request) -> StreamingResponse:
 
 @router.get("/api/chats")
 async def api_list_chats():
-    p_dir = get_active_project_dir()
-    if not p_dir:
-        return []
-    return list_chats(p_dir)
+    return list_active_chats()
 
 
 @router.get("/api/chats/{chat_id}")
 async def api_load_chat(chat_id: str):
-    p_dir = get_active_project_dir()
-    if not p_dir:
-        raise HTTPException(status_code=404, detail="No active project")
-    data = load_chat(p_dir, chat_id)
-    if not data:
-        raise HTTPException(status_code=404, detail="Chat not found")
-    return data
+    return load_active_chat(chat_id)
 
 
 @router.post("/api/chats/{chat_id}")
 async def api_save_chat(chat_id: str, request: Request):
-    p_dir = get_active_project_dir()
-    if not p_dir:
-        raise HTTPException(status_code=404, detail="No active project")
     try:
         data = await request.json()
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON")
-    data["id"] = chat_id
-    save_chat(p_dir, chat_id, data)
+    save_active_chat(chat_id, data)
     return {"ok": True}
 
 
 @router.delete("/api/chats/{chat_id}")
 async def api_delete_chat(chat_id: str):
-    p_dir = get_active_project_dir()
-    if not p_dir:
-        raise HTTPException(status_code=404, detail="No active project")
-    if delete_chat(p_dir, chat_id):
-        return {"ok": True}
-    raise HTTPException(status_code=404, detail="Chat not found")
+    delete_active_chat(chat_id)
+    return {"ok": True}
 
 
 @router.delete("/api/chats")
 async def api_delete_all_chats():
-    p_dir = get_active_project_dir()
-    if not p_dir:
-        raise HTTPException(status_code=404, detail="No active project")
-    from app.projects import delete_all_chats as delete_all
-
-    delete_all(p_dir)
+    delete_all_active_chats()
     return {"ok": True}
 
 
@@ -530,43 +436,4 @@ async def proxy_list_models(request: Request) -> JSONResponse:
         payload = await request.json()
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON body")
-
-    base_url = (payload or {}).get("base_url") or ""
-    api_key = (payload or {}).get("api_key") or ""
-    timeout_s = (payload or {}).get("timeout_s") or 60
-
-    if not isinstance(base_url, str) or not base_url:
-        raise HTTPException(status_code=400, detail="base_url is required")
-
-    url = base_url.rstrip("/") + "/models"
-    headers = {}
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
-
-    log_entry = create_log_entry(url, "GET", headers, None)
-    add_llm_log(log_entry)
-
-    try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(float(timeout_s))) as client:
-            resp = await client.get(url, headers=headers)
-            log_entry["response"]["status_code"] = resp.status_code
-            log_entry["timestamp_end"] = datetime.datetime.now().isoformat()
-            # Relay status code if not 2xx
-            content = (
-                resp.json()
-                if resp.headers.get("content-type", "").startswith("application/json")
-                else {"raw": resp.text}
-            )
-            log_entry["response"]["body"] = content
-            if resp.status_code >= 400:
-                return JSONResponse(
-                    status_code=resp.status_code,
-                    content={
-                        "error": "Upstream error",
-                        "status": resp.status_code,
-                        "data": content,
-                    },
-                )
-            return JSONResponse(status_code=200, content=content)
-    except httpx.HTTPError as e:
-        raise HTTPException(status_code=502, detail=f"Upstream request failed: {e}")
+    return await proxy_openai_models(payload)
