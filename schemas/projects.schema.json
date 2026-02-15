@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/projects.schema.json",
+  "title": "Projects Configuration Schema",
+  "description": "Schema for validating projects.json configuration file",
+  "type": "object",
+  "properties": {
+    "current": {
+      "type": "string",
+      "description": "Path to the current project"
+    },
+    "recent": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "List of recent project paths"
+    }
+  },
+  "required": ["current", "recent"]
+}

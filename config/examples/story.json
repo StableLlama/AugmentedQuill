@@ -2,6 +2,8 @@
   "project_title": "My Novel",
   "chapters": ["000-intro.md", "010-conflict.md"],
   "format": "markdown",
-  "version": 1,
+  "metadata": {
+    "version": 1
+  },
   "llm_prefs": { "temperature": 0.7, "max_tokens": 2048 }
 }

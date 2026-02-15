@@ -25,6 +25,19 @@ import re
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional
 
+import jsonschema
+
+CURRENT_SCHEMA_VERSION = 2
+
+
+def _get_story_schema(version: int) -> Dict[str, Any]:
+    """Get the JSON schema for a given story config version."""
+    schema_path = (
+        Path(__file__).parent.parent / "schemas" / f"story-v{version}.schema.json"
+    )
+    with open(schema_path, "r") as f:
+        return json.load(f)
+
 
 _ENV_PATTERN = re.compile(r"\$\{([A-Z0-9_]+)\}")
 
@@ -143,6 +156,24 @@ def load_story_config(
     json_config = load_json_file(path)
     json_config = _interpolate_env(json_config)
     merged = _deep_merge(defaults, json_config)
+
+    # Validate version and schema
+    version = merged.get("metadata", {}).get("version", 0)
+    if version < CURRENT_SCHEMA_VERSION:
+        raise ValueError(
+            f"Story config at {path} has outdated version {version}. Current version is {CURRENT_SCHEMA_VERSION}. Please update the config."
+        )
+    elif version > CURRENT_SCHEMA_VERSION:
+        raise ValueError(
+            f"Story config at {path} has unknown version {version}. Current supported version is {CURRENT_SCHEMA_VERSION}."
+        )
+
+    # Validate against schema
+    schema = _get_story_schema(version)
+    try:
+        jsonschema.validate(merged, schema)
+    except jsonschema.ValidationError as e:
+        raise ValueError(f"Invalid story config at {path}: {e.message}")
 
     if "tags" in merged and not isinstance(merged["tags"], list):
         raise ValueError(f"Invalid story config at {path}: 'tags' must be an array")

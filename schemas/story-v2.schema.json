@@ -1,0 +1,182 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/story-v1.schema.json",
+  "title": "Story Metadata Schema v1",
+  "description": "Schema for validating story.json files in AugmentedQuill projects, version 1",
+  "type": "object",
+  "properties": {
+    "project_title": {
+      "type": "string",
+      "description": "The title of the project"
+    },
+    "project_type": {
+      "type": "string",
+      "enum": ["novel", "series", "short-story"],
+      "description": "The type of the project"
+    },
+    "chapters": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "string",
+            "description": "Chapter filename"
+          },
+          {
+            "$ref": "#/$defs/chapter"
+          }
+        ]
+      },
+      "description": "Array of chapters, either filenames or objects"
+    },
+    "books": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/book"
+      },
+      "description": "Array of books for series projects"
+    },
+    "content_file": {
+      "type": "string",
+      "description": "The main content file"
+    },
+    "format": {
+      "type": "string",
+      "enum": ["markdown"],
+      "description": "The format of the content"
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "integer",
+          "const": 2,
+          "description": "The metadata version for this schema"
+        }
+      },
+      "required": ["version"]
+    },
+    "llm_prefs": {
+      "type": "object",
+      "properties": {
+        "temperature": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 2
+        },
+        "max_tokens": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": ["temperature", "max_tokens"],
+      "additionalProperties": true
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Creation timestamp"
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Tags for the project"
+    },
+    "sourcebook": {
+      "type": "object",
+      "patternProperties": {
+        ".*": {
+          "$ref": "#/$defs/sourcebook_entry"
+        }
+      },
+      "description": "Sourcebook entries"
+    },
+    "story_summary": {
+      "type": "string",
+      "description": "Summary of the story"
+    }
+  },
+  "required": ["project_title", "format", "metadata"],
+  "$defs": {
+    "chapter": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "filename": {
+          "type": "string"
+        },
+        "conflicts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "description": {
+                "type": "string"
+              },
+              "resolution": {
+                "type": "string"
+              }
+            },
+            "required": ["description", "resolution"]
+          }
+        },
+        "notes": {
+          "type": "string"
+        },
+        "private_notes": {
+          "type": "string"
+        }
+      },
+      "required": ["title"]
+    },
+    "book": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "chapters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/chapter"
+          }
+        }
+      },
+      "required": ["title", "chapters"]
+    },
+    "sourcebook_entry": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string"
+        },
+        "synonyms": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "images": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": ["description", "category"]
+    }
+  }
+}

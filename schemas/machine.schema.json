@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/machine.schema.json",
+  "title": "Machine Configuration Schema",
+  "description": "Schema for validating machine.json configuration file",
+  "type": "object",
+  "properties": {
+    "openai": {
+      "type": "object",
+      "properties": {
+        "models": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "base_url": {
+                "type": "string",
+                "format": "uri"
+              },
+              "api_key": {
+                "type": "string"
+              },
+              "timeout_s": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "model": {
+                "type": "string"
+              },
+              "is_multimodal": {
+                "type": ["boolean", "null"]
+              },
+              "supports_function_calling": {
+                "type": ["boolean", "null"]
+              },
+              "prompt_overrides": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": ["name", "base_url", "api_key", "timeout_s", "model"]
+          }
+        },
+        "selected": {
+          "type": "string",
+          "description": "The selected model name"
+        }
+      },
+      "required": ["models", "selected"]
+    }
+  },
+  "required": ["openai"]
+}

@@ -119,6 +119,14 @@ export const api = {
       if (!res.ok) throw new Error('Failed to export project');
       return res.blob();
     },
+    updateConfig: async () => {
+      const res = await fetch(`${API_BASE}/settings/update_story_config`, {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Failed to update story config');
+      return data;
+    },
     import: async (file: File) => {
       const formData = new FormData();
       formData.append('file', file);

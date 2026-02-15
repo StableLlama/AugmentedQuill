@@ -51,7 +51,89 @@ export const useStory = () => {
       if (!currentProject) return;
 
       const res = await api.projects.select(currentProject);
-      if (res.ok && res.story) {
+      if (res.error === 'version_outdated') {
+        // Show dialog to update
+        const shouldUpdate = confirm(
+          `The story config is outdated (version ${res.current_version}). Current version is ${res.required_version}. Do you want to update it?`
+        );
+        if (shouldUpdate) {
+          try {
+            const updateRes = await api.projects.updateConfig();
+            if (updateRes.ok) {
+              // After update, reload the story
+              const res2 = await api.projects.select(currentProject);
+              if (res2.ok && res2.story) {
+                const chaptersRes = await api.chapters.list();
+                const chapters: Chapter[] = chaptersRes.chapters.map((c: any) => ({
+                  id: String(c.id),
+                  title: c.title,
+                  summary: c.summary,
+                  content: '',
+                  filename: c.filename,
+                  book_id: c.book_id,
+                  notes: c.notes,
+                  private_notes: c.private_notes,
+                  conflicts: c.conflicts,
+                }));
+
+                // Re-anchor selection based on filename/book_id if IDs shifted
+                let newSelection = currentChapterId;
+                if (currentChapterId) {
+                  const oldChap = story.chapters.find((c) => c.id === currentChapterId);
+                  if (oldChap) {
+                    const matching = chapters.find(
+                      (c) =>
+                        c.filename === oldChap.filename && c.book_id === oldChap.book_id
+                    );
+                    if (matching) {
+                      newSelection = matching.id;
+                    } else {
+                      newSelection = null; // Reset if not found in new project
+                    }
+                  }
+                } else if (chapters.length > 0) {
+                  newSelection = null;
+                }
+
+                const newStory: StoryState = {
+                  id: currentProject,
+                  title: res2.story.project_title || currentProject,
+                  summary: res2.story.story_summary || '',
+                  styleTags: res2.story.tags || [],
+                  image_style: res2.story.image_style || '',
+                  image_additional_info: res2.story.image_additional_info || '',
+                  chapters: chapters,
+                  projectType: res2.story.project_type || 'novel',
+                  books: res2.story.books || [],
+                  sourcebook: res2.story.sourcebook || [],
+                  conflicts: res2.story.conflicts || [],
+                  llm_prefs: res2.story.llm_prefs,
+                  currentChapterId: newSelection,
+                  lastUpdated: Date.now(),
+                };
+
+                setStory(newStory);
+                setCurrentChapterId(newSelection);
+              } else if (res2.error) {
+                // Handle errors after update
+                if (res2.error === 'invalid_config') {
+                  alert(`Invalid story config: ${res2.error_message}`);
+                } else {
+                  alert(`Failed to load story after update: ${res2.error}`);
+                }
+              }
+            } else {
+              alert(`Failed to update config: ${updateRes.detail}`);
+            }
+          } catch (e) {
+            alert(`Failed to update config: ${e}`);
+          }
+        }
+        return;
+      } else if (res.error === 'invalid_config') {
+        alert(`Invalid story config: ${res.error_message}`);
+        return;
+      } else if (res.ok && res.story) {
         const chaptersRes = await api.chapters.list();
         const chapters: Chapter[] = chaptersRes.chapters.map((c: any) => ({
           id: String(c.id),
