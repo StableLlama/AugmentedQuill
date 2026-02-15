@@ -58,7 +58,6 @@ from pathlib import Path
 
 from app.helpers.stream_helpers import ChannelFilter
 
-
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 CONFIG_DIR = BASE_DIR / "config"
 

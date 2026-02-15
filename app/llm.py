@@ -31,7 +31,6 @@ import re
 from app.config import load_machine_config, load_story_config
 from app.projects import get_active_project_dir
 
-
 BASE_DIR = Path(__file__).resolve().parent.parent
 CONFIG_DIR = BASE_DIR / "config"
 
