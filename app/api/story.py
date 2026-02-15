@@ -5,16 +5,32 @@
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 
-import asyncio
 from fastapi import APIRouter, Request, HTTPException, Path as FastAPIPath
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from app.projects import get_active_project_dir
-from app.config import load_story_config, load_machine_config, save_story_config
-from app.helpers.chapter_helpers import _chapter_by_id_or_404, _normalize_chapter_entry
+from app.config import save_story_config
 from app.helpers.project_helpers import normalize_story_for_frontend
+from app.helpers.story_api_prompt_ops import (
+    resolve_model_runtime,
+    build_chapter_summary_messages,
+    build_story_summary_messages,
+    build_write_chapter_messages,
+    build_continue_chapter_messages,
+    build_suggest_prompt,
+)
+from app.helpers.story_api_state_ops import (
+    get_active_story_or_http_error,
+    get_chapter_locator,
+    read_text_or_http_500,
+    get_normalized_chapters,
+    ensure_chapter_slot,
+    collect_chapter_summaries,
+)
+from app.helpers.story_api_stream_ops import (
+    stream_unified_chat_content,
+    stream_collect_and_persist,
+)
 from app import llm
-from app.prompts import get_system_message, get_user_prompt, load_model_prompt_overrides
 from pathlib import Path
 
 router = APIRouter()
@@ -41,23 +57,16 @@ async def api_story_story_summary(request: Request) -> JSONResponse:
             content={"ok": False, "detail": "mode must be discard|update"},
         )
 
-    active = get_active_project_dir()
-    if not active:
+    try:
+        _, story_path, story = get_active_story_or_http_error()
+    except HTTPException:
         return JSONResponse(
             status_code=400, content={"ok": False, "detail": "No active project"}
         )
-    story_path = active / "story.json"
-    story = load_story_config(story_path) or {}
-    chapters_data = [_normalize_chapter_entry(c) for c in story.get("chapters", [])]
+    chapters_data = get_normalized_chapters(story)
     current_story_summary = story.get("story_summary", "")
 
-    # Collect all chapter summaries
-    chapter_summaries = []
-    for i, chapter in enumerate(chapters_data):
-        summary = chapter.get("summary", "").strip()
-        title = chapter.get("title", "").strip() or f"Chapter {i + 1}"
-        if summary:
-            chapter_summaries.append(f"{title}:\n{summary}")
+    chapter_summaries = collect_chapter_summaries(chapters_data)
 
     if not chapter_summaries:
         return JSONResponse(
@@ -65,33 +74,17 @@ async def api_story_story_summary(request: Request) -> JSONResponse:
             content={"ok": False, "detail": "No chapter summaries available"},
         )
 
-    base_url, api_key, model_id, timeout_s = llm.resolve_openai_credentials(
-        payload, model_type="EDITING"
+    base_url, api_key, model_id, timeout_s, model_overrides = resolve_model_runtime(
+        payload=payload,
+        model_type="EDITING",
+        base_dir=BASE_DIR,
     )
-
-    # Load model-specific prompt overrides
-    machine_config = load_machine_config(BASE_DIR / "config" / "machine.json") or {}
-    selected_model_name = llm.get_selected_model_name(payload, model_type="EDITING")
-    model_overrides = load_model_prompt_overrides(machine_config, selected_model_name)
-
-    sys_msg = {
-        "role": "system",
-        "content": get_system_message("story_summarizer", model_overrides),
-    }
-    if mode == "discard" or not current_story_summary:
-        user_prompt = get_user_prompt(
-            "story_summary_new",
-            chapter_summaries="\n\n".join(chapter_summaries),
-            user_prompt_overrides=model_overrides,
-        )
-    else:
-        user_prompt = get_user_prompt(
-            "story_summary_update",
-            existing_summary=current_story_summary,
-            chapter_summaries="\n\n".join(chapter_summaries),
-            user_prompt_overrides=model_overrides,
-        )
-    messages = [sys_msg, {"role": "user", "content": user_prompt}]
+    messages = build_story_summary_messages(
+        mode=mode,
+        current_story_summary=current_story_summary,
+        chapter_summaries=chapter_summaries,
+        model_overrides=model_overrides,
+    )
 
     try:
         data = await llm.unified_chat_complete(
@@ -151,54 +144,30 @@ async def api_story_summary(request: Request) -> JSONResponse:
             content={"ok": False, "detail": "mode must be discard|update"},
         )
 
-    _, path, pos = _chapter_by_id_or_404(chap_id)
-    try:
-        chapter_text = path.read_text(encoding="utf-8")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to read chapter: {e}")
+    _, path, pos = get_chapter_locator(chap_id)
+    chapter_text = read_text_or_http_500(path)
 
-    active = get_active_project_dir()
-    if not active:
+    try:
+        _, story_path, story = get_active_story_or_http_error()
+    except HTTPException:
         return JSONResponse(
             status_code=400, content={"ok": False, "detail": "No active project"}
         )
-    story_path = active / "story.json"
-    story = load_story_config(story_path) or {}
-    chapters_data = [_normalize_chapter_entry(c) for c in story.get("chapters", [])]
-    if pos >= len(chapters_data):
-        chapters_data.extend(
-            [{"title": "", "summary": ""}] * (pos - len(chapters_data) + 1)
-        )
+    chapters_data = get_normalized_chapters(story)
+    ensure_chapter_slot(chapters_data, pos)
     current_summary = chapters_data[pos].get("summary", "")
 
-    base_url, api_key, model_id, timeout_s = llm.resolve_openai_credentials(
-        payload, model_type="EDITING"
+    base_url, api_key, model_id, timeout_s, model_overrides = resolve_model_runtime(
+        payload=payload,
+        model_type="EDITING",
+        base_dir=BASE_DIR,
     )
-
-    # Load model-specific prompt overrides
-    machine_config = load_machine_config(BASE_DIR / "config" / "machine.json") or {}
-    selected_model_name = llm.get_selected_model_name(payload, model_type="EDITING")
-    model_overrides = load_model_prompt_overrides(machine_config, selected_model_name)
-
-    # Build messages
-    sys_msg = {
-        "role": "system",
-        "content": get_system_message("chapter_summarizer", model_overrides),
-    }
-    if mode == "discard" or not current_summary:
-        user_prompt = get_user_prompt(
-            "chapter_summary_new",
-            chapter_text=chapter_text,
-            user_prompt_overrides=model_overrides,
-        )
-    else:
-        user_prompt = get_user_prompt(
-            "chapter_summary_update",
-            existing_summary=current_summary,
-            chapter_text=chapter_text,
-            user_prompt_overrides=model_overrides,
-        )
-    messages = [sys_msg, {"role": "user", "content": user_prompt}]
+    messages = build_chapter_summary_messages(
+        mode=mode,
+        current_summary=current_summary,
+        chapter_text=chapter_text,
+        model_overrides=model_overrides,
+    )
 
     try:
         data = await llm.unified_chat_complete(
@@ -258,14 +227,14 @@ async def api_story_write(request: Request) -> JSONResponse:
             status_code=400, content={"ok": False, "detail": "chap_id is required"}
         )
 
-    idx, path, pos = _chapter_by_id_or_404(chap_id)
-    active = get_active_project_dir()
-    if not active:
+    idx, path, pos = get_chapter_locator(chap_id)
+    try:
+        _, _, story = get_active_story_or_http_error()
+    except HTTPException:
         return JSONResponse(
             status_code=400, content={"ok": False, "detail": "No active project"}
         )
-    story = load_story_config(active / "story.json") or {}
-    chapters_data = [_normalize_chapter_entry(c) for c in story.get("chapters", [])]
+    chapters_data = get_normalized_chapters(story)
     if pos >= len(chapters_data):
         return JSONResponse(
             status_code=400,
@@ -274,27 +243,17 @@ async def api_story_write(request: Request) -> JSONResponse:
     summary = chapters_data[pos].get("summary", "").strip()
     title = chapters_data[pos].get("title") or path.name
 
-    base_url, api_key, model_id, timeout_s = llm.resolve_openai_credentials(
-        payload, model_type="WRITING"
+    base_url, api_key, model_id, timeout_s, model_overrides = resolve_model_runtime(
+        payload=payload,
+        model_type="WRITING",
+        base_dir=BASE_DIR,
     )
-
-    # Load model-specific prompt overrides
-    machine_config = load_machine_config(BASE_DIR / "config" / "machine.json") or {}
-    selected_model_name = llm.get_selected_model_name(payload, model_type="WRITING")
-    model_overrides = load_model_prompt_overrides(machine_config, selected_model_name)
-
-    sys_msg = {
-        "role": "system",
-        "content": get_system_message("story_writer", model_overrides),
-    }
-    user_prompt = get_user_prompt(
-        "write_chapter",
+    messages = build_write_chapter_messages(
         project_title=story.get("project_title", "Story"),
         chapter_title=title,
         chapter_summary=summary,
-        user_prompt_overrides=model_overrides,
+        model_overrides=model_overrides,
     )
-    messages = [sys_msg, {"role": "user", "content": user_prompt}]
 
     try:
         data = await llm.unified_chat_complete(
@@ -337,19 +296,16 @@ async def api_story_continue(request: Request) -> JSONResponse:
             status_code=400, content={"ok": False, "detail": "chap_id is required"}
         )
 
-    idx, path, pos = _chapter_by_id_or_404(chap_id)
-    try:
-        existing = path.read_text(encoding="utf-8")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to read chapter: {e}")
+    idx, path, pos = get_chapter_locator(chap_id)
+    existing = read_text_or_http_500(path)
 
-    active = get_active_project_dir()
-    if not active:
+    try:
+        _, _, story = get_active_story_or_http_error()
+    except HTTPException:
         return JSONResponse(
             status_code=400, content={"ok": False, "detail": "No active project"}
         )
-    story = load_story_config(active / "story.json") or {}
-    chapters_data = [_normalize_chapter_entry(c) for c in story.get("chapters", [])]
+    chapters_data = get_normalized_chapters(story)
     if pos >= len(chapters_data):
         return JSONResponse(
             status_code=400,
@@ -358,27 +314,17 @@ async def api_story_continue(request: Request) -> JSONResponse:
     summary = chapters_data[pos].get("summary", "")
     title = chapters_data[pos].get("title") or path.name
 
-    base_url, api_key, model_id, timeout_s = llm.resolve_openai_credentials(
-        payload, model_type="WRITING"
+    base_url, api_key, model_id, timeout_s, model_overrides = resolve_model_runtime(
+        payload=payload,
+        model_type="WRITING",
+        base_dir=BASE_DIR,
     )
-
-    # Load model-specific prompt overrides
-    machine_config = load_machine_config(BASE_DIR / "config" / "machine.json") or {}
-    selected_model_name = llm.get_selected_model_name(payload, model_type="WRITING")
-    model_overrides = load_model_prompt_overrides(machine_config, selected_model_name)
-
-    sys_msg = {
-        "role": "system",
-        "content": get_system_message("story_continuer", model_overrides),
-    }
-    user_prompt = get_user_prompt(
-        "continue_chapter",
+    messages = build_continue_chapter_messages(
         chapter_title=title,
         chapter_summary=summary,
         existing_text=existing,
-        user_prompt_overrides=model_overrides,
+        model_overrides=model_overrides,
     )
-    messages = [sys_msg, {"role": "user", "content": user_prompt}]
 
     try:
         data = await llm.unified_chat_complete(
@@ -425,44 +371,32 @@ async def api_story_suggest(request: Request) -> StreamingResponse:
     if not isinstance(chap_id, int):
         raise HTTPException(status_code=400, detail="chap_id is required")
 
-    idx, path, pos = _chapter_by_id_or_404(chap_id)
+    idx, path, pos = get_chapter_locator(chap_id)
     # Use current_text override if provided (to reflect unsaved editor state); otherwise read from disk
     current_text = (payload or {}).get("current_text")
     if not isinstance(current_text, str):
         try:
-            current_text = path.read_text(encoding="utf-8")
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to read chapter: {e}")
+            current_text = read_text_or_http_500(path)
+        except HTTPException as e:
+            raise e
 
-    active = get_active_project_dir()
-    if not active:
-        raise HTTPException(status_code=400, detail="No active project")
-    story = load_story_config(active / "story.json") or {}
-    chapters_data = [_normalize_chapter_entry(c) for c in story.get("chapters", [])]
-    if pos >= len(chapters_data):
-        # If summary is missing, still proceed with empty summary
-        chapters_data.extend(
-            [{"title": "", "summary": ""}] * (pos - len(chapters_data) + 1)
-        )
+    _, _, story = get_active_story_or_http_error()
+    chapters_data = get_normalized_chapters(story)
+    ensure_chapter_slot(chapters_data, pos)
     summary = chapters_data[pos].get("summary", "")
     title = chapters_data[pos].get("title") or path.name
 
-    base_url, api_key, model_id, timeout_s = llm.resolve_openai_credentials(
-        payload, model_type="WRITING"
+    base_url, api_key, model_id, timeout_s, model_overrides = resolve_model_runtime(
+        payload=payload,
+        model_type="WRITING",
+        base_dir=BASE_DIR,
     )
 
-    # Load model-specific prompt overrides
-    machine_config = load_machine_config(BASE_DIR / "config" / "machine.json") or {}
-    selected_model_name = llm.get_selected_model_name(payload, model_type="WRITING")
-    model_overrides = load_model_prompt_overrides(machine_config, selected_model_name)
-
-    # Build prompt with title and summary
-    prompt = get_user_prompt(
-        "suggest_continuation",
-        chapter_title=title or "",
-        chapter_summary=summary or "",
-        current_text=current_text or "",
-        user_prompt_overrides=model_overrides,
+    prompt = build_suggest_prompt(
+        chapter_title=title,
+        chapter_summary=summary,
+        current_text=current_text,
+        model_overrides=model_overrides,
     )
 
     extra_body = {
@@ -518,80 +452,44 @@ async def api_story_summary_stream(request: Request):
     if mode not in ("discard", "update", ""):
         raise HTTPException(status_code=400, detail="mode must be discard|update")
 
-    _, path, pos = _chapter_by_id_or_404(chap_id)
-    try:
-        chapter_text = path.read_text(encoding="utf-8")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to read chapter: {e}")
+    _, path, pos = get_chapter_locator(chap_id)
+    chapter_text = read_text_or_http_500(path)
 
-    active = get_active_project_dir()
-    if not active:
-        raise HTTPException(status_code=400, detail="No active project")
-    story_path = active / "story.json"
-    story = load_story_config(story_path) or {}
-    chapters_data = [_normalize_chapter_entry(c) for c in story.get("chapters", [])]
-    if pos >= len(chapters_data):
-        chapters_data.extend(
-            [{"title": "", "summary": ""}] * (pos - len(chapters_data) + 1)
-        )
+    _, story_path, story = get_active_story_or_http_error()
+    chapters_data = get_normalized_chapters(story)
+    ensure_chapter_slot(chapters_data, pos)
     current_summary = chapters_data[pos].get("summary", "")
 
-    base_url, api_key, model_id, timeout_s = llm.resolve_openai_credentials(
-        payload, model_type="EDITING"
+    base_url, api_key, model_id, timeout_s, model_overrides = resolve_model_runtime(
+        payload=payload,
+        model_type="EDITING",
+        base_dir=BASE_DIR,
+    )
+    messages = build_chapter_summary_messages(
+        mode=mode,
+        current_summary=current_summary,
+        chapter_text=chapter_text,
+        model_overrides=model_overrides,
     )
 
-    # Load model-specific prompt overrides
-    machine_config = load_machine_config(BASE_DIR / "config" / "machine.json") or {}
-    selected_model_name = llm.get_selected_model_name(payload, model_type="EDITING")
-    model_overrides = load_model_prompt_overrides(machine_config, selected_model_name)
+    async def _gen_source():
+        async for chunk in stream_unified_chat_content(
+            messages=messages,
+            base_url=base_url,
+            api_key=api_key,
+            model_id=model_id,
+            timeout_s=timeout_s,
+        ):
+            yield chunk
 
-    sys_msg = {
-        "role": "system",
-        "content": get_system_message("chapter_summarizer", model_overrides),
-    }
-    if mode == "discard" or not current_summary:
-        user_prompt = get_user_prompt(
-            "chapter_summary_new",
-            chapter_text=chapter_text,
-            user_prompt_overrides=model_overrides,
-        )
-    else:
-        user_prompt = get_user_prompt(
-            "chapter_summary_update",
-            existing_summary=current_summary,
-            chapter_text=chapter_text,
-            user_prompt_overrides=model_overrides,
-        )
-    messages = [sys_msg, {"role": "user", "content": user_prompt}]
+    def _persist(new_summary: str) -> None:
+        chapters_data[pos]["summary"] = new_summary
+        story["chapters"] = chapters_data
+        save_story_config(story_path, story)
 
-    # We'll aggregate to persist at the end if not cancelled
-    async def _gen():
-        buf = []
-        try:
-            async for chunk_dict in llm.unified_chat_stream(
-                messages=messages,
-                base_url=base_url,
-                api_key=api_key,
-                model_id=model_id,
-                timeout_s=timeout_s,
-            ):
-                chunk = chunk_dict.get("content", "")
-                if chunk:
-                    buf.append(chunk)
-                    yield chunk
-        except asyncio.CancelledError:
-            # Do not persist on cancel
-            return
-        # Persist on normal completion
-        try:
-            new_summary = "".join(buf)
-            chapters_data[pos]["summary"] = new_summary
-            story["chapters"] = chapters_data
-            save_story_config(story_path, story)
-        except Exception:
-            pass
-
-    return _as_streaming_response(_gen)
+    return _as_streaming_response(
+        lambda: stream_collect_and_persist(_gen_source, _persist)
+    )
 
 
 @router.post("/api/story/write/stream")
@@ -603,13 +501,10 @@ async def api_story_write_stream(request: Request):
     chap_id = payload.get("chap_id")
     if not isinstance(chap_id, int):
         raise HTTPException(status_code=400, detail="chap_id is required")
-    idx, path, pos = _chapter_by_id_or_404(chap_id)
+    idx, path, pos = get_chapter_locator(chap_id)
 
-    active = get_active_project_dir()
-    if not active:
-        raise HTTPException(status_code=400, detail="No active project")
-    story = load_story_config(active / "story.json") or {}
-    chapters_data = [_normalize_chapter_entry(c) for c in story.get("chapters", [])]
+    _, _, story = get_active_story_or_http_error()
+    chapters_data = get_normalized_chapters(story)
     if pos >= len(chapters_data):
         raise HTTPException(
             status_code=400, detail="No summary available for this chapter"
@@ -617,52 +512,34 @@ async def api_story_write_stream(request: Request):
     summary = chapters_data[pos].get("summary", "").strip()
     title = chapters_data[pos].get("title") or path.name
 
-    base_url, api_key, model_id, timeout_s = llm.resolve_openai_credentials(
-        payload, model_type="WRITING"
+    base_url, api_key, model_id, timeout_s, model_overrides = resolve_model_runtime(
+        payload=payload,
+        model_type="WRITING",
+        base_dir=BASE_DIR,
     )
-
-    # Load model-specific prompt overrides
-    machine_config = load_machine_config(BASE_DIR / "config" / "machine.json") or {}
-    selected_model_name = llm.get_selected_model_name(payload, model_type="WRITING")
-    model_overrides = load_model_prompt_overrides(machine_config, selected_model_name)
-
-    sys_msg = {
-        "role": "system",
-        "content": get_system_message("story_writer", model_overrides),
-    }
-    user_prompt = get_user_prompt(
-        "write_chapter",
+    messages = build_write_chapter_messages(
         project_title=story.get("project_title", "Story"),
         chapter_title=title,
         chapter_summary=summary,
-        user_prompt_overrides=model_overrides,
+        model_overrides=model_overrides,
     )
-    messages = [sys_msg, {"role": "user", "content": user_prompt}]
 
-    async def _gen():
-        buf = []
-        try:
-            async for chunk_dict in llm.unified_chat_stream(
-                messages=messages,
-                base_url=base_url,
-                api_key=api_key,
-                model_id=model_id,
-                timeout_s=timeout_s,
-            ):
-                chunk = chunk_dict.get("content", "")
-                if chunk:
-                    buf.append(chunk)
-                    yield chunk
-        except asyncio.CancelledError:
-            return
-        # Persist full overwrite on completion
-        try:
-            content = "".join(buf)
-            path.write_text(content, encoding="utf-8")
-        except Exception:
-            pass
+    async def _gen_source():
+        async for chunk in stream_unified_chat_content(
+            messages=messages,
+            base_url=base_url,
+            api_key=api_key,
+            model_id=model_id,
+            timeout_s=timeout_s,
+        ):
+            yield chunk
 
-    return _as_streaming_response(_gen)
+    def _persist(content: str) -> None:
+        path.write_text(content, encoding="utf-8")
+
+    return _as_streaming_response(
+        lambda: stream_collect_and_persist(_gen_source, _persist)
+    )
 
 
 @router.post("/api/story/continue/stream")
@@ -674,18 +551,12 @@ async def api_story_continue_stream(request: Request):
     chap_id = payload.get("chap_id")
     if not isinstance(chap_id, int):
         raise HTTPException(status_code=400, detail="chap_id is required")
-    idx, path, pos = _chapter_by_id_or_404(chap_id)
+    idx, path, pos = get_chapter_locator(chap_id)
 
-    try:
-        existing = path.read_text(encoding="utf-8")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to read chapter: {e}")
+    existing = read_text_or_http_500(path)
 
-    active = get_active_project_dir()
-    if not active:
-        raise HTTPException(status_code=400, detail="No active project")
-    story = load_story_config(active / "story.json") or {}
-    chapters_data = [_normalize_chapter_entry(c) for c in story.get("chapters", [])]
+    _, _, story = get_active_story_or_http_error()
+    chapters_data = get_normalized_chapters(story)
     if pos >= len(chapters_data):
         raise HTTPException(
             status_code=400, detail="No summary available for this chapter"
@@ -693,57 +564,39 @@ async def api_story_continue_stream(request: Request):
     summary = chapters_data[pos].get("summary", "")
     title = chapters_data[pos].get("title") or path.name
 
-    base_url, api_key, model_id, timeout_s = llm.resolve_openai_credentials(
-        payload, model_type="WRITING"
+    base_url, api_key, model_id, timeout_s, model_overrides = resolve_model_runtime(
+        payload=payload,
+        model_type="WRITING",
+        base_dir=BASE_DIR,
     )
-
-    # Load model-specific prompt overrides
-    machine_config = load_machine_config(BASE_DIR / "config" / "machine.json") or {}
-    selected_model_name = llm.get_selected_model_name(payload, model_type="WRITING")
-    model_overrides = load_model_prompt_overrides(machine_config, selected_model_name)
-
-    sys_msg = {
-        "role": "system",
-        "content": get_system_message("story_continuer", model_overrides),
-    }
-    user_prompt = get_user_prompt(
-        "continue_chapter",
+    messages = build_continue_chapter_messages(
         chapter_title=title,
         chapter_summary=summary,
         existing_text=existing,
-        user_prompt_overrides=model_overrides,
+        model_overrides=model_overrides,
     )
-    messages = [sys_msg, {"role": "user", "content": user_prompt}]
 
-    async def _gen():
-        buf = []
-        try:
-            async for chunk_dict in llm.unified_chat_stream(
-                messages=messages,
-                base_url=base_url,
-                api_key=api_key,
-                model_id=model_id,
-                timeout_s=timeout_s,
-            ):
-                chunk = chunk_dict.get("content", "")
-                if chunk:
-                    buf.append(chunk)
-                    yield chunk
-        except asyncio.CancelledError:
-            return
-        # Persist appended content on completion
-        try:
-            appended = "".join(buf)
-            new_content = (
-                existing
-                + ("\n" if existing and not existing.endswith("\n") else "")
-                + appended
-            )
-            path.write_text(new_content, encoding="utf-8")
-        except Exception:
-            pass
+    async def _gen_source():
+        async for chunk in stream_unified_chat_content(
+            messages=messages,
+            base_url=base_url,
+            api_key=api_key,
+            model_id=model_id,
+            timeout_s=timeout_s,
+        ):
+            yield chunk
 
-    return _as_streaming_response(_gen)
+    def _persist(appended: str) -> None:
+        new_content = (
+            existing
+            + ("\n" if existing and not existing.endswith("\n") else "")
+            + appended
+        )
+        path.write_text(new_content, encoding="utf-8")
+
+    return _as_streaming_response(
+        lambda: stream_collect_and_persist(_gen_source, _persist)
+    )
 
 
 @router.post("/api/story/story-summary/stream")
@@ -757,78 +610,44 @@ async def api_story_story_summary_stream(request: Request):
     if mode not in ("discard", "update", ""):
         raise HTTPException(status_code=400, detail="mode must be discard|update")
 
-    active = get_active_project_dir()
-    if not active:
-        raise HTTPException(status_code=400, detail="No active project")
-    story_path = active / "story.json"
-    story = load_story_config(story_path) or {}
-    chapters_data = [_normalize_chapter_entry(c) for c in story.get("chapters", [])]
+    _, story_path, story = get_active_story_or_http_error()
+    chapters_data = get_normalized_chapters(story)
     current_story_summary = story.get("story_summary", "")
 
-    # Collect all chapter summaries
-    chapter_summaries = []
-    for i, chapter in enumerate(chapters_data):
-        summary = chapter.get("summary", "").strip()
-        title = chapter.get("title", "").strip() or f"Chapter {i + 1}"
-        if summary:
-            chapter_summaries.append(f"{title}:\n{summary}")
+    chapter_summaries = collect_chapter_summaries(chapters_data)
 
     if not chapter_summaries:
         raise HTTPException(status_code=400, detail="No chapter summaries available")
 
-    base_url, api_key, model_id, timeout_s = llm.resolve_openai_credentials(
-        payload, model_type="EDITING"
+    base_url, api_key, model_id, timeout_s, model_overrides = resolve_model_runtime(
+        payload=payload,
+        model_type="EDITING",
+        base_dir=BASE_DIR,
+    )
+    messages = build_story_summary_messages(
+        mode=mode,
+        current_story_summary=current_story_summary,
+        chapter_summaries=chapter_summaries,
+        model_overrides=model_overrides,
     )
 
-    # Load model-specific prompt overrides
-    machine_config = load_machine_config(BASE_DIR / "config" / "machine.json") or {}
-    selected_model_name = llm.get_selected_model_name(payload, model_type="EDITING")
-    model_overrides = load_model_prompt_overrides(machine_config, selected_model_name)
+    async def _gen_source():
+        async for chunk in stream_unified_chat_content(
+            messages=messages,
+            base_url=base_url,
+            api_key=api_key,
+            model_id=model_id,
+            timeout_s=timeout_s,
+        ):
+            yield chunk
 
-    sys_msg = {
-        "role": "system",
-        "content": get_system_message("story_summarizer", model_overrides),
-    }
-    if mode == "discard" or not current_story_summary:
-        user_prompt = get_user_prompt(
-            "story_summary_new",
-            chapter_summaries="\n\n".join(chapter_summaries),
-            user_prompt_overrides=model_overrides,
-        )
-    else:
-        user_prompt = get_user_prompt(
-            "story_summary_update",
-            existing_summary=current_story_summary,
-            chapter_summaries="\n\n".join(chapter_summaries),
-            user_prompt_overrides=model_overrides,
-        )
-    messages = [sys_msg, {"role": "user", "content": user_prompt}]
+    def _persist(new_summary: str) -> None:
+        story["story_summary"] = new_summary
+        save_story_config(story_path, story)
 
-    async def _gen():
-        buf = []
-        try:
-            async for chunk_dict in llm.unified_chat_stream(
-                messages=messages,
-                base_url=base_url,
-                api_key=api_key,
-                model_id=model_id,
-                timeout_s=timeout_s,
-            ):
-                chunk = chunk_dict.get("content", "")
-                if chunk:
-                    buf.append(chunk)
-                    yield chunk
-        except asyncio.CancelledError:
-            return
-        # Persist on normal completion
-        try:
-            new_summary = "".join(buf)
-            story["story_summary"] = new_summary
-            save_story_config(story_path, story)
-        except Exception:
-            pass
-
-    return _as_streaming_response(_gen)
+    return _as_streaming_response(
+        lambda: stream_collect_and_persist(_gen_source, _persist)
+    )
 
 
 @router.post("/api/story/title")
@@ -849,14 +668,12 @@ async def api_story_title(request: Request) -> JSONResponse:
             status_code=400, content={"ok": False, "detail": "Title cannot be empty"}
         )
 
-    active = get_active_project_dir()
-    if not active:
+    try:
+        _, story_path, story = get_active_story_or_http_error()
+    except HTTPException:
         return JSONResponse(
             status_code=400, content={"ok": False, "detail": "No active project"}
         )
-
-    story_path = active / "story.json"
-    story = load_story_config(story_path) or {}
     story["project_title"] = title
     save_story_config(story_path, story)
 
@@ -870,14 +687,12 @@ async def api_story_settings(request: Request) -> JSONResponse:
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON body")
 
-    active = get_active_project_dir()
-    if not active:
+    try:
+        _, story_path, story = get_active_story_or_http_error()
+    except HTTPException:
         return JSONResponse(
             status_code=400, content={"ok": False, "detail": "No active project"}
         )
-
-    story_path = active / "story.json"
-    story = load_story_config(story_path) or {}
 
     # Update allowed fields
     if "image_style" in payload:
@@ -907,8 +722,9 @@ async def api_story_metadata(request: Request) -> JSONResponse:
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON body")
 
-    active = get_active_project_dir()
-    if not active:
+    try:
+        get_active_story_or_http_error()
+    except HTTPException:
         return JSONResponse(
             status_code=400, content={"ok": False, "detail": "No active project"}
         )
@@ -950,8 +766,9 @@ async def api_book_metadata(
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON body")
 
-    active = get_active_project_dir()
-    if not active:
+    try:
+        get_active_story_or_http_error()
+    except HTTPException:
         return JSONResponse(
             status_code=400, content={"ok": False, "detail": "No active project"}
         )
