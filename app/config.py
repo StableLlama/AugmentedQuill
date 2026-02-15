@@ -25,7 +25,10 @@ import re
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional
 
-import jsonschema
+from app.helpers.config_story_ops import (
+    normalize_validate_story_config,
+    clean_story_config_for_disk,
+)
 
 CURRENT_SCHEMA_VERSION = 2
 
@@ -156,103 +159,12 @@ def load_story_config(
     json_config = load_json_file(path)
     json_config = _interpolate_env(json_config)
     merged = _deep_merge(defaults, json_config)
-
-    # Backward compatibility normalization for legacy/minimal story.json files
-    metadata = merged.get("metadata")
-    if not isinstance(metadata, dict):
-        metadata = {}
-    version = metadata.get("version")
-    if not isinstance(version, int) or version < CURRENT_SCHEMA_VERSION:
-        metadata["version"] = CURRENT_SCHEMA_VERSION
-    elif version > CURRENT_SCHEMA_VERSION:
-        raise ValueError(
-            f"Story config at {path} has unknown version {version}. Current supported version is {CURRENT_SCHEMA_VERSION}."
-        )
-    merged["metadata"] = metadata
-
-    if not isinstance(merged.get("project_title"), str):
-        merged["project_title"] = str(merged.get("project_title") or "")
-    if not merged.get("format"):
-        merged["format"] = "markdown"
-
-    if not isinstance(merged.get("project_type"), str):
-        if isinstance(merged.get("books"), list) and merged.get("books"):
-            merged["project_type"] = "series"
-        elif isinstance(merged.get("chapters"), list):
-            merged["project_type"] = "novel"
-        else:
-            merged["project_type"] = "novel"
-
-    sourcebook = merged.get("sourcebook")
-    if isinstance(sourcebook, list):
-        sourcebook_dict: Dict[str, Any] = {}
-        for entry in sourcebook:
-            if isinstance(entry, dict) and isinstance(entry.get("name"), str):
-                name = entry["name"]
-                sourcebook_dict[name] = {
-                    k: v for k, v in entry.items() if k not in ("id", "name")
-                }
-        merged["sourcebook"] = sourcebook_dict
-    elif not isinstance(sourcebook, dict):
-        merged["sourcebook"] = {}
-
-    chapters = merged.get("chapters")
-    if isinstance(chapters, list):
-        for idx, chapter in enumerate(chapters, start=1):
-            if isinstance(chapter, dict) and not chapter.get("title"):
-                chapter["title"] = f"Chapter {idx}"
-            if isinstance(chapter, dict) and isinstance(chapter.get("conflicts"), list):
-                for conflict in chapter["conflicts"]:
-                    if isinstance(conflict, dict) and "resolution" not in conflict:
-                        conflict["resolution"] = ""
-
-    books = merged.get("books")
-    if isinstance(books, list):
-        for book_idx, book in enumerate(books, start=1):
-            if not isinstance(book, dict):
-                continue
-            if not book.get("title"):
-                book["title"] = f"Book {book_idx}"
-            bchapters = book.get("chapters")
-            if not isinstance(bchapters, list):
-                bchapters = []
-                book["chapters"] = bchapters
-            for chap_idx, chapter in enumerate(bchapters, start=1):
-                if isinstance(chapter, dict) and not chapter.get("title"):
-                    chapter["title"] = f"Chapter {chap_idx}"
-                if isinstance(chapter, dict) and isinstance(
-                    chapter.get("conflicts"), list
-                ):
-                    for conflict in chapter["conflicts"]:
-                        if isinstance(conflict, dict) and "resolution" not in conflict:
-                            conflict["resolution"] = ""
-
-    # Validate version and schema
-    version = merged.get("metadata", {}).get("version", CURRENT_SCHEMA_VERSION)
-
-    # Validate against schema
-    schema = _get_story_schema(version)
-    try:
-        jsonschema.validate(merged, schema)
-    except jsonschema.ValidationError as e:
-        raise ValueError(f"Invalid story config at {path}: {e.message}")
-
-    if "tags" in merged and not isinstance(merged["tags"], list):
-        raise ValueError(f"Invalid story config at {path}: 'tags' must be an array")
-
-    # Internal Normalization: Re-inject IDs that are stored under different names (like folder)
-    # for consistent usage throughout the app.
-    if merged.get("project_type") == "series" and "books" in merged:
-        for book in merged["books"]:
-            if isinstance(book, dict):
-                # If we have id but no folder, assume folder = id (legacy/manual)
-                if "id" in book and "folder" not in book:
-                    book["folder"] = book["id"]
-                # If we have folder but no id, inject it for runtime
-                if "folder" in book and "id" not in book:
-                    book["id"] = book["folder"]
-
-    return merged
+    return normalize_validate_story_config(
+        merged=merged,
+        path_label=str(path),
+        current_schema_version=CURRENT_SCHEMA_VERSION,
+        schema_loader=_get_story_schema,
+    )
 
 
 def save_story_config(path: os.PathLike[str] | str, config: Dict[str, Any]) -> None:
@@ -260,43 +172,7 @@ def save_story_config(path: os.PathLike[str] | str, config: Dict[str, Any]) -> N
     if not p.parent.exists():
         p.parent.mkdir(parents=True)
 
-    # Strip internal IDs recursively before saving.
-    # The requirement is that internal implementation details like UUIDs
-    # should not be content in the file on disk.
-    def _clean_for_disk(data, current_key=None):
-        if isinstance(data, dict):
-            res = {}
-            for k, v in data.items():
-                if k == "id":
-                    continue
-                if current_key == "sourcebook":
-                    # For sourcebook entries, the key is the name.
-                    # Dictionary values are the entry data; strip 'name' from within them.
-                    entry_data = _clean_for_disk(v)
-                    if isinstance(entry_data, dict):
-                        entry_data.pop("name", None)
-                    res[k] = entry_data
-                else:
-                    res[k] = _clean_for_disk(v, k)
-            return res
-        elif isinstance(data, list):
-            # If sourcebook somehow arrives as a list, convert it to the expected dict format.
-            if current_key == "sourcebook":
-                res = {}
-                for entry in data:
-                    if isinstance(entry, dict) and "name" in entry:
-                        name = entry["name"]
-                        entry_copy = {
-                            k: _clean_for_disk(v)
-                            for k, v in entry.items()
-                            if k not in ("id", "name")
-                        }
-                        res[name] = entry_copy
-                return res
-            return [_clean_for_disk(x) for x in data]
-        return data
-
-    clean_config = _clean_for_disk(config)
+    clean_config = clean_story_config_for_disk(config)
 
     with p.open("w", encoding="utf-8") as f:
         json.dump(clean_config, f, indent=2, ensure_ascii=False)
