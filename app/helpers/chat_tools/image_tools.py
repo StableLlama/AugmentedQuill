@@ -18,11 +18,11 @@ async def _tool_generate_image_description(filename: str, payload: dict) -> str:
     if not img_path.exists():
         return f"Error: Image {filename} does not exist on disk."
 
-    base_url, api_key, model_id, timeout_s = llm.resolve_openai_credentials(
-        payload, model_type="EDITING"
-    )
-
     try:
+        base_url, api_key, model_id, timeout_s = llm.resolve_openai_credentials(
+            payload, model_type="EDITING"
+        )
+
         mime_type = "image/png"
         s = img_path.suffix.lower()
         if s in [".jpg", ".jpeg"]:

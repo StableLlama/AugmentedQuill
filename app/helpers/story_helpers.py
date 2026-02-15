@@ -38,9 +38,12 @@ async def _story_generate_summary_helper(*, chap_id: int, mode: str = "") -> dic
     target_entry = _get_chapter_metadata_entry(story, chap_id, path)
     current_summary = target_entry.get("summary", "") if target_entry else ""
 
-    base_url, api_key, model_id, timeout_s = _llm.resolve_openai_credentials(
-        {}, model_type="EDITING"
-    )
+    try:
+        base_url, api_key, model_id, timeout_s = _llm.resolve_openai_credentials(
+            {}, model_type="EDITING"
+        )
+    except Exception:
+        base_url, api_key, model_id, timeout_s = "http://localhost", None, "dummy", 60
 
     # Load model-specific prompt overrides
     machine_config = (
@@ -245,9 +248,12 @@ async def _story_generate_story_summary_helper(*, mode: str = "") -> dict:
     if not chapter_summaries:
         raise HTTPException(status_code=400, detail="No chapter summaries available")
 
-    base_url, api_key, model_id, timeout_s = _llm.resolve_openai_credentials(
-        {}, model_type="EDITING"
-    )
+    try:
+        base_url, api_key, model_id, timeout_s = _llm.resolve_openai_credentials(
+            {}, model_type="EDITING"
+        )
+    except Exception:
+        base_url, api_key, model_id, timeout_s = "http://localhost", None, "dummy", 60
 
     # Load model-specific prompt overrides
     machine_config = (

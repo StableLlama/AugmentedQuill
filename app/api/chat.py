@@ -13,6 +13,7 @@ from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.config import load_machine_config, load_story_config
+import app.config as _app_config
 from app.projects import (
     get_active_project_dir,
     list_chats,
@@ -42,8 +43,16 @@ except Exception:
 
 
 def _load_machine_config(path):
+    # If this module's symbol was monkeypatched, prefer it.
+    if load_machine_config is not _app_config.load_machine_config:
+        return load_machine_config(path)
+
+    # Otherwise allow app.main monkeypatches when present.
     if _app_main and hasattr(_app_main, "load_machine_config"):
-        return _app_main.load_machine_config(path)
+        main_lmc = getattr(_app_main, "load_machine_config")
+        if main_lmc is not _app_config.load_machine_config:
+            return main_lmc(path)
+
     return load_machine_config(path)
 
 
