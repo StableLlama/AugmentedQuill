@@ -15,7 +15,6 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-
 PY_HEADER = [
     "# Copyright (C) 2026 StableLlama",
     "#",
@@ -59,7 +58,11 @@ def split_pascal_camel(word: str) -> str:
 
 
 def infer_purpose(path: Path, marker: str) -> str:
-    stem = split_pascal_camel(path.stem.replace("_", " ").replace("-", " ")).lower().strip()
+    stem = (
+        split_pascal_camel(path.stem.replace("_", " ").replace("-", " "))
+        .lower()
+        .strip()
+    )
     stem = re.sub(r"\s+", " ", stem)
     if not stem:
         stem = "module"
@@ -77,11 +80,12 @@ def detect_shebang(lines: list[str], is_python: bool) -> tuple[str | None, list[
 
 def strip_existing_header(lines: list[str], marker: str) -> list[str]:
     idx = 0
-    if idx < len(lines) and re.match(rf"^{re.escape(marker)}\s*Copyright\s*\(C\)", lines[idx]):
+    if idx < len(lines) and re.match(
+        rf"^{re.escape(marker)}\s*Copyright\s*\(C\)", lines[idx]
+    ):
         idx += 1
         while idx < len(lines) and (
-            lines[idx].startswith(marker)
-            or lines[idx].strip() == ""
+            lines[idx].startswith(marker) or lines[idx].strip() == ""
         ):
             idx += 1
         return lines[idx:]
