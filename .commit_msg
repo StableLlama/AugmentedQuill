@@ -1,8 +1,0 @@
-refactor(core): restructure project to src layout and implement API v1
-
-- Move backend to src/augmentedquill/ and rename package from 'app' to 'augmentedquill'
-- Move frontend to src/frontend/ and update build paths to static/dist
-- Implement API v1 versioning with /api/v1 prefix in backend and frontend
-- Add community health files (CONTRIBUTING, CODE_OF_CONDUCT, SECURITY)
-- Update CI/CD workflow to include full frontend test and build cycles
-- Add requirements.lock and issue/PR templates
