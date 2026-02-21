@@ -65,10 +65,6 @@ from app.core.config import (
     PROJECTS_ROOT,
 )
 
-REGISTRY_PATH = Path(
-    os.getenv("AUGQ_PROJECTS_REGISTRY", str(CONFIG_DIR / "projects.json"))
-)
-
 
 def get_registry_path() -> Path:
     # Re-evaluate environment at call time to make tests able to redirect location

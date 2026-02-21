@@ -20,7 +20,7 @@ async def handle_order_tool(
             return tool_message(name, call_id, {"error": "chapter_ids must be a list"})
 
         try:
-            from app.api.chapters import api_reorder_chapters
+            from app.api.chapters_routes.mutate import api_reorder_chapters
 
             payload = {"chapter_ids": chapter_ids}
             if book_id:
@@ -61,7 +61,7 @@ async def handle_order_tool(
             return tool_message(name, call_id, {"error": "book_ids must be a list"})
 
         try:
-            from app.api.chapters import api_reorder_books
+            from app.api.chapters_routes.mutate import api_reorder_books
 
             class MockRequest:
                 async def json(self):

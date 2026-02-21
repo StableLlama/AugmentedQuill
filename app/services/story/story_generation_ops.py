@@ -23,6 +23,7 @@ from app.services.story.story_api_state_ops import (
     collect_chapter_summaries,
     ensure_chapter_slot,
     get_active_story_or_http_error,
+    get_all_normalized_chapters,
     get_chapter_locator,
     get_normalized_chapters,
     read_text_or_http_500,
@@ -38,7 +39,7 @@ async def generate_story_summary(
         raise HTTPException(status_code=400, detail="mode must be discard|update")
 
     _, story_path, story = get_active_story_or_http_error()
-    chapters_data = get_normalized_chapters(story)
+    chapters_data = get_all_normalized_chapters(story)
     current_story_summary = story.get("story_summary", "")
     chapter_summaries = collect_chapter_summaries(chapters_data)
     if not chapter_summaries:

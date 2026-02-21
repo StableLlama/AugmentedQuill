@@ -23,6 +23,9 @@ import { useChatSessionManagement } from './features/chat/useChatSessionManageme
 import { AppDialogs } from './features/layout/AppDialogs';
 import { AppHeader } from './features/layout/AppHeader';
 import { AppMainLayout } from './features/layout/AppMainLayout';
+import { ConfirmDialog } from './features/layout/ConfirmDialog';
+import { useConfirmDialog } from './features/layout/useConfirmDialog';
+import { ThemeProvider } from './features/layout/ThemeContext';
 import { useProjectManagement } from './features/projects/useProjectManagement';
 import { DebugLogs } from './features/debug/DebugLogs';
 import { useAppSettings } from './features/settings/useAppSettings';
@@ -52,6 +55,9 @@ const App: React.FC = () => {
   const getErrorMessage = (error: unknown, fallback: string) =>
     error instanceof Error ? error.message : fallback;
 
+  const { confirm, confirmDialogState, handleConfirm, handleCancel } =
+    useConfirmDialog();
+
   const {
     story,
     currentChapterId,
@@ -68,7 +74,7 @@ const App: React.FC = () => {
     redo,
     canUndo,
     canRedo,
-  } = useStory();
+  } = useStory({ confirm, alert: window.alert });
 
   const currentChapter = story.chapters.find((c) => c.id === currentChapterId);
   const editorRef = useRef<EditorHandle | null>(null);
@@ -243,8 +249,6 @@ const App: React.FC = () => {
   } = useAppUiActions({
     editorRef,
     activeFormats,
-    buttonActive,
-    isLight,
     setIsFormatMenuOpen,
     setIsMobileFormatMenuOpen,
     selectChapter,
@@ -282,175 +286,161 @@ const App: React.FC = () => {
     requestToolCallLoopAccess,
   });
 
-  // Styles based on theme (Light vs Dark/Mixed for UI elements)
+  // Minimal theme values needed by the outer wrapper div.
   const bgMain = isLight ? 'bg-brand-gray-50' : 'bg-brand-gray-950';
   const textMain = isLight ? 'text-brand-gray-800' : 'text-brand-gray-300';
-  const headerBg = isLight
-    ? 'bg-brand-gray-50 border-brand-gray-200'
-    : 'bg-brand-gray-900 border-brand-gray-800';
-  const iconColor = isLight ? 'text-brand-gray-600' : 'text-brand-gray-400';
-  const iconHover = isLight ? 'hover:text-brand-gray-900' : 'hover:text-brand-gray-300';
-  const dividerColor = isLight ? 'bg-brand-gray-300' : 'bg-brand-gray-800';
-  const sliderClass = `w-full h-1.5 rounded-lg appearance-none cursor-pointer ${
-    isLight
-      ? 'bg-brand-gray-200 accent-brand-600'
-      : 'bg-brand-gray-800 accent-brand-gray-500'
-  }`;
 
   return (
-    <div
-      className={`flex flex-col h-screen font-sans overflow-hidden ${bgMain} ${textMain}`}
-      style={
-        {
-          '--sidebar-width': `${editorSettings.sidebarWidth}px`,
-        } as React.CSSProperties
-      }
-    >
-      <AppDialogs
-        isSettingsOpen={isSettingsOpen}
-        setIsSettingsOpen={setIsSettingsOpen}
-        appSettings={appSettings}
-        setAppSettings={setAppSettings}
-        projects={projects}
-        story={story}
-        handleLoadProject={handleLoadProject}
-        handleCreateProject={handleCreateProject}
-        handleImportProject={handleImportProject}
-        handleDeleteProject={handleDeleteProject}
-        handleRenameProject={handleRenameProject}
-        handleConvertProject={handleConvertProject}
-        refreshProjects={refreshProjects}
-        currentTheme={currentTheme}
-        prompts={prompts}
-        isImagesOpen={isImagesOpen}
-        setIsImagesOpen={setIsImagesOpen}
-        updateStoryImageSettings={updateStoryImageSettings}
-        editorRef={editorRef}
-        isCreateProjectOpen={isCreateProjectOpen}
-        setIsCreateProjectOpen={setIsCreateProjectOpen}
-        handleCreateProjectConfirm={handleCreateProjectConfirm}
-      />
+    <ThemeProvider currentTheme={currentTheme}>
+      <div
+        className={`flex flex-col h-screen font-sans overflow-hidden ${bgMain} ${textMain}`}
+        style={
+          {
+            '--sidebar-width': `${editorSettings.sidebarWidth}px`,
+          } as React.CSSProperties
+        }
+      >
+        <AppDialogs
+          isSettingsOpen={isSettingsOpen}
+          setIsSettingsOpen={setIsSettingsOpen}
+          appSettings={appSettings}
+          setAppSettings={setAppSettings}
+          projects={projects}
+          story={story}
+          handleLoadProject={handleLoadProject}
+          handleCreateProject={handleCreateProject}
+          handleImportProject={handleImportProject}
+          handleDeleteProject={handleDeleteProject}
+          handleRenameProject={handleRenameProject}
+          handleConvertProject={handleConvertProject}
+          refreshProjects={refreshProjects}
+          currentTheme={currentTheme}
+          prompts={prompts}
+          isImagesOpen={isImagesOpen}
+          setIsImagesOpen={setIsImagesOpen}
+          updateStoryImageSettings={updateStoryImageSettings}
+          editorRef={editorRef}
+          isCreateProjectOpen={isCreateProjectOpen}
+          setIsCreateProjectOpen={setIsCreateProjectOpen}
+          handleCreateProjectConfirm={handleCreateProjectConfirm}
+        />
 
-      <AppHeader
-        headerBg={headerBg}
-        iconColor={iconColor}
-        iconHover={iconHover}
-        dividerColor={dividerColor}
-        buttonActive={buttonActive}
-        textMain={textMain}
-        isLight={isLight}
-        storyTitle={story.title}
-        currentTheme={currentTheme}
-        isSidebarOpen={isSidebarOpen}
-        setIsSidebarOpen={setIsSidebarOpen}
-        setIsSettingsOpen={setIsSettingsOpen}
-        undo={undo}
-        redo={redo}
-        canUndo={canUndo}
-        canRedo={canRedo}
-        viewMode={viewMode}
-        setViewMode={setViewMode}
-        showWhitespace={showWhitespace}
-        setShowWhitespace={setShowWhitespace}
-        isViewMenuOpen={isViewMenuOpen}
-        setIsViewMenuOpen={setIsViewMenuOpen}
-        handleFormat={handleFormat}
-        getFormatButtonClass={getFormatButtonClass}
-        isFormatMenuOpen={isFormatMenuOpen}
-        setIsFormatMenuOpen={setIsFormatMenuOpen}
-        isMobileFormatMenuOpen={isMobileFormatMenuOpen}
-        setIsMobileFormatMenuOpen={setIsMobileFormatMenuOpen}
-        handleAiAction={handleAiAction}
-        isAiActionLoading={isAiActionLoading}
-        appSettings={appSettings}
-        setAppSettings={setAppSettings}
-        modelConnectionStatus={modelConnectionStatus}
-        detectedCapabilities={detectedCapabilities}
-        setIsImagesOpen={setIsImagesOpen}
-        appearanceRef={appearanceRef}
-        isAppearanceOpen={isAppearanceOpen}
-        setIsAppearanceOpen={setIsAppearanceOpen}
-        setAppTheme={setAppTheme}
-        editorSettings={editorSettings}
-        setEditorSettings={setEditorSettings}
-        sliderClass={sliderClass}
-        setIsDebugLogsOpen={setIsDebugLogsOpen}
-        isChatOpen={isChatOpen}
-        setIsChatOpen={setIsChatOpen}
-      />
+        <AppHeader
+          storyTitle={story.title}
+          isSidebarOpen={isSidebarOpen}
+          setIsSidebarOpen={setIsSidebarOpen}
+          setIsSettingsOpen={setIsSettingsOpen}
+          undo={undo}
+          redo={redo}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          viewMode={viewMode}
+          setViewMode={setViewMode}
+          showWhitespace={showWhitespace}
+          setShowWhitespace={setShowWhitespace}
+          isViewMenuOpen={isViewMenuOpen}
+          setIsViewMenuOpen={setIsViewMenuOpen}
+          handleFormat={handleFormat}
+          getFormatButtonClass={getFormatButtonClass}
+          isFormatMenuOpen={isFormatMenuOpen}
+          setIsFormatMenuOpen={setIsFormatMenuOpen}
+          isMobileFormatMenuOpen={isMobileFormatMenuOpen}
+          setIsMobileFormatMenuOpen={setIsMobileFormatMenuOpen}
+          handleAiAction={handleAiAction}
+          isAiActionLoading={isAiActionLoading}
+          appSettings={appSettings}
+          setAppSettings={setAppSettings}
+          modelConnectionStatus={modelConnectionStatus}
+          detectedCapabilities={detectedCapabilities}
+          setIsImagesOpen={setIsImagesOpen}
+          appearanceRef={appearanceRef}
+          isAppearanceOpen={isAppearanceOpen}
+          setIsAppearanceOpen={setIsAppearanceOpen}
+          setAppTheme={setAppTheme}
+          editorSettings={editorSettings}
+          setEditorSettings={setEditorSettings}
+          setIsDebugLogsOpen={setIsDebugLogsOpen}
+          isChatOpen={isChatOpen}
+          setIsChatOpen={setIsChatOpen}
+        />
 
-      <AppMainLayout
-        isSidebarOpen={isSidebarOpen}
-        setIsSidebarOpen={setIsSidebarOpen}
-        isLight={isLight}
-        currentTheme={currentTheme}
-        story={story}
-        currentChapterId={currentChapterId}
-        handleChapterSelect={handleChapterSelect}
-        deleteChapter={deleteChapter}
-        updateChapter={updateChapter}
-        updateBook={updateBook}
-        addChapter={addChapter}
-        handleBookCreate={handleBookCreate}
-        handleBookDelete={handleBookDelete}
-        handleReorderChapters={handleReorderChapters}
-        handleReorderBooks={handleReorderBooks}
-        handleSidebarAiAction={handleSidebarAiAction}
-        handleOpenImages={handleOpenImages}
-        updateStoryMetadata={updateStoryMetadata}
-        bgMain={bgMain}
-        currentChapter={currentChapter}
-        editorRef={editorRef}
-        editorSettings={editorSettings}
-        viewMode={viewMode}
-        continuations={continuations}
-        isSuggesting={isSuggesting}
-        handleTriggerSuggestions={handleTriggerSuggestions}
-        handleAcceptContinuation={handleAcceptContinuation}
-        isSuggestionMode={isSuggestionMode}
-        handleKeyboardSuggestionAction={handleKeyboardSuggestionAction}
-        handleAiAction={handleAiAction}
-        isAiActionLoading={isAiActionLoading}
-        setActiveFormats={setActiveFormats}
-        showWhitespace={showWhitespace}
-        setShowWhitespace={setShowWhitespace}
-        isChatOpen={isChatOpen}
-        chatMessages={chatMessages}
-        isChatLoading={isChatLoading}
-        systemPrompt={systemPrompt}
-        handleSendMessage={handleSendMessage}
-        handleStopChat={handleStopChat}
-        handleRegenerate={handleRegenerate}
-        handleEditMessage={handleEditMessage}
-        handleDeleteMessage={handleDeleteMessage}
-        setSystemPrompt={setSystemPrompt}
-        handleLoadProject={handleLoadProject}
-        incognitoSessions={incognitoSessions}
-        chatHistoryList={chatHistoryList}
-        currentChatId={currentChatId}
-        isIncognito={isIncognito}
-        handleSelectChat={handleSelectChat}
-        handleNewChat={handleNewChat}
-        handleDeleteChat={handleDeleteChat}
-        handleDeleteAllChats={handleDeleteAllChats}
-        setIsIncognito={setIsIncognito}
-        allowWebSearch={allowWebSearch}
-        setAllowWebSearch={setAllowWebSearch}
-      />
+        <AppMainLayout
+          isSidebarOpen={isSidebarOpen}
+          setIsSidebarOpen={setIsSidebarOpen}
+          story={story}
+          currentChapterId={currentChapterId}
+          handleChapterSelect={handleChapterSelect}
+          deleteChapter={deleteChapter}
+          updateChapter={updateChapter}
+          updateBook={updateBook}
+          addChapter={addChapter}
+          handleBookCreate={handleBookCreate}
+          handleBookDelete={handleBookDelete}
+          handleReorderChapters={handleReorderChapters}
+          handleReorderBooks={handleReorderBooks}
+          handleSidebarAiAction={handleSidebarAiAction}
+          handleOpenImages={handleOpenImages}
+          updateStoryMetadata={updateStoryMetadata}
+          currentChapter={currentChapter}
+          editorRef={editorRef}
+          editorSettings={editorSettings}
+          viewMode={viewMode}
+          continuations={continuations}
+          isSuggesting={isSuggesting}
+          handleTriggerSuggestions={handleTriggerSuggestions}
+          handleAcceptContinuation={handleAcceptContinuation}
+          isSuggestionMode={isSuggestionMode}
+          handleKeyboardSuggestionAction={handleKeyboardSuggestionAction}
+          handleAiAction={handleAiAction}
+          isAiActionLoading={isAiActionLoading}
+          setActiveFormats={setActiveFormats}
+          showWhitespace={showWhitespace}
+          setShowWhitespace={setShowWhitespace}
+          isChatOpen={isChatOpen}
+          chatMessages={chatMessages}
+          isChatLoading={isChatLoading}
+          systemPrompt={systemPrompt}
+          handleSendMessage={handleSendMessage}
+          handleStopChat={handleStopChat}
+          handleRegenerate={handleRegenerate}
+          handleEditMessage={handleEditMessage}
+          handleDeleteMessage={handleDeleteMessage}
+          setSystemPrompt={setSystemPrompt}
+          handleLoadProject={handleLoadProject}
+          incognitoSessions={incognitoSessions}
+          chatHistoryList={chatHistoryList}
+          currentChatId={currentChatId}
+          isIncognito={isIncognito}
+          handleSelectChat={handleSelectChat}
+          handleNewChat={handleNewChat}
+          handleDeleteChat={handleDeleteChat}
+          handleDeleteAllChats={handleDeleteAllChats}
+          setIsIncognito={setIsIncognito}
+          allowWebSearch={allowWebSearch}
+          setAllowWebSearch={setAllowWebSearch}
+        />
 
-      <DebugLogs
-        isOpen={isDebugLogsOpen}
-        onClose={() => setIsDebugLogsOpen(false)}
-        theme={currentTheme}
-      />
+        <DebugLogs
+          isOpen={isDebugLogsOpen}
+          onClose={() => setIsDebugLogsOpen(false)}
+          theme={currentTheme}
+        />
 
-      <ToolCallLimitDialog
-        isOpen={!!toolCallLoopDialog}
-        count={toolCallLoopDialog?.count ?? 0}
-        theme={currentTheme}
-        onResolve={(choice) => toolCallLoopDialog?.resolver(choice)}
-      />
-    </div>
+        <ToolCallLimitDialog
+          isOpen={!!toolCallLoopDialog}
+          count={toolCallLoopDialog?.count ?? 0}
+          theme={currentTheme}
+          onResolve={(choice) => toolCallLoopDialog?.resolver(choice)}
+        />
+
+        <ConfirmDialog
+          isOpen={confirmDialogState.isOpen}
+          message={confirmDialogState.message}
+          onConfirm={handleConfirm}
+          onCancel={handleCancel}
+        />
+      </div>
+    </ThemeProvider>
   );
 };
 

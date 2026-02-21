@@ -53,3 +53,27 @@ class ImagePlaceholderRequest(BaseModel):
 
 class ImageDeleteRequest(BaseModel):
     filename: str
+
+
+# ---------------------------------------------------------------------------
+# Response models
+# ---------------------------------------------------------------------------
+
+
+class ProjectInfo(BaseModel):
+    """Describes a single project entry returned by the listing endpoint."""
+
+    id: str
+    name: str
+    path: str
+    is_valid: bool
+    title: str
+    type: str = "novel"
+
+
+class ProjectListResponse(BaseModel):
+    """Response body for ``GET /api/projects``."""
+
+    current: str
+    recent: list[str]
+    available: list[ProjectInfo]

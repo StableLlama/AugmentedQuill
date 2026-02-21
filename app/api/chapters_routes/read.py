@@ -14,18 +14,21 @@ from app.services.chapters.chapters_api_ops import (
     list_chapters_payload,
 )
 from app.services.projects.projects import get_active_project_dir
+from app.models.chapters import ChaptersListResponse, ChapterDetailResponse
 
 router = APIRouter(tags=["Chapters"])
 
 
-@router.get("/api/chapters")
-async def api_chapters() -> dict:
+@router.get("/api/chapters", response_model=ChaptersListResponse)
+async def api_chapters() -> ChaptersListResponse:
     active = get_active_project_dir()
     return {"chapters": list_chapters_payload(active)}
 
 
-@router.get("/api/chapters/{chap_id}")
-async def api_chapter_content(chap_id: int = FastAPIPath(..., ge=0)) -> dict:
+@router.get("/api/chapters/{chap_id}", response_model=ChapterDetailResponse)
+async def api_chapter_content(
+    chap_id: int = FastAPIPath(..., ge=0)
+) -> ChapterDetailResponse:
     _, path, _ = _chapter_by_id_or_404(chap_id)
     active = get_active_project_dir()
     chapter = chapter_detail_payload(active, chap_id, path)

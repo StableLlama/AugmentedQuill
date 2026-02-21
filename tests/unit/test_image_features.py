@@ -23,7 +23,8 @@ from app.utils.image_helpers import (
     get_project_images,
     update_image_metadata,
 )
-from app.api.chat import _inject_project_images, _exec_chat_tool
+from app.api.chat import _inject_project_images
+from app.services.chat.chat_tool_dispatcher import exec_chat_tool
 
 
 class ImageFeaturesTest(TestCase):
@@ -218,14 +219,14 @@ class ImageFeaturesTest(TestCase):
             mutations = {}
 
             # Test Tool 1: list_images
-            res = await _exec_chat_tool("list_images", {}, call_id, payload, mutations)
+            res = await exec_chat_tool("list_images", {}, call_id, payload, mutations)
             content = json.loads(res["content"])
             # Should have ref.png from previous test? No, clean dir each setUp.
             # But wait, we just created desc_test.jpg
             self.assertEqual(content[0]["filename"], "desc_test.jpg")
 
             # Test Tool 2: generate_image_description
-            res = await _exec_chat_tool(
+            res = await exec_chat_tool(
                 "generate_image_description",
                 {"filename": "desc_test.jpg"},
                 call_id,
@@ -251,7 +252,7 @@ class ImageFeaturesTest(TestCase):
             self.assertIn("data:image/jpeg;base64,", user_msg[1]["image_url"]["url"])
 
             # Test Tool 3: create_image_placeholder
-            res = await _exec_chat_tool(
+            res = await exec_chat_tool(
                 "create_image_placeholder",
                 {"description": "A ghost", "title": "Ghost"},
                 call_id,

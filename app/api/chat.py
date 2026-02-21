@@ -17,11 +17,10 @@ from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.core.config import load_machine_config, CONFIG_DIR
-import app.core.config as _app_config
 from app.services.projects.projects import get_active_project_dir
 from app.services.llm.llm import add_llm_log, create_log_entry
-from app.services.chat.chat_tool_dispatcher import _exec_chat_tool
-from app.services.chat.chat_tools_schema import STORY_TOOLS as CHAT_STORY_TOOLS
+from app.services.chat.chat_tool_dispatcher import exec_chat_tool
+from app.services.chat.chat_tools_schema import STORY_TOOLS
 from app.services.chat.chat_api_stream_ops import (
     normalize_chat_messages,
     resolve_stream_model_context,
@@ -38,88 +37,18 @@ from app.services.chat.chat_api_session_ops import (
 import app.services.chat.chat_api_proxy_ops as _chat_api_proxy_ops
 import json as _json
 from typing import Any, Dict
+from app.models.chat import ChatInitialStateResponse
 
 router = APIRouter(tags=["Chat"])
 
 proxy_openai_models = _chat_api_proxy_ops.proxy_openai_models
 httpx = _chat_api_proxy_ops.httpx
 
-# Prefer using `app.main.load_machine_config` when available so tests can monkeypatch it.
-try:
-    import app.main as _app_main  # type: ignore
-except Exception:
-    _app_main = None
 
-
-def _load_machine_config(path):
-    # If this module's symbol was monkeypatched, prefer it.
-    if load_machine_config is not _app_config.load_machine_config:
-        return load_machine_config(path)
-
-    # Otherwise allow app.main monkeypatches when present.
-    if _app_main and hasattr(_app_main, "load_machine_config"):
-        main_lmc = getattr(_app_main, "load_machine_config")
-        if main_lmc is not _app_config.load_machine_config:
-            return main_lmc(path)
-
-    return load_machine_config(path)
-
-
-STORY_TOOLS = CHAT_STORY_TOOLS
-
-WEB_SEARCH_TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "web_search",
-            "description": "Search the web for real-world information. NOTE: This returns snippets only. You MUST subsequently call 'visit_page' on the top 1-3 relevant URLs to get the actual content needed for your answer.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "The search query."}
-                },
-                "required": ["query"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "visit_page",
-            "description": "Visit a specific web page by URL and extract its main content as text.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "url": {
-                        "type": "string",
-                        "description": "The URL of the page to visit.",
-                    }
-                },
-                "required": ["url"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "wikipedia_search",
-            "description": "Search Wikipedia for factual information. You MUST subsequently call 'visit_page' on the result URLs to read the full article content.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "The search term."}
-                },
-                "required": ["query"],
-            },
-        },
-    },
-]
-
-
-@router.get("/api/chat")
-async def api_get_chat() -> dict:
+@router.get("/api/chat", response_model=ChatInitialStateResponse)
+async def api_get_chat() -> ChatInitialStateResponse:
     """Return initial state for chat view: models and current selection."""
-    machine = _load_machine_config(CONFIG_DIR / "machine.json") or {}
+    machine = load_machine_config(CONFIG_DIR / "machine.json") or {}
     openai_cfg = (machine.get("openai") or {}) if isinstance(machine, dict) else {}
     models_list = openai_cfg.get("models") if isinstance(openai_cfg, dict) else []
 
@@ -197,7 +126,7 @@ async def api_chat_tools(request: Request) -> JSONResponse:
             args_obj = {}
         if not name or not call_id:
             continue
-        msg = await _exec_chat_tool(name, args_obj, call_id, payload, mutations)
+        msg = await exec_chat_tool(name, args_obj, call_id, payload, mutations)
         appended.append(msg)
 
     # Log tool execution if there were any
@@ -303,7 +232,7 @@ async def api_chat_stream(request: Request) -> StreamingResponse:
         raise HTTPException(status_code=400, detail="messages array is required")
 
     # Load config to determine model capabilities and overrides
-    machine = _load_machine_config(CONFIG_DIR / "machine.json") or {}
+    machine = load_machine_config(CONFIG_DIR / "machine.json") or {}
     stream_ctx = resolve_stream_model_context(payload, machine)
     model_type = stream_ctx["model_type"]
     selected_name = stream_ctx["selected_name"]

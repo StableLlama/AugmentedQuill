@@ -13,8 +13,8 @@ import { Chat } from '../chat/Chat';
 import { Editor, EditorHandle } from '../editor/Editor';
 import { SourcebookList } from '../sourcebook/SourcebookList';
 import { StoryMetadata } from '../story/StoryMetadata';
+import { useTheme } from './ThemeContext';
 import {
-  AppTheme,
   ChatMessage,
   Chapter,
   EditorSettings,
@@ -25,8 +25,6 @@ import {
 type AppMainLayoutProps = {
   isSidebarOpen: boolean;
   setIsSidebarOpen: Dispatch<SetStateAction<boolean>>;
-  isLight: boolean;
-  currentTheme: AppTheme;
   story: StoryState;
   currentChapterId: string | null;
   handleChapterSelect: (id: string) => void;
@@ -59,7 +57,6 @@ type AppMainLayoutProps = {
     }>
   ) => Promise<void>;
 
-  bgMain: string;
   currentChapter?: Chapter;
   editorRef: RefObject<EditorHandle | null>;
   editorSettings: EditorSettings;
@@ -113,8 +110,6 @@ type AppMainLayoutProps = {
 export const AppMainLayout: React.FC<AppMainLayoutProps> = ({
   isSidebarOpen,
   setIsSidebarOpen,
-  isLight,
-  currentTheme,
   story,
   currentChapterId,
   handleChapterSelect,
@@ -129,7 +124,6 @@ export const AppMainLayout: React.FC<AppMainLayoutProps> = ({
   handleSidebarAiAction,
   handleOpenImages,
   updateStoryMetadata,
-  bgMain,
   currentChapter,
   editorRef,
   editorSettings,
@@ -168,6 +162,8 @@ export const AppMainLayout: React.FC<AppMainLayoutProps> = ({
   allowWebSearch,
   setAllowWebSearch,
 }) => {
+  const { bgMain, isLight, currentTheme } = useTheme();
+
   return (
     <div className="flex-1 flex overflow-hidden relative">
       {isSidebarOpen && (

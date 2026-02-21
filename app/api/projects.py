@@ -42,13 +42,14 @@ from app.models.projects import (
     ImageDescriptionUpdateRequest,
     ImagePlaceholderRequest,
     ImageDeleteRequest,
+    ProjectListResponse,
 )
 
 router = APIRouter(tags=["Projects"])
 
 
-@router.get("/api/projects")
-async def api_projects() -> dict:
+@router.get("/api/projects", response_model=ProjectListResponse)
+async def api_projects() -> ProjectListResponse:
     return projects_listing_payload()
 
 

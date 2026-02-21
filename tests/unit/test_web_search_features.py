@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 from unittest import TestCase
 from fastapi.testclient import TestClient
-from app.api.chat import WEB_SEARCH_TOOLS
+from app.services.chat.chat_tools_schema import WEB_SEARCH_TOOLS
 from app.main import app
 
 

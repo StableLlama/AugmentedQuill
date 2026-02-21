@@ -14,9 +14,15 @@ splitting story endpoints into focused route modules.
 
 from fastapi import APIRouter
 
-from app.api.story_routes.generation import router as generation_router
+from app.api.story_routes.generation_mutations import (
+    router as generation_mutations_router,
+)
+from app.api.story_routes.generation_streaming import (
+    router as generation_streaming_router,
+)
 from app.api.story_routes.metadata import router as metadata_router
 
 router = APIRouter(tags=["Story"])
-router.include_router(generation_router)
+router.include_router(generation_mutations_router)
+router.include_router(generation_streaming_router)
 router.include_router(metadata_router)

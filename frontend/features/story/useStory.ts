@@ -11,6 +11,24 @@ import { StoryState, Chapter, Book } from '../../types';
 import { api } from '../../services/api';
 import { mapApiChapters, mapSelectStoryToState } from './storyMappers';
 
+/** Maximum number of undo/redo states retained in memory. */
+const MAX_HISTORY = 50;
+
+/**
+ * Injectable dialog callbacks for useStory.
+ * Defaults use window.confirm / window.alert, which can be replaced in tests
+ * or by a React-based dialog system in App.tsx.
+ */
+export interface StoryDialogs {
+  confirm: (message: string) => Promise<boolean>;
+  alert: (message: string) => void;
+}
+
+const defaultDialogs: StoryDialogs = {
+  confirm: (message) => Promise.resolve(window.confirm(message)),
+  alert: (message) => window.alert(message),
+};
+
 const INITIAL_STORY: StoryState = {
   id: '',
   title: '',
@@ -27,20 +45,26 @@ const INITIAL_STORY: StoryState = {
   lastUpdated: Date.now(),
 };
 
-export const useStory = () => {
+export const useStory = (dialogs: StoryDialogs = defaultDialogs) => {
   const [story, setStory] = useState<StoryState>(INITIAL_STORY);
   const [currentChapterId, setCurrentChapterId] = useState<string | null>(null);
   const [history, setHistory] = useState<StoryState[]>([INITIAL_STORY]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const hasFetchedRef = useRef(false);
+  // Hold dialog callbacks in a ref so refreshStory callbacks never go stale.
+  const dialogsRef = useRef(dialogs);
+  useEffect(() => {
+    dialogsRef.current = dialogs;
+  });
 
   const pushState = useCallback(
     (newState: StoryState) => {
       const updatedState = { ...newState, lastUpdated: Date.now() };
-      const newHistory = history.slice(0, currentIndex + 1);
-      newHistory.push(updatedState);
-      setHistory(newHistory);
-      setCurrentIndex(newHistory.length - 1);
+      const trimmed = history.slice(0, currentIndex + 1);
+      trimmed.push(updatedState);
+      const bounded = trimmed.slice(-MAX_HISTORY);
+      setHistory(bounded);
+      setCurrentIndex(bounded.length - 1);
       setStory(updatedState);
     },
     [history, currentIndex]
@@ -55,7 +79,7 @@ export const useStory = () => {
       const res = await api.projects.select(currentProject);
       if (res.error === 'version_outdated') {
         // Block normal loading so schema transitions are explicit and recoverable.
-        const shouldUpdate = confirm(
+        const shouldUpdate = await dialogsRef.current.confirm(
           `The story config is outdated (version ${res.current_version}). Current version is ${res.required_version}. Do you want to update it?`
         );
         if (shouldUpdate) {
@@ -80,21 +104,25 @@ export const useStory = () => {
                 setCurrentChapterId(newStory.currentChapterId);
               } else if (res2.error) {
                 if (res2.error === 'invalid_config') {
-                  alert(`Invalid story config: ${res2.error_message}`);
+                  dialogsRef.current.alert(
+                    `Invalid story config: ${res2.error_message}`
+                  );
                 } else {
-                  alert(`Failed to load story after update: ${res2.error}`);
+                  dialogsRef.current.alert(
+                    `Failed to load story after update: ${res2.error}`
+                  );
                 }
               }
             } else {
-              alert(`Failed to update config: ${updateRes.detail}`);
+              dialogsRef.current.alert(`Failed to update config: ${updateRes.detail}`);
             }
           } catch (e) {
-            alert(`Failed to update config: ${e}`);
+            dialogsRef.current.alert(`Failed to update config: ${e}`);
           }
         }
         return;
       } else if (res.error === 'invalid_config') {
-        alert(`Invalid story config: ${res.error_message}`);
+        dialogsRef.current.alert(`Invalid story config: ${res.error_message}`);
         return;
       } else if (res.ok && res.story) {
         const chaptersRes = await api.chapters.list();

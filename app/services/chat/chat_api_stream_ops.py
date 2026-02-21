@@ -13,6 +13,7 @@ from typing import Any, Dict
 
 from app.core.config import load_story_config
 from app.core.prompts import get_system_message, load_model_prompt_overrides
+from app.services.llm.llm_request_helpers import find_model_in_list
 
 
 def normalize_chat_messages(value: Any) -> list[dict]:
@@ -59,14 +60,7 @@ def resolve_stream_model_context(payload: dict, machine: dict) -> dict:
     chosen = None
     models = openai_cfg.get("models") if isinstance(openai_cfg, dict) else None
     if isinstance(models, list) and models:
-        allowed_models = models
-        if selected_name:
-            for model in allowed_models:
-                if isinstance(model, dict) and (model.get("name") == selected_name):
-                    chosen = model
-                    break
-        if chosen is None:
-            chosen = allowed_models[0]
+        chosen = find_model_in_list(models, selected_name) or models[0]
 
         base_url = chosen.get("base_url") or base_url
         api_key = chosen.get("api_key") or api_key

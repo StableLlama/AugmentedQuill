@@ -19,22 +19,6 @@ def _get_story_data():
         return None, None
     story_path = active / "story.json"
     story = load_story_config(story_path) or {}
-
-    # Migrate from list to dict if needed
-    if "sourcebook" in story and isinstance(story["sourcebook"], list):
-        old_sb = story["sourcebook"]
-        new_sb = {}
-        for entry in old_sb:
-            if isinstance(entry, dict) and "name" in entry:
-                entry_copy = entry.copy()
-                name = entry_copy.pop("name")
-                entry_copy.pop("id", None)
-                new_sb[name] = entry_copy
-        story["sourcebook"] = new_sb
-        # We don't save here to avoid side effects in a helper,
-        # but the story dict is now updated in memory.
-        # Actually it's probably better to return it and let caller save if they want.
-
     return story, story_path
 
 

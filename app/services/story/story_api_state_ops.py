@@ -44,6 +44,22 @@ def get_normalized_chapters(story: dict) -> list[dict]:
     return [_normalize_chapter_entry(chapter) for chapter in story.get("chapters", [])]
 
 
+def get_all_normalized_chapters(story: dict) -> list[dict]:
+    """Return all normalized chapter entries regardless of project type.
+
+    For series projects, chapters are aggregated across all books.
+    For novel/short-story projects, chapters come from the top-level chapters list.
+    """
+    if story.get("project_type") == "series":
+        chapters: list[dict] = []
+        for book in story.get("books", []):
+            if isinstance(book, dict):
+                for chapter in book.get("chapters", []):
+                    chapters.append(_normalize_chapter_entry(chapter))
+        return chapters
+    return get_normalized_chapters(story)
+
+
 def ensure_chapter_slot(chapters_data: list[dict], pos: int) -> None:
     if pos >= len(chapters_data):
         chapters_data.extend(

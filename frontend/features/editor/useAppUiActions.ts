@@ -11,12 +11,11 @@ import { Dispatch, RefObject, SetStateAction } from 'react';
 import { api } from '../../services/api';
 import { AppTheme, EditorSettings } from '../../types';
 import { EditorHandle } from './Editor';
+import { useTheme } from '../layout/ThemeContext';
 
 type UseAppUiActionsParams = {
   editorRef: RefObject<EditorHandle | null>;
   activeFormats: string[];
-  buttonActive: string;
-  isLight: boolean;
   setIsFormatMenuOpen: (open: boolean) => void;
   setIsMobileFormatMenuOpen: (open: boolean) => void;
   selectChapter: (id: string) => void;
@@ -29,8 +28,6 @@ type UseAppUiActionsParams = {
 export function useAppUiActions({
   editorRef,
   activeFormats,
-  buttonActive,
-  isLight,
   setIsFormatMenuOpen,
   setIsMobileFormatMenuOpen,
   selectChapter,
@@ -39,6 +36,8 @@ export function useAppUiActions({
   refreshStory,
   getErrorMessage,
 }: UseAppUiActionsParams) {
+  const { buttonActive, isLight } = useTheme();
+
   const handleFormat = (type: string) => {
     if (editorRef.current) {
       editorRef.current.format(type);

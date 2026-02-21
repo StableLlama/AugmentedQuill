@@ -24,6 +24,7 @@ from app.core.config import load_machine_config, CONFIG_DIR
 from app.services.llm import llm_logging as _llm_logging
 from app.services.llm import llm_stream_ops as _llm_stream_ops
 from app.services.llm import llm_completion_ops as _llm_completion_ops
+from app.services.llm.llm_request_helpers import find_model_in_list
 from app.utils import llm_parsing as _llm_parsing
 
 # Backward-compatible export used by debug endpoint and tests.
@@ -85,14 +86,7 @@ def resolve_openai_credentials(
             detail="No OpenAI models configured. Configure openai.models[] in machine.json.",
         )
 
-    chosen = None
-    if selected_name:
-        for m in models:
-            if isinstance(m, dict) and (m.get("name") == selected_name):
-                chosen = m
-                break
-    if chosen is None:
-        chosen = models[0]
+    chosen = find_model_in_list(models, selected_name) or models[0]
 
     base_url = chosen.get("base_url") or base_url
     api_key = chosen.get("api_key") or api_key

@@ -7,6 +7,7 @@
 // Purpose: Defines the app header unit so this responsibility stays isolated, testable, and easy to evolve.
 
 import React, { Dispatch, RefObject, SetStateAction } from 'react';
+import { useTheme } from './ThemeContext';
 import {
   Bold,
   ChevronDown,
@@ -37,15 +38,7 @@ import { ModelSelector } from '../chat/ModelSelector';
 import { HeaderAppearanceControls } from '../editor/HeaderAppearanceControls';
 
 type AppHeaderProps = {
-  headerBg: string;
-  iconColor: string;
-  iconHover: string;
-  dividerColor: string;
-  buttonActive: string;
-  textMain: string;
-  isLight: boolean;
   storyTitle: string;
-  currentTheme: AppTheme;
 
   isSidebarOpen: boolean;
   setIsSidebarOpen: Dispatch<SetStateAction<boolean>>;
@@ -90,7 +83,6 @@ type AppHeaderProps = {
   setAppTheme: (theme: AppTheme) => void;
   editorSettings: EditorSettings;
   setEditorSettings: Dispatch<SetStateAction<EditorSettings>>;
-  sliderClass: string;
   setIsDebugLogsOpen: Dispatch<SetStateAction<boolean>>;
 
   isChatOpen: boolean;
@@ -98,15 +90,7 @@ type AppHeaderProps = {
 };
 
 export const AppHeader: React.FC<AppHeaderProps> = ({
-  headerBg,
-  iconColor,
-  iconHover,
-  dividerColor,
-  buttonActive,
-  textMain,
-  isLight,
   storyTitle,
-  currentTheme,
   isSidebarOpen,
   setIsSidebarOpen,
   setIsSettingsOpen,
@@ -139,11 +123,22 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   setAppTheme,
   editorSettings,
   setEditorSettings,
-  sliderClass,
   setIsDebugLogsOpen,
   isChatOpen,
   setIsChatOpen,
 }) => {
+  const {
+    headerBg,
+    iconColor,
+    iconHover,
+    dividerColor,
+    buttonActive,
+    textMain,
+    isLight,
+    currentTheme,
+    sliderClass,
+  } = useTheme();
+
   return (
     <header
       className={`h-14 border-b flex items-center justify-between px-3 md:px-4 shadow-sm z-40 relative shrink-0 ${headerBg}`}

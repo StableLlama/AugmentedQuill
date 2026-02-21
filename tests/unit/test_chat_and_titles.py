@@ -14,6 +14,7 @@ from unittest import TestCase
 from fastapi.testclient import TestClient
 
 import app.main as main
+import app.api.chat
 from app.services.projects.projects import select_project
 
 
@@ -34,7 +35,7 @@ class ChatAndTitlesTest(TestCase):
 
     def test_api_chat_coerces_invalid_selected_and_lists_models(self):
         # Patch load_machine_config to return models with an invalid selected name
-        orig_lmc = main.load_machine_config
+        orig_lmc = app.api.chat.load_machine_config
 
         def fake_lmc(_path):  # type: ignore
             return {
@@ -60,7 +61,7 @@ class ChatAndTitlesTest(TestCase):
             }
 
         try:
-            main.load_machine_config = fake_lmc  # type: ignore
+            app.api.chat.load_machine_config = fake_lmc  # type: ignore
             r = self.client.get("/api/chat")
             self.assertEqual(r.status_code, 200, r.text)
             data = r.json()
@@ -68,7 +69,7 @@ class ChatAndTitlesTest(TestCase):
             # Should coerce to first available model
             self.assertEqual(data.get("current_model"), "m1")
         finally:
-            main.load_machine_config = orig_lmc  # type: ignore
+            app.api.chat.load_machine_config = orig_lmc  # type: ignore
 
     def test_chapter_title_object_object_falls_back_to_filename(self):
         ok, msg = select_project("oob")

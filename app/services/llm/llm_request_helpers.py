@@ -45,3 +45,17 @@ def build_timeout(timeout_s: int) -> httpx.Timeout:
         return httpx.Timeout(float(timeout_s or 60))
     except Exception:
         return httpx.Timeout(60.0)
+
+
+def find_model_in_list(models: list, selected_name: str | None) -> dict | None:
+    """Return the first model config dict whose "name" matches selected_name.
+
+    Returns None when selected_name is falsy or no match is found, signalling
+    that the caller should fall back to the first available model.
+    """
+    if not selected_name:
+        return None
+    for m in models:
+        if isinstance(m, dict) and m.get("name") == selected_name:
+            return m
+    return None
