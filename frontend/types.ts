@@ -73,8 +73,14 @@ export interface ChatMessage {
   isError?: boolean;
   name?: string;
   tool_call_id?: string;
-  tool_calls?: any[];
+  tool_calls?: ChatToolCall[];
   traceback?: string;
+}
+
+export interface ChatToolCall {
+  id: string;
+  name: string;
+  args: Record<string, unknown>;
 }
 
 export interface ChatSession {
@@ -116,6 +122,7 @@ export interface LLMConfig {
     system: string;
     continuation: string;
     summary: string;
+    [key: string]: string;
   };
 }
 

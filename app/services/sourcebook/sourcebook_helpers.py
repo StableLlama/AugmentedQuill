@@ -37,6 +37,25 @@ def _get_story_data():
     return story, story_path
 
 
+def sb_list() -> List[Dict]:
+    story, _ = _get_story_data()
+    if not story:
+        return []
+
+    sb_dict = story.get("sourcebook", {})
+    if not isinstance(sb_dict, dict):
+        return []
+
+    results = []
+    for name in sorted(sb_dict.keys(), key=str.lower):
+        e_data = sb_dict.get(name) or {}
+        if not isinstance(e_data, dict):
+            continue
+        results.append({"id": name, "name": name, **e_data})
+
+    return results
+
+
 def sb_search(query: str) -> List[Dict]:
     story, _ = _get_story_data()
     if not story:

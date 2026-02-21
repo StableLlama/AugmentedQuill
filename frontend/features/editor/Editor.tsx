@@ -58,8 +58,25 @@ interface EditorProps {
   onContextChange?: (formats: string[]) => void;
 }
 
+interface PlainTextEditableProps extends React.HTMLAttributes<HTMLDivElement> {
+  value: string;
+  onChange: (value: string) => void;
+  showWhitespace?: boolean;
+}
+
+interface TurndownServiceLike {
+  turndown: (html: string) => string;
+}
+
+export interface EditorHandle {
+  insertImage: (filename: string, url: string, altText?: string) => void;
+  focus: () => void;
+  format: (type: string) => void;
+  openImageManager?: () => void;
+}
+
 // Internal component for auto-growing plain text editing
-const PlainTextEditable = React.forwardRef<HTMLDivElement, any>(
+const PlainTextEditable = React.forwardRef<HTMLDivElement, PlainTextEditableProps>(
   (
     {
       value,
@@ -131,7 +148,7 @@ const PlainTextEditable = React.forwardRef<HTMLDivElement, any>(
   }
 );
 
-export const Editor = React.forwardRef<any, EditorProps>(
+export const Editor = React.forwardRef<EditorHandle, EditorProps>(
   (
     {
       chapter,
@@ -212,7 +229,7 @@ export const Editor = React.forwardRef<any, EditorProps>(
       }
     };
 
-    const turndownService = useRef<any>(null);
+    const turndownService = useRef<TurndownServiceLike | null>(null);
     if (!turndownService.current) {
       turndownService.current = new TurndownService({
         headingStyle: 'atx',
@@ -377,11 +394,8 @@ export const Editor = React.forwardRef<any, EditorProps>(
       const onKeyDown = (e: KeyboardEvent) => {
         maybeHandleSuggestionHotkey(e);
       };
-      window.addEventListener('keydown', onKeyDown, { capture: true });
-      return () =>
-        window.removeEventListener('keydown', onKeyDown, {
-          capture: true,
-        } as any);
+      window.addEventListener('keydown', onKeyDown, true);
+      return () => window.removeEventListener('keydown', onKeyDown, true);
     }, [maybeHandleSuggestionHotkey]);
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {

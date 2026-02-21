@@ -23,6 +23,7 @@ import {
   DEFAULT_LLM_CONFIG,
 } from '../../types';
 import { api } from '../../services/api';
+import { MachineModelConfig } from '../../services/apiTypes';
 import { Button } from '../../components/ui/Button';
 import { SettingsProjects } from './settings/SettingsProjects';
 import { SettingsMachine } from './settings/SettingsMachine';
@@ -114,12 +115,12 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
           const selectedName = (openai?.selected || '') as string;
 
           const providers: LLMConfig[] = models
-            .filter((m: any) => m && typeof m === 'object')
-            .map((m: any) => {
+            .filter((m): m is MachineModelConfig => Boolean(m && typeof m === 'object'))
+            .map((m) => {
               const name = String(m.name || '').trim() || 'Unnamed';
               const timeoutS = Number(m.timeout_s ?? 60);
               return {
-                ...DEFAULT_CONFIG,
+                ...DEFAULT_LLM_CONFIG,
                 id: name,
                 name,
                 baseUrl: String(m.base_url || '').trim(),
@@ -130,7 +131,10 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                 modelId: String(m.model || '').trim(),
                 isMultimodal: m.is_multimodal,
                 supportsFunctionCalling: m.supports_function_calling,
-                prompts: m.prompt_overrides || {},
+                prompts: {
+                  ...DEFAULT_LLM_CONFIG.prompts,
+                  ...(m.prompt_overrides || {}),
+                },
               };
             });
 
@@ -157,10 +161,11 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
             };
 
             setLocalSettings((prev) => {
-              const newChatId = getValidId(
-                prev.activeChatProviderId,
-                (openai as any).selected_chat
-              );
+              const selectedChat = openai.selected_chat;
+              const selectedWriting = openai.selected_writing;
+              const selectedEditing = openai.selected_editing;
+
+              const newChatId = getValidId(prev.activeChatProviderId, selectedChat);
               // Update editing provider to match chat if untracked, or keep if valid
               setEditingProviderId((currEdit) => {
                 if (currEdit && providers.some((p) => p.id === currEdit))
@@ -174,11 +179,11 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                 activeChatProviderId: newChatId,
                 activeWritingProviderId: getValidId(
                   prev.activeWritingProviderId,
-                  (openai as any).selected_writing
+                  selectedWriting
                 ),
                 activeEditingProviderId: getValidId(
                   prev.activeEditingProviderId,
-                  (openai as any).selected_editing
+                  selectedEditing
                 ),
               };
             });
@@ -383,9 +388,9 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
       await api.machine.save(machinePayload);
       onSaveSettings(localSettings);
       onClose();
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('Failed to save machine settings', e);
-      setSaveError(String(e?.message || e || 'Failed to save'));
+      setSaveError(e instanceof Error ? e.message : 'Failed to save');
     } finally {
       setSaveLoading(false);
     }

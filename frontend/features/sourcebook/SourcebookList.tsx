@@ -23,7 +23,8 @@ import {
 import { Button } from '../../components/ui/Button';
 import { SourcebookEntryDialog } from './SourcebookEntryDialog';
 import { api } from '../../services/api';
-import { AppTheme } from '../../types';
+import { AppTheme, SourcebookEntry } from '../../types';
+import { ProjectImage, SourcebookUpsertPayload } from '../../services/apiTypes';
 
 const CATEGORY_DETAILS: Record<string, { icon: React.ElementType }> = {
   Character: { icon: User },
@@ -40,13 +41,13 @@ interface SourcebookListProps {
 }
 
 export const SourcebookList: React.FC<SourcebookListProps> = ({ theme = 'mixed' }) => {
-  const [entries, setEntries] = useState<any[]>([]);
+  const [entries, setEntries] = useState<SourcebookEntry[]>([]);
   const [search, setSearch] = useState('');
-  const [selectedEntry, setSelectedEntry] = useState<any>(null);
+  const [selectedEntry, setSelectedEntry] = useState<SourcebookEntry | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
   // Tooltip state
-  const [hoveredEntry, setHoveredEntry] = useState<any>(null);
+  const [hoveredEntry, setHoveredEntry] = useState<SourcebookEntry | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
 
   const isLight = theme === 'light';
@@ -66,12 +67,12 @@ export const SourcebookList: React.FC<SourcebookListProps> = ({ theme = 'mixed' 
     return () => clearInterval(interval);
   }, []);
 
-  const handleCreate = async (entry: any) => {
+  const handleCreate = async (entry: SourcebookUpsertPayload) => {
     await api.sourcebook.create(entry);
     loadEntries();
   };
 
-  const handleUpdate = async (entry: any) => {
+  const handleUpdate = async (entry: SourcebookUpsertPayload) => {
     await api.sourcebook.update(entry.id, entry);
     loadEntries();
   };
@@ -81,7 +82,7 @@ export const SourcebookList: React.FC<SourcebookListProps> = ({ theme = 'mixed' 
     loadEntries();
   };
 
-  const handleMouseEnter = (e: React.MouseEvent, entry: any) => {
+  const handleMouseEnter = (e: React.MouseEvent, entry: SourcebookEntry) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const x = rect.right + 10;
     // Ensure it doesn't go off bottom
@@ -110,7 +111,7 @@ export const SourcebookList: React.FC<SourcebookListProps> = ({ theme = 'mixed' 
   const inputPlace = 'placeholder-brand-gray-500';
 
   // Resolve available images for tooltip
-  const [availableImages, setAvailableImages] = useState<any[]>([]);
+  const [availableImages, setAvailableImages] = useState<ProjectImage[]>([]);
   useEffect(() => {
     if (hoveredEntry && hoveredEntry.images?.length > 0) {
       api.projects.listImages().then((data) => {
@@ -119,11 +120,11 @@ export const SourcebookList: React.FC<SourcebookListProps> = ({ theme = 'mixed' 
     }
   }, [hoveredEntry]);
 
-  const getEntryImage = (entry: any) => {
+  const getEntryImage = (entry: SourcebookEntry) => {
     if (!entry.images || entry.images.length === 0) return null;
     // Get first image
     const firstImgName = entry.images[0];
-    const imgData = availableImages.find((i: any) => i.filename === firstImgName);
+    const imgData = availableImages.find((image) => image.filename === firstImgName);
     return imgData;
   };
 

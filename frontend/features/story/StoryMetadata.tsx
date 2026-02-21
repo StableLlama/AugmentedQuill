@@ -12,7 +12,7 @@ import {
   MarkdownView,
   hasUnsupportedSummaryMarkdown,
   SummaryWarning,
-} from './MarkdownView';
+} from '../editor/MarkdownView';
 import { AppTheme, Story, Conflict } from '../../types';
 import { MetadataEditorDialog } from './MetadataEditorDialog';
 import { api } from '../../services/api';
@@ -53,7 +53,13 @@ export const StoryMetadata: React.FC<StoryMetadataProps> = ({
     ? 'bg-brand-gray-50 text-brand-gray-600 border-brand-gray-200'
     : 'bg-brand-gray-800 text-brand-gray-400 border-brand-gray-700';
 
-  const handleMetadataSave = async (data: any) => {
+  const handleMetadataSave = async (data: {
+    title: string;
+    summary: string;
+    tags: string[];
+    notes?: string;
+    private_notes?: string;
+  }) => {
     try {
       await api.story.updateMetadata({
         title: data.title,

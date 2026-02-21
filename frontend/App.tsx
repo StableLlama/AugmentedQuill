@@ -10,7 +10,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { useStory } from './features/story/useStory';
 import { StoryMetadata } from './features/story/StoryMetadata';
 import { ChapterList } from './features/chapters/ChapterList';
-import { Editor } from './features/editor/Editor';
+import { Editor, EditorHandle } from './features/editor/Editor';
 import { Chat } from './features/chat/Chat';
 import { ProjectImages } from './features/projects/ProjectImages';
 import { SourcebookList } from './features/sourcebook/SourcebookList';
@@ -74,6 +74,8 @@ import {
   Palette,
 } from 'lucide-react';
 import { api } from './services/api';
+import { MachineModelConfig, ProjectListItem } from './services/apiTypes';
+import { mapSelectStoryToState } from './features/story/storyMappers';
 
 // Default Settings
 const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -94,6 +96,9 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
 };
 
 const App: React.FC = () => {
+  const getErrorMessage = (error: unknown, fallback: string) =>
+    error instanceof Error ? error.message : fallback;
+
   const {
     story,
     currentChapterId,
@@ -113,7 +118,7 @@ const App: React.FC = () => {
   } = useStory();
 
   const currentChapter = story.chapters.find((c) => c.id === currentChapterId);
-  const editorRef = useRef<any>(null);
+  const editorRef = useRef<EditorHandle | null>(null);
   const appearanceRef = useRef<HTMLDivElement>(null);
 
   // App State
@@ -231,7 +236,7 @@ const App: React.FC = () => {
         const models = Array.isArray(openai?.models) ? openai.models : [];
 
         if (models.length > 0) {
-          const providers: LLMConfig[] = models.map((m: any) => {
+          const providers: LLMConfig[] = (models as MachineModelConfig[]).map((m) => {
             const name = String(m.name || '').trim();
             const timeoutS = Number(m.timeout_s ?? 60);
             return {
@@ -244,7 +249,10 @@ const App: React.FC = () => {
               modelId: String(m.model || '').trim(),
               isMultimodal: m.is_multimodal,
               supportsFunctionCalling: m.supports_function_calling,
-              prompts: m.prompt_overrides || {},
+              prompts: {
+                ...DEFAULT_LLM_CONFIG.prompts,
+                ...(m.prompt_overrides || {}),
+              },
             };
           });
 
@@ -379,7 +387,7 @@ const App: React.FC = () => {
       const data = await api.projects.list();
       if (data.available) {
         setProjects(
-          data.available.map((p: any) => ({
+          data.available.map((p: ProjectListItem) => ({
             id: p.name,
             title: p.title || p.name,
             type: p.type || 'novel',
@@ -511,7 +519,7 @@ const App: React.FC = () => {
         const available = res.available;
         if (available) {
           setProjects(
-            available.map((p: any) => ({
+            available.map((p: ProjectListItem) => ({
               id: p.name,
               title: p.title || p.name,
               type: p.type || 'novel',
@@ -520,9 +528,9 @@ const App: React.FC = () => {
           );
         }
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error(e);
-      alert(`Import failed: ${e.message}`);
+      alert(`Import failed: ${getErrorMessage(e, 'Unknown error')}`);
     }
   };
 
@@ -530,7 +538,10 @@ const App: React.FC = () => {
     setIsCreateProjectOpen(true);
   };
 
-  const handleCreateProjectConfirm = async (name: string, type: string) => {
+  const handleCreateProjectConfirm = async (
+    name: string,
+    type: 'short-story' | 'novel' | 'series'
+  ) => {
     try {
       const result = await api.projects.create(name, type);
       if (result.ok) {
@@ -538,7 +549,7 @@ const App: React.FC = () => {
         const data = await api.projects.list();
         if (data.projects) {
           setProjects(
-            data.projects.map((p: any) => ({
+            data.projects.map((p: ProjectListItem) => ({
               id: p.name, // Use folder name as ID if ID not in metadata?
               // Wait, backend list_projects returns {name:..., path:..., title:...}
               // Previously App used story.id. Backend story.json doesn't strictly enforce ID but frontend uses uuid.
@@ -549,22 +560,23 @@ const App: React.FC = () => {
           );
         }
         if (result.story) {
-          // Ensure story object has the correct ID (folder name) and matches StoryState structure
-          const mappedStory: StoryState = {
-            id: name, // Vital: Use the directory name as ID for subsequent API calls
-            title: result.story.project_title || name,
-            summary: result.story.story_summary || '',
-            projectType: result.story.project_type || 'novel',
-            styleTags: result.story.tags || [],
-            chapters: (result.story.chapters || []).map((c: any, i: number) => ({
+          const mappedStory: StoryState = mapSelectStoryToState(
+            name,
+            result.story,
+            (result.story.chapters || []).map((c, i) => ({
               id: String(i + 1),
               title: c.title || '',
               summary: c.summary || '',
               content: '',
+              filename: c.filename,
+              book_id: c.book_id,
+              notes: c.notes,
+              private_notes: c.private_notes,
+              conflicts: c.conflicts,
             })),
-            currentChapterId: null,
-            lastUpdated: Date.now(),
-          };
+            null,
+            []
+          );
 
           // For short-story projects (empty chapters in JSON), add the virtual chapter manually
           // so the UI doesn't look empty before fetchStory kicks in
@@ -580,7 +592,7 @@ const App: React.FC = () => {
             mappedStory.currentChapterId = '1';
           }
 
-          loadStory(mappedStory as any);
+          loadStory(mappedStory);
           handleNewChat(false);
         }
         setIsCreateProjectOpen(false);
@@ -604,9 +616,9 @@ const App: React.FC = () => {
       if (id === story.id) {
         handleLoadProject(newProjects[0].id);
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('Failed to delete project', e);
-      alert(`Failed to delete project: ${e.message}`);
+      alert(`Failed to delete project: ${getErrorMessage(e, 'Unknown error')}`);
     }
   };
 
@@ -764,7 +776,7 @@ const App: React.FC = () => {
 
   // Auto-save chat
   useEffect(() => {
-    let timeout: any;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
     if (currentChatId && chatMessages.length > 0 && !isChatLoading) {
       if (isIncognito) {
         // Update incognito in-memory
@@ -1008,16 +1020,19 @@ const App: React.FC = () => {
           return [...prev, botMessage];
         });
       }
-    } catch (error: any) {
-      if (stopSignalRef.current && error.name === 'AbortError') {
+    } catch (error: unknown) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
         // Ignored
       } else {
-        let errorText = `AI Error: ${error.message || 'An unexpected error occurred'}`;
-        if (error.data) {
+        const message =
+          error instanceof Error ? error.message : 'An unexpected error occurred';
+        let errorText = `AI Error: ${message}`;
+        const detailedError = error as { data?: unknown; traceback?: string };
+        if (detailedError.data) {
           const detail =
-            typeof error.data === 'string'
-              ? error.data
-              : JSON.stringify(error.data, null, 2);
+            typeof detailedError.data === 'string'
+              ? detailedError.data
+              : JSON.stringify(detailedError.data, null, 2);
           errorText += `\n\n**Details:**\n${detail}`;
         }
 
@@ -1026,7 +1041,7 @@ const App: React.FC = () => {
           role: 'model',
           text: errorText,
           isError: true,
-          traceback: error.traceback,
+          traceback: detailedError.traceback,
         };
         setChatMessages((prev) => [...prev, errorMessage]);
       }
@@ -1118,11 +1133,11 @@ const App: React.FC = () => {
         currentChapter.id
       );
       setContinuations(options);
-    } catch (e: any) {
+    } catch (e: unknown) {
       const errorMessage: ChatMessage = {
         id: uuidv4(),
         role: 'model',
-        text: `Suggestion Error: ${e.message || 'Failed to generate suggestions'}`,
+        text: `Suggestion Error: ${getErrorMessage(e, 'Failed to generate suggestions')}`,
         isError: true,
       };
       setChatMessages((prev) => [...prev, errorMessage]);
@@ -1342,11 +1357,11 @@ const App: React.FC = () => {
           updateChapter(currentChapter.id, { content: result });
         }
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       const errorMessage: ChatMessage = {
         id: uuidv4(),
         role: 'model',
-        text: `AI Action Error: ${e.message || 'Failed to perform AI action'}`,
+        text: `AI Action Error: ${getErrorMessage(e, 'Failed to perform AI action')}`,
         isError: true,
       };
       setChatMessages((prev) => [...prev, errorMessage]);
@@ -1429,9 +1444,9 @@ const App: React.FC = () => {
       });
 
       return cleanText(result);
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error(e);
-      alert(`AI Action Failed: ${e.message}`);
+      alert(`AI Action Failed: ${getErrorMessage(e, 'Unknown error')}`);
     } finally {
       setIsAiActionLoading(false);
     }
@@ -1493,8 +1508,8 @@ const App: React.FC = () => {
     try {
       await api.projects.convert(newType);
       await refreshStory();
-    } catch (e: any) {
-      alert(`Failed to convert project: ${e.message}`);
+    } catch (e: unknown) {
+      alert(`Failed to convert project: ${getErrorMessage(e, 'Unknown error')}`);
     }
   };
 
@@ -1502,9 +1517,9 @@ const App: React.FC = () => {
     try {
       await api.books.create(title);
       await refreshStory();
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error(e);
-      alert(`Failed to create book: ${e.message}`);
+      alert(`Failed to create book: ${getErrorMessage(e, 'Unknown error')}`);
     }
   };
 
@@ -1512,9 +1527,9 @@ const App: React.FC = () => {
     try {
       await api.books.delete(id);
       await refreshStory();
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error(e);
-      alert(`Failed to delete book: ${e.message}`);
+      alert(`Failed to delete book: ${getErrorMessage(e, 'Unknown error')}`);
     }
   };
 
@@ -1522,9 +1537,9 @@ const App: React.FC = () => {
     try {
       await api.chapters.reorder(chapterIds, bookId);
       await refreshStory();
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error(e);
-      alert(`Failed to reorder chapters: ${e.message}`);
+      alert(`Failed to reorder chapters: ${getErrorMessage(e, 'Unknown error')}`);
     }
   };
 
@@ -1532,9 +1547,9 @@ const App: React.FC = () => {
     try {
       await api.books.reorder(bookIds);
       await refreshStory();
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error(e);
-      alert(`Failed to reorder books: ${e.message}`);
+      alert(`Failed to reorder books: ${getErrorMessage(e, 'Unknown error')}`);
     }
   };
 

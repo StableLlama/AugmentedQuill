@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { AppTheme } from '../../types';
 import { api } from '../../services/api';
+import { DebugLogEntry } from '../../services/apiTypes';
 
 interface DebugLogsProps {
   isOpen: boolean;
@@ -25,29 +26,10 @@ interface DebugLogsProps {
   theme: AppTheme;
 }
 
-interface LogEntry {
-  id: string;
-  model_type?: string;
-  timestamp_start: string;
-  timestamp_end: string | null;
-  request: {
-    url: string;
-    method: string;
-    headers: Record<string, string>;
-    body: any;
-  };
-  response: {
-    status_code: number | null;
-    body?: any;
-    streaming?: boolean;
-    chunks?: any[];
-    full_content?: string;
-    error?: any;
-  } | null;
-}
+type LogEntry = DebugLogEntry;
 
 const JsonView: React.FC<{
-  data: any;
+  data: unknown;
   theme: AppTheme;
   depth?: number;
   label?: string;
@@ -84,7 +66,7 @@ const JsonView: React.FC<{
   }
 
   const isArray = Array.isArray(data);
-  const keys = Object.keys(data);
+  const keys = Object.keys(data as Record<string, unknown>);
 
   if (keys.length === 0) return <span>{isArray ? '[]' : '{}'}</span>;
 
@@ -105,7 +87,7 @@ const JsonView: React.FC<{
           {keys.map((key) => (
             <div key={key} className="flex flex-col">
               <JsonView
-                data={data[key]}
+                data={(data as Record<string, unknown>)[key]}
                 theme={theme}
                 depth={depth + 1}
                 label={isArray ? undefined : key}
@@ -393,12 +375,12 @@ export const DebugLogs: React.FC<DebugLogsProps> = ({ isOpen, onClose, theme }) 
                                 {log.response.full_content}
                               </div>
                             </div>
-                            {(log.response as any).tool_calls && (
+                            {log.response.tool_calls && (
                               <div className="space-y-1">
                                 <span className="text-blue-400">tool_calls:</span>
                                 <div className="mt-1">
                                   <JsonView
-                                    data={(log.response as any).tool_calls}
+                                    data={log.response.tool_calls}
                                     theme={theme}
                                   />
                                 </div>

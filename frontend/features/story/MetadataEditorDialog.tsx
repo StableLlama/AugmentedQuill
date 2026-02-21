@@ -30,7 +30,7 @@ interface MetadataParams {
   tags?: string[];
   notes?: string;
   private_notes?: string;
-  conflicts?: Conflict[];
+  conflicts?: Array<Conflict | string>;
 }
 
 interface Props {
@@ -67,24 +67,26 @@ export function MetadataEditorDialog({
   const onSaveRef = useRef(onSave);
   const isFirstRun = useRef(true);
 
+  const normalizeConflict = (value: string | Conflict): Conflict => {
+    if (typeof value === 'string') {
+      return { id: crypto.randomUUID(), description: value, resolution: 'TBD' };
+    }
+    return {
+      id: value.id || crypto.randomUUID(),
+      description: value.description || '',
+      resolution: value.resolution || 'TBD',
+    };
+  };
+
   // For Conflicts - normalize to object format if they are strings
   const [conflicts, setConflicts] = useState<Conflict[]>(
-    (initialData.conflicts || []).map((c: any) => {
-      if (typeof c === 'string') {
-        return { id: crypto.randomUUID(), description: c, resolution: '' };
-      }
-      return {
-        id: c.id || crypto.randomUUID(),
-        description: c.description || '',
-        resolution: c.resolution || '',
-      };
-    })
+    (initialData.conflicts || []).map((c) => normalizeConflict(c))
   );
 
   // Sync with prop changes (e.g. AI updates in background)
   useEffect(() => {
     // Determine if conflicts actually changed (ignoring IDs if they are newly generated)
-    const normalizedPropConflicts = (initialData.conflicts || []).map((c: any) =>
+    const normalizedPropConflicts = (initialData.conflicts || []).map((c) =>
       typeof c === 'string'
         ? { description: c, resolution: 'TBD' }
         : { description: c.description || '', resolution: c.resolution || 'TBD' }
@@ -99,18 +101,7 @@ export function MetadataEditorDialog({
       JSON.stringify(normalizedLocalConflicts);
 
     if (hasConflictsChanged && saveStatus !== 'saving') {
-      setConflicts(
-        initialData.conflicts!.map((c: any) => {
-          if (typeof c === 'string') {
-            return { id: crypto.randomUUID(), description: c, resolution: 'TBD' };
-          }
-          return {
-            id: c.id || crypto.randomUUID(),
-            description: c.description || '',
-            resolution: c.resolution || 'TBD',
-          };
-        })
-      );
+      setConflicts((initialData.conflicts || []).map((c) => normalizeConflict(c)));
     }
 
     // Sync other fields if they changed in prop but are empty locally,

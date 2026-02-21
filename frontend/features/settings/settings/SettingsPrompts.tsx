@@ -78,7 +78,7 @@ export const SettingsPrompts: React.FC<SettingsPromptsProps> = ({
                       ? 'dark:bg-violet-900/20'
                       : 'dark:bg-fuchsia-900/20';
 
-                const promptValue = (activeProvider.prompts as any)?.[prompt.id] || '';
+                const promptValue = activeProvider.prompts?.[prompt.id] || '';
 
                 return (
                   <div key={prompt.id} className="space-y-1">

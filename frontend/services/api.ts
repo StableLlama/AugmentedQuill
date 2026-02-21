@@ -5,7 +5,20 @@
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 
-import { Chapter, ProjectMetadata, StoryState } from '../types';
+import { ChatSession, Conflict, SourcebookEntry } from '../types';
+import {
+  MachineConfigResponse,
+  ProjectsListResponse,
+  ProjectSelectResponse,
+  ProjectMutationResponse,
+  ChapterListResponse,
+  ChapterDetailResponse,
+  ChatApiMessage,
+  ChatToolExecutionResponse,
+  ListImagesResponse,
+  DebugLogEntry,
+  SourcebookUpsertPayload,
+} from './apiTypes';
 
 const API_BASE = '/api';
 
@@ -14,16 +27,16 @@ export const api = {
     get: async () => {
       const res = await fetch(`${API_BASE}/machine`);
       if (!res.ok) throw new Error('Failed to load machine config');
-      return res.json();
+      return res.json() as Promise<MachineConfigResponse>;
     },
-    save: async (machine: any) => {
+    save: async (machine: MachineConfigResponse) => {
       const res = await fetch(`${API_BASE}/machine`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(machine),
       });
       if (!res.ok) throw new Error('Failed to save machine config');
-      return res.json();
+      return res.json() as Promise<{ ok: boolean; detail?: string }>;
     },
     test: async (payload: {
       base_url: string;
@@ -70,7 +83,7 @@ export const api = {
     list: async () => {
       const res = await fetch(`${API_BASE}/projects`);
       if (!res.ok) throw new Error('Failed to list projects');
-      return res.json();
+      return res.json() as Promise<ProjectsListResponse>;
     },
     select: async (name: string) => {
       const res = await fetch(`${API_BASE}/projects/select`, {
@@ -79,16 +92,16 @@ export const api = {
         body: JSON.stringify({ name }),
       });
       if (!res.ok) throw new Error('Failed to select project');
-      return res.json();
+      return res.json() as Promise<ProjectSelectResponse>;
     },
-    create: async (name: string, type: string) => {
+    create: async (name: string, type: 'short-story' | 'novel' | 'series') => {
       const res = await fetch(`${API_BASE}/projects/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, type }),
       });
       if (!res.ok) throw new Error('Failed to create project');
-      return res.json();
+      return res.json() as Promise<ProjectMutationResponse>;
     },
     convert: async (new_type: string) => {
       const res = await fetch(`${API_BASE}/projects/convert`, {
@@ -97,10 +110,10 @@ export const api = {
         body: JSON.stringify({ new_type }),
       });
       if (!res.ok) {
-        const body = await res.json();
+        const body = (await res.json()) as { detail?: string };
         throw new Error(body.detail || 'Failed to convert project');
       }
-      return res.json();
+      return res.json() as Promise<ProjectMutationResponse>;
     },
     delete: async (name: string) => {
       const res = await fetch(`${API_BASE}/projects/delete`, {
@@ -109,7 +122,7 @@ export const api = {
         body: JSON.stringify({ name }),
       });
       if (!res.ok) throw new Error('Failed to delete project');
-      return res.json();
+      return res.json() as Promise<ProjectMutationResponse>;
     },
     export: async (name?: string) => {
       const url = name
@@ -123,7 +136,7 @@ export const api = {
       const res = await fetch(`${API_BASE}/settings/update_story_config`, {
         method: 'POST',
       });
-      const data = await res.json();
+      const data = (await res.json()) as { ok?: boolean; detail?: string };
       if (!res.ok) throw new Error(data.detail || 'Failed to update story config');
       return data;
     },
@@ -136,13 +149,14 @@ export const api = {
       });
       if (!res.ok) {
         try {
-          const err = await res.json();
+          const err = (await res.json()) as { detail?: string };
           throw new Error(err.detail || 'Failed to import project');
-        } catch (e: any) {
-          throw new Error(e.message || 'Failed to import project');
+        } catch (e: unknown) {
+          const message = e instanceof Error ? e.message : 'Failed to import project';
+          throw new Error(message);
         }
       }
-      return res.json();
+      return res.json() as Promise<ProjectMutationResponse>;
     },
     uploadImage: async (file: File, targetName?: string) => {
       const formData = new FormData();
@@ -156,7 +170,7 @@ export const api = {
         body: formData,
       });
       if (!res.ok) throw new Error('Failed to upload image');
-      return res.json();
+      return res.json() as Promise<{ ok: boolean; filename: string; url: string }>;
     },
     updateImage: async (filename: string, description?: string, title?: string) => {
       const res = await fetch(`${API_BASE}/projects/images/update_description`, {
@@ -165,7 +179,7 @@ export const api = {
         body: JSON.stringify({ filename, description, title }),
       });
       if (!res.ok) throw new Error('Failed to update image metadata');
-      return res.json();
+      return res.json() as Promise<{ ok: boolean }>;
     },
     createImagePlaceholder: async (description: string, title?: string) => {
       const res = await fetch(`${API_BASE}/projects/images/create_placeholder`, {
@@ -174,12 +188,12 @@ export const api = {
         body: JSON.stringify({ description, title }),
       });
       if (!res.ok) throw new Error('Failed to create placeholder');
-      return res.json();
+      return res.json() as Promise<{ ok: boolean; filename: string }>;
     },
     listImages: async () => {
       const res = await fetch(`${API_BASE}/projects/images/list`);
       if (!res.ok) throw new Error('Failed to list images');
-      return res.json();
+      return res.json() as Promise<ListImagesResponse>;
     },
     deleteImage: async (filename: string) => {
       const res = await fetch(`${API_BASE}/projects/images/delete`, {
@@ -188,31 +202,27 @@ export const api = {
         body: JSON.stringify({ filename }),
       });
       if (!res.ok) throw new Error('Failed to delete image');
-      return res.json();
+      return res.json() as Promise<{ ok: boolean }>;
     },
   },
   books: {
     create: async (title: string) => {
-      // Create via Chat Tool or dedicated endpoint?
-      // Since I didn't add a dedicated REST endpoint in api/projects.py, I should add one OR use the chat tool.
-      // But using Chat Tool from GUI is weird.
-      // Let's assume I WILL add the endpoint in api/projects.py now because it's cleaner.
       const res = await fetch(`${API_BASE}/books/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title }),
+        body: JSON.stringify({ name: title }),
       });
       if (!res.ok) throw new Error('Failed to create book');
-      return res.json();
+      return res.json() as Promise<{ ok: boolean; book_id?: string; story?: unknown }>;
     },
     delete: async (id: string) => {
       const res = await fetch(`${API_BASE}/books/delete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ book_id: id }),
+        body: JSON.stringify({ name: id }),
       });
       if (!res.ok) throw new Error('Failed to delete book');
-      return res.json();
+      return res.json() as Promise<{ ok: boolean; story?: unknown }>;
     },
     uploadImage: async (file: File) => {
       const formData = new FormData();
@@ -222,12 +232,12 @@ export const api = {
         body: formData,
       });
       if (!res.ok) throw new Error('Failed to upload image');
-      return res.json();
+      return res.json() as Promise<{ ok: boolean; filename: string; url: string }>;
     },
     listImages: async () => {
       const res = await fetch(`${API_BASE}/projects/images/list`);
       if (!res.ok) throw new Error('Failed to list images');
-      return res.json();
+      return res.json() as Promise<ListImagesResponse>;
     },
     deleteImage: async (filename: string) => {
       const res = await fetch(`${API_BASE}/projects/images/delete`, {
@@ -236,7 +246,7 @@ export const api = {
         body: JSON.stringify({ filename }),
       });
       if (!res.ok) throw new Error('Failed to delete image');
-      return res.json();
+      return res.json() as Promise<{ ok: boolean }>;
     },
     reorder: async (bookIds: string[]) => {
       const res = await fetch(`${API_BASE}/books/reorder`, {
@@ -245,7 +255,7 @@ export const api = {
         body: JSON.stringify({ book_ids: bookIds }),
       });
       if (!res.ok) throw new Error('Failed to reorder books');
-      return res.json();
+      return res.json() as Promise<{ ok: boolean }>;
     },
     updateBookMetadata: async (
       bookId: string,
@@ -262,19 +272,19 @@ export const api = {
         body: JSON.stringify(data),
       });
       if (!res.ok) throw new Error('Failed to update book metadata');
-      return res.json();
+      return res.json() as Promise<{ ok: boolean; detail?: string }>;
     },
   },
   chapters: {
     list: async () => {
       const res = await fetch(`${API_BASE}/chapters`);
       if (!res.ok) throw new Error('Failed to list chapters');
-      return res.json();
+      return res.json() as Promise<ChapterListResponse>;
     },
     get: async (id: number) => {
       const res = await fetch(`${API_BASE}/chapters/${id}`);
       if (!res.ok) throw new Error('Failed to get chapter');
-      return res.json();
+      return res.json() as Promise<ChapterDetailResponse>;
     },
     create: async (title: string, content: string = '', book_id?: string) => {
       const res = await fetch(`${API_BASE}/chapters`, {
@@ -283,7 +293,12 @@ export const api = {
         body: JSON.stringify({ title, content, book_id }),
       });
       if (!res.ok) throw new Error('Failed to create chapter');
-      return res.json();
+      return res.json() as Promise<{
+        ok: boolean;
+        id: number;
+        title: string;
+        book_id?: string;
+      }>;
     },
     updateContent: async (id: number, content: string) => {
       const res = await fetch(`${API_BASE}/chapters/${id}/content`, {
@@ -292,7 +307,7 @@ export const api = {
         body: JSON.stringify({ content }),
       });
       if (!res.ok) throw new Error('Failed to update chapter content');
-      return res.json();
+      return res.json() as Promise<{ ok: boolean }>;
     },
     updateTitle: async (id: number, title: string) => {
       const res = await fetch(`${API_BASE}/chapters/${id}/title`, {
@@ -301,7 +316,7 @@ export const api = {
         body: JSON.stringify({ title }),
       });
       if (!res.ok) throw new Error('Failed to update chapter title');
-      return res.json();
+      return res.json() as Promise<{ ok: boolean }>;
     },
     updateSummary: async (id: number, summary: string) => {
       const res = await fetch(`${API_BASE}/chapters/${id}/summary`, {
@@ -310,7 +325,7 @@ export const api = {
         body: JSON.stringify({ summary }),
       });
       if (!res.ok) throw new Error('Failed to update chapter summary');
-      return res.json();
+      return res.json() as Promise<{ ok: boolean }>;
     },
     updateMetadata: async (
       id: number,
@@ -318,7 +333,7 @@ export const api = {
         summary?: string;
         notes?: string;
         private_notes?: string;
-        conflicts?: any[];
+        conflicts?: Conflict[];
       }
     ) => {
       const res = await fetch(`${API_BASE}/chapters/${id}/metadata`, {
@@ -327,14 +342,14 @@ export const api = {
         body: JSON.stringify(data),
       });
       if (!res.ok) throw new Error('Failed to update chapter metadata');
-      return res.json();
+      return res.json() as Promise<{ ok: boolean; id?: number; message?: string }>;
     },
     delete: async (id: number) => {
       const res = await fetch(`${API_BASE}/chapters/${id}`, {
         method: 'DELETE',
       });
       if (!res.ok) throw new Error('Failed to delete chapter');
-      return res.json();
+      return res.json() as Promise<{ ok: boolean }>;
     },
     reorder: async (chapterIds: number[], bookId?: string) => {
       const res = await fetch(`${API_BASE}/chapters/reorder`, {
@@ -347,7 +362,7 @@ export const api = {
         ),
       });
       if (!res.ok) throw new Error('Failed to reorder chapters');
-      return res.json();
+      return res.json() as Promise<{ ok: boolean }>;
     },
   },
   story: {
@@ -358,7 +373,7 @@ export const api = {
         body: JSON.stringify({ title }),
       });
       if (!res.ok) throw new Error('Failed to update story title');
-      return res.json();
+      return res.json() as Promise<{ ok: boolean; detail?: string }>;
     },
     updateSummary: async (summary: string) => {
       const res = await fetch(`${API_BASE}/story/summary`, {
@@ -367,7 +382,7 @@ export const api = {
         body: JSON.stringify({ summary }),
       });
       if (!res.ok) throw new Error('Failed to update story summary');
-      return res.json();
+      return res.json() as Promise<{ ok: boolean; summary?: string }>;
     },
     updateTags: async (tags: string[]) => {
       const res = await fetch(`${API_BASE}/story/tags`, {
@@ -376,7 +391,7 @@ export const api = {
         body: JSON.stringify({ tags }),
       });
       if (!res.ok) throw new Error('Failed to update story tags');
-      return res.json();
+      return res.json() as Promise<{ ok: boolean }>;
     },
     updateSettings: async (settings: {
       image_style?: string;
@@ -388,7 +403,7 @@ export const api = {
         body: JSON.stringify(settings),
       });
       if (!res.ok) throw new Error('Failed to update story settings');
-      return res.json();
+      return res.json() as Promise<{ ok: boolean; story?: unknown }>;
     },
     updateMetadata: async (data: {
       title?: string;
@@ -403,7 +418,7 @@ export const api = {
         body: JSON.stringify(data),
       });
       if (!res.ok) throw new Error('Failed to update story metadata');
-      return res.json();
+      return res.json() as Promise<{ ok: boolean; detail?: string }>;
     },
   },
   settings: {
@@ -424,38 +439,46 @@ export const api = {
     list: async () => {
       const res = await fetch(`${API_BASE}/chats`);
       if (!res.ok) throw new Error('Failed to list chats');
-      return res.json();
+      return res.json() as Promise<ChatSession[]>;
     },
     load: async (id: string) => {
       const res = await fetch(`${API_BASE}/chats/${id}`);
       if (!res.ok) throw new Error('Failed to load chat');
-      return res.json();
+      return res.json() as Promise<ChatSession>;
     },
-    save: async (id: string, data: any) => {
+    save: async (
+      id: string,
+      data: {
+        name: string;
+        messages: unknown[];
+        systemPrompt: string;
+        allowWebSearch?: boolean;
+      }
+    ) => {
       const res = await fetch(`${API_BASE}/chats/${id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
       if (!res.ok) throw new Error('Failed to save chat');
-      return res.json();
+      return res.json() as Promise<{ ok: boolean }>;
     },
     delete: async (id: string) => {
       const res = await fetch(`${API_BASE}/chats/${id}`, {
         method: 'DELETE',
       });
       if (!res.ok) throw new Error('Failed to delete chat');
-      return res.json();
+      return res.json() as Promise<{ ok: boolean }>;
     },
     deleteAll: async () => {
       const res = await fetch(`${API_BASE}/chats`, {
         method: 'DELETE',
       });
       if (!res.ok) throw new Error('Failed to delete all chats');
-      return res.json();
+      return res.json() as Promise<{ ok: boolean }>;
     },
     executeTools: async (payload: {
-      messages: any[];
+      messages: ChatApiMessage[];
       active_chapter_id?: number;
       model_name?: string;
     }) => {
@@ -465,53 +488,53 @@ export const api = {
         body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error('Failed to execute chat tools');
-      return res.json();
+      return res.json() as Promise<ChatToolExecutionResponse>;
     },
   },
   sourcebook: {
     list: async () => {
       const res = await fetch(`${API_BASE}/sourcebook`);
       if (!res.ok) throw new Error('Failed to load sourcebook');
-      return res.json();
+      return res.json() as Promise<SourcebookEntry[]>;
     },
-    create: async (entry: any) => {
+    create: async (entry: SourcebookUpsertPayload) => {
       const res = await fetch(`${API_BASE}/sourcebook`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(entry),
       });
       if (!res.ok) throw new Error('Failed to create entry');
-      return res.json();
+      return res.json() as Promise<SourcebookEntry>;
     },
-    update: async (id: string, updates: any) => {
+    update: async (id: string, updates: Partial<SourcebookUpsertPayload>) => {
       const res = await fetch(`${API_BASE}/sourcebook/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates),
       });
       if (!res.ok) throw new Error('Failed to update entry');
-      return res.json();
+      return res.json() as Promise<SourcebookEntry>;
     },
     delete: async (id: string) => {
       const res = await fetch(`${API_BASE}/sourcebook/${id}`, {
         method: 'DELETE',
       });
       if (!res.ok) throw new Error('Failed to delete entry');
-      return res.json();
+      return res.json() as Promise<{ ok: boolean }>;
     },
   },
   debug: {
     getLogs: async () => {
       const res = await fetch(`${API_BASE}/debug/llm_logs`);
       if (!res.ok) throw new Error('Failed to fetch debug logs');
-      return res.json();
+      return res.json() as Promise<DebugLogEntry[]>;
     },
     clearLogs: async () => {
       const res = await fetch(`${API_BASE}/debug/llm_logs`, {
         method: 'DELETE',
       });
       if (!res.ok) throw new Error('Failed to clear debug logs');
-      return res.json();
+      return res.json() as Promise<{ status: string }>;
     },
   },
 };

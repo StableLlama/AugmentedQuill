@@ -7,14 +7,51 @@
 
 import { LLMConfig } from '../types';
 
+type ErrorData = string | Record<string, unknown> | unknown[];
+
+type UserMessageInput = string | { message: string };
+
+type ToolCallChunk = {
+  index?: number;
+  id?: string;
+  function?: {
+    name?: string;
+    arguments?: string;
+  };
+};
+
+type ParsedFunctionCall = {
+  id: string;
+  name: string;
+  args: Record<string, unknown>;
+};
+
+type HistoryMessage = {
+  role: 'user' | 'model' | 'assistant' | 'tool' | 'system';
+  text?: string;
+  parts?: Array<{ text?: string }>;
+  name?: string;
+  tool_call_id?: string;
+  tool_calls?: Array<{
+    id: string;
+    name: string;
+    args: string | Record<string, unknown>;
+  }>;
+};
+
+type ModelsResponse = {
+  data?: Array<{ id?: string }>;
+  models?: Array<string | { id?: string }>;
+};
+
 export class ChatError extends Error {
   traceback?: string;
   status?: number;
-  data?: any;
+  data?: ErrorData;
 
   constructor(
     message: string,
-    options?: { traceback?: string; status?: number; data?: any }
+    options?: { traceback?: string; status?: number; data?: ErrorData }
   ) {
     super(message);
     this.name = 'ChatError';
@@ -26,7 +63,7 @@ export class ChatError extends Error {
 
 export interface UnifiedChat {
   sendMessage(
-    message: string | { message: any },
+    message: UserMessageInput,
     onUpdate?: (update: {
       text?: string;
       thinking?: string;
@@ -35,7 +72,7 @@ export interface UnifiedChat {
   ): Promise<{
     text: string;
     thinking?: string;
-    functionCalls?: any[];
+    functionCalls?: ParsedFunctionCall[];
     traceback?: string;
   }>;
 }
@@ -71,18 +108,18 @@ export const getModels = async (config: LLMConfig): Promise<string[]> => {
     });
 
     if (!res.ok) return [];
-    const data = await res.json();
+    const data = (await res.json()) as ModelsResponse;
 
     // OpenAI returns { data: [{ id: 'gpt-4' }, ...] }
     if (Array.isArray(data?.data)) {
-      return data.data.map((m: any) => m.id).filter(Boolean);
+      return data.data.map((m) => m.id).filter((id): id is string => Boolean(id));
     }
 
     // Some compatible endpoints may return { models: [...] }
     if (Array.isArray(data?.models)) {
       return data.models
-        .map((m: any) => (typeof m === 'string' ? m : m.id))
-        .filter(Boolean);
+        .map((m) => (typeof m === 'string' ? m : m.id))
+        .filter((id): id is string => Boolean(id));
     }
 
     return [];
@@ -94,7 +131,7 @@ export const getModels = async (config: LLMConfig): Promise<string[]> => {
 
 async function readSSEStream(
   reader: ReadableStreamDefaultReader<Uint8Array>,
-  onToolCalls?: (toolCalls: any[]) => void,
+  onToolCalls?: (toolCalls: ToolCallChunk[]) => void,
   onThinking?: (thinking: string) => void,
   onContent?: (content: string) => void
 ): Promise<string> {
@@ -116,7 +153,16 @@ async function readSSEStream(
         const dataStr = trimmed.slice(6);
         if (dataStr === '[DONE]') continue;
         try {
-          const data = JSON.parse(dataStr);
+          const data = JSON.parse(dataStr) as {
+            error?: string;
+            message?: string;
+            traceback?: string;
+            status?: number;
+            data?: ErrorData;
+            content?: string;
+            thinking?: string;
+            tool_calls?: ToolCallChunk[];
+          };
           if (data.error) {
             let msg = data.message || data.error;
             throw new ChatError(msg, {
@@ -158,26 +204,36 @@ async function readSSEStream(
 
 export const createChatSession = (
   systemInstruction: string,
-  history: any[],
+  history: HistoryMessage[],
   config: LLMConfig,
   modelType: 'CHAT' | 'WRITING' | 'EDITING' = 'CHAT',
   options?: { allowWebSearch?: boolean }
 ): UnifiedChat => {
   return {
     sendMessage: async (msg, onUpdate) => {
-      const userMsgText = typeof msg === 'string' ? msg : (msg as any).message;
+      const userMsgText = typeof msg === 'string' ? msg : msg.message;
 
       const messages = [
         { role: 'system', content: systemInstruction },
         ...history.map((h) => {
-          const m: any = {
+          const m: {
+            role: string;
+            content: string;
+            name?: string;
+            tool_call_id?: string;
+            tool_calls?: Array<{
+              id: string;
+              type: 'function';
+              function: { name: string; arguments: string };
+            }>;
+          } = {
             role: h.role === 'model' ? 'assistant' : h.role,
             content: h.text || (h.parts && h.parts[0]?.text) || '',
           };
           if (h.name) m.name = h.name;
           if (h.tool_call_id) m.tool_call_id = h.tool_call_id;
           if (h.tool_calls) {
-            m.tool_calls = h.tool_calls.map((tc: any) => ({
+            m.tool_calls = h.tool_calls.map((tc) => ({
               id: tc.id,
               type: 'function',
               function: {
@@ -212,7 +268,8 @@ export const createChatSession = (
         const reader = res.body?.getReader();
         if (!reader) return { text: '' };
 
-        const toolCallsAccumulator: any[] = [];
+        const toolCallsAccumulator: Array<{ id: string; name: string; args: string }> =
+          [];
         let thinking = '';
         let fullText = '';
         const text = await readSSEStream(
@@ -269,7 +326,7 @@ export const createChatSession = (
           functionCalls: functionCalls.length > 0 ? functionCalls : undefined,
           traceback: undefined, // Or capture if needed
         };
-      } catch (e: any) {
+      } catch (e: unknown) {
         throw e;
       }
     },
@@ -313,7 +370,7 @@ export const generateSimpleContent = async (
       accumulated += delta;
       options?.onUpdate?.(accumulated);
     });
-  } catch (e: any) {
+  } catch (e: unknown) {
     // Re-throw so the caller can handle it and show it to the user
     throw e;
   }

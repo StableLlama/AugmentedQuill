@@ -28,7 +28,8 @@ import {
 } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { api } from '../../services/api';
-import { AppTheme } from '../../types';
+import { AppTheme, SourcebookEntry } from '../../types';
+import { ProjectImage, SourcebookUpsertPayload } from '../../services/apiTypes';
 
 const CATEGORY_DETAILS: Record<
   string,
@@ -65,10 +66,10 @@ const CATEGORY_DETAILS: Record<
 };
 
 interface SourcebookEntryDialogProps {
-  entry?: any;
+  entry?: SourcebookEntry | null;
   isOpen: boolean;
   onClose: () => void;
-  onSave: (entry: any) => void;
+  onSave: (entry: SourcebookUpsertPayload) => void;
   onDelete?: (id: string) => void;
   theme?: AppTheme;
 }
@@ -87,7 +88,7 @@ export const SourcebookEntryDialog: React.FC<SourcebookEntryDialogProps> = ({
   const [synonyms, setSynonyms] = useState<string[]>([]);
   const [newSynonym, setNewSynonym] = useState('');
   const [images, setImages] = useState<string[]>([]);
-  const [availableImages, setAvailableImages] = useState<any[]>([]);
+  const [availableImages, setAvailableImages] = useState<ProjectImage[]>([]);
 
   const [isImagePickerOpen, setIsImagePickerOpen] = useState(false);
 
@@ -333,7 +334,7 @@ export const SourcebookEntryDialog: React.FC<SourcebookEntryDialogProps> = ({
                   </div>
                 ) : (
                   <div className="grid grid-cols-5 sm:grid-cols-6 gap-2">
-                    {selectedImagesList.map((img: any) => {
+                    {selectedImagesList.map((img) => {
                       const tooltip = `${img.title || img.filename}\n${img.description || ''}`;
                       return (
                         <div
@@ -446,7 +447,7 @@ export const SourcebookEntryDialog: React.FC<SourcebookEntryDialogProps> = ({
                 </div>
               ) : (
                 <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-3">
-                  {availableImages.map((img: any) => {
+                  {availableImages.map((img) => {
                     const isSelected = images.includes(img.filename);
                     const tooltip = `${img.title || img.filename}\n${img.description || ''}`;
                     return (

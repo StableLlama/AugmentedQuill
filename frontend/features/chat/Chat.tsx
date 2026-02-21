@@ -28,7 +28,15 @@ import {
   History,
 } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
-import { MarkdownView } from './MarkdownView';
+import { MarkdownView } from '../editor/MarkdownView';
+
+type SearchResult = {
+  title?: string;
+  href?: string;
+  url?: string;
+  body?: string;
+  snippet?: string;
+};
 
 const CollapsibleToolSection: React.FC<{
   title: string;
@@ -108,7 +116,7 @@ const WebSearchResults: React.FC<{ content: string; name: string }> = ({
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-3 py-2">
-            {results.map((r: any, i: number) => (
+            {results.map((r: SearchResult, i: number) => (
               <div
                 key={i}
                 className="group flex flex-col p-2 rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors border border-transparent hover:border-blue-500/20"

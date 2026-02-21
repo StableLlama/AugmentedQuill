@@ -14,7 +14,12 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.services.projects.projects import get_active_project_dir
-from app.core.config import load_story_config, save_story_config
+from app.services.sourcebook.sourcebook_helpers import (
+    sb_list,
+    sb_create,
+    sb_update,
+    sb_delete,
+)
 
 router = APIRouter(tags=["Sourcebook"])
 
@@ -44,112 +49,59 @@ class SourcebookEntryUpdate(BaseModel):
     images: Optional[List[str]] = None
 
 
-def get_story_data():
+@router.get("/api/sourcebook")
+async def get_sourcebook() -> List[SourcebookEntry]:
     active = get_active_project_dir()
     if not active:
         raise HTTPException(status_code=400, detail="No active project")
-    story_path = active / "story.json"
-    story = load_story_config(story_path) or {}
-
-    # Migrate from list to dict if needed
-    if "sourcebook" in story and isinstance(story["sourcebook"], list):
-        old_sb = story["sourcebook"]
-        new_sb = {}
-        for entry in old_sb:
-            if isinstance(entry, dict) and "name" in entry:
-                entry_copy = entry.copy()
-                name = entry_copy.pop("name")
-                entry_copy.pop("id", None)
-                new_sb[name] = entry_copy
-        story["sourcebook"] = new_sb
-        save_story_config(story_path, story)
-
-    return story, story_path
-
-
-@router.get("/api/sourcebook")
-async def get_sourcebook() -> List[SourcebookEntry]:
-    story, _ = get_story_data()
-    sb_dict = story.get("sourcebook", {})
-    results = []
-    # Convert dict back to list with IDs for frontend compatibility
-    # User said sourcebook entries should be alphabetical
-    for name in sorted(sb_dict.keys(), key=str.lower):
-        entry_data = sb_dict[name]
-        results.append(
-            SourcebookEntry(
-                id=name, name=name, **entry_data  # Use name as ID for frontend
-            )
-        )
-    return results
+    return [SourcebookEntry(**entry) for entry in sb_list()]
 
 
 @router.post("/api/sourcebook")
 async def create_sourcebook_entry(entry: SourcebookEntryCreate) -> SourcebookEntry:
-    story, story_path = get_story_data()
-    sb_dict = story.get("sourcebook", {})
+    active = get_active_project_dir()
+    if not active:
+        raise HTTPException(status_code=400, detail="No active project")
 
-    if entry.name in sb_dict:
-        raise HTTPException(
-            status_code=400, detail=f"Entry '{entry.name}' already exists."
-        )
-
-    entry_data = entry.dict()
-    name = entry_data.pop("name")
-    entry_data.pop("id", None)  # Ensure no ID in stored data
-
-    sb_dict[name] = entry_data
-    story["sourcebook"] = sb_dict
-    save_story_config(story_path, story)
-
-    return SourcebookEntry(id=name, name=name, **entry_data)
+    created = sb_create(
+        name=entry.name,
+        description=entry.description,
+        category=entry.category,
+        synonyms=entry.synonyms,
+    )
+    if "error" in created:
+        raise HTTPException(status_code=400, detail=created["error"])
+    return SourcebookEntry(**created)
 
 
 @router.put("/api/sourcebook/{entry_name}")
 async def update_sourcebook_entry(
     entry_name: str, updates: SourcebookEntryUpdate
 ) -> SourcebookEntry:
-    story, story_path = get_story_data()
-    sb_dict = story.get("sourcebook", {})
+    active = get_active_project_dir()
+    if not active:
+        raise HTTPException(status_code=400, detail="No active project")
 
-    if entry_name not in sb_dict:
-        raise HTTPException(status_code=404, detail="Entry not found")
-
-    current = sb_dict[entry_name]
-    update_data = updates.dict(exclude_unset=True)
-
-    # Handle rename if name is provided in updates
-    new_name = update_data.pop("name", None)
-    if new_name and new_name != entry_name:
-        if new_name in sb_dict:
-            raise HTTPException(
-                status_code=400, detail=f"Entry '{new_name}' already exists."
-            )
-        del sb_dict[entry_name]
-        entry_name = new_name
-
-    # Merge updates
-    updated_entry_data = {**current, **update_data}
-    updated_entry_data.pop("id", None)  # Strip ID
-
-    sb_dict[entry_name] = updated_entry_data
-
-    story["sourcebook"] = sb_dict
-    save_story_config(story_path, story)
-
-    return SourcebookEntry(id=entry_name, name=entry_name, **updated_entry_data)
+    result = sb_update(
+        name_or_id=entry_name,
+        name=updates.name,
+        description=updates.description,
+        category=updates.category,
+        synonyms=updates.synonyms,
+    )
+    if "error" in result:
+        detail = str(result["error"])
+        status = 404 if "not found" in detail.lower() else 400
+        raise HTTPException(status_code=status, detail=detail)
+    return SourcebookEntry(**result)
 
 
 @router.delete("/api/sourcebook/{entry_name}")
 async def delete_sourcebook_entry(entry_name: str):
-    story, story_path = get_story_data()
-    sb_dict = story.get("sourcebook", {})
+    active = get_active_project_dir()
+    if not active:
+        raise HTTPException(status_code=400, detail="No active project")
 
-    if entry_name not in sb_dict:
+    if not sb_delete(entry_name):
         raise HTTPException(status_code=404, detail="Entry not found")
-
-    del sb_dict[entry_name]
-
-    story["sourcebook"] = sb_dict
-    save_story_config(story_path, story)
     return {"ok": True}

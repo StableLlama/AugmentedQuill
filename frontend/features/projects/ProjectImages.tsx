@@ -25,7 +25,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { api } from '../../services/api';
-import { generateSimpleContent } from '../services/openaiService';
+import { generateSimpleContent } from '../../services/openaiService';
 import { AppTheme, AppSettings } from '../../types';
 import { Button } from '../../components/ui/Button';
 
@@ -88,6 +88,8 @@ export const ProjectImages: React.FC<ProjectImagesProps> = ({
   const textClass = isLight ? 'text-brand-gray-900' : 'text-brand-gray-100';
   const borderClass = isLight ? 'border-brand-gray-200' : 'border-brand-gray-700';
   const cardBg = isLight ? 'bg-brand-gray-50' : 'bg-brand-gray-800';
+  const getErrorMessage = (error: unknown, fallback: string) =>
+    error instanceof Error ? error.message : fallback;
 
   useEffect(() => {
     if (isOpen) {
@@ -102,8 +104,8 @@ export const ProjectImages: React.FC<ProjectImagesProps> = ({
       const res = await api.projects.listImages();
       setImages(res.images || []);
       setEdits({});
-    } catch (err: any) {
-      setError(err.message || 'Failed to load images');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Failed to load images'));
     } finally {
       setLoading(false);
     }
@@ -150,8 +152,8 @@ export const ProjectImages: React.FC<ProjectImagesProps> = ({
         delete next[filename];
         return next;
       });
-    } catch (err: any) {
-      setError('Failed to save metadata: ' + err.message);
+    } catch (err: unknown) {
+      setError('Failed to save metadata: ' + getErrorMessage(err, 'Unknown error'));
     }
   };
 
@@ -185,8 +187,8 @@ export const ProjectImages: React.FC<ProjectImagesProps> = ({
       if (result) {
         handleMetadataChange(img.filename, 'description', result);
       }
-    } catch (err: any) {
-      setError('Generation failed: ' + err.message);
+    } catch (err: unknown) {
+      setError('Generation failed: ' + getErrorMessage(err, 'Unknown error'));
     } finally {
       setGenerating(null);
     }
@@ -232,10 +234,10 @@ export const ProjectImages: React.FC<ProjectImagesProps> = ({
         const clean = prev.content.replace(/^"|"$/g, '');
         return { ...prev, content: clean, loading: false };
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       setPromptPopup((prev) => ({
         ...prev,
-        content: 'Error creating prompt: ' + err.message,
+        content: 'Error creating prompt: ' + getErrorMessage(err, 'Unknown error'),
         loading: false,
       }));
     }
@@ -286,10 +288,10 @@ export const ProjectImages: React.FC<ProjectImagesProps> = ({
         content: prev.content.trimEnd(),
         loading: false,
       }));
-    } catch (err: any) {
+    } catch (err: unknown) {
       setPromptPopup((prev) => ({
         ...prev,
-        content: prev.content + '\nError: ' + err.message,
+        content: prev.content + '\nError: ' + getErrorMessage(err, 'Unknown error'),
         loading: false,
       }));
     }
@@ -330,8 +332,8 @@ export const ProjectImages: React.FC<ProjectImagesProps> = ({
       }
       await loadImages();
       setReplaceTarget(null);
-    } catch (err: any) {
-      setError('Upload failed: ' + err.message);
+    } catch (err: unknown) {
+      setError('Upload failed: ' + getErrorMessage(err, 'Unknown error'));
     }
   };
 
@@ -346,8 +348,8 @@ export const ProjectImages: React.FC<ProjectImagesProps> = ({
     try {
       await api.projects.deleteImage(filename);
       setImages((prev) => prev.filter((i) => i.filename !== filename));
-    } catch (err: any) {
-      setError('Delete failed: ' + err.message);
+    } catch (err: unknown) {
+      setError('Delete failed: ' + getErrorMessage(err, 'Unknown error'));
     }
   };
 
@@ -355,8 +357,8 @@ export const ProjectImages: React.FC<ProjectImagesProps> = ({
     try {
       await api.projects.createImagePlaceholder('', ''); // Empty description and title
       await loadImages();
-    } catch (e: any) {
-      setError('Failed to create placeholder: ' + e.message);
+    } catch (e: unknown) {
+      setError('Failed to create placeholder: ' + getErrorMessage(e, 'Unknown error'));
     }
   };
 

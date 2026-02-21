@@ -7,7 +7,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Chapter, Book, AppTheme } from '../../types';
-import { MetadataEditorDialog } from './MetadataEditorDialog';
+import { MetadataEditorDialog } from '../story/MetadataEditorDialog';
 import { api } from '../../services/api';
 import {
   Plus,
@@ -27,7 +27,7 @@ interface ChapterListProps {
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
   onUpdateChapter?: (id: string, updates: Partial<Chapter>) => void;
-  onUpdateBook?: (id: string, updates: any) => void;
+  onUpdateBook?: (id: string, updates: Partial<Book>) => void;
   onCreate: (bookId?: string) => void;
   onBookCreate?: (title: string) => void;
   onBookDelete?: (id: string) => void;
@@ -280,7 +280,13 @@ export const ChapterList: React.FC<ChapterListProps> = ({
     setEditingMetadata({ type: 'book', id: book.id });
   };
 
-  const saveMetadata = async (data: any) => {
+  const saveMetadata = async (data: {
+    title?: string;
+    summary?: string;
+    notes?: string;
+    private_notes?: string;
+    conflicts?: Chapter['conflicts'];
+  }) => {
     if (!editingMetadata || !activeEditingData) return;
     try {
       if (editingMetadata.type === 'chapter') {

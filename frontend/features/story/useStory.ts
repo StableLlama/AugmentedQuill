@@ -6,8 +6,9 @@
 // (at your option) any later version.
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { StoryState, Chapter } from '../../types';
+import { StoryState, Chapter, Book } from '../../types';
 import { api } from '../../services/api';
+import { mapApiChapters, mapSelectStoryToState } from './storyMappers';
 
 const INITIAL_STORY: StoryState = {
   id: '',
@@ -64,56 +65,18 @@ export const useStory = () => {
               const res2 = await api.projects.select(currentProject);
               if (res2.ok && res2.story) {
                 const chaptersRes = await api.chapters.list();
-                const chapters: Chapter[] = chaptersRes.chapters.map((c: any) => ({
-                  id: String(c.id),
-                  title: c.title,
-                  summary: c.summary,
-                  content: '',
-                  filename: c.filename,
-                  book_id: c.book_id,
-                  notes: c.notes,
-                  private_notes: c.private_notes,
-                  conflicts: c.conflicts,
-                }));
+                const chapters: Chapter[] = mapApiChapters(chaptersRes.chapters);
 
-                // Re-anchor selection based on filename/book_id if IDs shifted
-                let newSelection = currentChapterId;
-                if (currentChapterId) {
-                  const oldChap = story.chapters.find((c) => c.id === currentChapterId);
-                  if (oldChap) {
-                    const matching = chapters.find(
-                      (c) =>
-                        c.filename === oldChap.filename && c.book_id === oldChap.book_id
-                    );
-                    if (matching) {
-                      newSelection = matching.id;
-                    } else {
-                      newSelection = null; // Reset if not found in new project
-                    }
-                  }
-                } else if (chapters.length > 0) {
-                  newSelection = null;
-                }
-
-                const newStory: StoryState = {
-                  id: currentProject,
-                  title: res2.story.project_title || currentProject,
-                  summary: res2.story.story_summary || '',
-                  styleTags: res2.story.tags || [],
-                  image_style: res2.story.image_style || '',
-                  image_additional_info: res2.story.image_additional_info || '',
-                  chapters: chapters,
-                  projectType: res2.story.project_type || 'novel',
-                  books: res2.story.books || [],
-                  sourcebook: res2.story.sourcebook || [],
-                  conflicts: res2.story.conflicts || [],
-                  llm_prefs: res2.story.llm_prefs,
-                  currentChapterId: newSelection,
-                  lastUpdated: Date.now(),
-                };
+                const newStory: StoryState = mapSelectStoryToState(
+                  currentProject,
+                  res2.story,
+                  chapters,
+                  currentChapterId,
+                  story.chapters
+                );
 
                 setStory(newStory);
-                setCurrentChapterId(newSelection);
+                setCurrentChapterId(newStory.currentChapterId);
               } else if (res2.error) {
                 // Handle errors after update
                 if (res2.error === 'invalid_config') {
@@ -135,55 +98,18 @@ export const useStory = () => {
         return;
       } else if (res.ok && res.story) {
         const chaptersRes = await api.chapters.list();
-        const chapters: Chapter[] = chaptersRes.chapters.map((c: any) => ({
-          id: String(c.id),
-          title: c.title,
-          summary: c.summary,
-          content: '',
-          filename: c.filename,
-          book_id: c.book_id,
-          notes: c.notes,
-          private_notes: c.private_notes,
-          conflicts: c.conflicts,
-        }));
+        const chapters: Chapter[] = mapApiChapters(chaptersRes.chapters);
 
-        // Re-anchor selection based on filename/book_id if IDs shifted
-        let newSelection = currentChapterId;
-        if (currentChapterId) {
-          const oldChap = story.chapters.find((c) => c.id === currentChapterId);
-          if (oldChap) {
-            const matching = chapters.find(
-              (c) => c.filename === oldChap.filename && c.book_id === oldChap.book_id
-            );
-            if (matching) {
-              newSelection = matching.id;
-            } else {
-              newSelection = null; // Reset if not found in new project
-            }
-          }
-        } else if (chapters.length > 0) {
-          newSelection = null;
-        }
-
-        const newStory: StoryState = {
-          id: currentProject,
-          title: res.story.project_title || currentProject,
-          summary: res.story.story_summary || '',
-          styleTags: res.story.tags || [],
-          image_style: res.story.image_style || '',
-          image_additional_info: res.story.image_additional_info || '',
-          chapters: chapters,
-          projectType: res.story.project_type || 'novel',
-          books: res.story.books || [],
-          sourcebook: res.story.sourcebook || [],
-          conflicts: res.story.conflicts || [],
-          llm_prefs: res.story.llm_prefs,
-          currentChapterId: newSelection,
-          lastUpdated: Date.now(),
-        };
+        const newStory: StoryState = mapSelectStoryToState(
+          currentProject,
+          res.story,
+          chapters,
+          currentChapterId,
+          story.chapters
+        );
 
         setStory(newStory);
-        setCurrentChapterId(newSelection);
+        setCurrentChapterId(newStory.currentChapterId);
       }
     } catch (e) {
       console.error('Failed to refresh story', e);
@@ -232,17 +158,7 @@ export const useStory = () => {
         const res = await api.projects.select(projects.current);
         if (res.ok && res.story) {
           const chaptersRes = await api.chapters.list();
-          const chapters = chaptersRes.chapters.map((c: any) => ({
-            id: String(c.id),
-            title: c.title,
-            summary: c.summary,
-            content: '',
-            filename: c.filename,
-            book_id: c.book_id,
-            notes: c.notes,
-            private_notes: c.private_notes,
-            conflicts: c.conflicts,
-          }));
+          const chapters = mapApiChapters(chaptersRes.chapters);
 
           const newStory: StoryState = {
             id: projects.current,
@@ -345,7 +261,7 @@ export const useStory = () => {
     }
   };
 
-  const updateBook = async (id: string, partial: any) => {
+  const updateBook = async (id: string, partial: Partial<Book>) => {
     const newBooks =
       story.books?.map((b) => (b.id === id ? { ...b, ...partial } : b)) || [];
     const newState = { ...story, books: newBooks };
@@ -362,14 +278,7 @@ export const useStory = () => {
     try {
       const res = await api.chapters.create(title, '', bookId);
       const chaptersRes = await api.chapters.list();
-      const newChapters: Chapter[] = chaptersRes.chapters.map((c: any) => ({
-        id: String(c.id),
-        title: c.title,
-        summary: c.summary,
-        content: '',
-        filename: c.filename,
-        book_id: c.book_id,
-      }));
+      const newChapters: Chapter[] = mapApiChapters(chaptersRes.chapters);
 
       // Find the new chapter in the list by the ID returned from creation
       const newChapter =
@@ -398,14 +307,7 @@ export const useStory = () => {
       // Refresh the chapter list from the backend since IDs are positional
       // and deleting one shifts subsequent IDs in Series projects.
       const chaptersRes = await api.chapters.list();
-      const newChapters: Chapter[] = chaptersRes.chapters.map((c: any) => ({
-        id: String(c.id),
-        title: c.title,
-        summary: c.summary,
-        content: '',
-        filename: c.filename,
-        book_id: c.book_id,
-      }));
+      const newChapters: Chapter[] = mapApiChapters(chaptersRes.chapters);
 
       // Re-anchor selection based on filename/book_id since IDs may have shifted
       let newSelection = null;
