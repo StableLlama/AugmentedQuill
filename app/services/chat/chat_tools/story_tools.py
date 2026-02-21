@@ -154,11 +154,9 @@ async def handle_story_tool(
 
     if name == "sync_story_summary":
         mode = str(args_obj.get("mode", "")).lower()
-        from app.services.story.story_helpers import (
-            _story_generate_story_summary_helper,
-        )
+        from app.services.story.story_generation_ops import generate_story_summary
 
-        data = await _story_generate_story_summary_helper(mode=mode)
+        data = await generate_story_summary(mode=mode)
         mutations["story_changed"] = True
         return tool_message(name, call_id, data)
 

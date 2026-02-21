@@ -14,10 +14,10 @@ from app.services.projects.project_helpers import (
     _chapter_content_slice,
     _project_overview,
 )
-from app.services.story.story_helpers import (
-    _story_continue_helper,
-    _story_generate_summary_helper,
-    _story_write_helper,
+from app.services.story.story_generation_ops import (
+    continue_chapter_from_summary,
+    generate_chapter_summary,
+    write_chapter_from_summary,
 )
 from app.services.projects.projects import (
     get_active_project_dir,
@@ -172,7 +172,7 @@ async def handle_chapter_tool(
         if not isinstance(chap_id, int):
             return tool_message(name, call_id, {"error": "chap_id is required"})
         mode = str(args_obj.get("mode", "")).lower()
-        data = await _story_generate_summary_helper(chap_id=chap_id, mode=mode)
+        data = await generate_chapter_summary(chap_id=chap_id, mode=mode)
         mutations["story_changed"] = True
         return tool_message(name, call_id, data)
 
@@ -180,7 +180,7 @@ async def handle_chapter_tool(
         chap_id = args_obj.get("chap_id")
         if not isinstance(chap_id, int):
             return tool_message(name, call_id, {"error": "chap_id is required"})
-        data = await _story_write_helper(chap_id=chap_id)
+        data = await write_chapter_from_summary(chap_id=chap_id)
         mutations["story_changed"] = True
         return tool_message(name, call_id, data)
 
@@ -188,7 +188,7 @@ async def handle_chapter_tool(
         chap_id = args_obj.get("chap_id")
         if not isinstance(chap_id, int):
             return tool_message(name, call_id, {"error": "chap_id is required"})
-        data = await _story_continue_helper(chap_id=chap_id)
+        data = await continue_chapter_from_summary(chap_id=chap_id)
         mutations["story_changed"] = True
         return tool_message(name, call_id, data)
 

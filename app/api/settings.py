@@ -40,6 +40,7 @@ from app.services.settings.settings_machine_ops import (
     remote_model_exists,
 )
 from app.services.settings.settings_update_ops import run_story_config_update
+from app.api.http_responses import error_json, ok_json
 from pathlib import Path
 
 router = APIRouter(tags=["Settings"])
@@ -89,12 +90,9 @@ async def api_settings_post(request: Request) -> JSONResponse:
         save_story_config(story_path, story_cfg)
         machine_path.write_text(_json.dumps(machine_cfg, indent=2), encoding="utf-8")
     except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"ok": False, "detail": f"Failed to write configs: {e}"},
-        )
+        return error_json(f"Failed to write configs: {e}", status_code=500)
 
-    return JSONResponse(status_code=200, content={"ok": True})
+    return ok_json({"ok": True})
 
 
 @router.get("/api/prompts")
@@ -309,22 +307,16 @@ async def api_story_tags_put(request: Request) -> JSONResponse:
 
     tags = payload.get("tags")
     if not isinstance(tags, list):
-        return JSONResponse(
-            status_code=400,
-            content={"ok": False, "detail": "tags must be an array"},
-        )
+        return error_json("tags must be an array", status_code=400)
 
     try:
         active = get_active_project_dir()
         story_path = (active / "story.json") if active else (CONFIG_DIR / "story.json")
         update_story_field(story_path, "tags", tags)
     except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"ok": False, "detail": f"Failed to update story tags: {e}"},
-        )
+        return error_json(f"Failed to update story tags: {e}", status_code=500)
 
-    return JSONResponse(status_code=200, content={"ok": True, "tags": tags})
+    return ok_json({"ok": True, "tags": tags})
 
 
 @router.post("/api/settings/update_story_config")
