@@ -4,6 +4,7 @@
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
+# Purpose: Defines the chapter helpers unit so this responsibility stays isolated, testable, and easy to evolve.
 
 import re
 from pathlib import Path
@@ -49,8 +50,8 @@ def _scan_chapter_files() -> List[Tuple[str, Path]]:
             if not bid:
                 continue
 
-            # Use 'chapters' dir inside the book dir
-            # Requirement: "each book should have its own directory where the chapter files ... are stored"
+            # Enforce per-book chapter directories so identical chapter filenames
+            # across books cannot collide.
             b_dir = active / "books" / bid
             if not b_dir.exists():
                 continue
@@ -59,7 +60,6 @@ def _scan_chapter_files() -> List[Tuple[str, Path]]:
             if not chapters_dir.exists():
                 continue
 
-            # Scan book chapters
             book_items = []
             for p in chapters_dir.glob("*.txt"):
                 if not p.is_file():
@@ -70,16 +70,15 @@ def _scan_chapter_files() -> List[Tuple[str, Path]]:
                     idx = int(m.group(1))
                     book_items.append((idx, p))
 
-            # Sort by local filename index
             book_items.sort(key=lambda t: t[0])
 
-            # Assign global ID
+            # Expose a single linear ID space so API callers can stay agnostic
+            # to storage layout differences between project types.
             for _, path in book_items:
                 items.append((global_idx, path))
                 global_idx += 1
         return items
 
-    # Medium
     chapters_dir = active / "chapters"
     if not chapters_dir.exists() or not chapters_dir.is_dir():
         return []
@@ -95,8 +94,8 @@ def _scan_chapter_files() -> List[Tuple[str, Path]]:
             continue
     items.sort(key=lambda t: t[0])
 
-    # Remap to linear 1-based index to be consistent with large projects and
-    # satisfy the expectation of 1-based indices in recent versions.
+    # Keep a consistent 1-based linear ID scheme across all project modes to
+    # avoid mode-specific handling in API consumers.
     return [(i + 1, p) for i, (_, p) in enumerate(items)]
 
 
@@ -109,7 +108,7 @@ def _load_chapter_titles(count: int) -> List[str]:
     active = get_active_project_dir()
     story = load_story_config((active / "story.json") if active else None) or {}
     titles = story.get("chapters") or []
-    # Normalize to strings and keep as-provided; empty strings allowed (handled by caller)
+    # Preserve caller-controlled fallback behavior by not mutating empty titles here.
     titles = [str(x) for x in titles if isinstance(x, (str, int, float))]
     return titles[:count]
 

@@ -4,6 +4,7 @@
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
+// Purpose: Defines the project images unit so this responsibility stays isolated, testable, and easy to evolve.
 
 import React, { useState, useEffect, useRef } from 'react';
 import {
@@ -129,7 +130,7 @@ export const ProjectImages: React.FC<ProjectImagesProps> = ({
     const edit = edits[filename];
     if (!edit) return;
 
-    // Find original to fallback
+    // Preserve existing fields when only one metadata field is edited.
     const original = images.find((i) => i.filename === filename);
     if (!original) return;
 
@@ -139,7 +140,7 @@ export const ProjectImages: React.FC<ProjectImagesProps> = ({
 
     try {
       await api.projects.updateImage(filename, newDesc, newTitle);
-      // Update local state
+      // Mirror persisted metadata immediately for responsive editing feedback.
       setImages((prev) =>
         prev.map((img) =>
           img.filename === filename
@@ -247,7 +248,7 @@ export const ProjectImages: React.FC<ProjectImagesProps> = ({
     const placeholders = images.filter((i) => i.is_placeholder);
     if (placeholders.length === 0) return;
 
-    // Clear content before starting
+    // Reset output so streamed progress reflects only the current run.
     setPromptPopup({ isOpen: true, content: '', loading: true });
 
     try {
@@ -268,7 +269,7 @@ export const ProjectImages: React.FC<ProjectImagesProps> = ({
         await generateSimpleContent(userContent, system, activeProvider, 'EDITING', {
           tool_choice: 'none',
           onUpdate: (text) => {
-            // Strip quotes and flatten text to single line
+            // Normalize output into single-line prompt format expected by generators.
             const clean = text.replace(/^"|"$/g, '');
             currentItemText = clean.replace(/[\r\n]+/g, ' ');
             setPromptPopup((prev) => ({
@@ -277,12 +278,10 @@ export const ProjectImages: React.FC<ProjectImagesProps> = ({
             }));
           },
         });
-        // Ensure final cleanup
         currentItemText = currentItemText.replace(/^"|"$/g, '');
         completedOutput += currentItemText + '\n';
         setPromptPopup((prev) => ({ ...prev, content: completedOutput }));
       }
-      // Trim the final newline
       setPromptPopup((prev) => ({
         ...prev,
         content: prev.content.trimEnd(),
@@ -308,9 +307,7 @@ export const ProjectImages: React.FC<ProjectImagesProps> = ({
   const handleUploadFile = async (file: File, replaceTargetName: string | null) => {
     try {
       if (replaceTargetName) {
-        // User requested to replace 'replaceTargetName' with 'file'.
-        // If filenames match, we overwrite.
-        // If they differ, we upload new, migrate metadata, delete old.
+        // Keep replacement intent while preserving metadata when filenames differ.
         if (file.name === replaceTargetName) {
           await api.projects.uploadImage(file, replaceTargetName);
         } else {
@@ -355,7 +352,7 @@ export const ProjectImages: React.FC<ProjectImagesProps> = ({
 
   const handleCreatePlaceholder = async () => {
     try {
-      await api.projects.createImagePlaceholder('', ''); // Empty description and title
+      await api.projects.createImagePlaceholder('', '');
       await loadImages();
     } catch (e: unknown) {
       setError('Failed to create placeholder: ' + getErrorMessage(e, 'Unknown error'));
@@ -393,7 +390,7 @@ export const ProjectImages: React.FC<ProjectImagesProps> = ({
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const file = e.dataTransfer.files[0];
       if (file.type.startsWith('image/')) {
-        // Drag and drop is always a new upload, not a replace
+        // Background drop is treated as create-only to avoid accidental replacements.
         await handleUploadFile(file, null);
       }
     }

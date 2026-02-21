@@ -4,6 +4,7 @@
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
+// Purpose: Defines the test accept continuation unit so this responsibility stays isolated, testable, and easy to evolve.
 
 function computeNewContent(prefix, text, viewMode) {
   const startsWithWhitespace = text.length > 0 && /^\s/.test(text);

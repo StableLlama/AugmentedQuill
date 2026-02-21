@@ -4,6 +4,7 @@
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
+# Purpose: Defines the init unit so this responsibility stays isolated, testable, and easy to evolve.
 
 from app.services.chat.chat_tools.chapter_tools import handle_chapter_tool
 from app.services.chat.chat_tools.image_tools import (

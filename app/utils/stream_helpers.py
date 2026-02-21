@@ -4,6 +4,7 @@
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
+# Purpose: Defines the stream helpers unit so this responsibility stays isolated, testable, and easy to evolve.
 
 """
 Utility functions for handling server-sent events (SSE) and data streaming.
@@ -71,10 +72,11 @@ class ChannelFilter:
                     self.buffer = self.buffer[first_bracket:]
 
                 # Now the buffer starts with '<' or '[' (or is empty).
-                # If it's getting too long, it's probably not a tag we recognize.
+                # Guard against pathological buffers by degrading to character
+                # passthrough when no recognizable tag is forming.
                 if len(self.buffer) > 150:
-                    # Yield everything up to the next bracket or everything if no more brackets.
-                    # Simplified: just yield one char and continue, buffer logic handles rest eventually
+                    # Emit a single character to keep progress monotonic and
+                    # prevent unbounded buffering.
                     results.append(
                         {"channel": self.current_channel, "content": self.buffer[0]}
                     )
@@ -92,30 +94,20 @@ class ChannelFilter:
                 # Process the tag
                 tag_text = match.group(0)
 
-                # Update channel logic based on tag
-                # Check for opening thought tags
+                # Update output channel according to control tags.
                 if re.match(r"<(thought|thinking)>", tag_text, re.IGNORECASE):
                     self.current_channel = "thought"
-                # Check for closing thought tags
                 elif re.match(r"</(thought|thinking)>", tag_text, re.IGNORECASE):
                     self.current_channel = "final"
-                # Check for opening tool call tags
                 elif re.match(r"\[TOOL_CALL\]\s*|<tool_call>", tag_text, re.IGNORECASE):
                     self.current_channel = "tool_def"
-                # Check for closing tool call tags
                 elif re.match(r"\[/TOOL_CALL\]|</tool_call>", tag_text, re.IGNORECASE):
                     self.current_channel = "final"
-                # Check for special channel tags
                 elif tag_text.startswith("<|channel|>"):
-                    # Extract channel name
-                    # Group 2 captures the channel name inside <|channel|>...<|message|>
-                    # But wait, the regex is ( ... )
-                    # Group 1 is the whole match. Group 2 is (.*?) inside.
                     channel_name = match.group(2)
                     if channel_name:
                         if "<|constrain|>" in channel_name:
                             channel_name = channel_name.split("<|constrain|>", 1)[0]
-                        # Normalize or use as is. Usually 'thought' or 'final'
                         self.current_channel = channel_name.strip()
                 elif (
                     tag_text.startswith("<|start|>assistant")
@@ -127,11 +119,11 @@ class ChannelFilter:
                         channel_name = channel_name.split("<|constrain|>", 1)[0]
                     self.current_channel = channel_name.strip()
                 elif "<|message|>" in tag_text:
-                    # This might be part of the channel tag, handled above or just switching context
-                    # If we just switch to message, usually implies back to main/final logic unless specialized
+                    # Message boundaries without explicit channel changes do not
+                    # require state transitions.
                     pass
                 elif "<|end|>" in tag_text:
-                    # End of turn, reset?
+                    # End markers reset to final output as a safe default.
                     self.current_channel = "final"
 
                 # Advance buffer past the tag

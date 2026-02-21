@@ -4,6 +4,7 @@
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
+// Purpose: Defines the chapter list unit so this responsibility stays isolated, testable, and easy to evolve.
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Chapter, Book, AppTheme } from '../../types';
@@ -66,7 +67,7 @@ export const ChapterList: React.FC<ChapterListProps> = ({
   const [newBookTitle, setNewBookTitle] = useState('');
   const [isCreatingBook, setIsCreatingBook] = useState(false);
 
-  // Drag & drop state
+  // Keep transient drag state local so failed reorder requests do not corrupt source props.
   const [draggedItem, setDraggedItem] = useState<{
     type: 'chapter' | 'book';
     id: string;
@@ -78,7 +79,7 @@ export const ChapterList: React.FC<ChapterListProps> = ({
   const [optimisticChapters, setOptimisticChapters] = useState<Chapter[] | null>(null);
   const [optimisticBooks, setOptimisticBooks] = useState<Book[] | null>(null);
 
-  // Clear optimistic state when props update
+  // Server-confirmed props always win over optimistic previews.
   useEffect(() => {
     setOptimisticChapters(null);
   }, [chapters]);
@@ -87,7 +88,7 @@ export const ChapterList: React.FC<ChapterListProps> = ({
     setOptimisticBooks(null);
   }, [books]);
 
-  // Derived reordering for "live" preview
+  // Shared array move helper for optimistic drag previews.
   const moveInArray = <T,>(arr: T[], from: number, to: number): T[] => {
     if (from === to || from === -1 || to === -1) return arr;
     const result = [...arr];
@@ -116,7 +117,7 @@ export const ChapterList: React.FC<ChapterListProps> = ({
             return reordered[subIdx];
           });
         } else {
-          // Cross-book move
+          // Cross-book preview keeps chapter context visible before persistence.
           const sourceChapters = chapters.filter(
             (c) => c.book_id === draggedItem.bookId
           );
@@ -154,7 +155,7 @@ export const ChapterList: React.FC<ChapterListProps> = ({
     }
   }
 
-  // Drag & drop handlers
+  // Drag handlers coordinate optimistic UI and final persistence callbacks.
   const handleDragStart = (
     e: React.DragEvent,
     type: 'chapter' | 'book',
@@ -193,7 +194,7 @@ export const ChapterList: React.FC<ChapterListProps> = ({
       if (projectType === 'series') {
         const targetBookId = dragOverBookId || dragged.bookId;
 
-        // Only skip if same book AND same index
+        // Skip no-op drops to avoid unnecessary reorder writes.
         if (targetBookId === dragged.bookId && targetIdx === dragged.originalIndex) {
           setDragOverIndex(null);
           setDraggedItem(null);
@@ -486,19 +487,11 @@ export const ChapterList: React.FC<ChapterListProps> = ({
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            // Create chapter in this book specifically?
-                            // Backend `create_project` -> `create_new_chapter` supports `book_id`.
-                            // We need to pass book_id to onCreate if supported.
-                            // Temporarily just onCreate() which defaults to last book.
-                            // We should probably expose book specific create.
-                            // For now, let's just allow global create or fail gracefully.
-                            // Wait, onCreate prop is generic.
-                            // User can move chapters later? No UI for that yet.
-                            // Ideally we pass book context.
+                            onCreate(book.id);
                           }}
                           className={`p-1 opacity-0 hover:opacity-100 ${btnHover}`}
                         >
-                          {/* Placeholder for specific add */}
+                          <Plus size={14} />
                         </button>
                         <button
                           onClick={(e) => {
@@ -592,7 +585,7 @@ export const ChapterList: React.FC<ChapterListProps> = ({
             </div>
           </div>
         ) : (
-          // Medium / Default View
+          // Non-series projects render as a flat chapter list.
           <>
             {displayChapters.map(renderChapter)}
             {displayChapters.length === 0 && (

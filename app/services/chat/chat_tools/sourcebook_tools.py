@@ -4,6 +4,7 @@
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
+# Purpose: Defines the sourcebook tools unit so this responsibility stays isolated, testable, and easy to evolve.
 
 from app.services.chat.chat_tools.common import tool_message
 from app.services.sourcebook.sourcebook_helpers import (

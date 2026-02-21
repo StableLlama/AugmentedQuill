@@ -4,8 +4,8 @@
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
+# Purpose: Defines the update v1 to v2 unit so this responsibility stays isolated, testable, and easy to evolve.
 
-#!/usr/bin/env python3
 """
 Update script for story.json from version 1 to 2.
 

@@ -4,6 +4,7 @@
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
+# Purpose: Defines the llm parsing unit so this responsibility stays isolated, testable, and easy to evolve.
 
 """
 Utilities for parsing assistant messages, extracting tool calls, and handling generated Markdown.
@@ -207,8 +208,8 @@ def strip_thinking_tags(content: str) -> str:
         )
         if final_match:
             return final_match.group(1).strip()
-        # If no final channel found but analysis is present, it might be just analysis or incomplete
-        # Remove the analysis part
+        # Fall back to stripping analysis sections when the stream terminates
+        # before a final channel block is emitted.
         content = re.sub(
             r"<\|channel\|>analysis<\|message\|>.*?<\|end\|>",
             "",

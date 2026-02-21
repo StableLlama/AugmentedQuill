@@ -4,6 +4,7 @@
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
+// Purpose: Defines the metadata editor dialog unit so this responsibility stays isolated, testable, and easy to evolve.
 
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
@@ -38,7 +39,7 @@ interface Props {
   initialData: MetadataParams;
   onSave: (data: MetadataParams) => Promise<void>;
   onClose: () => void;
-  title: string; // Dialog title
+  title: string;
   theme?: AppTheme;
   onAiGenerate?: (
     action: 'write' | 'update' | 'rewrite',
@@ -63,7 +64,7 @@ export function MetadataEditorDialog({
   const [isFullscreen, setIsFullscreen] = useState(true);
   const [isAiGenerating, setIsAiGenerating] = useState(false);
 
-  // Refs for autosave
+  // Store the latest callback reference so debounced saves use current props.
   const onSaveRef = useRef(onSave);
   const isFirstRun = useRef(true);
 
@@ -78,14 +79,14 @@ export function MetadataEditorDialog({
     };
   };
 
-  // For Conflicts - normalize to object format if they are strings
+  // Normalize legacy string conflicts once so downstream editing stays typed.
   const [conflicts, setConflicts] = useState<Conflict[]>(
     (initialData.conflicts || []).map((c) => normalizeConflict(c))
   );
 
-  // Sync with prop changes (e.g. AI updates in background)
+  // Reconcile external updates (for example, AI writes) without clobbering
+  // in-flight autosave operations.
   useEffect(() => {
-    // Determine if conflicts actually changed (ignoring IDs if they are newly generated)
     const normalizedPropConflicts = (initialData.conflicts || []).map((c) =>
       typeof c === 'string'
         ? { description: c, resolution: 'TBD' }
@@ -104,8 +105,6 @@ export function MetadataEditorDialog({
       setConflicts((initialData.conflicts || []).map((c) => normalizeConflict(c)));
     }
 
-    // Sync other fields if they changed in prop but are empty locally,
-    // or if the whole data changed (e.g. background update)
     if (saveStatus !== 'saving') {
       const hasTitleChanged = (initialData.title || '') !== (data.title || '');
       const hasSummaryChanged = (initialData.summary || '') !== (data.summary || '');
@@ -139,7 +138,7 @@ export function MetadataEditorDialog({
     setData((prev) => ({ ...prev, conflicts }));
   }, [conflicts]);
 
-  // Autosave Logic
+  // Debounced autosave reduces write pressure while preserving quick feedback.
   useEffect(() => {
     if (isFirstRun.current) {
       isFirstRun.current = false;
@@ -148,7 +147,6 @@ export function MetadataEditorDialog({
 
     setSaveStatus('saving');
     const timer = setTimeout(async () => {
-      // Check if data is actually different from initialData before saving
       const isTitleSame = (data.title || '') === (initialData.title || '');
       const isSummarySame = (data.summary || '') === (initialData.summary || '');
       const isNotesSame = (data.notes || '') === (initialData.notes || '');
@@ -182,8 +180,7 @@ export function MetadataEditorDialog({
   }, [data]);
 
   const handleClose = async () => {
-    // Ensure we save on close if there are pending changes or just to be safe
-    // (We assume data is current state)
+    // Best-effort flush on close prevents losing the latest unsaved keystrokes.
     if (saveStatus !== 'saved') {
       try {
         await onSave(data);
@@ -235,11 +232,10 @@ export function MetadataEditorDialog({
     if (!onAiGenerate) return;
     setIsAiGenerating(true);
     try {
-      // Pass a callback to update state as chunks arrive
+      // Stream partial text into the editor so users can intervene early.
       const result = await onAiGenerate(action, (partialText) => {
         setData((prev) => ({ ...prev, summary: partialText }));
       });
-      // Ensure final result is set (though progress should have covered it)
       if (result) {
         setData((prev) => ({ ...prev, summary: result }));
       }
@@ -331,8 +327,7 @@ export function MetadataEditorDialog({
                     value={data.tags ? data.tags.join(', ') : ''}
                     onChange={(e) => {
                       const val = e.target.value;
-                      // Allow typing trailing comma by not filtering empty strings immediately if needed,
-                      // but simple split is fine for now.
+                      // Preserve user-entered ordering; normalization happens server-side.
                       const tags = val.split(',').map((s) => s.trimStart());
                       setData({ ...data, tags: tags });
                     }}

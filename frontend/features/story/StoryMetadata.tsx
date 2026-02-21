@@ -4,6 +4,7 @@
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
+// Purpose: Defines the story metadata unit so this responsibility stays isolated, testable, and easy to evolve.
 
 import React, { useState, useEffect } from 'react';
 import { Tag, Edit, Save, X } from 'lucide-react';
@@ -75,7 +76,7 @@ export const StoryMetadata: React.FC<StoryMetadataProps> = ({
         data.notes,
         data.private_notes
       );
-      // Do NOT close on save - this is called by autosave
+      // Keep dialog open because saves are triggered by autosave while editing.
     } catch (e) {
       console.error(e);
       alert('Failed to update story metadata');

@@ -4,6 +4,7 @@
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
+// Purpose: Defines the sourcebook list unit so this responsibility stays isolated, testable, and easy to evolve.
 
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
@@ -46,7 +47,7 @@ export const SourcebookList: React.FC<SourcebookListProps> = ({ theme = 'mixed' 
   const [selectedEntry, setSelectedEntry] = useState<SourcebookEntry | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
-  // Tooltip state
+  // Keep hover preview state local so list rendering stays stateless.
   const [hoveredEntry, setHoveredEntry] = useState<SourcebookEntry | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
 
@@ -85,7 +86,7 @@ export const SourcebookList: React.FC<SourcebookListProps> = ({ theme = 'mixed' 
   const handleMouseEnter = (e: React.MouseEvent, entry: SourcebookEntry) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const x = rect.right + 10;
-    // Ensure it doesn't go off bottom
+    // Clamp tooltip origin so previews remain visible on short viewports.
     const y = Math.min(rect.top, window.innerHeight - 200);
     setTooltipPos({ x, y });
     setHoveredEntry(entry);
@@ -110,7 +111,7 @@ export const SourcebookList: React.FC<SourcebookListProps> = ({ theme = 'mixed' 
   const inputBorder = isLight ? 'border-brand-gray-200' : 'border-brand-gray-800';
   const inputPlace = 'placeholder-brand-gray-500';
 
-  // Resolve available images for tooltip
+  // Resolve image metadata lazily to avoid extra API traffic during normal list browsing.
   const [availableImages, setAvailableImages] = useState<ProjectImage[]>([]);
   useEffect(() => {
     if (hoveredEntry && hoveredEntry.images?.length > 0) {
@@ -122,7 +123,7 @@ export const SourcebookList: React.FC<SourcebookListProps> = ({ theme = 'mixed' 
 
   const getEntryImage = (entry: SourcebookEntry) => {
     if (!entry.images || entry.images.length === 0) return null;
-    // Get first image
+    // Preview only the primary linked image to keep the hover card lightweight.
     const firstImgName = entry.images[0];
     const imgData = availableImages.find((image) => image.filename === firstImgName);
     return imgData;
@@ -134,7 +135,6 @@ export const SourcebookList: React.FC<SourcebookListProps> = ({ theme = 'mixed' 
     >
       {/* Title Header */}
       <div className="flex items-center justify-between px-4 py-4 border-b border-transparent">
-        {/* MATCHING HEADER STYLE FROM CHAPTER LIST */}
         <h3
           className={`text-sm font-semibold uppercase tracking-wider ${textHeaderClass} flex items-center gap-2`}
         >

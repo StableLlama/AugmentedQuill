@@ -4,6 +4,7 @@
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
+// Purpose: Defines the settings dialog unit so this responsibility stays isolated, testable, and easy to evolve.
 
 import React, { useState, useEffect, useRef } from 'react';
 import {
@@ -94,15 +95,15 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
 
   const isLight = theme === 'light';
 
-  // Reset local state when opening + load machine config from backend
+  // Reinitialize dialog state on open to avoid stale provider/test cache leakage.
   useEffect(() => {
     if (isOpen) {
       setLocalSettings(settings);
-      setEditingProviderId(settings.activeChatProviderId); // Default to editing current chat provider
+      setEditingProviderId(settings.activeChatProviderId);
       setSaveError('');
       setModelLists({});
 
-      // Reset "already tested" caches so opening the dialog triggers one test.
+      // Force fresh capability/model checks for the current editing session.
       lastConnTestKeyRef.current = {};
       prevModelIdRef.current = {};
 
@@ -148,15 +149,15 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
               currentId: string | undefined,
               specificSaved: string | undefined
             ) => {
-              // 1. Prefer current in-memory value if valid
+              // Prioritize current in-memory selection to preserve user intent.
               if (currentId && providers.some((p) => p.id === currentId)) {
                 return currentId;
               }
-              // 2. Prefer specific saved value (selected_chat, etc) if valid
+              // Fall back to persisted per-role selection when available.
               if (specificSaved && providers.some((p) => p.id === specificSaved)) {
                 return specificSaved;
               }
-              // 3. Fallback to generic selected or first
+              // Final fallback keeps dialog operable with partially configured data.
               return fallbackId;
             };
 
@@ -166,7 +167,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
               const selectedEditing = openai.selected_editing;
 
               const newChatId = getValidId(prev.activeChatProviderId, selectedChat);
-              // Update editing provider to match chat if untracked, or keep if valid
+              // Keep the editor target stable unless it points to a removed provider.
               setEditingProviderId((currEdit) => {
                 if (currEdit && providers.some((p) => p.id === currEdit))
                   return currEdit;
@@ -199,7 +200,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
     }
   }, [isOpen, settings]);
 
-  // Auto-test connection and fetch models for all providers.
+  // Auto-test connectivity so model selectors can rely on known-good endpoints.
   useEffect(() => {
     if (!isOpen) return;
 
@@ -213,7 +214,6 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
       const timeoutS = Math.max(1, Math.round((provider.timeout || 10000) / 1000));
       const testKey = `${baseUrl}|${apiKey}|${timeoutS}`;
 
-      // Only attempt if baseUrl and apiKey are present
       if (!baseUrl || !apiKey) {
         setConnectionStatus((s) => ({ ...s, [providerId]: 'idle' }));
         setModelStatus((s) => ({ ...s, [providerId]: 'idle' }));
@@ -221,7 +221,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
         return;
       }
 
-      // Avoid re-testing unless the relevant inputs changed or dialog just opened.
+      // Debounce repeated checks to keep typing responsive.
       if (lastConnTestKeyRef.current[providerId] === testKey) {
         return;
       }
@@ -266,7 +266,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
     };
   }, [isOpen, localSettings.providers]);
 
-  // Test model availability for all providers.
+  // Validate selected model IDs only after connectivity succeeds.
   useEffect(() => {
     if (!isOpen) return;
 
@@ -278,7 +278,6 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
       const modelId = (provider.modelId || '').trim();
       const prevId = prevModelIdRef.current[providerId];
 
-      // If nothing changed and we already have a status, skip.
       if (
         prevId === modelId &&
         modelStatus[providerId] &&
@@ -287,14 +286,12 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
         return;
       }
 
-      // If no modelId, it's idle.
       if (!modelId) {
         prevModelIdRef.current[providerId] = modelId;
         setModelStatus((s) => ({ ...s, [providerId]: 'idle' }));
         return;
       }
 
-      // Only test if connection is OK.
       if (connectionStatus[providerId] !== 'success') {
         return;
       }
@@ -343,11 +340,6 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
       timeouts.forEach(clearTimeout);
     };
   }, [isOpen, localSettings.providers, connectionStatus]);
-
-  // Close model dropdown when switching providers
-  useEffect(() => {
-    //  setModelPickerOpenFor(null); // This was missing or causing issues in orig? No, just logic fix
-  }, [editingProviderId]);
 
   if (!isOpen) return null;
 

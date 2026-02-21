@@ -4,6 +4,7 @@
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
+# Purpose: Defines the project helpers unit so this responsibility stays isolated, testable, and easy to evolve.
 
 from app.services.projects.projects import get_active_project_dir
 from app.core.config import load_story_config
@@ -24,19 +25,19 @@ def normalize_story_for_frontend(story: dict) -> dict:
         return {}
     res = story.copy()
 
-    # 1. Sourcebook: Dict -> Sorted List
+    # Frontend expects a list shape; normalizing here keeps storage format
+    # decoupled from UI transport format.
     sb = res.get("sourcebook", {})
     if isinstance(sb, dict):
         new_sb = []
-        # Sort alphabetically by name (the key)
         for name, data in sorted(sb.items(), key=lambda x: x[0].lower()):
-            # Inject name and id (name is the ID)
             new_sb.append({"id": name, "name": name, **data})
         res["sourcebook"] = new_sb
     elif not isinstance(sb, list):
         res["sourcebook"] = []
 
-    # 2. Books (for Series): Inject IDs from folder names if missing
+    # Stable book IDs are required to keep chapter routing deterministic
+    # when titles change.
     if res.get("project_type") == "series" and "books" in res:
         books = res["books"]
         if isinstance(books, list):
@@ -46,7 +47,6 @@ def normalize_story_for_frontend(story: dict) -> dict:
             if active:
                 books_dir = active / "books"
                 if books_dir.exists():
-                    # Map existing folders
                     folders = sorted(
                         [d.name for d in books_dir.iterdir() if d.is_dir()]
                     )
@@ -55,19 +55,19 @@ def normalize_story_for_frontend(story: dict) -> dict:
                     for i, book in enumerate(books):
                         if isinstance(book, dict):
                             b_copy = book.copy()
-                            # If ID is missing, try folder, then try to find it
                             if not b_copy.get("id"):
                                 b_copy["id"] = b_copy.get("folder")
 
                             if not b_copy.get("id"):
-                                # This is tricky. If we just use index, it's fragile.
-                                # But if we rename folders to titles, it's stable.
+                                # Filesystem order fallback preserves legacy projects
+                                # that predate explicit IDs.
                                 if i < len(folders):
                                     b_copy["id"] = folders[i]
                             new_books.append(b_copy)
                     res["books"] = new_books
 
-    # 3. Chapters and Conflicts: Inject IDs for conflicts if missing
+    # Conflict IDs are synthesized when missing so editing and reordering
+    # remain stable in the frontend.
     def _handle_chapters(chapters):
         if not isinstance(chapters, list):
             return
@@ -105,7 +105,8 @@ def _project_overview() -> dict:
     if p_type == "short-story":
         fn = story.get("content_file", "content.md")
 
-        # Use metadata from story.json if available
+        # Preserve authored metadata so single-file projects still present
+        # rich chapter details in the same shape as multi-chapter projects.
         chapters = story.get("chapters", [])
         title = "Story Content"
         summary = "Full content of the story"
@@ -148,7 +149,8 @@ def _project_overview() -> dict:
         books = story.get("books", [])
         enriched_books = []
 
-        # Build ID -> Metadata mapping for series
+        # Build a metadata map from filesystem order to keep chapter identity
+        # aligned with persisted files even after renames.
         all_meta = []
         for b in books:
             bid = b.get("id") or b.get("folder")

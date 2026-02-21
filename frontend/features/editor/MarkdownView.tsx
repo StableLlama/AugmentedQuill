@@ -4,6 +4,7 @@
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
+// Purpose: Defines the markdown view unit so this responsibility stays isolated, testable, and easy to evolve.
 
 import React from 'react';
 import { AlertTriangle } from 'lucide-react';
@@ -13,15 +14,15 @@ import { marked } from 'marked';
 interface MarkdownViewProps {
   content: string;
   className?: string;
-  simple?: boolean; // If true, only highlights bold/italic, shows source for others
+  simple?: boolean;
 }
 
-// Configure marked once
+// Configure markdown rendering once to keep parsing behavior stable.
 const renderer = new marked.Renderer();
 // @ts-ignore
 renderer.image = (href, title, text) => {
   type LegacyImageArg = { href?: string; title?: string; text?: string };
-  // Compatibility for older vs newer marked versions (args vs object)
+  // Support both legacy positional args and modern object-style image args.
   if (typeof href === 'object' && href !== null) {
     const obj = href as LegacyImageArg;
     href = obj.href;
@@ -56,7 +57,7 @@ export const MarkdownView: React.FC<MarkdownViewProps> = ({
   }
 
   const renderLine = (line: string, i: number) => {
-    // In simple mode, we still show the markdown for headers/lists etc but warn via the parent
+    // Simple mode preserves source for complex markdown to avoid misleading preview fidelity.
     return (
       <div key={i} className="min-h-[1.5em]">
         {renderInline(line)}
@@ -67,7 +68,7 @@ export const MarkdownView: React.FC<MarkdownViewProps> = ({
   const renderInline = (text: string) => {
     if (!text) return null;
 
-    // Tokenizer regex for inline elements
+    // Tokenize minimal inline markdown for lightweight summary previews.
     const regex = /(`.*?`|\*\*.*?\*\*|__.*?__|\*.*?\*|_.*?_)/g;
     const parts = text.split(regex);
 

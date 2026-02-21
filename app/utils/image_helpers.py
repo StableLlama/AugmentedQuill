@@ -4,6 +4,7 @@
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
+# Purpose: Defines the image helpers unit so this responsibility stays isolated, testable, and easy to evolve.
 
 """
 Helper functions for managing project images and their metadata.
@@ -29,7 +30,7 @@ def load_image_metadata() -> dict:
     if meta_file.exists():
         try:
             data = json.loads(meta_file.read_text("utf-8"))
-            # Check for versioned format
+            # Support both legacy flat metadata and versioned payloads.
             if "version" in data and isinstance(data["version"], int):
                 return data.get("items", {})
             return data
@@ -117,8 +118,8 @@ def get_project_images() -> list[dict]:
     for fname in sorted(meta.keys()):
         if fname not in files_map:
             info = meta[fname]
-            # Verify if it's meant to be a placeholder or just stale metadata?
-            # Any metadata without a file is effectively a placeholder in this system.
+            # Metadata entries without a backing file are treated as placeholders
+            # so author intent is retained until an asset is uploaded.
             images.append(
                 {
                     "filename": fname,

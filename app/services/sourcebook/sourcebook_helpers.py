@@ -4,6 +4,7 @@
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
+# Purpose: Defines the sourcebook helpers unit so this responsibility stays isolated, testable, and easy to evolve.
 
 from typing import List, Optional, Dict
 from app.services.projects.projects import get_active_project_dir

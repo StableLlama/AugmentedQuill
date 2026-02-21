@@ -4,6 +4,7 @@
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
+// Purpose: Defines the sourcebook entry dialog unit so this responsibility stays isolated, testable, and easy to evolve.
 
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
@@ -161,7 +162,7 @@ export const SourcebookEntryDialog: React.FC<SourcebookEntryDialogProps> = ({
   const inputBorderClass = isLight ? 'border-brand-gray-200' : 'border-brand-gray-800';
   const labelClass = isLight ? 'text-brand-gray-600' : 'text-brand-gray-400';
 
-  // Derived state for the image picker
+  // Keep picker rendering derived from canonical selection state.
   const selectedImagesList = availableImages.filter((img) =>
     images.includes(img.filename)
   );

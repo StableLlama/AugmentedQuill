@@ -4,6 +4,7 @@
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
+// Purpose: Defines the use story unit so this responsibility stays isolated, testable, and easy to evolve.
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { StoryState, Chapter, Book } from '../../types';
@@ -53,7 +54,7 @@ export const useStory = () => {
 
       const res = await api.projects.select(currentProject);
       if (res.error === 'version_outdated') {
-        // Show dialog to update
+        // Block normal loading so schema transitions are explicit and recoverable.
         const shouldUpdate = confirm(
           `The story config is outdated (version ${res.current_version}). Current version is ${res.required_version}. Do you want to update it?`
         );
@@ -61,7 +62,7 @@ export const useStory = () => {
           try {
             const updateRes = await api.projects.updateConfig();
             if (updateRes.ok) {
-              // After update, reload the story
+              // Reload immediately to ensure local state reflects migrated structure.
               const res2 = await api.projects.select(currentProject);
               if (res2.ok && res2.story) {
                 const chaptersRes = await api.chapters.list();
@@ -78,7 +79,6 @@ export const useStory = () => {
                 setStory(newStory);
                 setCurrentChapterId(newStory.currentChapterId);
               } else if (res2.error) {
-                // Handle errors after update
                 if (res2.error === 'invalid_config') {
                   alert(`Invalid story config: ${res2.error_message}`);
                 } else {
@@ -120,7 +120,7 @@ export const useStory = () => {
     setCurrentChapterId(id);
   }, []);
 
-  // Load chapter content when currentChapterId changes
+  // Load chapter content lazily so list refreshes stay responsive.
   useEffect(() => {
     if (currentChapterId) {
       const loadContent = async () => {
@@ -151,7 +151,7 @@ export const useStory = () => {
   }, [currentChapterId, story.lastUpdated]);
 
   const fetchStory = useCallback(async () => {
-    if (story.id) return; // Already loaded
+    if (story.id) return;
     try {
       const projects = await api.projects.list();
       if (projects.current) {
@@ -254,8 +254,8 @@ export const useStory = () => {
         await api.chapters.updateTitle(numId, partial.title);
       if (partial.summary !== undefined)
         await api.chapters.updateSummary(numId, partial.summary);
-      // For metadata (notes, private_notes, conflicts), typically updateMetadata is used by caller
-      // but if we wanted to support it here we could add it.
+      // Metadata fields are managed through dedicated metadata flows to avoid
+      // partial writes racing with dialog autosave.
     } catch (e) {
       console.error('Failed to update chapter', e);
     }
@@ -266,8 +266,8 @@ export const useStory = () => {
       story.books?.map((b) => (b.id === id ? { ...b, ...partial } : b)) || [];
     const newState = { ...story, books: newBooks };
     pushState(newState);
-    // Note: API calls for books are handled by the caller (MetadataEditorDialog/ChapterList usually)
-    // or we could move them here.
+    // Book persistence stays at call sites that own the surrounding workflow
+    // (rename, reorder, metadata edit) to keep this hook narrowly scoped.
   };
 
   const addChapter = async (
@@ -280,7 +280,7 @@ export const useStory = () => {
       const chaptersRes = await api.chapters.list();
       const newChapters: Chapter[] = mapApiChapters(chaptersRes.chapters);
 
-      // Find the new chapter in the list by the ID returned from creation
+      // Prefer backend-returned identity, then fallback to list tail for compatibility.
       const newChapter =
         newChapters.find((c) => c.id === String(res.id)) ||
         newChapters[newChapters.length - 1];
@@ -304,12 +304,11 @@ export const useStory = () => {
 
       await api.chapters.delete(Number(id));
 
-      // Refresh the chapter list from the backend since IDs are positional
-      // and deleting one shifts subsequent IDs in Series projects.
+      // Re-fetch after deletion because positional IDs can shift in series mode.
       const chaptersRes = await api.chapters.list();
       const newChapters: Chapter[] = mapApiChapters(chaptersRes.chapters);
 
-      // Re-anchor selection based on filename/book_id since IDs may have shifted
+      // Re-anchor via stable file/book coordinates instead of transient numeric IDs.
       let newSelection = null;
       if (currentChapterId !== id && currentChap) {
         const matching = newChapters.find(
@@ -321,7 +320,7 @@ export const useStory = () => {
         }
       }
 
-      // If we deleted the active chapter or couldn't find it, pick a neighbor
+      // Keep editor continuity by selecting a nearby chapter when possible.
       if (!newSelection && newChapters.length > 0) {
         const oldIndex = story.chapters.findIndex((c) => c.id === id);
         newSelection =
@@ -342,7 +341,7 @@ export const useStory = () => {
 
   const loadStory = useCallback(
     (newStory: StoryState) => {
-      // Always select project to ensure backend active state matches frontend
+      // Keep backend active-project context aligned before local state updates.
       if (newStory.id) {
         api.projects
           .select(newStory.id)
@@ -350,7 +349,6 @@ export const useStory = () => {
           .catch((e) => console.error('Failed to select project', e));
       }
 
-      // Update local state
       setStory(newStory);
       setHistory([newStory]);
       setCurrentIndex(0);

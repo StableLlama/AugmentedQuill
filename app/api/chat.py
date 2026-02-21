@@ -4,6 +4,7 @@
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
+# Purpose: Defines the chat unit so this responsibility stays isolated, testable, and easy to evolve.
 
 """
 API endpoints for chat sessions and conversational interactions with the LLM writing partner.
@@ -236,19 +237,20 @@ async def _inject_project_images(messages: list[dict]):
         return
 
     found_images = []
-    # Scan for common image extensions
+    # Restrict lookup to known image types so user text cannot trigger
+    # accidental binary reads from unrelated project files.
     allowed = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
 
     for f in images_dir.iterdir():
         if f.is_file() and f.suffix.lower() in allowed:
-            # Check if filename is in content
+            # Filename matching keeps image attachment explicit and user-controlled.
             if f.name in content:
                 found_images.append(f)
 
     if not found_images:
         return
 
-    # Construct new content
+    # Preserve original text and append matched images as multimodal payload items.
     new_content = [{"type": "text", "text": content}]
 
     for path in found_images:

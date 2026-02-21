@@ -4,6 +4,7 @@
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
+# Purpose: Defines the prompts unit so this responsibility stays isolated, testable, and easy to evolve.
 
 """
 Centralized prompts configuration for LLM interactions.
@@ -104,7 +105,7 @@ def get_user_prompt(prompt_type: str, **kwargs) -> str:
     Returns:
         The formatted user prompt string
     """
-    # Check for overrides in kwargs if they were passed as 'user_prompt_overrides'
+    # Allow per-request prompt overrides without mutating global defaults.
     overrides = kwargs.get("user_prompt_overrides", {})
     template = overrides.get(prompt_type) or DEFAULT_USER_PROMPTS.get(prompt_type, "")
 
@@ -114,7 +115,7 @@ def get_user_prompt(prompt_type: str, **kwargs) -> str:
     template = ensure_string(template)
 
     try:
-        # Remove user_prompt_overrides from kwargs before formatting
+        # Strip control keys so only template variables reach format().
         format_kwargs = {
             k: v for k, v in kwargs.items() if k != "user_prompt_overrides"
         }

@@ -5,9 +5,11 @@
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
+# Purpose: Defines the check copyright unit so this responsibility stays isolated, testable, and easy to evolve.
 
 import os
 import sys
+import re
 
 
 def check_copyright(directory):
@@ -23,9 +25,10 @@ def check_copyright(directory):
     }
 
     missing_copyright = []
+    missing_purpose = []
 
     for root, dirs, files in os.walk(directory):
-        # Filter directories
+        # Skip generated/dependency folders to keep checks focused on maintained source.
         dirs[:] = [d for d in dirs if d not in ignore_dirs]
 
         for file in files:
@@ -33,18 +36,24 @@ def check_copyright(directory):
             if ext in extensions:
                 path = os.path.join(root, file)
 
-                # Check for empty file or specific test files that might not need it (optional)
-                # But request said "all files".
-
                 try:
                     with open(path, "r", encoding="utf-8") as f:
-                        content = f.read(500)  # Check first 500 chars
+                        content = f.read(1200)
                         if "Copyright (C)" not in content:
                             missing_copyright.append(path)
+
+                        is_python = ext == ".py"
+                        marker = "#" if is_python else "//"
+                        purpose_re = re.compile(
+                            rf"^\s*{re.escape(marker)}\s*Purpose:\s+.+$",
+                            re.MULTILINE,
+                        )
+                        if not purpose_re.search(content):
+                            missing_purpose.append(path)
                 except Exception as e:
                     print(f"Error reading {path}: {e}")
 
-    return missing_copyright
+    return missing_copyright, missing_purpose
 
 
 if __name__ == "__main__":
@@ -54,11 +63,15 @@ if __name__ == "__main__":
         root_dir = os.getcwd()
 
     print(f"Checking for copyright notices in {root_dir}...")
-    missing = check_copyright(root_dir)
+    missing_copyright, missing_purpose = check_copyright(root_dir)
 
-    if missing:
+    if missing_copyright or missing_purpose:
         print("\nMissing Copyright Notice in:")
-        for f in missing:
+        for f in missing_copyright:
+            print(f"  {os.path.relpath(f, root_dir)}")
+
+        print("\nMissing Purpose Header in:")
+        for f in missing_purpose:
             print(f"  {os.path.relpath(f, root_dir)}")
         sys.exit(1)
     else:

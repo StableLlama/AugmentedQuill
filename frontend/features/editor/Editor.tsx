@@ -4,6 +4,7 @@
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
+// Purpose: Defines the editor unit so this responsibility stays isolated, testable, and easy to evolve.
 
 import React, {
   useRef,
@@ -94,7 +95,7 @@ const PlainTextEditable = React.forwardRef<HTMLDivElement, PlainTextEditableProp
     const elementRef = useRef<HTMLDivElement>(null);
     useImperativeHandle(ref, () => elementRef.current);
 
-    // Sync external value to innerText only if significantly different to avoid cursor jumps
+    // Avoid unnecessary DOM rewrites to preserve caret stability while typing.
     useEffect(() => {
       const display = showWhitespace
         ? (value || '')
@@ -238,7 +239,7 @@ export const Editor = React.forwardRef<EditorHandle, EditorProps>(
       });
     }
 
-    // Handle WYSIWYG Content Sync
+    // Keep WYSIWYG DOM synchronized when content changes externally.
     useEffect(() => {
       if (viewMode === 'wysiwyg' && wysiwygRef.current) {
         if (document.activeElement !== wysiwygRef.current) {
@@ -258,7 +259,7 @@ export const Editor = React.forwardRef<EditorHandle, EditorProps>(
       }
     };
 
-    // Check Formatting Context (Sticky Buttons)
+    // Update active formatting state for toolbar affordances.
     const checkContext = () => {
       if (!onContextChange) return;
 
@@ -277,16 +278,15 @@ export const Editor = React.forwardRef<EditorHandle, EditorProps>(
         if (formatBlock === 'h3') formats.push('h3');
         if (formatBlock === 'blockquote') formats.push('quote');
       } else if (el) {
-        // Markdown / Raw Context Detection using Selection API on the Div
         const selection = window.getSelection();
         if (
           selection &&
           selection.rangeCount > 0 &&
           el.contains(selection.anchorNode)
         ) {
+          // Raw-mode context detection is intentionally conservative until
+          // selection-to-markdown offset mapping is implemented.
           const text = el.innerText;
-          // Basic naive check (improving this would require mapping selection offset to text index)
-          // For now, we just pass empty or implement simple regex if needed.
         }
       }
       onContextChange(formats);
@@ -309,9 +309,8 @@ export const Editor = React.forwardRef<EditorHandle, EditorProps>(
         return getCaretOffset(textareaRef.current);
       }
       if (viewMode === 'wysiwyg') {
-        // Mapping a WYSIWYG DOM selection to markdown offsets is non-trivial.
-        // For now, only allow trigger when selection is inside the wysiwyg editor;
-        // insertion happens at end-of-content semantics in the parent.
+        // DOM-to-markdown offset mapping is ambiguous in WYSIWYG mode;
+        // use content-end fallback while still requiring in-editor selection.
         const inside =
           !!wysiwygRef.current &&
           !!window.getSelection()?.anchorNode &&
@@ -389,8 +388,8 @@ export const Editor = React.forwardRef<EditorHandle, EditorProps>(
     );
 
     useEffect(() => {
-      // Capture global keydown so the shortcuts work even if focus moved away
-      // (e.g. footer button, scroll container).
+      // Capture shortcuts globally so suggestion controls remain reachable
+      // while focus moves across editor-adjacent UI.
       const onKeyDown = (e: KeyboardEvent) => {
         maybeHandleSuggestionHotkey(e);
       };
@@ -403,8 +402,8 @@ export const Editor = React.forwardRef<EditorHandle, EditorProps>(
 
       // Basic Enter handling to prevent div insertion, ensuring clean newlines
       if (e.key === 'Enter') {
-        // Let the browser handle simple newlines in plain text mode usually,
-        // but sometimes browsers wrap in <div>. We'll leave default for now as it's robust enough for "Raw".
+        // Keep native behavior in raw mode; newline normalization happens
+        // during content extraction.
       }
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
         setTimeout(checkContext, 0);

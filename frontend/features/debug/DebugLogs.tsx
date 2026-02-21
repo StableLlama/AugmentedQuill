@@ -4,6 +4,7 @@
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
+// Purpose: Defines the debug logs unit so this responsibility stays isolated, testable, and easy to evolve.
 
 import React, { useState, useEffect, useRef } from 'react';
 import {
@@ -123,7 +124,7 @@ export const DebugLogs: React.FC<DebugLogsProps> = ({ isOpen, onClose, theme }) 
     setIsLoading(true);
     try {
       const data = await api.debug.getLogs();
-      setLogs(data); // Show newest at bottom
+      setLogs(data);
     } catch (error) {
       console.error('Failed to fetch debug logs:', error);
     } finally {
@@ -149,7 +150,7 @@ export const DebugLogs: React.FC<DebugLogsProps> = ({ isOpen, onClose, theme }) 
 
   useEffect(() => {
     if (isOpen && logs.length > 0) {
-      // Small delay to ensure content is rendered
+      // Defer scroll until layout settles so height calculations are accurate.
       const timeoutId = setTimeout(scrollToBottom, 50);
       return () => clearTimeout(timeoutId);
     }
