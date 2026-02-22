@@ -4,9 +4,8 @@ The AI Chat Assistant is your dedicated co-writer, sounding board, and editor. I
 
 `[SCREENSHOT: The AI Chat Assistant panel open in the right sidebar next to the text editor]`
 
-The Chat Assistant is powered by the **CHAT model**, which you can spot by the blue halo around the panel.
-
-<img src="assets/message-square.svg" alt="Message square icon" width="20" height="20" style="vertical-align:text-bottom;" /> <img src="assets/swatches/blue.svg" alt="Blue swatch" width="16" height="16" style="vertical-align:text-bottom;" /> Blue
+The Chat Assistant is powered by the **CHAT model**
+<img src="assets/message-square.svg" alt="Message square icon" width="20" height="20" style="vertical-align:text-bottom;" /> <img src="assets/swatches/blue.svg" alt="Blue swatch" width="16" height="16" style="vertical-align:text-bottom;" />, which you can spot by the blue halo around the panel.
 
 ## Chat Features
 
