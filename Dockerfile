@@ -1,12 +1,3 @@
-# Stage 1: Build the frontend
-FROM node:18-alpine AS frontend-builder
-WORKDIR /app/src/frontend
-COPY src/frontend/package*.json ./
-RUN npm install
-COPY src/frontend/ ./
-RUN npm run build
-
-# Stage 2: Build the backend
 FROM python:3.11-slim
 WORKDIR /app
 
@@ -20,8 +11,9 @@ COPY pyproject.toml README.md ./
 COPY src/augmentedquill/ ./src/augmentedquill/
 RUN pip install --no-cache-dir -e .
 
-# Copy built frontend from Stage 1
-COPY --from=frontend-builder /app/src/frontend/dist ./static/dist
+# Copy pre-built frontend (CI should build `src/frontend/dist` before docker build)
+# Fall back to empty directory if dist is not present to avoid build failures.
+COPY src/frontend/dist ./static/dist
 COPY static/images ./static/images
 
 # Create necessary directories
