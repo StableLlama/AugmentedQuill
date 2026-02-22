@@ -95,3 +95,13 @@ If you want to modify the code, contribute to the project, or just prefer runnin
    Then open `http://127.0.0.1:8000` in your browser.
 
 For hot-reloading during development, see the Development Workflow section in the `README.md`.
+
+### Branching notes for contributors
+
+When contributing, branch from `develop` and open pull requests against `develop` (unless the change is an urgent fix to `main`).
+
+- Feature branches: `feature/<short-desc>`
+- Release branches: `release/vX.Y` (short-lived)
+- Hotfix branches: `hotfix/vX.Y.Z` (branch from `main`)
+
+The `main` branch always reflects the last release; `develop` is the integration branch used for ongoing development.
