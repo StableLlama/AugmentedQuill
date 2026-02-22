@@ -144,3 +144,22 @@ To maintain visual consistency across your project, you can configure **Project 
 4.  **Additional Information**: Add specific technical parameters or LoRA triggers (e.g., "<lora:my_style:0.8>, dark lighting, no humans"). These details are appended to the generation prompt to ensure your specific generation pipeline rules are followed.
 
 When you click "Create Prompt" for an image, the AI will intelligently fuse your image's specific description with your global style and additional parameters into a single, optimized prompt line.
+
+## Branching Strategy
+
+This repository uses a simple Git Flow variant to keep releases stable while allowing ongoing development:
+
+- `main` — the stable branch that always reflects the last tagged release. Protected; merges to `main` should be done only via reviewed PRs and after passing CI.
+- `develop` — the integration branch for ongoing development. Feature branches are branched from and merged into `develop`.
+- `release/vX.Y` — short-lived release candidate branches created from `develop` when preparing a release.
+- `hotfix/vX.Y.Z` — branch from `main` for urgent fixes; merge back into both `main` and `develop`.
+- `feature/<short-desc>` — feature branches off `develop`.
+
+Workflow summary:
+
+1. Develop features on `feature/*` branches and open PRs against `develop`.
+2. When ready, create `release/vX.Y` from `develop`, finalize tests and fixes, then merge into `main` and tag `vX.Y`.
+3. Merge the release back into `develop` if any release-specific changes were made.
+4. For urgent fixes, create `hotfix/*` from `main`, merge into `main` and `develop`, and tag as appropriate.
+
+See CONTRIBUTING.md for PR and review requirements.
