@@ -1,9 +1,17 @@
-FROM python:3.11-slim
+FROM node:18-bullseye AS frontend-builder
+WORKDIR /app/src/frontend
+COPY src/frontend/package*.json ./
+RUN npm ci --no-audit --prefer-offline
+COPY src/frontend/ ./
+RUN npm run build
+
+FROM python:3.11-slim AS runtime
 WORKDIR /app
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy backend source and install
@@ -11,9 +19,8 @@ COPY pyproject.toml README.md ./
 COPY src/augmentedquill/ ./src/augmentedquill/
 RUN pip install --no-cache-dir -e .
 
-# Copy pre-built frontend (CI should build `src/frontend/dist` before docker build)
-# Fall back to empty directory if dist is not present to avoid build failures.
-COPY src/frontend/dist ./static/dist
+# Copy built frontend from the builder stage
+COPY --from=frontend-builder /app/src/frontend/dist ./static/dist
 COPY static/images ./static/images
 
 # Create necessary directories
