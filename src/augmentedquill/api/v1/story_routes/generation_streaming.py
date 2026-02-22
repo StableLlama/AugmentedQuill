@@ -12,20 +12,21 @@ from fastapi.responses import StreamingResponse
 from augmentedquill.core.config import BASE_DIR, save_story_config
 from augmentedquill.services.llm import llm
 from augmentedquill.services.story.story_api_prompt_ops import (
-    build_chapter_summary_messages,
-    build_continue_chapter_messages,
-    build_story_summary_messages,
     build_suggest_prompt,
-    build_write_chapter_messages,
     resolve_model_runtime,
 )
 from augmentedquill.services.story.story_api_state_ops import (
-    collect_chapter_summaries,
     ensure_chapter_slot,
     get_active_story_or_http_error,
     get_chapter_locator,
     get_normalized_chapters,
     read_text_or_http_500,
+)
+from augmentedquill.services.story.story_generation_common import (
+    prepare_chapter_summary_generation,
+    prepare_continue_chapter_generation,
+    prepare_story_summary_generation,
+    prepare_write_chapter_generation,
 )
 from augmentedquill.services.story.story_api_stream_ops import (
     stream_collect_and_persist,
@@ -111,47 +112,26 @@ async def api_story_suggest(request: Request) -> StreamingResponse:
 @router.post("/story/summary/stream")
 async def api_story_summary_stream(request: Request):
     payload = await parse_json_body(request)
-    chap_id = payload.get("chap_id")
-    if not isinstance(chap_id, int):
-        raise HTTPException(status_code=400, detail="chap_id is required")
-    mode = (payload.get("mode") or "").lower()
-    if mode not in ("discard", "update", ""):
-        raise HTTPException(status_code=400, detail="mode must be discard|update")
-
-    _, path, pos = get_chapter_locator(chap_id)
-    chapter_text = read_text_or_http_500(path)
-
-    _, story_path, story = get_active_story_or_http_error()
-    chapters_data = get_normalized_chapters(story)
-    ensure_chapter_slot(chapters_data, pos)
-    current_summary = chapters_data[pos].get("summary", "")
-
-    base_url, api_key, model_id, timeout_s, model_overrides = resolve_model_runtime(
-        payload=payload,
-        model_type="EDITING",
-        base_dir=BASE_DIR,
-    )
-    messages = build_chapter_summary_messages(
-        mode=mode,
-        current_summary=current_summary,
-        chapter_text=chapter_text,
-        model_overrides=model_overrides,
+    prepared = prepare_chapter_summary_generation(
+        payload,
+        payload.get("chap_id"),
+        payload.get("mode") or "",
     )
 
     async def _gen_source():
         async for chunk in stream_unified_chat_content(
-            messages=messages,
-            base_url=base_url,
-            api_key=api_key,
-            model_id=model_id,
-            timeout_s=timeout_s,
+            messages=prepared["messages"],
+            base_url=prepared["base_url"],
+            api_key=prepared["api_key"],
+            model_id=prepared["model_id"],
+            timeout_s=prepared["timeout_s"],
         ):
             yield chunk
 
     def _persist(new_summary: str) -> None:
-        chapters_data[pos]["summary"] = new_summary
-        story["chapters"] = chapters_data
-        save_story_config(story_path, story)
+        prepared["chapters_data"][prepared["pos"]]["summary"] = new_summary
+        prepared["story"]["chapters"] = prepared["chapters_data"]
+        save_story_config(prepared["story_path"], prepared["story"])
 
     return _as_streaming_response(
         lambda: stream_collect_and_persist(_gen_source, _persist)
@@ -161,45 +141,20 @@ async def api_story_summary_stream(request: Request):
 @router.post("/story/write/stream")
 async def api_story_write_stream(request: Request):
     payload = await parse_json_body(request)
-    chap_id = payload.get("chap_id")
-    if not isinstance(chap_id, int):
-        raise HTTPException(status_code=400, detail="chap_id is required")
-    _, path, pos = get_chapter_locator(chap_id)
-
-    _, _, story = get_active_story_or_http_error()
-    chapters_data = get_normalized_chapters(story)
-    if pos >= len(chapters_data):
-        raise HTTPException(
-            status_code=400, detail="No summary available for this chapter"
-        )
-
-    summary = chapters_data[pos].get("summary", "").strip()
-    title = chapters_data[pos].get("title") or path.name
-
-    base_url, api_key, model_id, timeout_s, model_overrides = resolve_model_runtime(
-        payload=payload,
-        model_type="WRITING",
-        base_dir=BASE_DIR,
-    )
-    messages = build_write_chapter_messages(
-        project_title=story.get("project_title", "Story"),
-        chapter_title=title,
-        chapter_summary=summary,
-        model_overrides=model_overrides,
-    )
+    prepared = prepare_write_chapter_generation(payload, payload.get("chap_id"))
 
     async def _gen_source():
         async for chunk in stream_unified_chat_content(
-            messages=messages,
-            base_url=base_url,
-            api_key=api_key,
-            model_id=model_id,
-            timeout_s=timeout_s,
+            messages=prepared["messages"],
+            base_url=prepared["base_url"],
+            api_key=prepared["api_key"],
+            model_id=prepared["model_id"],
+            timeout_s=prepared["timeout_s"],
         ):
             yield chunk
 
     def _persist(content: str) -> None:
-        path.write_text(content, encoding="utf-8")
+        prepared["path"].write_text(content, encoding="utf-8")
 
     return _as_streaming_response(
         lambda: stream_collect_and_persist(_gen_source, _persist)
@@ -209,52 +164,29 @@ async def api_story_write_stream(request: Request):
 @router.post("/story/continue/stream")
 async def api_story_continue_stream(request: Request):
     payload = await parse_json_body(request)
-    chap_id = payload.get("chap_id")
-    if not isinstance(chap_id, int):
-        raise HTTPException(status_code=400, detail="chap_id is required")
-    _, path, pos = get_chapter_locator(chap_id)
-
-    existing = read_text_or_http_500(path)
-
-    _, _, story = get_active_story_or_http_error()
-    chapters_data = get_normalized_chapters(story)
-    if pos >= len(chapters_data):
-        raise HTTPException(
-            status_code=400, detail="No summary available for this chapter"
-        )
-
-    summary = chapters_data[pos].get("summary", "")
-    title = chapters_data[pos].get("title") or path.name
-
-    base_url, api_key, model_id, timeout_s, model_overrides = resolve_model_runtime(
-        payload=payload,
-        model_type="WRITING",
-        base_dir=BASE_DIR,
-    )
-    messages = build_continue_chapter_messages(
-        chapter_title=title,
-        chapter_summary=summary,
-        existing_text=existing,
-        model_overrides=model_overrides,
-    )
+    prepared = prepare_continue_chapter_generation(payload, payload.get("chap_id"))
 
     async def _gen_source():
         async for chunk in stream_unified_chat_content(
-            messages=messages,
-            base_url=base_url,
-            api_key=api_key,
-            model_id=model_id,
-            timeout_s=timeout_s,
+            messages=prepared["messages"],
+            base_url=prepared["base_url"],
+            api_key=prepared["api_key"],
+            model_id=prepared["model_id"],
+            timeout_s=prepared["timeout_s"],
         ):
             yield chunk
 
     def _persist(appended: str) -> None:
         new_content = (
-            existing
-            + ("\n" if existing and not existing.endswith("\n") else "")
+            prepared["existing"]
+            + (
+                "\n"
+                if prepared["existing"] and not prepared["existing"].endswith("\n")
+                else ""
+            )
             + appended
         )
-        path.write_text(new_content, encoding="utf-8")
+        prepared["path"].write_text(new_content, encoding="utf-8")
 
     return _as_streaming_response(
         lambda: stream_collect_and_persist(_gen_source, _persist)
@@ -264,44 +196,21 @@ async def api_story_continue_stream(request: Request):
 @router.post("/story/story-summary/stream")
 async def api_story_story_summary_stream(request: Request):
     payload = await parse_json_body(request)
-
-    mode = (payload.get("mode") or "").lower()
-    if mode not in ("discard", "update", ""):
-        raise HTTPException(status_code=400, detail="mode must be discard|update")
-
-    _, story_path, story = get_active_story_or_http_error()
-    chapters_data = get_normalized_chapters(story)
-    current_story_summary = story.get("story_summary", "")
-
-    chapter_summaries = collect_chapter_summaries(chapters_data)
-    if not chapter_summaries:
-        raise HTTPException(status_code=400, detail="No chapter summaries available")
-
-    base_url, api_key, model_id, timeout_s, model_overrides = resolve_model_runtime(
-        payload=payload,
-        model_type="EDITING",
-        base_dir=BASE_DIR,
-    )
-    messages = build_story_summary_messages(
-        mode=mode,
-        current_story_summary=current_story_summary,
-        chapter_summaries=chapter_summaries,
-        model_overrides=model_overrides,
-    )
+    prepared = prepare_story_summary_generation(payload, payload.get("mode") or "")
 
     async def _gen_source():
         async for chunk in stream_unified_chat_content(
-            messages=messages,
-            base_url=base_url,
-            api_key=api_key,
-            model_id=model_id,
-            timeout_s=timeout_s,
+            messages=prepared["messages"],
+            base_url=prepared["base_url"],
+            api_key=prepared["api_key"],
+            model_id=prepared["model_id"],
+            timeout_s=prepared["timeout_s"],
         ):
             yield chunk
 
     def _persist(new_summary: str) -> None:
-        story["story_summary"] = new_summary
-        save_story_config(story_path, story)
+        prepared["story"]["story_summary"] = new_summary
+        save_story_config(prepared["story_path"], prepared["story"])
 
     return _as_streaming_response(
         lambda: stream_collect_and_persist(_gen_source, _persist)

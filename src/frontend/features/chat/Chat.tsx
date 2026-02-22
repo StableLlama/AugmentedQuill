@@ -9,62 +9,24 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ChatMessage, AppTheme, ChatSession } from '../../types';
 import {
-  Send,
   Loader2,
   Bot,
   User,
-  Sparkles,
-  Globe,
   RefreshCw,
   Trash2,
   Edit2,
   Save,
   X,
   Settings2,
-  ChevronDown,
-  ChevronRight,
   ArrowRight,
-  Plus,
-  Ghost,
-  History,
 } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { MarkdownView } from '../editor/MarkdownView';
-
-type SearchResult = {
-  title?: string;
-  href?: string;
-  url?: string;
-  body?: string;
-  snippet?: string;
-};
-
-const CollapsibleToolSection: React.FC<{
-  title: string;
-  children: React.ReactNode;
-  defaultExpanded?: boolean;
-}> = ({ title, children, defaultExpanded = false }) => {
-  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
-
-  useEffect(() => {
-    setIsExpanded(defaultExpanded);
-  }, [defaultExpanded]);
-
-  return (
-    <div className="mt-2 border border-black/10 dark:border-white/10 rounded overflow-hidden">
-      <button
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center justify-between px-2 py-1 bg-black/5 dark:bg-black/20 hover:bg-black/10 dark:hover:bg-black/30 transition-colors text-[10px] font-mono text-brand-gray-500"
-      >
-        <span className="flex items-center gap-1">
-          {isExpanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
-          {title}
-        </span>
-      </button>
-      {isExpanded && <div className="p-2 bg-transparent">{children}</div>}
-    </div>
-  );
-};
+import { CollapsibleToolSection } from './components/CollapsibleToolSection';
+import { WebSearchResults, VisitPageResult } from './components/ToolResultViews';
+import { ChatHeader } from './components/ChatHeader';
+import { ChatHistoryPanel } from './components/ChatHistoryPanel';
+import { ChatComposer } from './components/ChatComposer';
 
 interface ChatProps {
   messages: ChatMessage[];
@@ -89,104 +51,6 @@ interface ChatProps {
   allowWebSearch: boolean;
   onToggleWebSearch: (val: boolean) => void;
 }
-
-const WebSearchResults: React.FC<{ content: string; name: string }> = ({
-  content,
-  name,
-}) => {
-  try {
-    const data = JSON.parse(content);
-    const results = Array.isArray(data) ? data : data.results || [];
-    const query = data.query || '';
-
-    return (
-      <div className="flex flex-col space-y-2">
-        <div className="flex items-center space-x-2 pb-2 border-b border-blue-500/20">
-          <Globe className="text-blue-500" size={16} />
-          <span className="font-bold text-xs text-blue-700 dark:text-blue-400">
-            {name === 'wikipedia_search' ? 'Wikipedia:' : 'Web Search:'}
-          </span>
-          <span className="italic text-brand-gray-600 dark:text-brand-gray-400 text-xs truncate">
-            "{query}"
-          </span>
-        </div>
-
-        {results.length === 0 ? (
-          <div className="text-[11px] text-brand-gray-500 italic py-2">
-            {data.error ? `Error: ${data.error}` : 'No relevant results found.'}
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-3 py-2">
-            {results.map((r: SearchResult, i: number) => (
-              <div
-                key={i}
-                className="group flex flex-col p-2 rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors border border-transparent hover:border-blue-500/20"
-              >
-                <a
-                  href={r.href || r.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-blue-600 dark:text-blue-400 hover:underline font-semibold text-sm line-clamp-1"
-                >
-                  {r.title}
-                </a>
-                <div className="text-[10px] text-green-700 dark:text-green-500 truncate mt-0.5">
-                  {r.href || r.url}
-                </div>
-                {r.body || r.snippet ? (
-                  <div className="text-brand-gray-600 dark:text-brand-gray-300 text-[11px] line-clamp-2 mt-1 leading-snug">
-                    {r.body || r.snippet}
-                  </div>
-                ) : null}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  } catch (e) {
-    return <MarkdownView content={content} />;
-  }
-};
-
-const VisitPageResult: React.FC<{ content: string }> = ({ content }) => {
-  try {
-    const data = JSON.parse(content);
-    return (
-      <div className="flex flex-col space-y-2">
-        <div className="flex items-center space-x-2 pb-2 border-b border-amber-500/20">
-          <ArrowRight className="text-amber-500" size={14} />
-          <span className="font-bold text-xs text-amber-700 dark:text-amber-400">
-            Visited Page:
-          </span>
-        </div>
-
-        <div className="bg-amber-500/5 border border-amber-500/10 rounded p-2 text-[10px] text-brand-gray-500 break-all font-mono">
-          {data.url}
-        </div>
-
-        {data.error ? (
-          <div className="text-[11px] text-red-500 italic p-1">
-            Error loading page: {data.error}
-          </div>
-        ) : (
-          <div className="bg-white/80 dark:bg-black/20 border border-black/5 dark:border-white/5 rounded-lg p-3">
-            <div className="max-h-80 overflow-y-auto custom-scrollbar text-[11px] whitespace-pre-wrap opacity-90 font-sans leading-relaxed">
-              {data.content}
-            </div>
-            <div className="mt-2 text-right">
-              <span className="text-[9px] text-brand-gray-400 uppercase tracking-wider">
-                Extracted Text ({Math.round(data.content.length / 1024)} KB)
-              </span>
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  } catch (e) {
-    return <MarkdownView content={content} />;
-  }
-};
 
 export const Chat: React.FC<ChatProps> = ({
   messages,
@@ -291,13 +155,6 @@ export const Chat: React.FC<ChatProps> = ({
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSubmit();
-    }
-  };
-
   const startEditing = (msg: ChatMessage) => {
     setEditingMessageId(msg.id);
     setEditContent(msg.text);
@@ -328,157 +185,29 @@ export const Chat: React.FC<ChatProps> = ({
     <div
       className={`flex flex-col h-full border-l ${bgMain} ${borderMain} ${textMain}`}
     >
-      <div
-        className={`p-4 border-b flex items-center justify-between ${headerBg} ${borderMain}`}
-      >
-        <div className="flex items-center space-x-2 overflow-hidden">
-          <Sparkles className="text-blue-600 shrink-0" size={20} />
-          <h2 className="font-semibold truncate">
-            {isIncognito ? 'Incognito Chat' : 'Writing Partner'}
-          </h2>
-        </div>
-        <div className="flex items-center space-x-1">
-          <button
-            onClick={() => {
-              if (currentSessionId) {
-                onDeleteSession(currentSessionId);
-              }
-            }}
-            className="p-1.5 rounded hover:bg-red-500/10 text-red-500/70 hover:text-red-500 transition-colors"
-            title="Delete Current Chat"
-            disabled={!currentSessionId}
-          >
-            <Trash2 size={16} />
-          </button>
-          <button
-            onClick={() => onNewSession(false)}
-            className="p-1.5 rounded hover:bg-brand-gray-200 dark:hover:bg-brand-gray-800 transition-colors text-brand-gray-500"
-            title="New Chat"
-          >
-            <Plus size={16} />
-          </button>
-          <button
-            onClick={() => onNewSession(true)}
-            className={`p-1.5 rounded hover:bg-brand-gray-200 dark:hover:bg-brand-gray-800 transition-colors ${
-              isIncognito ? 'text-purple-500 bg-purple-500/10' : 'text-brand-gray-500'
-            }`}
-            title="Incognito Chat (Not Saved)"
-          >
-            <Ghost size={16} />
-          </button>
-          <button
-            onClick={() => setShowHistory(!showHistory)}
-            className={`p-1.5 rounded hover:bg-brand-gray-200 dark:hover:bg-brand-gray-800 transition-colors ${
-              showHistory
-                ? 'bg-brand-gray-200 dark:bg-brand-gray-800 text-brand-600'
-                : 'text-brand-gray-500'
-            }`}
-            title="Chat History"
-          >
-            <History size={16} />
-          </button>
-          <button
-            onClick={() => onToggleWebSearch(!allowWebSearch)}
-            className={`p-1.5 rounded border transition-all ${
-              allowWebSearch
-                ? 'text-blue-600 bg-blue-50 border-blue-200 dark:text-blue-400 dark:bg-blue-500/20 dark:border-blue-500/30 shadow-sm'
-                : 'text-brand-gray-500 border-transparent hover:bg-brand-gray-200 dark:hover:bg-brand-gray-800'
-            }`}
-            title={allowWebSearch ? 'Web Search Enabled' : 'Enable Web Search'}
-          >
-            <Globe size={16} />
-          </button>
-          <button
-            onClick={() => setShowSystemPrompt(!showSystemPrompt)}
-            className={`p-1.5 rounded hover:bg-brand-gray-200 dark:hover:bg-brand-gray-800 transition-colors ${
-              showSystemPrompt
-                ? 'bg-brand-gray-200 dark:bg-brand-gray-800 text-brand-600'
-                : 'text-brand-gray-500'
-            }`}
-            title="Chat Settings"
-          >
-            <Settings2 size={16} />
-          </button>
-        </div>
-      </div>
+      <ChatHeader
+        title={isIncognito ? 'Incognito Chat' : 'Writing Partner'}
+        currentSessionId={currentSessionId}
+        isIncognito={isIncognito}
+        showHistory={showHistory}
+        setShowHistory={setShowHistory}
+        showSystemPrompt={showSystemPrompt}
+        setShowSystemPrompt={setShowSystemPrompt}
+        allowWebSearch={allowWebSearch}
+        onDeleteSession={onDeleteSession}
+        onNewSession={onNewSession}
+        onToggleWebSearch={onToggleWebSearch}
+      />
 
       {showHistory && (
-        <div
-          className={`p-4 border-b max-h-60 overflow-y-auto ${headerBg} ${borderMain}`}
-        >
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center space-x-2">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-brand-gray-500">
-                Recent Chats
-              </h3>
-              {sessions.length > 0 && onDeleteAllSessions && (
-                <button
-                  onClick={onDeleteAllSessions}
-                  className="text-[10px] text-red-500 hover:text-red-600 font-bold uppercase hover:underline ml-2"
-                >
-                  Clear All
-                </button>
-              )}
-            </div>
-            <button
-              onClick={() => setShowHistory(false)}
-              className="text-brand-gray-500 hover:text-brand-gray-700"
-            >
-              <X size={14} />
-            </button>
-          </div>
-          <div className="space-y-1">
-            {sessions.length === 0 && (
-              <div className="text-xs text-brand-gray-500 py-2 italic">
-                No saved chats yet.
-              </div>
-            )}
-            {sessions.map((s) => {
-              const isSIncognito = s.isIncognito;
-              return (
-                <div
-                  key={s.id}
-                  className={`group flex items-center justify-between p-2 rounded text-sm cursor-pointer transition-colors ${
-                    currentSessionId === s.id
-                      ? 'bg-brand-gray-200 dark:bg-brand-gray-800 text-brand-600 font-medium'
-                      : 'hover:bg-brand-gray-200/50 dark:hover:bg-brand-gray-800/50'
-                  }`}
-                  onClick={() => {
-                    onSelectSession(s.id);
-                    setShowHistory(false);
-                  }}
-                >
-                  <div className="flex flex-col overflow-hidden">
-                    <div className="flex items-center space-x-1">
-                      {isSIncognito && (
-                        <Ghost size={12} className="text-purple-500 shrink-0" />
-                      )}
-                      <span className="truncate">{s.name}</span>
-                    </div>
-                    <span className="text-[10px] text-brand-gray-500">
-                      {isSIncognito
-                        ? 'Not saved to disk'
-                        : s.updated_at
-                          ? new Date(s.updated_at).toLocaleString()
-                          : 'Unknown date'}
-                    </span>
-                  </div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (confirm('Delete this chat?')) {
-                        onDeleteSession(s.id);
-                      }
-                    }}
-                    className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-100 hover:text-red-600 transition-all"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+        <ChatHistoryPanel
+          sessions={sessions}
+          currentSessionId={currentSessionId}
+          onSelectSession={onSelectSession}
+          onDeleteSession={onDeleteSession}
+          onDeleteAllSessions={onDeleteAllSessions}
+          onClose={() => setShowHistory(false)}
+        />
       )}
 
       {showSystemPrompt && (
@@ -789,26 +518,14 @@ export const Chat: React.FC<ChatProps> = ({
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="relative">
-          <textarea
-            ref={textareaRef}
-            rows={1}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Type your instruction..."
-            className={`w-full pl-4 pr-12 py-3 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-all text-sm placeholder-brand-gray-400 border resize-none overflow-y-auto ${inputBg}`}
-            disabled={isLoading}
-          />
-          <button
-            type="submit"
-            disabled={!input.trim() || isLoading}
-            className="absolute right-2 bottom-2 p-2 text-brand-500 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-brand-gray-200 dark:hover:bg-brand-gray-700 rounded-full transition-colors"
-            title="Send Message (CHAT model)"
-          >
-            <Send size={18} />
-          </button>
-        </form>
+        <ChatComposer
+          textareaRef={textareaRef}
+          input={input}
+          setInput={setInput}
+          isLoading={isLoading}
+          inputBg={inputBg}
+          onSubmit={handleSubmit}
+        />
       </div>
     </div>
   );

@@ -17,6 +17,7 @@ import {
 import { AppTheme, Story, Conflict } from '../../types';
 import { MetadataEditorDialog } from './MetadataEditorDialog';
 import { api } from '../../services/api';
+import { notifyError } from '../../services/errorNotifier';
 
 interface StoryMetadataProps {
   title: string;
@@ -78,8 +79,7 @@ export const StoryMetadata: React.FC<StoryMetadataProps> = ({
       );
       // Keep dialog open because saves are triggered by autosave while editing.
     } catch (e) {
-      console.error(e);
-      alert('Failed to update story metadata');
+      notifyError('Failed to update story metadata', e);
     }
   };
 

@@ -11,6 +11,7 @@ import { StoryState, ProjectMetadata, ChatSession } from '../../types';
 import { api } from '../../services/api';
 import { ProjectListItem } from '../../services/apiTypes';
 import { mapSelectStoryToState } from '../story/storyMappers';
+import { formatError, notifyError } from '../../services/errorNotifier';
 
 type CreateProjectType = 'short-story' | 'novel' | 'series';
 
@@ -155,8 +156,7 @@ export function useProjectManagement({
           );
         }
       } catch (error) {
-        console.error(error);
-        alert(`Import failed: ${getErrorMessage(error, 'Unknown error')}`);
+        notifyError(`Import failed: ${getErrorMessage(error, 'Unknown error')}`, error);
       }
     },
     [getErrorMessage]
@@ -221,8 +221,7 @@ export function useProjectManagement({
         setIsCreateProjectOpen(false);
         if (isSettingsOpen) setIsSettingsOpen(false);
       } catch (error) {
-        console.error('Failed to create project', error);
-        alert(`Failed to create project: ${error}`);
+        notifyError(`Failed to create project: ${formatError(error)}`, error);
       }
     },
     [loadStory, handleNewChat, isSettingsOpen, setIsSettingsOpen]
@@ -242,8 +241,10 @@ export function useProjectManagement({
           await handleLoadProject(newProjects[0].id);
         }
       } catch (error) {
-        console.error('Failed to delete project', error);
-        alert(`Failed to delete project: ${getErrorMessage(error, 'Unknown error')}`);
+        notifyError(
+          `Failed to delete project: ${getErrorMessage(error, 'Unknown error')}`,
+          error
+        );
       }
     },
     [projects, story.id, handleLoadProject, getErrorMessage]

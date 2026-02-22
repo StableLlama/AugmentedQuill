@@ -6,163 +6,85 @@
 // (at your option) any later version.
 // Purpose: Defines the app main layout unit so this responsibility stays isolated, testable, and easy to evolve.
 
-import React, { Dispatch, RefObject, SetStateAction } from 'react';
+import React from 'react';
 
 import { ChapterList } from '../chapters/ChapterList';
 import { Chat } from '../chat/Chat';
-import { Editor, EditorHandle } from '../editor/Editor';
+import { Editor } from '../editor/Editor';
 import { SourcebookList } from '../sourcebook/SourcebookList';
 import { StoryMetadata } from '../story/StoryMetadata';
 import { useTheme } from './ThemeContext';
 import {
-  ChatMessage,
-  Chapter,
-  EditorSettings,
-  StoryState,
-  ViewMode,
-} from '../../types';
+  MainChatControls,
+  MainEditorControls,
+  MainSidebarControls,
+} from './layoutControlTypes';
 
 type AppMainLayoutProps = {
-  isSidebarOpen: boolean;
-  setIsSidebarOpen: Dispatch<SetStateAction<boolean>>;
-  story: StoryState;
-  currentChapterId: string | null;
-  handleChapterSelect: (id: string) => void;
-  deleteChapter: (id: string) => Promise<void>;
-  updateChapter: (id: string, partial: Partial<Chapter>) => Promise<void>;
-  updateBook: (
-    id: string,
-    partial: { title?: string; summary?: string }
-  ) => Promise<void>;
-  addChapter: (title?: string, content?: string, bookId?: string) => Promise<void>;
-  handleBookCreate: (title: string) => Promise<void>;
-  handleBookDelete: (id: string) => Promise<void>;
-  handleReorderChapters: (chapterIds: number[], bookId?: string) => Promise<void>;
-  handleReorderBooks: (bookIds: string[]) => Promise<void>;
-  handleSidebarAiAction: (
-    type: 'chapter' | 'book',
-    id: string,
-    action: 'write' | 'update' | 'rewrite',
-    onProgress?: (text: string) => void
-  ) => Promise<string | undefined>;
-  handleOpenImages: () => void;
-  updateStoryMetadata: (
-    updates: Partial<{
-      title: string;
-      summary: string;
-      styleTags: string[];
-      notes: string;
-      private_notes: string;
-      conflicts: string[];
-    }>
-  ) => Promise<void>;
-
-  currentChapter?: Chapter;
-  editorRef: RefObject<EditorHandle | null>;
-  editorSettings: EditorSettings;
-  viewMode: ViewMode;
-  continuations: string[];
-  isSuggesting: boolean;
-  handleTriggerSuggestions: (
-    cursor?: number,
-    contentOverride?: string,
-    enableSuggestionMode?: boolean
-  ) => Promise<void>;
-  handleAcceptContinuation: (text: string) => Promise<void>;
-  isSuggestionMode: boolean;
-  handleKeyboardSuggestionAction: (
-    action: 'trigger' | 'chooseLeft' | 'chooseRight' | 'regenerate' | 'undo' | 'exit',
-    cursor?: number
-  ) => Promise<void>;
-  handleAiAction: (
-    target: 'summary' | 'chapter',
-    action: 'update' | 'rewrite' | 'extend'
-  ) => Promise<void>;
-  isAiActionLoading: boolean;
-  setActiveFormats: Dispatch<SetStateAction<string[]>>;
-  showWhitespace: boolean;
-  setShowWhitespace: Dispatch<SetStateAction<boolean>>;
-
-  isChatOpen: boolean;
-  chatMessages: ChatMessage[];
-  isChatLoading: boolean;
-  systemPrompt: string;
-  handleSendMessage: (text: string) => Promise<void>;
-  handleStopChat: () => void;
-  handleRegenerate: () => Promise<void>;
-  handleEditMessage: (id: string, newText: string) => void;
-  handleDeleteMessage: (id: string) => void;
-  setSystemPrompt: Dispatch<SetStateAction<string>>;
-  handleLoadProject: (projectId: string) => Promise<void>;
-  incognitoSessions: React.ComponentProps<typeof Chat>['sessions'];
-  chatHistoryList: React.ComponentProps<typeof Chat>['sessions'];
-  currentChatId: string | null;
-  isIncognito: boolean;
-  handleSelectChat: (chatId: string) => Promise<void>;
-  handleNewChat: () => Promise<void>;
-  handleDeleteChat: (chatId: string) => Promise<void>;
-  handleDeleteAllChats: () => Promise<void>;
-  setIsIncognito: Dispatch<SetStateAction<boolean>>;
-  allowWebSearch: boolean;
-  setAllowWebSearch: Dispatch<SetStateAction<boolean>>;
+  sidebarControls: MainSidebarControls;
+  editorControls: MainEditorControls;
+  chatControls: MainChatControls;
 };
 
 export const AppMainLayout: React.FC<AppMainLayoutProps> = ({
-  isSidebarOpen,
-  setIsSidebarOpen,
-  story,
-  currentChapterId,
-  handleChapterSelect,
-  deleteChapter,
-  updateChapter,
-  updateBook,
-  addChapter,
-  handleBookCreate,
-  handleBookDelete,
-  handleReorderChapters,
-  handleReorderBooks,
-  handleSidebarAiAction,
-  handleOpenImages,
-  updateStoryMetadata,
-  currentChapter,
-  editorRef,
-  editorSettings,
-  viewMode,
-  continuations,
-  isSuggesting,
-  handleTriggerSuggestions,
-  handleAcceptContinuation,
-  isSuggestionMode,
-  handleKeyboardSuggestionAction,
-  handleAiAction,
-  isAiActionLoading,
-  setActiveFormats,
-  showWhitespace,
-  setShowWhitespace,
-  isChatOpen,
-  chatMessages,
-  isChatLoading,
-  systemPrompt,
-  handleSendMessage,
-  handleStopChat,
-  handleRegenerate,
-  handleEditMessage,
-  handleDeleteMessage,
-  setSystemPrompt,
-  handleLoadProject,
-  incognitoSessions,
-  chatHistoryList,
-  currentChatId,
-  isIncognito,
-  handleSelectChat,
-  handleNewChat,
-  handleDeleteChat,
-  handleDeleteAllChats,
-  setIsIncognito,
-  allowWebSearch,
-  setAllowWebSearch,
+  sidebarControls,
+  editorControls,
+  chatControls,
 }) => {
   const { bgMain, isLight, currentTheme } = useTheme();
+  const {
+    isSidebarOpen,
+    setIsSidebarOpen,
+    story,
+    currentChapterId,
+    handleChapterSelect,
+    deleteChapter,
+    updateChapter,
+    updateBook,
+    addChapter,
+    handleBookCreate,
+    handleBookDelete,
+    handleReorderChapters,
+    handleReorderBooks,
+    handleSidebarAiAction,
+    handleOpenImages,
+    updateStoryMetadata,
+  } = sidebarControls;
+  const {
+    currentChapter,
+    editorRef,
+    editorSettings,
+    viewMode,
+    suggestionControls,
+    aiControls,
+    setActiveFormats,
+    showWhitespace,
+    setShowWhitespace,
+  } = editorControls;
+  const {
+    isChatOpen,
+    chatMessages,
+    isChatLoading,
+    systemPrompt,
+    handleSendMessage,
+    handleStopChat,
+    handleRegenerate,
+    handleEditMessage,
+    handleDeleteMessage,
+    setSystemPrompt,
+    handleLoadProject,
+    incognitoSessions,
+    chatHistoryList,
+    currentChatId,
+    isIncognito,
+    handleSelectChat,
+    handleNewChat,
+    handleDeleteChat,
+    handleDeleteAllChats,
+    setIsIncognito,
+    allowWebSearch,
+    setAllowWebSearch,
+  } = chatControls;
 
   return (
     <div className="flex-1 flex overflow-hidden relative">
@@ -221,15 +143,20 @@ export const AppMainLayout: React.FC<AppMainLayoutProps> = ({
               chapter={currentChapter}
               settings={editorSettings}
               viewMode={viewMode}
-              onChange={updateChapter}
-              continuations={continuations}
-              isSuggesting={isSuggesting}
-              onTriggerSuggestions={handleTriggerSuggestions}
-              onAcceptContinuation={handleAcceptContinuation}
-              isSuggestionMode={isSuggestionMode}
-              onKeyboardSuggestionAction={handleKeyboardSuggestionAction}
-              onAiAction={handleAiAction}
-              isAiLoading={isAiActionLoading}
+              onChange={editorControls.updateChapter}
+              suggestionControls={{
+                continuations: suggestionControls.continuations,
+                isSuggesting: suggestionControls.isSuggesting,
+                onTriggerSuggestions: suggestionControls.handleTriggerSuggestions,
+                onAcceptContinuation: suggestionControls.handleAcceptContinuation,
+                isSuggestionMode: suggestionControls.isSuggestionMode,
+                onKeyboardSuggestionAction:
+                  suggestionControls.handleKeyboardSuggestionAction,
+              }}
+              aiControls={{
+                onAiAction: aiControls.handleAiAction,
+                isAiLoading: aiControls.isAiActionLoading,
+              }}
               onContextChange={setActiveFormats}
               showWhitespace={showWhitespace}
               onToggleShowWhitespace={() => setShowWhitespace((value) => !value)}

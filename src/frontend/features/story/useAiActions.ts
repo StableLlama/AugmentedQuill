@@ -11,6 +11,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 import { ChatMessage, Chapter, LLMConfig, StoryState } from '../../types';
 import { generateSimpleContent } from '../../services/openaiService';
+import { notifyError } from '../../services/errorNotifier';
 
 type PromptsState = {
   system_messages: Record<string, string>;
@@ -193,8 +194,10 @@ export function useAiActions({
 
       return cleanText(result);
     } catch (error: unknown) {
-      console.error(error);
-      alert(`AI Action Failed: ${getErrorMessage(error, 'Unknown error')}`);
+      notifyError(
+        `AI Action Failed: ${getErrorMessage(error, 'Unknown error')}`,
+        error
+      );
       return undefined;
     } finally {
       setIsAiActionLoading(false);

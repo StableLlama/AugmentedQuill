@@ -141,6 +141,13 @@ def get_active_project_dir() -> Path | None:
     return get_active_project_dir_from_registry(load_registry())
 
 
+def _require_active_project() -> Path:
+    active = get_active_project_dir()
+    if not active:
+        raise ValueError("No active project")
+    return active
+
+
 def delete_project(name: str) -> Tuple[bool, str]:
     """Delete a project directory under the projects root by name.
 
@@ -210,9 +217,7 @@ def update_chapter_metadata(
     conflicts: list = None,
 ) -> None:
     """Update metadata fields for a chapter by its ID across all project types."""
-    active = get_active_project_dir()
-    if not active:
-        raise ValueError("No active project")
+    active = _require_active_project()
     update_chapter_metadata_in_project(
         active=active,
         chap_id=chap_id,
@@ -228,9 +233,7 @@ def add_chapter_conflict(
     chap_id: int, description: str, resolution: str, index: int = None
 ) -> None:
     """Add a conflict to a chapter. If index is provided, inserts there; else appends."""
-    active = get_active_project_dir()
-    if not active:
-        raise ValueError("No active project")
+    active = _require_active_project()
     add_chapter_conflict_in_project(
         active=active,
         chap_id=chap_id,
@@ -244,9 +247,7 @@ def update_chapter_conflict(
     chap_id: int, index: int, description: str = None, resolution: str = None
 ) -> None:
     """Update a specific conflict in a chapter by its index."""
-    active = get_active_project_dir()
-    if not active:
-        raise ValueError("No active project")
+    active = _require_active_project()
     update_chapter_conflict_in_project(
         active=active,
         chap_id=chap_id,
@@ -258,17 +259,13 @@ def update_chapter_conflict(
 
 def remove_chapter_conflict(chap_id: int, index: int) -> None:
     """Remove a conflict from a chapter by its index."""
-    active = get_active_project_dir()
-    if not active:
-        raise ValueError("No active project")
+    active = _require_active_project()
     remove_chapter_conflict_in_project(active=active, chap_id=chap_id, index=index)
 
 
 def reorder_chapter_conflicts(chap_id: int, new_indices: List[int]) -> None:
     """Reorder conflicts in a chapter providing the new sequence of indices."""
-    active = get_active_project_dir()
-    if not active:
-        raise ValueError("No active project")
+    active = _require_active_project()
     reorder_chapter_conflicts_in_project(
         active=active,
         chap_id=chap_id,
@@ -278,17 +275,13 @@ def reorder_chapter_conflicts(chap_id: int, new_indices: List[int]) -> None:
 
 def write_chapter_title(chap_id: int, title: str) -> None:
     """Update the title of a chapter in the story.json across all project types."""
-    active = get_active_project_dir()
-    if not active:
-        raise ValueError("No active project")
+    active = _require_active_project()
     write_chapter_title_in_project(active=active, chap_id=chap_id, title=title)
 
 
 def delete_chapter(chap_id: int) -> None:
     """Delete a chapter file and remove its metadata from story.json."""
-    active = get_active_project_dir()
-    if not active:
-        raise ValueError("No active project")
+    active = _require_active_project()
     delete_chapter_in_project(active=active, chap_id=chap_id)
 
 
@@ -341,9 +334,7 @@ def create_new_chapter(title: str = "", book_id: str = None) -> int:
       - Appends to chapters dir.
       - Returns filename index.
     """
-    active = get_active_project_dir()
-    if not active:
-        raise ValueError("No active project")
+    active = _require_active_project()
     return create_new_chapter_in_project(active=active, title=title, book_id=book_id)
 
 
@@ -361,9 +352,7 @@ def update_book_metadata(
     private_notes: str = None,
 ) -> None:
     """Update title or metadata for a book in a series project."""
-    active = get_active_project_dir()
-    if not active:
-        raise ValueError("No active project")
+    active = _require_active_project()
     update_book_metadata_in_project(
         active=active,
         book_id=book_id,
@@ -376,17 +365,13 @@ def update_book_metadata(
 
 def read_book_content(book_id: str) -> str:
     """Read the overall intro/content for a book from its book_content.md."""
-    active = get_active_project_dir()
-    if not active:
-        raise ValueError("No active project")
+    active = _require_active_project()
     return read_book_content_in_project(active=active, book_id=book_id)
 
 
 def write_book_content(book_id: str, content: str) -> None:
     """Write the overall intro/content for a book to its book_content.md."""
-    active = get_active_project_dir()
-    if not active:
-        raise ValueError("No active project")
+    active = _require_active_project()
     write_book_content_in_project(active=active, book_id=book_id, content=content)
 
 
@@ -398,9 +383,7 @@ def update_story_metadata(
     private_notes: str = None,
 ) -> None:
     """Update general story metadata."""
-    active = get_active_project_dir()
-    if not active:
-        raise ValueError("No active project")
+    active = _require_active_project()
     update_story_metadata_in_project(
         active=active,
         title=title,
@@ -413,17 +396,13 @@ def update_story_metadata(
 
 def read_story_content() -> str:
     """Read the story-level content/introduction."""
-    active = get_active_project_dir()
-    if not active:
-        raise ValueError("No active project")
+    active = _require_active_project()
     return read_story_content_in_project(active=active)
 
 
 def write_story_content(content: str) -> None:
     """Write the story-level content/introduction."""
-    active = get_active_project_dir()
-    if not active:
-        raise ValueError("No active project")
+    active = _require_active_project()
     write_story_content_in_project(active=active, content=content)
 
 

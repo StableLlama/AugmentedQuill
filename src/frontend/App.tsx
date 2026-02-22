@@ -31,30 +31,14 @@ import { DebugLogs } from './features/debug/DebugLogs';
 import { useAppSettings } from './features/settings/useAppSettings';
 import { useProviderHealth } from './features/settings/useProviderHealth';
 import { usePrompts } from './features/settings/usePrompts';
-import { ChatMessage, ViewMode, AppSettings, DEFAULT_LLM_CONFIG } from './types';
-
-// Default Settings
-const DEFAULT_APP_SETTINGS: AppSettings = {
-  providers: [DEFAULT_LLM_CONFIG],
-  activeChatProviderId: DEFAULT_LLM_CONFIG.id,
-  activeWritingProviderId: DEFAULT_LLM_CONFIG.id,
-  activeEditingProviderId: DEFAULT_LLM_CONFIG.id,
-  editor: {
-    fontSize: 18,
-    maxWidth: 60,
-    brightness: 0.95,
-    contrast: 0.9,
-    theme: 'mixed',
-    sidebarWidth: 320,
-  },
-  sidebarOpen: false,
-  activeTab: 'chat',
-};
+import { ChatMessage, ViewMode } from './types';
+import { DEFAULT_APP_SETTINGS } from './features/app/appDefaults';
+import {
+  getErrorMessage,
+  resolveActiveProviderConfigs,
+} from './features/app/appSelectors';
 
 const App: React.FC = () => {
-  const getErrorMessage = (error: unknown, fallback: string) =>
-    error instanceof Error ? error.message : fallback;
-
   const { confirm, confirmDialogState, handleConfirm, handleCancel } =
     useConfirmDialog();
 
@@ -189,15 +173,8 @@ const App: React.FC = () => {
   });
 
   // Get Active LLM Configs
-  const activeChatConfig =
-    appSettings.providers.find((p) => p.id === appSettings.activeChatProviderId) ||
-    appSettings.providers[0];
-  const activeWritingConfig =
-    appSettings.providers.find((p) => p.id === appSettings.activeWritingProviderId) ||
-    appSettings.providers[0];
-  const activeEditingConfig =
-    appSettings.providers.find((p) => p.id === appSettings.activeEditingProviderId) ||
-    appSettings.providers[0];
+  const { activeChatConfig, activeWritingConfig, activeEditingConfig } =
+    resolveActiveProviderConfigs(appSettings);
 
   const { isAiActionLoading, handleAiAction, handleSidebarAiAction } = useAiActions({
     currentChapter,
@@ -327,97 +304,112 @@ const App: React.FC = () => {
 
         <AppHeader
           storyTitle={story.title}
-          isSidebarOpen={isSidebarOpen}
-          setIsSidebarOpen={setIsSidebarOpen}
-          setIsSettingsOpen={setIsSettingsOpen}
-          undo={undo}
-          redo={redo}
-          canUndo={canUndo}
-          canRedo={canRedo}
-          viewMode={viewMode}
-          setViewMode={setViewMode}
-          showWhitespace={showWhitespace}
-          setShowWhitespace={setShowWhitespace}
-          isViewMenuOpen={isViewMenuOpen}
-          setIsViewMenuOpen={setIsViewMenuOpen}
-          handleFormat={handleFormat}
-          getFormatButtonClass={getFormatButtonClass}
-          isFormatMenuOpen={isFormatMenuOpen}
-          setIsFormatMenuOpen={setIsFormatMenuOpen}
-          isMobileFormatMenuOpen={isMobileFormatMenuOpen}
-          setIsMobileFormatMenuOpen={setIsMobileFormatMenuOpen}
-          handleAiAction={handleAiAction}
-          isAiActionLoading={isAiActionLoading}
-          appSettings={appSettings}
-          setAppSettings={setAppSettings}
-          modelConnectionStatus={modelConnectionStatus}
-          detectedCapabilities={detectedCapabilities}
-          setIsImagesOpen={setIsImagesOpen}
-          appearanceRef={appearanceRef}
-          isAppearanceOpen={isAppearanceOpen}
-          setIsAppearanceOpen={setIsAppearanceOpen}
-          setAppTheme={setAppTheme}
-          editorSettings={editorSettings}
-          setEditorSettings={setEditorSettings}
-          setIsDebugLogsOpen={setIsDebugLogsOpen}
-          isChatOpen={isChatOpen}
-          setIsChatOpen={setIsChatOpen}
+          sidebarControls={{ isSidebarOpen, setIsSidebarOpen }}
+          settingsControls={{
+            setIsSettingsOpen,
+            setIsImagesOpen,
+            setIsDebugLogsOpen,
+          }}
+          historyControls={{ undo, redo, canUndo, canRedo }}
+          viewControls={{
+            viewMode,
+            setViewMode,
+            showWhitespace,
+            setShowWhitespace,
+            isViewMenuOpen,
+            setIsViewMenuOpen,
+          }}
+          formatControls={{
+            handleFormat,
+            getFormatButtonClass,
+            isFormatMenuOpen,
+            setIsFormatMenuOpen,
+            isMobileFormatMenuOpen,
+            setIsMobileFormatMenuOpen,
+          }}
+          aiControls={{ handleAiAction, isAiActionLoading }}
+          modelControls={{
+            appSettings,
+            setAppSettings,
+            modelConnectionStatus,
+            detectedCapabilities,
+          }}
+          appearanceControls={{
+            appearanceRef,
+            isAppearanceOpen,
+            setIsAppearanceOpen,
+            setAppTheme,
+            editorSettings,
+            setEditorSettings,
+          }}
+          chatPanelControls={{ isChatOpen, setIsChatOpen }}
         />
 
         <AppMainLayout
-          isSidebarOpen={isSidebarOpen}
-          setIsSidebarOpen={setIsSidebarOpen}
-          story={story}
-          currentChapterId={currentChapterId}
-          handleChapterSelect={handleChapterSelect}
-          deleteChapter={deleteChapter}
-          updateChapter={updateChapter}
-          updateBook={updateBook}
-          addChapter={addChapter}
-          handleBookCreate={handleBookCreate}
-          handleBookDelete={handleBookDelete}
-          handleReorderChapters={handleReorderChapters}
-          handleReorderBooks={handleReorderBooks}
-          handleSidebarAiAction={handleSidebarAiAction}
-          handleOpenImages={handleOpenImages}
-          updateStoryMetadata={updateStoryMetadata}
-          currentChapter={currentChapter}
-          editorRef={editorRef}
-          editorSettings={editorSettings}
-          viewMode={viewMode}
-          continuations={continuations}
-          isSuggesting={isSuggesting}
-          handleTriggerSuggestions={handleTriggerSuggestions}
-          handleAcceptContinuation={handleAcceptContinuation}
-          isSuggestionMode={isSuggestionMode}
-          handleKeyboardSuggestionAction={handleKeyboardSuggestionAction}
-          handleAiAction={handleAiAction}
-          isAiActionLoading={isAiActionLoading}
-          setActiveFormats={setActiveFormats}
-          showWhitespace={showWhitespace}
-          setShowWhitespace={setShowWhitespace}
-          isChatOpen={isChatOpen}
-          chatMessages={chatMessages}
-          isChatLoading={isChatLoading}
-          systemPrompt={systemPrompt}
-          handleSendMessage={handleSendMessage}
-          handleStopChat={handleStopChat}
-          handleRegenerate={handleRegenerate}
-          handleEditMessage={handleEditMessage}
-          handleDeleteMessage={handleDeleteMessage}
-          setSystemPrompt={setSystemPrompt}
-          handleLoadProject={handleLoadProject}
-          incognitoSessions={incognitoSessions}
-          chatHistoryList={chatHistoryList}
-          currentChatId={currentChatId}
-          isIncognito={isIncognito}
-          handleSelectChat={handleSelectChat}
-          handleNewChat={handleNewChat}
-          handleDeleteChat={handleDeleteChat}
-          handleDeleteAllChats={handleDeleteAllChats}
-          setIsIncognito={setIsIncognito}
-          allowWebSearch={allowWebSearch}
-          setAllowWebSearch={setAllowWebSearch}
+          sidebarControls={{
+            isSidebarOpen,
+            setIsSidebarOpen,
+            story,
+            currentChapterId,
+            handleChapterSelect,
+            deleteChapter,
+            updateChapter,
+            updateBook,
+            addChapter,
+            handleBookCreate,
+            handleBookDelete,
+            handleReorderChapters,
+            handleReorderBooks,
+            handleSidebarAiAction,
+            handleOpenImages,
+            updateStoryMetadata,
+          }}
+          editorControls={{
+            currentChapter,
+            editorRef,
+            editorSettings,
+            viewMode,
+            updateChapter,
+            suggestionControls: {
+              continuations,
+              isSuggesting,
+              handleTriggerSuggestions,
+              handleAcceptContinuation,
+              isSuggestionMode,
+              handleKeyboardSuggestionAction,
+            },
+            aiControls: {
+              handleAiAction,
+              isAiActionLoading,
+            },
+            setActiveFormats,
+            showWhitespace,
+            setShowWhitespace,
+          }}
+          chatControls={{
+            isChatOpen,
+            chatMessages,
+            isChatLoading,
+            systemPrompt,
+            handleSendMessage,
+            handleStopChat,
+            handleRegenerate,
+            handleEditMessage,
+            handleDeleteMessage,
+            setSystemPrompt,
+            handleLoadProject,
+            incognitoSessions,
+            chatHistoryList,
+            currentChatId,
+            isIncognito,
+            handleSelectChat,
+            handleNewChat,
+            handleDeleteChat,
+            handleDeleteAllChats,
+            setIsIncognito,
+            allowWebSearch,
+            setAllowWebSearch,
+          }}
         />
 
         <DebugLogs

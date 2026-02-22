@@ -22,6 +22,7 @@ import {
 import { AppTheme, ProjectMetadata } from '../../../types';
 import { Button } from '../../../components/ui/Button';
 import { api } from '../../../services/api';
+import { notifyError } from '../../../services/errorNotifier';
 
 interface SettingsProjectsProps {
   projects: ProjectMetadata[];
@@ -115,7 +116,7 @@ export const SettingsProjects: React.FC<SettingsProjectsProps> = ({
       a.click();
       window.URL.revokeObjectURL(url);
     } catch (e) {
-      alert('Export failed');
+      notifyError('Export failed', e);
     }
   };
 

@@ -20,7 +20,7 @@ from augmentedquill.core.config import load_machine_config, CONFIG_DIR
 from augmentedquill.services.projects.projects import get_active_project_dir
 from augmentedquill.services.llm.llm import add_llm_log, create_log_entry
 from augmentedquill.services.chat.chat_tool_dispatcher import exec_chat_tool
-from augmentedquill.services.chat.chat_tools_schema import STORY_TOOLS
+from augmentedquill.services.chat.chat_tools_schema import get_story_tools
 from augmentedquill.services.chat.chat_api_stream_ops import (
     normalize_chat_messages,
     resolve_stream_model_context,
@@ -281,6 +281,7 @@ async def api_chat_stream(request: Request) -> StreamingResponse:
 
     # Pass through OpenAI tool-calling fields if provided
     tool_choice = None
+    story_tools = get_story_tools()
     if supports_function_calling:
         tool_choice = (payload or {}).get("tool_choice")
         # If the client explicitly requests "none", do not send tools.
@@ -288,7 +289,7 @@ async def api_chat_stream(request: Request) -> StreamingResponse:
         if tool_choice == "none":
             pass
         else:
-            body["tools"] = STORY_TOOLS
+            body["tools"] = story_tools
             if tool_choice:
                 body["tool_choice"] = tool_choice
 
@@ -304,7 +305,7 @@ async def api_chat_stream(request: Request) -> StreamingResponse:
             model_id=model_id,
             timeout_s=timeout_s,
             supports_function_calling=supports_function_calling,
-            tools=STORY_TOOLS,
+            tools=story_tools,
             tool_choice=tool_choice if tool_choice != "none" else None,
             temperature=temperature,
             max_tokens=max_tokens,

@@ -30,10 +30,12 @@ import {
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { Button } from '../../components/ui/Button';
+import { notifyError } from '../../services/errorNotifier';
 // @ts-ignore
 import { marked } from 'marked';
 // @ts-ignore
 import TurndownService from 'turndown';
+import { PlainTextEditable } from './PlainTextEditable';
 
 interface EditorProps {
   chapter: Chapter;
@@ -42,27 +44,25 @@ interface EditorProps {
   showWhitespace?: boolean;
   onToggleShowWhitespace?: () => void;
   onChange: (id: string, updates: Partial<Chapter>) => void;
-  continuations: string[];
-  isSuggesting: boolean;
-  onTriggerSuggestions: () => void;
-  onAcceptContinuation: (text: string) => void;
-  isSuggestionMode: boolean;
-  onKeyboardSuggestionAction: (
-    action: 'trigger' | 'chooseLeft' | 'chooseRight' | 'regenerate' | 'undo' | 'exit',
-    cursor?: number
-  ) => void;
-  onAiAction: (
-    target: 'summary' | 'chapter',
-    action: 'update' | 'rewrite' | 'extend'
-  ) => void;
-  isAiLoading: boolean;
+  suggestionControls: {
+    continuations: string[];
+    isSuggesting: boolean;
+    onTriggerSuggestions: () => void;
+    onAcceptContinuation: (text: string) => void;
+    isSuggestionMode: boolean;
+    onKeyboardSuggestionAction: (
+      action: 'trigger' | 'chooseLeft' | 'chooseRight' | 'regenerate' | 'undo' | 'exit',
+      cursor?: number
+    ) => void;
+  };
+  aiControls: {
+    onAiAction: (
+      target: 'summary' | 'chapter',
+      action: 'update' | 'rewrite' | 'extend'
+    ) => void;
+    isAiLoading: boolean;
+  };
   onContextChange?: (formats: string[]) => void;
-}
-
-interface PlainTextEditableProps extends React.HTMLAttributes<HTMLDivElement> {
-  value: string;
-  onChange: (value: string) => void;
-  showWhitespace?: boolean;
 }
 
 interface TurndownServiceLike {
@@ -76,79 +76,6 @@ export interface EditorHandle {
   openImageManager?: () => void;
 }
 
-// Internal component for auto-growing plain text editing
-const PlainTextEditable = React.forwardRef<HTMLDivElement, PlainTextEditableProps>(
-  (
-    {
-      value,
-      onChange,
-      className,
-      onKeyDown,
-      onSelect,
-      placeholder,
-      style,
-      showWhitespace = false,
-      ...props
-    },
-    ref
-  ) => {
-    const elementRef = useRef<HTMLDivElement>(null);
-    useImperativeHandle(ref, () => elementRef.current);
-
-    // Avoid unnecessary DOM rewrites to preserve caret stability while typing.
-    useEffect(() => {
-      const display = showWhitespace
-        ? (value || '')
-            .replace(/\t/g, '→\t')
-            .replace(/ /g, '·\u200b')
-            .replace(/\r?\n/g, '¶\n')
-        : value || '';
-      if (elementRef.current && elementRef.current.innerText !== display) {
-        elementRef.current.innerText = display;
-      }
-    }, [value, showWhitespace]);
-
-    const onPaste = (e: React.ClipboardEvent) => {
-      e.preventDefault();
-      const text = e.clipboardData.getData('text/plain');
-      // insert raw text; onInput handler will convert display when needed
-      document.execCommand('insertText', false, text);
-    };
-
-    const fromDisplay = (s: string) => {
-      return s
-        .replace(/·\u200b?/g, ' ')
-        .replace(/→\t/g, '\t')
-        .replace(/¶\n/g, '\n');
-    };
-
-    const handleInput = (e: React.FormEvent<HTMLDivElement>) => {
-      const displayed = e.currentTarget.innerText;
-      const raw = showWhitespace ? fromDisplay(displayed) : displayed;
-      onChange(raw);
-    };
-
-    return (
-      <div
-        ref={elementRef}
-        contentEditable
-        className={`${className} empty:before:content-[attr(data-placeholder)] empty:before:text-inherit empty:before:opacity-40 outline-none`}
-        onInput={handleInput}
-        onPaste={onPaste}
-        onKeyDown={onKeyDown}
-        onSelect={onSelect}
-        onMouseUp={onSelect}
-        onKeyUp={onSelect}
-        data-placeholder={placeholder}
-        suppressContentEditableWarning
-        spellCheck={false}
-        style={style}
-        {...props}
-      />
-    );
-  }
-);
-
 export const Editor = React.forwardRef<EditorHandle, EditorProps>(
   (
     {
@@ -158,14 +85,8 @@ export const Editor = React.forwardRef<EditorHandle, EditorProps>(
       showWhitespace,
       onToggleShowWhitespace,
       onChange,
-      continuations,
-      isSuggesting,
-      onTriggerSuggestions,
-      onAcceptContinuation,
-      isSuggestionMode,
-      onKeyboardSuggestionAction,
-      onAiAction,
-      isAiLoading,
+      suggestionControls,
+      aiControls,
       onContextChange,
     },
     ref
@@ -173,6 +94,16 @@ export const Editor = React.forwardRef<EditorHandle, EditorProps>(
     const textareaRef = useRef<HTMLDivElement>(null);
     const wysiwygRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const {
+      continuations,
+      isSuggesting,
+      onTriggerSuggestions,
+      onAcceptContinuation,
+      isSuggestionMode,
+      onKeyboardSuggestionAction,
+    } = suggestionControls;
+    const { onAiAction, isAiLoading } = aiControls;
 
     const [isDragging, setIsDragging] = useState(false);
 
@@ -183,8 +114,7 @@ export const Editor = React.forwardRef<EditorHandle, EditorProps>(
           insertImageMarkdown(res.filename, res.url);
         }
       } catch (e) {
-        console.error(e);
-        alert('Failed to upload image');
+        notifyError('Failed to upload image', e);
       }
     };
 

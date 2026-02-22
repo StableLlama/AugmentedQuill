@@ -10,6 +10,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { StoryState, Chapter, Book } from '../../types';
 import { api } from '../../services/api';
 import { mapApiChapters, mapSelectStoryToState } from './storyMappers';
+import { notifyError } from '../../services/errorNotifier';
 
 /** Maximum number of undo/redo states retained in memory. */
 const MAX_HISTORY = 50;
@@ -26,7 +27,7 @@ export interface StoryDialogs {
 
 const defaultDialogs: StoryDialogs = {
   confirm: (message) => Promise.resolve(window.confirm(message)),
-  alert: (message) => window.alert(message),
+  alert: (message) => notifyError(message),
 };
 
 const INITIAL_STORY: StoryState = {

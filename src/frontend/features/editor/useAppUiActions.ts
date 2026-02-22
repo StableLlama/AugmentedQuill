@@ -12,6 +12,7 @@ import { api } from '../../services/api';
 import { AppTheme, EditorSettings } from '../../types';
 import { EditorHandle } from './Editor';
 import { useTheme } from '../layout/ThemeContext';
+import { notifyError } from '../../services/errorNotifier';
 
 type UseAppUiActionsParams = {
   editorRef: RefObject<EditorHandle | null>;
@@ -66,7 +67,10 @@ export function useAppUiActions({
       await api.projects.convert(newType);
       await refreshStory();
     } catch (error: unknown) {
-      alert(`Failed to convert project: ${getErrorMessage(error, 'Unknown error')}`);
+      notifyError(
+        `Failed to convert project: ${getErrorMessage(error, 'Unknown error')}`,
+        error
+      );
     }
   };
 
@@ -75,8 +79,10 @@ export function useAppUiActions({
       await api.books.create(title);
       await refreshStory();
     } catch (error: unknown) {
-      console.error(error);
-      alert(`Failed to create book: ${getErrorMessage(error, 'Unknown error')}`);
+      notifyError(
+        `Failed to create book: ${getErrorMessage(error, 'Unknown error')}`,
+        error
+      );
     }
   };
 
@@ -85,8 +91,10 @@ export function useAppUiActions({
       await api.books.delete(id);
       await refreshStory();
     } catch (error: unknown) {
-      console.error(error);
-      alert(`Failed to delete book: ${getErrorMessage(error, 'Unknown error')}`);
+      notifyError(
+        `Failed to delete book: ${getErrorMessage(error, 'Unknown error')}`,
+        error
+      );
     }
   };
 
@@ -95,8 +103,10 @@ export function useAppUiActions({
       await api.chapters.reorder(chapterIds, bookId);
       await refreshStory();
     } catch (error: unknown) {
-      console.error(error);
-      alert(`Failed to reorder chapters: ${getErrorMessage(error, 'Unknown error')}`);
+      notifyError(
+        `Failed to reorder chapters: ${getErrorMessage(error, 'Unknown error')}`,
+        error
+      );
     }
   };
 
@@ -105,8 +115,10 @@ export function useAppUiActions({
       await api.books.reorder(bookIds);
       await refreshStory();
     } catch (error: unknown) {
-      console.error(error);
-      alert(`Failed to reorder books: ${getErrorMessage(error, 'Unknown error')}`);
+      notifyError(
+        `Failed to reorder books: ${getErrorMessage(error, 'Unknown error')}`,
+        error
+      );
     }
   };
 

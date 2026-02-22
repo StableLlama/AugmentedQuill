@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 from unittest import TestCase
 from fastapi.testclient import TestClient
-from augmentedquill.services.chat.chat_tools_schema import WEB_SEARCH_TOOLS
+from augmentedquill.services.chat.chat_tools_schema import get_story_tools
 from augmentedquill.main import app
 
 
@@ -18,23 +18,13 @@ class WebSearchFeaturesTest(TestCase):
     def setUp(self):
         self.client = TestClient(app)
 
-    def test_web_search_tools_definition(self):
-        """Verify that web search tools are correctly defined in WEB_SEARCH_TOOLS."""
-        tool_names = [tool["function"]["name"] for tool in WEB_SEARCH_TOOLS]
-        self.assertIn("web_search", tool_names)
-        self.assertIn("wikipedia_search", tool_names)
-        self.assertIn("visit_page", tool_names)
-
-        # Check descriptions for the mandatory visit instructions we added
-        ddg_tool = next(
-            t for t in WEB_SEARCH_TOOLS if t["function"]["name"] == "web_search"
-        )
-        self.assertIn("visit_page", ddg_tool["function"]["description"])
-
-        wiki_tool = next(
-            t for t in WEB_SEARCH_TOOLS if t["function"]["name"] == "wikipedia_search"
-        )
-        self.assertIn("visit_page", wiki_tool["function"]["description"])
+    def test_web_search_tools_removed_from_schema(self):
+        """Verify deprecated web-search tools are not present in the chat tool schema."""
+        story_tools = get_story_tools()
+        tool_names = [tool["function"]["name"] for tool in story_tools]
+        self.assertNotIn("web_search", tool_names)
+        self.assertNotIn("wikipedia_search", tool_names)
+        self.assertNotIn("visit_page", tool_names)
 
     def test_delete_all_chats_endpoint(self):
         """Test the DELETE /api/v1/chats endpoint."""
