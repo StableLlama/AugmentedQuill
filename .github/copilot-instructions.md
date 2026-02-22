@@ -112,6 +112,17 @@ Top-level directories (one level down):
 - Prefer frontend changes inside features/<domain>/ and keep API calls in services/.
 - Trust these instructions and only search the repo if something is missing or contradicts these notes.
 
+## Branching and Release Policy
+
+The repository uses the following branch layout by default:
+
+- `main` — stable, reflects the last tagged release. Protected and only updated via PRs that have passed CI and reviews.
+- `develop` — integration branch for active development. Feature branches should branch from and be merged into `develop`.
+
+Release and hotfix branches follow `release/vX.Y` and `hotfix/vX.Y.Z` naming; tags should use semantic versions like `v1.2.3`.
+
+When preparing a new release, create `release/vX.Y` from `develop`, finish testing, then merge into `main` and tag. Merge the release branch back into `develop` afterwards.
+
 ## Chat Tools (LLM Function Calling)
 
 To add a new chat tool:
