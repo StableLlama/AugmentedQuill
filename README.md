@@ -67,7 +67,7 @@ The application follows a modular FastAPI architecture:
     The frontend must be built before running the application.
 
     ```bash
-    cd frontend
+    cd src/frontend
     npm install
     npm run build
     ```
@@ -96,14 +96,14 @@ If you want to modify the frontend and see changes on the fly:
 
     ```bash
     pip install -e ".[dev]"
-    cd frontend && npm install
+    cd src/frontend && npm install
     ```
 
 2.  **Run in Development Mode**:
     - **Option A (VS Code)**: Use the "Full Stack Dev" launch configuration. This starts the backend and the frontend dev server automatically.
     - **Option B (Terminal)**:
       - Terminal 1 (Backend): `augmentedquill --reload`
-      - Terminal 2 (Frontend): `cd frontend && npm run dev`
+      - Terminal 2 (Frontend): `cd src/frontend && npm run dev`
     - Open http://127.0.0.1:28001 (Vite Dev Server) for hot-reloading. API requests are proxied to port 28000.
 
 ## Configuration
@@ -139,7 +139,7 @@ Note: Direct browser access to third-party APIs requires proper CORS headers fro
 
 The Settings UI tries to load models directly from your OpenAI-compatible endpoint in the browser. If that direct call is blocked by CORS, the UI will automatically fall back to a same-origin proxy endpoint provided by this app:
 
-- POST /api/openai/models with JSON body: {"base_url":"...","api_key":"...","timeout_s":60}
+- POST /api/v1/openai/models with JSON body: {"base_url":"...","api_key":"...","timeout_s":60}
 - The server fetches `${base_url}/models` and relays the JSON back to the browser.
 
 This keeps your API key client-provided for development purposes while avoiding cross-origin limitations. For production, prefer configuring your endpoint to allow your app's origin or place a controlled proxy in front of it.

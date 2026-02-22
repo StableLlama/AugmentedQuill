@@ -5,7 +5,7 @@
       "name": "Backend (Dev API 28000)",
       "type": "debugpy",
       "request": "launch",
-      "module": "app.main",
+      "module": "augmentedquill.main",
       "args": ["--host", "127.0.0.1", "--port", "28000", "--reload", "--llm-dump"],
       "console": "integratedTerminal",
       "justMyCode": true
@@ -16,7 +16,7 @@
       "request": "launch",
       "preLaunchTask": "frontend: install",
       "command": "npm run dev -- --host 127.0.0.1 --port 28001 --strictPort",
-      "cwd": "${workspaceFolder}/frontend"
+      "cwd": "${workspaceFolder}/src/frontend"
     }
   ],
   "compounds": [

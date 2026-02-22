@@ -7,7 +7,7 @@
       "command": "npm",
       "args": ["install"],
       "options": {
-        "cwd": "${workspaceFolder}/frontend"
+        "cwd": "${workspaceFolder}/src/frontend"
       },
       "group": "build",
       "presentation": {
