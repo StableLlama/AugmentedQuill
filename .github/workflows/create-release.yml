@@ -38,4 +38,5 @@ jobs:
           body: ${{ github.event.inputs.body }}
           draft: false
           prerelease: false
-          commitish: main
+          commit: main
+          token: ${{ secrets.GITHUB_TOKEN }}
