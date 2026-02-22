@@ -2,8 +2,8 @@ name: Build Standalone App (Electron)
 
 on:
   release:
-    # Run this workflow only when a new release is created
-    types: [created]
+    # Run this workflow only when a release is published
+    types: [published]
 
 jobs:
   build:
