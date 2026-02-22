@@ -6,7 +6,9 @@
 # (at your option) any later version.
 # Purpose: Defines the sourcebook tools unit so this responsibility stays isolated, testable, and easy to evolve.
 
-from augmentedquill.services.chat.chat_tools.common import tool_message
+from pydantic import BaseModel, Field
+
+from augmentedquill.services.chat.chat_tool_decorator import chat_tool
 from augmentedquill.services.sourcebook.sourcebook_helpers import (
     sb_create,
     sb_delete,
@@ -15,50 +17,111 @@ from augmentedquill.services.sourcebook.sourcebook_helpers import (
     sb_update,
 )
 
+# Pydantic models for tool parameters
 
-async def handle_sourcebook_tool(
-    name: str, args_obj: dict, call_id: str, payload: dict, mutations: dict
+
+class SearchSourcebookParams(BaseModel):
+    """Parameters for searching the sourcebook."""
+
+    query: str = Field(..., description="The search query string")
+
+
+class GetSourcebookEntryParams(BaseModel):
+    """Parameters for retrieving a sourcebook entry."""
+
+    name_or_id: str = Field(
+        ..., description="The name or ID of the sourcebook entry to retrieve"
+    )
+
+
+class CreateSourcebookEntryParams(BaseModel):
+    """Parameters for creating a sourcebook entry."""
+
+    name: str = Field(..., description="The name of the sourcebook entry")
+    description: str = Field(..., description="The description/content of the entry")
+    category: str | None = Field(None, description="Optional category for the entry")
+    synonyms: list[str] = Field(
+        default_factory=list, description="Optional list of synonyms"
+    )
+
+
+class UpdateSourcebookEntryParams(BaseModel):
+    """Parameters for updating a sourcebook entry."""
+
+    name_or_id: str = Field(..., description="The name or ID of the entry to update")
+    name: str | None = Field(None, description="New name for the entry")
+    description: str | None = Field(None, description="New description for the entry")
+    category: str | None = Field(None, description="New category for the entry")
+    synonyms: list[str] | None = Field(
+        None, description="New list of synonyms for the entry"
+    )
+
+
+class DeleteSourcebookEntryParams(BaseModel):
+    """Parameters for deleting a sourcebook entry."""
+
+    name_or_id: str = Field(..., description="The name or ID of the entry to delete")
+
+
+# Tool implementations with co-located schemas
+
+
+@chat_tool(description="Search the sourcebook for entries matching a query string.")
+async def search_sourcebook(
+    params: SearchSourcebookParams, payload: dict, mutations: dict
 ):
-    if name == "search_sourcebook":
-        query = args_obj.get("query", "")
-        return tool_message(name, call_id, sb_search(query))
+    return sb_search(params.query)
 
-    if name == "get_sourcebook_entry":
-        name_or_id = args_obj.get("name_or_id", "")
-        entry = sb_get(name_or_id)
-        if not entry:
-            return tool_message(name, call_id, {"error": "Not found"})
-        return tool_message(name, call_id, entry)
 
-    if name == "create_sourcebook_entry":
-        new_entry = sb_create(
-            name=args_obj.get("name"),
-            description=args_obj.get("description"),
-            category=args_obj.get("category"),
-            synonyms=args_obj.get("synonyms", []),
-        )
-        if "error" not in new_entry:
-            mutations["story_changed"] = True
-        return tool_message(name, call_id, new_entry)
+@chat_tool(description="Get a specific sourcebook entry by name or ID.")
+async def get_sourcebook_entry(
+    params: GetSourcebookEntryParams, payload: dict, mutations: dict
+):
+    entry = sb_get(params.name_or_id)
+    if not entry:
+        return {"error": "Not found"}
+    return entry
 
-    if name == "update_sourcebook_entry":
-        result = sb_update(
-            name_or_id=args_obj.get("name_or_id"),
-            name=args_obj.get("name"),
-            description=args_obj.get("description"),
-            category=args_obj.get("category"),
-            synonyms=args_obj.get("synonyms"),
-        )
-        if "error" not in result:
-            mutations["story_changed"] = True
-        return tool_message(name, call_id, result)
 
-    if name == "delete_sourcebook_entry":
-        name_or_id = args_obj.get("name_or_id")
-        deleted = sb_delete(name_or_id)
-        if deleted:
-            mutations["story_changed"] = True
-            return tool_message(name, call_id, {"ok": True})
-        return tool_message(name, call_id, {"error": "Not found"})
+@chat_tool(description="Create a new sourcebook entry with name and description.")
+async def create_sourcebook_entry(
+    params: CreateSourcebookEntryParams, payload: dict, mutations: dict
+):
+    new_entry = sb_create(
+        name=params.name,
+        description=params.description,
+        category=params.category,
+        synonyms=params.synonyms,
+    )
+    if "error" not in new_entry:
+        mutations["story_changed"] = True
+    return new_entry
 
-    return None
+
+@chat_tool(
+    description="Update an existing sourcebook entry. Provide only the fields you want to change."
+)
+async def update_sourcebook_entry(
+    params: UpdateSourcebookEntryParams, payload: dict, mutations: dict
+):
+    result = sb_update(
+        name_or_id=params.name_or_id,
+        name=params.name,
+        description=params.description,
+        category=params.category,
+        synonyms=params.synonyms,
+    )
+    if "error" not in result:
+        mutations["story_changed"] = True
+    return result
+
+
+@chat_tool(description="Delete a sourcebook entry by name or ID.")
+async def delete_sourcebook_entry(
+    params: DeleteSourcebookEntryParams, payload: dict, mutations: dict
+):
+    deleted = sb_delete(params.name_or_id)
+    if deleted:
+        mutations["story_changed"] = True
+        return {"ok": True}
+    return {"error": "Not found"}

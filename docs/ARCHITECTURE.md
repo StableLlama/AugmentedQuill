@@ -82,6 +82,33 @@ LLM usage is intentionally split by responsibility:
 4. LLM service executes completion/stream request.
 5. Parsed output is mapped back to story/chat structures and sent to the frontend.
 
+### Chat Tools (Function Calling)
+
+AugmentedQuill implements LLM function calling using a **decorator-based architecture** that co-locates tool schemas with their implementations. This ensures consistency and eliminates manual schema maintenance.
+
+- **Decorator** (`chat_tool_decorator.py`): `@chat_tool` decorator auto-registers tools and generates schemas from Pydantic models
+- **Implementations** (`chat_tools/*.py`): Each domain (project, story, chapter, etc.) has its tools in a separate file
+- **Schema Collection** (`chat_tools_schema.py`): Collects all registered tool schemas for LLM API calls
+- **Dispatcher** (`chat_tool_dispatcher.py`): Routes tool calls to their handlers
+
+#### Adding a New Tool
+
+Define a Pydantic model and use the `@chat_tool` decorator:
+
+```python
+from pydantic import BaseModel, Field
+from augmentedquill.services.chat.chat_tool_decorator import chat_tool
+
+class MyParams(BaseModel):
+    name: str = Field(..., description="Description")
+
+@chat_tool(description="Tool description")
+async def my_tool(params: MyParams, payload: dict, mutations: dict):
+    return {"result": "value"}
+```
+
+Tools are auto-registered at import time and schemas are auto-generated from Pydantic models.
+
 ## 6) Persistence and Data Boundaries
 
 - Runtime content is persisted under `data/projects/` (stories, chapter files, related content).

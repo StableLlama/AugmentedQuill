@@ -6,91 +6,81 @@
 # (at your option) any later version.
 # Purpose: Defines the order tools unit so this responsibility stays isolated, testable, and easy to evolve.
 
-from augmentedquill.services.chat.chat_tools.common import tool_message
+from pydantic import BaseModel, Field
+
+from augmentedquill.services.chat.chat_tool_decorator import chat_tool
+
+# Pydantic models for tool parameters
 
 
-async def handle_order_tool(
-    name: str, args_obj: dict, call_id: str, payload: dict, mutations: dict
+class ReorderChaptersParams(BaseModel):
+    """Parameters for reordering chapters."""
+
+    chapter_ids: list[int] = Field(
+        ..., description="List of numeric chapter IDs in the desired order"
+    )
+    book_id: str | None = Field(
+        None,
+        description="The UUID of the book (required for series projects, omit for novel projects)",
+    )
+
+
+class ReorderBooksParams(BaseModel):
+    """Parameters for reordering books in a series."""
+
+    book_ids: list[str] = Field(
+        ..., description="List of book UUIDs in the desired order"
+    )
+
+
+# Tool implementations with co-located schemas
+
+
+@chat_tool(
+    description="Reorder chapters within a book (series) or in the novel. Provide the complete list of chapter IDs in the desired order."
+)
+async def reorder_chapters(
+    params: ReorderChaptersParams, payload: dict, mutations: dict
 ):
-    if name == "reorder_chapters":
-        chapter_ids = args_obj.get("chapter_ids", [])
-        book_id = args_obj.get("book_id")
+    from augmentedquill.api.v1.chapters_routes.mutate import api_reorder_chapters
 
-        if not isinstance(chapter_ids, list):
-            return tool_message(name, call_id, {"error": "chapter_ids must be a list"})
+    request_payload = {"chapter_ids": params.chapter_ids}
+    if params.book_id:
+        request_payload["book_id"] = params.book_id
 
-        try:
-            from augmentedquill.api.v1.chapters_routes.mutate import (
-                api_reorder_chapters,
-            )
+    class MockRequest:
+        async def json(self):
+            return request_payload
 
-            payload = {"chapter_ids": chapter_ids}
-            if book_id:
-                payload["book_id"] = book_id
+    mock_request = MockRequest()
+    result = await api_reorder_chapters(mock_request)
 
-            class MockRequest:
-                async def json(self):
-                    return payload
+    if result.status_code == 200:
+        mutations["story_changed"] = True
+        return {"ok": True, "message": "Chapters reordered successfully"}
 
-            mock_request = MockRequest()
-            result = await api_reorder_chapters(mock_request)
+    return {
+        "error": (result.body.decode() if hasattr(result, "body") else "Reorder failed")
+    }
 
-            if result.status_code == 200:
-                mutations["story_changed"] = True
-                return tool_message(
-                    name,
-                    call_id,
-                    {"ok": True, "message": "Chapters reordered successfully"},
-                )
-            return tool_message(
-                name,
-                call_id,
-                {
-                    "error": (
-                        result.body.decode()
-                        if hasattr(result, "body")
-                        else "Reorder failed"
-                    )
-                },
-            )
-        except Exception as e:
-            return tool_message(name, call_id, {"error": str(e)})
 
-    if name == "reorder_books":
-        book_ids = args_obj.get("book_ids", [])
+@chat_tool(
+    description="Reorder books in a series project. Provide the complete list of book UUIDs in the desired order."
+)
+async def reorder_books(params: ReorderBooksParams, payload: dict, mutations: dict):
+    from augmentedquill.api.v1.chapters_routes.mutate import api_reorder_books
 
-        if not isinstance(book_ids, list):
-            return tool_message(name, call_id, {"error": "book_ids must be a list"})
+    class MockRequest:
+        async def json(self):
+            return {"book_ids": params.book_ids}
 
-        try:
-            from augmentedquill.api.v1.chapters_routes.mutate import api_reorder_books
+    mock_request = MockRequest()
+    result = await api_reorder_books(mock_request)
 
-            class MockRequest:
-                async def json(self):
-                    return {"book_ids": book_ids}
+    if result.status_code == 200:
+        mutations["story_changed"] = True
+        return {"ok": True, "message": "Books reordered successfully"}
 
-            mock_request = MockRequest()
-            result = await api_reorder_books(mock_request)
-
-            if result.status_code == 200:
-                mutations["story_changed"] = True
-                return tool_message(
-                    name,
-                    call_id,
-                    {"ok": True, "message": "Books reordered successfully"},
-                )
-            return tool_message(
-                name,
-                call_id,
-                {
-                    "error": (
-                        result.body.decode()
-                        if hasattr(result, "body")
-                        else "Reorder failed"
-                    )
-                },
-            )
-        except Exception as e:
-            return tool_message(name, call_id, {"error": str(e)})
-
-    return None
+    return {
+        "error": (result.body.decode() if hasattr(result, "body") else "Reorder failed")
+    }

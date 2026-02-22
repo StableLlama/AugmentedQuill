@@ -6,27 +6,26 @@
 # (at your option) any later version.
 # Purpose: Defines the init unit so this responsibility stays isolated, testable, and easy to evolve.
 
-from augmentedquill.services.chat.chat_tools.chapter_tools import handle_chapter_tool
-from augmentedquill.services.chat.chat_tools.image_tools import (
-    _tool_generate_image_description,
-    handle_image_tool,
-)
-from augmentedquill.services.chat.chat_tools.order_tools import handle_order_tool
-from augmentedquill.services.chat.chat_tools.project_tools import handle_project_tool
-from augmentedquill.services.chat.chat_tools.sourcebook_tools import (
-    handle_sourcebook_tool,
-)
-from augmentedquill.services.chat.chat_tools.story_tools import handle_story_tool
-
-__all__ = [
-    "_tool_generate_image_description",
-    "handle_image_tool",
-    "handle_story_tool",
-    "handle_chapter_tool",
-    "handle_project_tool",
-    "handle_sourcebook_tool",
-    "handle_order_tool",
-]
 """
 Chat tool implementations for specific domain areas.
+
+This module imports all tool modules to ensure decorator registration happens.
+Tools are auto-registered via the @chat_tool decorator.
 """
+
+# Import all tool modules to trigger decorator registration
+from augmentedquill.services.chat.chat_tools import chapter_tools  # noqa: F401
+from augmentedquill.services.chat.chat_tools import image_tools  # noqa: F401
+from augmentedquill.services.chat.chat_tools import order_tools  # noqa: F401
+from augmentedquill.services.chat.chat_tools import project_tools  # noqa: F401
+from augmentedquill.services.chat.chat_tools import sourcebook_tools  # noqa: F401
+from augmentedquill.services.chat.chat_tools import story_tools  # noqa: F401
+
+__all__ = [
+    "chapter_tools",
+    "image_tools",
+    "order_tools",
+    "project_tools",
+    "sourcebook_tools",
+    "story_tools",
+]

@@ -6,15 +6,44 @@
 # (at your option) any later version.
 # Purpose: Defines the chat tools schema unit so this responsibility stays isolated, testable, and easy to evolve.
 
-STORY_TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "get_project_overview",
-            "description": "Get project title, type, and a structured list of all books (for series) or chapters (for novels). Use this to find the correct NUMERIC chapter IDs and UUID book IDs. Never assume an ID based on a title.",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
+"""
+Chat tool schemas for LLM function calling.
+
+This module collects tool schemas from two sources:
+1. Decorator-based tools (auto-registered via @chat_tool) - NEW APPROACH
+2. Legacy manually-defined tools (for backward compatibility during migration)
+
+Once all tools are migrated to decorators, the legacy schemas can be removed.
+"""
+
+# Import decorator registry functions and ensure tools are registered
+from augmentedquill.services.chat.chat_tool_decorator import get_tool_schemas
+
+# Import tool modules to trigger decorator registration
+from augmentedquill.services.chat import chat_tools  # noqa: F401
+
+
+def get_story_tools() -> list[dict]:
+    """
+    Get all story tools (both decorator-based and legacy).
+
+    Returns a combined list of tool schemas for passing to the LLM.
+    """
+    # Get decorator-based tools (these are auto-registered)
+    decorator_tools = get_tool_schemas()
+
+    # Combine with any legacy tools still defined below
+    legacy_tools = _LEGACY_STORY_TOOLS
+
+    return decorator_tools + legacy_tools
+
+
+# LEGACY: Manually defined tool schemas (for backward compatibility)
+# TODO: Remove these as tools are migrated to decorator-based approach
+_LEGACY_STORY_TOOLS = [
+    # Project tools moved to decorator-based approach in project_tools.py
+    # get_project_overview, create_project, list_projects, delete_project,
+    # delete_book, create_new_book, change_project_type
     {
         "type": "function",
         "function": {
@@ -380,82 +409,7 @@ STORY_TOOLS = [
             },
         },
     },
-    {
-        "type": "function",
-        "function": {
-            "name": "create_project",
-            "description": "Create a new project.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "name": {
-                        "type": "string",
-                        "description": "The name of the project.",
-                    },
-                    "project_type": {
-                        "type": "string",
-                        "enum": ["short-story", "novel", "series"],
-                        "description": "The type of project: short-story (single file), novel (chapters), series (books).",
-                    },
-                },
-                "required": ["name"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "list_projects",
-            "description": "List all available projects.",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "required": [],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "delete_project",
-            "description": "Delete a project. Requires confirmation.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "name": {
-                        "type": "string",
-                        "description": "The name of the project to delete.",
-                    },
-                    "confirm": {
-                        "type": "boolean",
-                        "description": "Set to true to confirm deletion.",
-                    },
-                },
-                "required": ["name"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "delete_book",
-            "description": "Delete a book from a series project. Requires confirmation. Use the book UUID.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "book_id": {
-                        "type": "string",
-                        "description": "The UUID of the book to delete.",
-                    },
-                    "confirm": {
-                        "type": "boolean",
-                        "description": "Set to true to confirm deletion.",
-                    },
-                },
-                "required": ["book_id"],
-            },
-        },
-    },
+    # Project tools removed - now defined with decorators in project_tools.py
     {
         "type": "function",
         "function": {
@@ -474,41 +428,6 @@ STORY_TOOLS = [
                     },
                 },
                 "required": ["chap_id"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "create_new_book",
-            "description": "Create a new book in a Series project.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "title": {
-                        "type": "string",
-                        "description": "The title of the new book.",
-                    },
-                },
-                "required": ["title"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "change_project_type",
-            "description": "Convert the active project to a new type (short-story, novel, series).",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "new_type": {
-                        "type": "string",
-                        "enum": ["short-story", "novel", "series"],
-                        "description": "The new project type.",
-                    }
-                },
-                "required": ["new_type"],
             },
         },
     },
@@ -775,3 +694,7 @@ WEB_SEARCH_TOOLS = [
         },
     },
 ]
+
+
+# Backward compatibility: STORY_TOOLS for modules that haven't migrated to get_story_tools()
+STORY_TOOLS = get_story_tools()

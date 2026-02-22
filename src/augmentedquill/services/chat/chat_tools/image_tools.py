@@ -7,9 +7,44 @@
 # Purpose: Defines the image tools unit so this responsibility stays isolated, testable, and easy to evolve.
 
 import base64
+import uuid
 from pathlib import Path
 
-from augmentedquill.services.chat.chat_tools.common import tool_message
+from pydantic import BaseModel, Field
+
+from augmentedquill.services.chat.chat_tool_decorator import chat_tool
+
+# Pydantic models for tool parameters
+
+
+class ListImagesParams(BaseModel):
+    """Parameters for list_images (no parameters needed)."""
+
+    pass
+
+
+class GenerateImageDescriptionParams(BaseModel):
+    """Parameters for generating image description."""
+
+    filename: str = Field(..., description="The filename of the image")
+
+
+class CreateImagePlaceholderParams(BaseModel):
+    """Parameters for creating an image placeholder."""
+
+    description: str = Field(..., description="Description of the desired image")
+    title: str | None = Field(None, description="Optional title for the image")
+
+
+class SetImageMetadataParams(BaseModel):
+    """Parameters for setting image metadata."""
+
+    filename: str = Field(..., description="The filename of the image")
+    title: str | None = Field(None, description="New title for the image")
+    description: str | None = Field(None, description="New description for the image")
+
+
+# Helper function for generating image descriptions (not a tool itself)
 
 
 async def _tool_generate_image_description(filename: str, payload: dict) -> str:
@@ -84,51 +119,65 @@ async def _tool_generate_image_description(filename: str, payload: dict) -> str:
         return f"Error generating description: {str(e)}"
 
 
-async def handle_image_tool(
-    name: str, args_obj: dict, call_id: str, payload: dict, mutations: dict
+# Tool implementations with co-located schemas
+
+
+@chat_tool(
+    description="List all images in the project with their filenames, descriptions, titles, and placeholder status."
+)
+async def list_images(params: ListImagesParams, payload: dict, mutations: dict):
+    from augmentedquill.utils.image_helpers import get_project_images
+
+    imgs = get_project_images()
+    simple = [
+        {
+            "filename": i["filename"],
+            "description": i["description"],
+            "title": i.get("title", ""),
+            "is_placeholder": i["is_placeholder"],
+        }
+        for i in imgs
+    ]
+    return simple
+
+
+@chat_tool(
+    description="Generate a detailed description for an existing image using the EDIT LLM's vision capabilities."
+)
+async def generate_image_description(
+    params: GenerateImageDescriptionParams, payload: dict, mutations: dict
 ):
-    if name == "list_images":
-        from augmentedquill.utils.image_helpers import get_project_images
+    desc = await _tool_generate_image_description(params.filename, payload)
+    return {"description": desc}
 
-        imgs = get_project_images()
-        simple = [
-            {
-                "filename": i["filename"],
-                "description": i["description"],
-                "title": i.get("title", ""),
-                "is_placeholder": i["is_placeholder"],
-            }
-            for i in imgs
-        ]
-        return tool_message(name, call_id, simple)
 
-    if name == "generate_image_description":
-        filename = args_obj.get("filename")
-        desc = await _tool_generate_image_description(filename, payload)
-        return tool_message(name, call_id, {"description": desc})
+@chat_tool(
+    description="Create a new image placeholder with a description. Useful for noting images to be created later."
+)
+async def create_image_placeholder(
+    params: CreateImagePlaceholderParams, payload: dict, mutations: dict
+):
+    from augmentedquill.utils.image_helpers import update_image_metadata
 
-    if name == "create_image_placeholder":
-        desc = args_obj.get("description")
-        title = args_obj.get("title")
-        from augmentedquill.utils.image_helpers import update_image_metadata
-        import uuid
+    filename = f"placeholder_{uuid.uuid4().hex[:8]}.png"
+    update_image_metadata(filename, description=params.description, title=params.title)
 
-        filename = f"placeholder_{uuid.uuid4().hex[:8]}.png"
-        update_image_metadata(filename, description=desc, title=title)
+    return {
+        "filename": filename,
+        "description": params.description,
+        "title": params.title,
+    }
 
-        return tool_message(
-            name,
-            call_id,
-            {"filename": filename, "description": desc, "title": title},
-        )
 
-    if name == "set_image_metadata":
-        filename = args_obj.get("filename")
-        title = args_obj.get("title")
-        desc = args_obj.get("description")
-        from augmentedquill.utils.image_helpers import update_image_metadata
+@chat_tool(
+    description="Update the title and/or description metadata for an existing image. Provide only the fields you want to change."
+)
+async def set_image_metadata(
+    params: SetImageMetadataParams, payload: dict, mutations: dict
+):
+    from augmentedquill.utils.image_helpers import update_image_metadata
 
-        update_image_metadata(filename, description=desc, title=title)
-        return tool_message(name, call_id, {"ok": True})
-
-    return None
+    update_image_metadata(
+        params.filename, description=params.description, title=params.title
+    )
+    return {"ok": True}
