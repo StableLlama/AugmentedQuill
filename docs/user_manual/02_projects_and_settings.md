@@ -56,15 +56,15 @@ The Machine Settings tab is where you configure the AI models (providers) that p
 
 AugmentedQuill uses three distinct model roles, each optimized for a specific part of the writing process. You can assign a different provider to each role based on its strengths. The application uses color hints everywhere in the UI to help you see which role is active.
 
-1. **WRITING Model** — <img src="assets/swatches/violet.svg" alt="Violet swatch" width="16" height="16" style="vertical-align:text-bottom;" /> **Violet**
+1. **WRITING Model** — <img src="assets/book-open.svg" alt="Book Open icon" width="16" height="16" style="vertical-align:text-bottom;" /> <img src="assets/swatches/violet.svg" alt="Violet swatch" width="16" height="16" style="vertical-align:text-bottom;" /> **Violet**
    - Called when generating new prose: **Extend Chapter**, **Rewrite Chapter**, and **Suggest Next Paragraph**.
    - Optimized for creativity, narrative flow, and honoring your style tags.
 
-2. **EDITING Model** — <img src="assets/swatches/fuchsia.svg" alt="Fuchsia swatch" width="16" height="16" style="vertical-align:text-bottom;" /> **Fuchsia**
+2. **EDITING Model** — <img src="assets/pen.svg" alt="Pen icon" width="16" height="16" style="vertical-align:text-bottom;" /> <img src="assets/swatches/fuchsia.svg" alt="Fuchsia swatch" width="16" height="16" style="vertical-align:text-bottom;" /> **Fuchsia**
    - Called for structured text tasks: writing or updating chapter summaries, story summaries, and the **AI Write / AI Update / AI Rewrite** summary buttons in the Metadata Editor.
    - Optimized for accuracy, conciseness, and following specific instructions without adding new plot points.
 
-3. **CHAT Model** — <img src="assets/swatches/blue.svg" alt="Blue swatch" width="16" height="16" style="vertical-align:text-bottom;" /> **Blue**
+3. **CHAT Model** — <img src="assets/message-square.svg" alt="Message Square icon" width="16" height="16" style="vertical-align:text-bottom;" /> <img src="assets/swatches/blue.svg" alt="Blue swatch" width="16" height="16" style="vertical-align:text-bottom;" /> **Blue**
    - Powers the AI Chat Assistant panel.
    - Supports tool calls (creating Sourcebook entries, managing chapters, generating images, etc.) and optionally web search.
    - Optimized for conversation, reasoning, and multi-step actions.

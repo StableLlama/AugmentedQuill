@@ -69,7 +69,7 @@ On mobile a single **View** dropdown (showing the current mode and a chevron) co
 
 On medium screens the heading and list buttons collapse into a **Format** dropdown (the <img src="assets/type.svg" alt="Type icon" width="16" height="16" style="vertical-align:text-bottom;" /> Type icon with chevron).
 
-**Chapter AI** — Two quick actions that call the [WRITING model](02_projects_and_settings.md#the-three-ai-models) on the current chapter:
+**Chapter AI** — Two quick actions that call the <img src="assets/book-open.svg" alt="Book Open icon" width="16" height="16" style="vertical-align:text-bottom;" /> <img src="assets/swatches/violet.svg" alt="Violet swatch" width="16" height="16" style="vertical-align:text-bottom;" /> [WRITING model](02_projects_and_settings.md#the-three-ai-models) on the current chapter:
 
 - **Extend** (<img src="assets/wand.svg" alt="Wand icon" width="16" height="16" style="vertical-align:text-bottom;" />): Appends a continuation of the chapter using the story context.
 - **Rewrite** (<img src="assets/file-pen.svg" alt="File Edit icon" width="16" height="16" style="vertical-align:text-bottom;" />): Regenerates the chapter body while keeping the same summary and style tags.

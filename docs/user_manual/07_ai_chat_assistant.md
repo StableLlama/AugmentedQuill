@@ -4,7 +4,7 @@ The AI Chat Assistant is your dedicated co-writer, sounding board, and editor. I
 
 `[SCREENSHOT: The AI Chat Assistant panel open in the right sidebar next to the text editor]`
 
-The Chat Assistant is powered by the **CHAT model**
+The Chat Assistant is powered by the <img src="assets/message-square.svg" alt="Message square icon" width="20" height="20" style="vertical-align:text-bottom;" /> <img src="assets/swatches/blue.svg" alt="Blue swatch" width="16" height="16" style="vertical-align:text-bottom;" /> **CHAT model**
 <img src="assets/message-square.svg" alt="Message square icon" width="20" height="20" style="vertical-align:text-bottom;" /> <img src="assets/swatches/blue.svg" alt="Blue swatch" width="16" height="16" style="vertical-align:text-bottom;" />, which you can spot by the blue halo around the panel. You can swap the CHAT provider at any time using the model selector in the header without opening Settings.
 
 ---
@@ -105,7 +105,7 @@ If the AI visits a specific page, a **Visit Page result** card appears with the 
 
 ### AI Actions and Project Changes
 
-The Chat model can take actions directly inside your project (create characters, update summaries, manage chapters, generate images). When the AI creates a new project or switches context, a **Switch to New Project** button may appear inside the response, letting you load the changed project with one click.
+The <img src="assets/message-square.svg" alt="Message Square icon" width="16" height="16" style="vertical-align:text-bottom;" /> <img src="assets/swatches/blue.svg" alt="Blue swatch" width="16" height="16" style="vertical-align:text-bottom;" /> Chat model can take actions directly inside your project (create characters, update summaries, manage chapters, generate images). When the AI creates a new project or switches context, a **Switch to New Project** button may appear inside the response, letting you load the changed project with one click.
 
 ---
 

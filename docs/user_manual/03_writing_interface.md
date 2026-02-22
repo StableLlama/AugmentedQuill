@@ -34,7 +34,7 @@ Drag an image file (PNG, JPEG, GIF, WEBP) and drop it onto the editor paper area
 
 ## Top Bar Controls
 
-The condensed bar above the editor holds view toggles, formatting helpers, AI buttons, and the WRITING/EDITING/CHAT model selectors. On desktop the buttons are exposed; smaller screens wrap the view and formatting controls inside expandable menus so the same commands stay within reach.
+The condensed bar above the editor holds view toggles, formatting helpers, AI buttons, and the <img src="assets/book-open.svg" alt="Book Open icon" width="16" height="16" style="vertical-align:text-bottom;" /> <img src="assets/swatches/violet.svg" alt="Violet swatch" width="16" height="16" style="vertical-align:text-bottom;" /> WRITING / <img src="assets/pen.svg" alt="Pen icon" width="16" height="16" style="vertical-align:text-bottom;" /> <img src="assets/swatches/fuchsia.svg" alt="Fuchsia swatch" width="16" height="16" style="vertical-align:text-bottom;" /> EDITING / <img src="assets/message-square.svg" alt="Message Square icon" width="16" height="16" style="vertical-align:text-bottom;" /> <img src="assets/swatches/blue.svg" alt="Blue swatch" width="16" height="16" style="vertical-align:text-bottom;" /> CHAT model selectors. On desktop the buttons are exposed; smaller screens wrap the view and formatting controls inside expandable menus so the same commands stay within reach.
 
 `[SCREENSHOT: Top header bar focused on the center section: view toggles, format toolbar, Chapter AI, and model selectors]`
 
@@ -81,7 +81,7 @@ Each dropdown button shows a colored status dot (green = connected, red = failed
 
 ---
 
-## AI Writing Tools (WRITING Model)
+## AI Writing Tools (<img src="assets/book-open.svg" alt="Book Open icon" width="16" height="16" style="vertical-align:text-bottom;" /> WRITING Model <img src="assets/swatches/violet.svg" alt="Violet swatch" width="16" height="16" style="vertical-align:text-bottom;" />)
 
 All three writing-focused actions — Extend, Rewrite, and Suggest — use the **WRITING** model (<img src="assets/book-open.svg" alt="Book Open icon" width="16" height="16" style="vertical-align:text-bottom;" /> Book Open, <img src="assets/swatches/violet.svg" alt="Violet swatch" width="16" height="16" style="vertical-align:text-bottom;" /> Violet) explained in the machine settings guide. The action buttons live in the floating toolbar and the persistent footer, so they are always available even as you scroll.
 
@@ -89,17 +89,17 @@ All three writing-focused actions — Extend, Rewrite, and Suggest — use the *
 
 ### Extend Chapter
 
-The first Chapter AI button is `Extend` with the <img src="assets/wand.svg" alt="Wand icon" width="16" height="16" style="vertical-align:text-bottom;" /> Wand icon. Clicking it asks the WRITING model to continue from the end of the current chapter, injecting new prose while keeping existing formatting and style tags intact. The button is disabled while the model is processing, and a spinner appears until the new text is appended.
+The first Chapter AI button is `Extend` with the <img src="assets/wand.svg" alt="Wand icon" width="16" height="16" style="vertical-align:text-bottom;" /> Wand icon. Clicking it asks the <img src="assets/book-open.svg" alt="Book Open icon" width="16" height="16" style="vertical-align:text-bottom;" /> <img src="assets/swatches/violet.svg" alt="Violet swatch" width="16" height="16" style="vertical-align:text-bottom;" /> WRITING model to continue from the end of the current chapter, injecting new prose while keeping existing formatting and style tags intact. The button is disabled while the model is processing, and a spinner appears until the new text is appended.
 
 ### Rewrite Chapter
 
-Next to Extend is `Rewrite`, decorated with the <img src="assets/file-pen.svg" alt="File Edit icon" width="16" height="16" style="vertical-align:text-bottom;" /> File Edit icon. Unlike a simple grammar pass, Rewrite asks the WRITING model to re-generate the chapter content entirely (using the same summary and style tags it already knows). This makes it easy to reset the voice or framing of a chapter while retaining the story structure.
+Next to Extend is `Rewrite`, decorated with the <img src="assets/file-pen.svg" alt="File Edit icon" width="16" height="16" style="vertical-align:text-bottom;" /> File Edit icon. Unlike a simple grammar pass, Rewrite asks the <img src="assets/book-open.svg" alt="Book Open icon" width="16" height="16" style="vertical-align:text-bottom;" /> <img src="assets/swatches/violet.svg" alt="Violet swatch" width="16" height="16" style="vertical-align:text-bottom;" /> WRITING model to re-generate the chapter content entirely (using the same summary and style tags it already knows). This makes it easy to reset the voice or framing of a chapter while retaining the story structure.
 
 ### Suggest Next Paragraph
 
 `[SCREENSHOT: The suggestion footer open with two or three continuation cards and the Dismiss button]`
 
-At the bottom of the editor sits the pulsing `Suggest next paragraph` pill with the <img src="assets/sparkles.svg" alt="Sparkles icon" width="16" height="16" style="vertical-align:text-bottom;" /> Sparkles icon. Click it to open the **continuation pane**. The WRITING model generates two or more short continuation options, each shown as a card. Click any card to insert that text at the cursor and close the pane, or press **Dismiss** to discard all suggestions without changing your draft.
+At the bottom of the editor sits the pulsing `Suggest next paragraph` pill with the <img src="assets/sparkles.svg" alt="Sparkles icon" width="16" height="16" style="vertical-align:text-bottom;" /> Sparkles icon. Click it to open the **continuation pane**. The <img src="assets/book-open.svg" alt="Book Open icon" width="16" height="16" style="vertical-align:text-bottom;" /> <img src="assets/swatches/violet.svg" alt="Violet swatch" width="16" height="16" style="vertical-align:text-bottom;" /> WRITING model generates two or more short continuation options, each shown as a card. Click any card to insert that text at the cursor and close the pane, or press **Dismiss** to discard all suggestions without changing your draft.
 
 While suggestions are still generating, the button shows a spinner and the word "Working…" The suggestion cards appear as they stream in, so you may see partial text before generation finishes.
 
@@ -115,7 +115,7 @@ While suggestions are still generating, the button shows a spinner and the word 
 
 ---
 
-## Summary AI Controls (EDITING Model)
+## Summary AI Controls (<img src="assets/pen.svg" alt="Pen icon" width="16" height="16" style="vertical-align:text-bottom;" /> EDITING Model <img src="assets/swatches/fuchsia.svg" alt="Fuchsia swatch" width="16" height="16" style="vertical-align:text-bottom;" />)
 
 The summary tab inside the Metadata Editor dialog (covered in [Chapters and Books](04_chapters_and_books.md)) exposes `AI Write`, `AI Update`, and `AI Rewrite` buttons. They use the <img src="assets/pen.svg" alt="Pen icon" width="16" height="16" style="vertical-align:text-bottom;" /> Fuchsia **EDITING** model <img src="assets/swatches/fuchsia.svg" alt="Fuchsia swatch" width="16" height="16" style="vertical-align:text-bottom;" /> to craft concise descriptions, tweak tone, or polish the storytelling focus without touching the chapter body.
 

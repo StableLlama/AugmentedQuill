@@ -70,7 +70,7 @@ The toolbar at the top of the dialog offers two ways to inspect logs:
 Each entry in the log list is a collapsible row. The collapsed row shows:
 
 - An **HTTP method badge** (POST in green, other methods in blue).
-- A **model type badge** indicating which role made the call: EDITING (purple), WRITING (blue), or CHAT (orange).
+- A **model type badge** indicating which role made the call: <img src="assets/pen.svg" alt="Pen icon" width="16" height="16" style="vertical-align:text-bottom;" /> EDITING (purple), <img src="assets/book-open.svg" alt="Book Open icon" width="16" height="16" style="vertical-align:text-bottom;" /> WRITING (blue), or <img src="assets/message-square.svg" alt="Message Square icon" width="16" height="16" style="vertical-align:text-bottom;" /> CHAT (orange).
 - The **API endpoint name** (e.g. `/api/v1/chat/completions`).
 - The **HTTP status code** (200 in green, errors in red).
 - **Start and end timestamps** with elapsed time.
