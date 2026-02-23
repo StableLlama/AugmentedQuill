@@ -4,9 +4,9 @@
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
-# Purpose: Decorator for defining chat tools with automatic schema generation from Pydantic models.
 
-"""
+"""Decorator for defining chat tools with automatic schema generation from Pydantic models.
+
 Decorator system for chat tools that maintains co-location of schemas and implementations.
 
 This module provides a decorator that:

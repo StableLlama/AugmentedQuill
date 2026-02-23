@@ -4,9 +4,9 @@
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
-# Purpose: Defines the main unit so this responsibility stays isolated, testable, and easy to evolve.
 
-"""
+"""Defines the main unit so this responsibility stays isolated, testable, and easy to evolve.
+
 Main application entry point for the AugmentedQuill API server.
 Includes global configuration setup, error handling, and router registration.
 """

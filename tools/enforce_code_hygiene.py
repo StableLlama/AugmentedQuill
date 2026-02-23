@@ -5,7 +5,8 @@
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
-# Purpose: Enforces consistent legal and purpose headers across source files.
+
+"""Enforces consistent legal and purpose headers across source files."""
 
 from __future__ import annotations
 

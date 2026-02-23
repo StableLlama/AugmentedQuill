@@ -4,9 +4,9 @@
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
-# Purpose: Defines the init unit so this responsibility stays isolated, testable, and easy to evolve.
 
-"""
+"""Defines the init unit so this responsibility stays isolated, testable, and easy to evolve.
+
 Chat tool implementations for specific domain areas.
 
 This module imports all tool modules to ensure decorator registration happens.

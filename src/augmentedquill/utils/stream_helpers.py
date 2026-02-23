@@ -4,9 +4,9 @@
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
-# Purpose: Defines the stream helpers unit so this responsibility stays isolated, testable, and easy to evolve.
 
-"""
+"""Defines the stream helpers unit so this responsibility stays isolated, testable, and easy to evolve.
+
 Utility functions for handling server-sent events (SSE) and data streaming.
 Includes stateful filtering for multi-channel LLM output.
 """

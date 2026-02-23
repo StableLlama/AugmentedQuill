@@ -4,7 +4,8 @@
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
-# Purpose: Validates all LLM-callable chat tools for successful execution and graceful handling of malformed and invalid tool-call inputs.
+
+"""Validates all LLM-callable chat tools for successful execution and graceful handling of malformed and invalid tool-call inputs."""
 
 import json
 import os

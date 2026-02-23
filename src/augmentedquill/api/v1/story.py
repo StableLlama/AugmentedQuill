@@ -4,9 +4,9 @@
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
-# Purpose: Defines the story unit so this responsibility stays isolated, testable, and easy to evolve.
 
-"""Story API router aggregator.
+"""Defines the story unit so this responsibility stays isolated, testable, and easy to evolve.
+
 
 This module keeps the public import path stable (`augmentedquill.api.v1.story:router`) while
 splitting story endpoints into focused route modules.

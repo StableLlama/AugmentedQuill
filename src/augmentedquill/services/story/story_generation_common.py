@@ -4,7 +4,8 @@
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
-# Purpose: Shared generation preparation helpers used by streaming and non-streaming story flows.
+
+"""Shared generation preparation helpers used by streaming and non-streaming story flows."""
 
 from __future__ import annotations
 
