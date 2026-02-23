@@ -4,7 +4,10 @@
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
-// Purpose: Centralises all derived theme CSS-class strings so components can
+
+/**
+ * Centralises all derived theme CSS-class strings so components can
+ */
 
 import React, { createContext, useContext, useMemo } from 'react';
 import { AppTheme } from '../../types';

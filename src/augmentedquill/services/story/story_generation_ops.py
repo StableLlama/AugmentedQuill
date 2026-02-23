@@ -25,6 +25,7 @@ from augmentedquill.services.story.story_generation_common import (
 async def generate_story_summary(
     *, mode: str = "", payload: dict | None = None
 ) -> dict:
+    """Generate Story Summary."""
     payload = payload or {}
     prepared = prepare_story_summary_generation(payload, mode)
 
@@ -45,6 +46,7 @@ async def generate_story_summary(
 async def generate_chapter_summary(
     *, chap_id: int, mode: str = "", payload: dict | None = None
 ) -> dict:
+    """Generate Chapter Summary."""
     payload = payload or {}
     prepared = prepare_chapter_summary_generation(payload, chap_id, mode)
 
@@ -79,6 +81,7 @@ async def generate_chapter_summary(
 async def write_chapter_from_summary(
     *, chap_id: int, payload: dict | None = None
 ) -> dict:
+    """Write Chapter From Summary."""
     payload = payload or {}
     prepared = prepare_write_chapter_generation(payload, chap_id)
 
@@ -98,6 +101,7 @@ async def write_chapter_from_summary(
 async def continue_chapter_from_summary(
     *, chap_id: int, payload: dict | None = None
 ) -> dict:
+    """Continue Chapter From Summary."""
     payload = payload or {}
     prepared = prepare_continue_chapter_generation(payload, chap_id)
 

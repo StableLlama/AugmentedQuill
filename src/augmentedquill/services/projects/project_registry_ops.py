@@ -15,6 +15,7 @@ from typing import Dict, List
 
 
 def load_registry_from_path(registry_path: Path) -> Dict:
+    """Load Registry From Path."""
     if not registry_path.exists():
         return {"current": "", "recent": []}
     try:
@@ -33,6 +34,7 @@ def load_registry_from_path(registry_path: Path) -> Dict:
 
 
 def save_registry_to_path(registry_path: Path, current: str, recent: List[str]) -> None:
+    """Save Registry To Path."""
     registry_path.parent.mkdir(parents=True, exist_ok=True)
     seen = set()
     deduped: List[str] = []
@@ -51,6 +53,7 @@ def set_active_project_in_registry(
     project_path: Path,
     current_registry: Dict,
 ) -> tuple[str, List[str]]:
+    """Set Active Project In Registry."""
     current = str(project_path)
     recent: List[str] = []
     for item in current_registry.get("recent", []) or []:
@@ -66,6 +69,7 @@ def set_active_project_in_registry(
 
 
 def get_active_project_dir_from_registry(current_registry: Dict) -> Path | None:
+    """Get Active Project Dir From Registry."""
     cur = current_registry.get("current") or ""
     if cur:
         try:

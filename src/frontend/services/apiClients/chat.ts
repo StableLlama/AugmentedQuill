@@ -4,7 +4,10 @@
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
-// Purpose: Defines the chat unit so this responsibility stays isolated, testable, and easy to evolve.
+
+/**
+ * Defines the chat unit so this responsibility stays isolated, testable, and easy to evolve.
+ */
 
 import { ChatSession } from '../../types';
 import { ChatApiMessage, ChatToolExecutionResponse } from '../apiTypes';

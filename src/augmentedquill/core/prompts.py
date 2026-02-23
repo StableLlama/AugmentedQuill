@@ -25,6 +25,7 @@ USER_PROMPTS_JSON_PATH = CONFIG_DIR / "prompts.json"
 
 def _load_prompts() -> Dict[str, Any]:
     # 1. Load internal defaults
+    """Load Prompts."""
     prompts = {"system_messages": {}, "user_prompts": {}, "prompt_types": {}}
     if DEFAULTS_JSON_PATH.exists():
         try:

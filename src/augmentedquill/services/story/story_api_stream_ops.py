@@ -18,6 +18,7 @@ from augmentedquill.services.llm import llm
 async def stream_unified_chat_content(
     *, messages: list, base_url: str, api_key: str | None, model_id: str, timeout_s: int
 ) -> AsyncIterator[str]:
+    """Stream Unified Chat Content."""
     async for chunk_dict in llm.unified_chat_stream(
         messages=messages,
         base_url=base_url,
@@ -34,6 +35,7 @@ async def stream_collect_and_persist(
     stream_factory: Callable[[], AsyncIterator[str]],
     persist_on_complete: Callable[[str], None],
 ) -> AsyncIterator[str]:
+    """Stream Collect And Persist."""
     buf: list[str] = []
     try:
         async for chunk in stream_factory():

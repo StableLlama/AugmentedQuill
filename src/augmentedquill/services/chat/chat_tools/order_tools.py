@@ -43,6 +43,7 @@ class ReorderBooksParams(BaseModel):
 async def reorder_chapters(
     params: ReorderChaptersParams, payload: dict, mutations: dict
 ):
+    """Reorder Chapters."""
     from augmentedquill.api.v1.chapters_routes.mutate import api_reorder_chapters
 
     request_payload = {"chapter_ids": params.chapter_ids}
@@ -69,6 +70,7 @@ async def reorder_chapters(
     description="Reorder books in a series project. Provide the complete list of book UUIDs in the desired order."
 )
 async def reorder_books(params: ReorderBooksParams, payload: dict, mutations: dict):
+    """Reorder Books."""
     from augmentedquill.api.v1.chapters_routes.mutate import api_reorder_books
 
     class MockRequest:

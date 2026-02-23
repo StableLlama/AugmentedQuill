@@ -15,6 +15,7 @@ _UNSET = object()
 
 
 def _get_story_data():
+    """Get Story Data."""
     active = get_active_project_dir()
     if not active:
         return None, None
@@ -24,6 +25,7 @@ def _get_story_data():
 
 
 def sourcebook_list_entries() -> List[Dict]:
+    """Sourcebook List Entries."""
     story, _ = _get_story_data()
     if not story:
         return []
@@ -43,6 +45,7 @@ def sourcebook_list_entries() -> List[Dict]:
 
 
 def sourcebook_search_entries(query: str) -> List[Dict]:
+    """Sourcebook Search Entries."""
     story, _ = _get_story_data()
     if not story:
         return []
@@ -72,6 +75,7 @@ def sourcebook_search_entries(query: str) -> List[Dict]:
 
 
 def sourcebook_get_entry(name_or_id: str) -> Optional[Dict]:
+    """Sourcebook Get Entry."""
     if not name_or_id:
         return None
 
@@ -135,6 +139,7 @@ def sourcebook_create_entry(
 
 
 def sourcebook_delete_entry(name_or_id: str) -> bool:
+    """Sourcebook Delete Entry."""
     if not name_or_id:
         return False
 
@@ -167,6 +172,7 @@ def sourcebook_update_entry(
     category: str = None,
     synonyms: List[str] = None,
 ) -> Dict:
+    """Sourcebook Update Entry."""
     if not name_or_id:
         return {"error": "Invalid identifier: name_or_id is required."}
 

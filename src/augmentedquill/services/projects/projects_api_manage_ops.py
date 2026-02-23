@@ -41,6 +41,7 @@ def normalize_registry(reg: dict) -> dict:
 
 
 def projects_listing_payload() -> dict:
+    """Projects Listing Payload."""
     reg = load_registry()
     normalized_reg = normalize_registry(reg)
     available = list_projects()
@@ -52,6 +53,7 @@ def projects_listing_payload() -> dict:
 
 
 def delete_project_response(name: str) -> JSONResponse:
+    """Delete Project Response."""
     ok, msg = delete_project(name)
     if not ok:
         return JSONResponse(status_code=400, content={"ok": False, "detail": msg})
@@ -71,6 +73,7 @@ def delete_project_response(name: str) -> JSONResponse:
 
 
 def select_project_response(name: str) -> JSONResponse:
+    """Select Project Response."""
     ok, msg = select_project(name)
     if not ok:
         return JSONResponse(status_code=400, content={"ok": False, "detail": msg})
@@ -125,6 +128,7 @@ def select_project_response(name: str) -> JSONResponse:
 
 
 def create_project_response(name: str, project_type: str) -> JSONResponse:
+    """Create Project Response."""
     ok, msg = create_project(name, project_type=project_type)
     if not ok:
         return JSONResponse(status_code=400, content={"ok": False, "detail": msg})
@@ -145,6 +149,7 @@ def create_project_response(name: str, project_type: str) -> JSONResponse:
 
 
 def convert_project_response(new_type: str) -> JSONResponse:
+    """Convert Project Response."""
     if not new_type:
         raise HTTPException(status_code=400, detail="new_type is required")
 
@@ -165,6 +170,7 @@ def convert_project_response(new_type: str) -> JSONResponse:
 
 
 def create_book_response(title: str) -> JSONResponse:
+    """Create Book Response."""
     if not title:
         raise HTTPException(status_code=400, detail="Book title is required")
 
@@ -186,6 +192,7 @@ def create_book_response(title: str) -> JSONResponse:
 
 
 def delete_book_response(book_id: str) -> JSONResponse:
+    """Delete Book Response."""
     if not book_id:
         raise HTTPException(status_code=400, detail="book_id is required")
 

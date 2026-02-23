@@ -40,6 +40,7 @@ def list_images_response() -> JSONResponse:
 
 
 def update_image_description_response(payload: dict) -> JSONResponse:
+    """Update Image Description Response."""
     filename = payload.get("filename")
     description = payload.get("description")
     title = payload.get("title")
@@ -56,6 +57,7 @@ def update_image_description_response(payload: dict) -> JSONResponse:
 
 
 def create_image_placeholder_response(payload: dict) -> JSONResponse:
+    """Create Image Placeholder Response."""
     description = payload.get("description") or ""
     title = payload.get("title") or "Untitled Placeholder"
 
@@ -75,6 +77,7 @@ def _sanitize_target_name(raw: str) -> str:
 async def upload_image_response(
     file: UploadFile, target_name: str | None = None
 ) -> JSONResponse:
+    """Upload Image Response."""
     active = get_active_project_dir()
     if not active:
         raise HTTPException(status_code=400, detail="No active project")
@@ -119,6 +122,7 @@ async def upload_image_response(
 
 
 def delete_image_response(payload: dict) -> JSONResponse:
+    """Delete Image Response."""
     filename = payload.get("filename")
     if not filename:
         raise HTTPException(status_code=400, detail="Filename required")
@@ -136,6 +140,7 @@ def delete_image_response(payload: dict) -> JSONResponse:
 
 
 def get_image_file_response(filename: str) -> FileResponse:
+    """Get Image File Response."""
     active = get_active_project_dir()
     if not active:
         raise HTTPException(status_code=404, detail="No active project")
@@ -148,6 +153,7 @@ def get_image_file_response(filename: str) -> FileResponse:
 
 
 def export_project_response(name: str | None = None) -> Response:
+    """Export Project Response."""
     if name:
         path = get_projects_root() / name
     else:
@@ -173,6 +179,7 @@ def export_project_response(name: str | None = None) -> Response:
 
 
 async def import_project_response(file: UploadFile) -> JSONResponse:
+    """Import Project Response."""
     if not file.filename.endswith(".zip"):
         raise HTTPException(status_code=400, detail="File must be a ZIP archive")
 

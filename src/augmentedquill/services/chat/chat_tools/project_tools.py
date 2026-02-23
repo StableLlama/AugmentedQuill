@@ -119,6 +119,7 @@ async def list_projects_tool(
 async def delete_project_tool(
     params: DeleteProjectParams, payload: dict, mutations: dict
 ):
+    """Delete Project Tool."""
     if not params.confirm:
         return {
             "status": "confirmation_required",
@@ -132,6 +133,7 @@ async def delete_project_tool(
     description="Delete a book from a series project. Requires confirmation with confirm=true."
 )
 async def delete_book(params: DeleteBookParams, payload: dict, mutations: dict):
+    """Delete Book."""
     if not params.confirm:
         return {
             "status": "confirmation_required",
@@ -160,6 +162,7 @@ async def delete_book(params: DeleteBookParams, payload: dict, mutations: dict):
 
 @chat_tool(description="Create a new book in a series project.")
 async def create_new_book(params: CreateNewBookParams, payload: dict, mutations: dict):
+    """Create New Book."""
     from augmentedquill.services.projects.projects import (
         create_new_book as _create_book,
     )
@@ -175,6 +178,7 @@ async def create_new_book(params: CreateNewBookParams, payload: dict, mutations:
 async def change_project_type(
     params: ChangeProjectTypeParams, payload: dict, mutations: dict
 ):
+    """Change Project Type."""
     from augmentedquill.services.projects.projects import (
         change_project_type as _change_type,
     )

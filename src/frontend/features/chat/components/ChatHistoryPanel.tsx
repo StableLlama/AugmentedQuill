@@ -4,7 +4,10 @@
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
-// Purpose: Defines the chat history panel so session management UI is isolated from message rendering.
+
+/**
+ * Defines the chat history panel so session management UI is isolated from message rendering.
+ */
 
 import React from 'react';
 import { Ghost, Trash2, X } from 'lucide-react';

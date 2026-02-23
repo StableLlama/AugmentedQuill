@@ -4,7 +4,10 @@
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
-// Purpose: Tests app selector helpers used by top-level app orchestration.
+
+/**
+ * Tests app selector helpers used by top-level app orchestration.
+ */
 
 import { describe, expect, it } from 'vitest';
 import { AppSettings } from '../../types';

@@ -4,7 +4,10 @@
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
-// Purpose: Defines app selectors so App component orchestration stays focused and testable.
+
+/**
+ * Defines app selectors so App component orchestration stays focused and testable.
+ */
 
 import { AppSettings, LLMConfig } from '../../types';
 

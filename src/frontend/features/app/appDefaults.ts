@@ -4,7 +4,10 @@
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
-// Purpose: Defines app defaults so top-level app orchestration stays smaller and easier to maintain.
+
+/**
+ * Defines app defaults so top-level app orchestration stays smaller and easier to maintain.
+ */
 
 import { AppSettings, DEFAULT_LLM_CONFIG } from '../../types';
 

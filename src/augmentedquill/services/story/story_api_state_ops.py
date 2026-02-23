@@ -22,6 +22,7 @@ from augmentedquill.services.projects.projects import get_active_project_dir
 
 
 def get_active_story_or_http_error() -> tuple[Path, Path, dict]:
+    """Get Active Story Or Http Error."""
     active = get_active_project_dir()
     if not active:
         raise HTTPException(status_code=400, detail="No active project")
@@ -68,6 +69,7 @@ def ensure_chapter_slot(chapters_data: list[dict], pos: int) -> None:
 
 
 def collect_chapter_summaries(chapters_data: list[dict]) -> list[str]:
+    """Collect Chapter Summaries."""
     chapter_summaries: list[str] = []
     for index, chapter in enumerate(chapters_data):
         summary = chapter.get("summary", "").strip()

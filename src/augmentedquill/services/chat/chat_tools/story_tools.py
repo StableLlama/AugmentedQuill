@@ -123,6 +123,7 @@ class WriteStorySummaryParams(BaseModel):
 async def get_story_metadata(
     params: GetStoryMetadataParams, payload: dict, mutations: dict
 ):
+    """Get Story Metadata."""
     active = get_active_project_dir()
     story = load_story_config((active / "story.json") if active else None) or {}
     return {
@@ -140,6 +141,7 @@ async def get_story_metadata(
 async def update_story_metadata(
     params: UpdateStoryMetadataParams, payload: dict, mutations: dict
 ):
+    """Update Story Metadata."""
     _update_story_metadata(
         title=params.title, summary=params.summary, notes=params.notes, tags=params.tags
     )
@@ -170,6 +172,7 @@ async def write_story_content(
 async def get_book_metadata(
     params: GetBookMetadataParams, payload: dict, mutations: dict
 ):
+    """Get Book Metadata."""
     active = get_active_project_dir()
     story = load_story_config((active / "story.json") if active else None) or {}
     books = story.get("books", [])
@@ -189,6 +192,7 @@ async def get_book_metadata(
 async def update_book_metadata(
     params: UpdateBookMetadataParams, payload: dict, mutations: dict
 ):
+    """Update Book Metadata."""
     _update_book_metadata(
         params.book_id, title=params.title, summary=params.summary, notes=params.notes
     )
@@ -220,6 +224,7 @@ async def write_book_content(
 async def get_story_summary_tool(
     params: GetStorySummaryParams, payload: dict, mutations: dict
 ):
+    """Get Story Summary Tool."""
     active = get_active_project_dir()
     story = load_story_config((active / "story.json") if active else None) or {}
     summary = story.get("story_summary", "")
@@ -236,6 +241,7 @@ async def get_story_tags(params: GetStoryTagsParams, payload: dict, mutations: d
 
 @chat_tool(description="Set the tags for the story. Replaces all existing tags.")
 async def set_story_tags(params: SetStoryTagsParams, payload: dict, mutations: dict):
+    """Set Story Tags."""
     active = get_active_project_dir()
     if not active:
         return {"error": "No active project"}
@@ -257,6 +263,7 @@ async def set_story_tags(params: SetStoryTagsParams, payload: dict, mutations: d
 async def sync_story_summary(
     params: SyncStorySummaryParams, payload: dict, mutations: dict
 ):
+    """Sync Story Summary."""
     from augmentedquill.services.story.story_generation_ops import (
         generate_story_summary,
     )
@@ -270,6 +277,7 @@ async def sync_story_summary(
 async def write_story_summary(
     params: WriteStorySummaryParams, payload: dict, mutations: dict
 ):
+    """Write Story Summary."""
     active = get_active_project_dir()
     if not active:
         return {"error": "No active project"}

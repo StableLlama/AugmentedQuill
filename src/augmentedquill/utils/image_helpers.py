@@ -23,6 +23,7 @@ def get_images_dir() -> Path | None:
 
 
 def load_image_metadata() -> dict:
+    """Load Image Metadata."""
     d = get_images_dir()
     if not d:
         return {}
@@ -30,7 +31,6 @@ def load_image_metadata() -> dict:
     if meta_file.exists():
         try:
             data = json.loads(meta_file.read_text("utf-8"))
-            # Support both legacy flat metadata and versioned payloads.
             if "version" in data and isinstance(data["version"], int):
                 return data.get("items", {})
             return data
@@ -53,6 +53,7 @@ def get_image_entry(filename: str) -> dict:
 
 
 def update_image_metadata(filename: str, description: str = None, title: str = None):
+    """Update Image Metadata."""
     meta = load_image_metadata()
     if filename not in meta:
         meta[filename] = {}
@@ -73,6 +74,7 @@ def delete_image_metadata(filename: str):
 
 
 def get_project_images() -> list[dict]:
+    """Get Project Images."""
     active = get_active_project_dir()
     if not active:
         return []

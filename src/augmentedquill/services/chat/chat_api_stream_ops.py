@@ -45,6 +45,7 @@ def normalize_chat_messages(value: Any) -> list[dict]:
 
 
 def resolve_stream_model_context(payload: dict, machine: dict) -> dict:
+    """Resolve Stream Model Context."""
     openai_cfg: Dict[str, Any] = machine.get("openai") or {}
     model_type = (payload or {}).get("model_type") or "CHAT"
     selected_name = (
@@ -97,6 +98,7 @@ def ensure_system_message_if_missing(
     machine: dict,
     selected_name: str | None,
 ) -> None:
+    """Ensure System Message If Missing."""
     has_system = any(msg.get("role") == "system" for msg in req_messages)
     if has_system:
         return
@@ -115,6 +117,7 @@ def ensure_system_message_if_missing(
 def resolve_story_llm_prefs(
     config_dir: Path, active_project_dir: Path | None
 ) -> tuple[float, Any]:
+    """Resolve Story Llm Prefs."""
     story = load_story_config((active_project_dir or config_dir) / "story.json") or {}
     prefs = (story.get("llm_prefs") or {}) if isinstance(story, dict) else {}
     temperature = (

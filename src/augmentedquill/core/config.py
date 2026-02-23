@@ -176,6 +176,7 @@ def load_story_config(
 
 
 def save_story_config(path: os.PathLike[str] | str, config: Dict[str, Any]) -> None:
+    """Save Story Config."""
     p = Path(path)
     if not p.parent.exists():
         p.parent.mkdir(parents=True)

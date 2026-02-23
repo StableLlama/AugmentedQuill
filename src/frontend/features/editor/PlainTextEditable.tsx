@@ -4,7 +4,10 @@
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
-// Purpose: Defines plain text editable surface for the editor so content-editable behavior is isolated and reusable.
+
+/**
+ * Defines plain text editable surface for the editor so content-editable behavior is isolated and reusable.
+ */
 
 import React, { useEffect, useImperativeHandle, useRef } from 'react';
 

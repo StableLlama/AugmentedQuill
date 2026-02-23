@@ -44,6 +44,7 @@ def _as_streaming_response(gen_factory, media_type: str = "text/plain"):
 
 @router.post("/story/suggest")
 async def api_story_suggest(request: Request) -> StreamingResponse:
+    """Api Story Suggest."""
     payload = await parse_json_body(request)
 
     chap_id = (payload or {}).get("chap_id")
@@ -85,6 +86,7 @@ async def api_story_suggest(request: Request) -> StreamingResponse:
     }
 
     async def generate_suggestion():
+        """Generate Suggestion."""
         startFound = False
         isNewParagraph = False
         async for chunk in llm.openai_completions_stream(
@@ -113,6 +115,7 @@ async def api_story_suggest(request: Request) -> StreamingResponse:
 
 @router.post("/story/summary/stream")
 async def api_story_summary_stream(request: Request):
+    """Api Story Summary Stream."""
     payload = await parse_json_body(request)
     prepared = prepare_chapter_summary_generation(
         payload,
@@ -121,6 +124,7 @@ async def api_story_summary_stream(request: Request):
     )
 
     async def _gen_source():
+        """Gen Source."""
         async for chunk in stream_unified_chat_content(
             messages=prepared["messages"],
             base_url=prepared["base_url"],
@@ -142,10 +146,12 @@ async def api_story_summary_stream(request: Request):
 
 @router.post("/story/write/stream")
 async def api_story_write_stream(request: Request):
+    """Api Story Write Stream."""
     payload = await parse_json_body(request)
     prepared = prepare_write_chapter_generation(payload, payload.get("chap_id"))
 
     async def _gen_source():
+        """Gen Source."""
         async for chunk in stream_unified_chat_content(
             messages=prepared["messages"],
             base_url=prepared["base_url"],
@@ -165,10 +171,12 @@ async def api_story_write_stream(request: Request):
 
 @router.post("/story/continue/stream")
 async def api_story_continue_stream(request: Request):
+    """Api Story Continue Stream."""
     payload = await parse_json_body(request)
     prepared = prepare_continue_chapter_generation(payload, payload.get("chap_id"))
 
     async def _gen_source():
+        """Gen Source."""
         async for chunk in stream_unified_chat_content(
             messages=prepared["messages"],
             base_url=prepared["base_url"],
@@ -179,6 +187,7 @@ async def api_story_continue_stream(request: Request):
             yield chunk
 
     def _persist(appended: str) -> None:
+        """Persist."""
         new_content = (
             prepared["existing"]
             + (
@@ -197,10 +206,12 @@ async def api_story_continue_stream(request: Request):
 
 @router.post("/story/story-summary/stream")
 async def api_story_story_summary_stream(request: Request):
+    """Api Story Story Summary Stream."""
     payload = await parse_json_body(request)
     prepared = prepare_story_summary_generation(payload, payload.get("mode") or "")
 
     async def _gen_source():
+        """Gen Source."""
         async for chunk in stream_unified_chat_content(
             messages=prepared["messages"],
             base_url=prepared["base_url"],

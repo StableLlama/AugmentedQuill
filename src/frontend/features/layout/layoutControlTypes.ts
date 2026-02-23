@@ -4,7 +4,10 @@
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
-// Purpose: Defines shared layout control-bundle types so prop contracts stay consistent across layout components.
+
+/**
+ * Defines shared layout control-bundle types so prop contracts stay consistent across layout components.
+ */
 
 import type { ComponentProps, Dispatch, RefObject, SetStateAction } from 'react';
 

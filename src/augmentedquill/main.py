@@ -83,6 +83,7 @@ app = create_app()
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
+    """Build Arg Parser."""
     parser = argparse.ArgumentParser(
         prog="augmentedquill",
         description="Run the AugmentedQuill FastAPI server",

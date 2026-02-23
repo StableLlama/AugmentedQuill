@@ -137,6 +137,7 @@ def _normalize_chapter_entry(entry: Any) -> Dict[str, Any]:
 
 
 def _chapter_by_id_or_404(chap_id: int) -> tuple[Path, int, int]:
+    """Chapter By Id Or 404."""
     files = _scan_chapter_files()
     match = next(
         ((idx, p, i) for i, (idx, p) in enumerate(files) if idx == chap_id), None

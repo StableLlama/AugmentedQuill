@@ -22,6 +22,7 @@ def run_story_config_update(
     story_path: Path | None,
     current_schema_version: int,
 ) -> tuple[bool, str]:
+    """Run Story Config Update."""
     target_story_path = story_path or (config_dir / "story.json")
 
     defaults = {}

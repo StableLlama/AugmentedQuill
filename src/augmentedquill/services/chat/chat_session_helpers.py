@@ -29,6 +29,7 @@ def get_chats_dir(project_path: Path) -> Path:
 
 
 def list_chats(project_path: Path) -> List[Dict]:
+    """List Chats."""
     chats_dir = get_chats_dir(project_path)
     if not chats_dir.exists():
         return []
@@ -55,6 +56,7 @@ def list_chats(project_path: Path) -> List[Dict]:
 
 
 def load_chat(project_path: Path, chat_id: str) -> Dict | None:
+    """Load Chat."""
     chat_file = get_chats_dir(project_path) / f"{chat_id}.json"
     if not chat_file.exists():
         return None
@@ -65,6 +67,7 @@ def load_chat(project_path: Path, chat_id: str) -> Dict | None:
 
 
 def save_chat(project_path: Path, chat_id: str, chat_data: Dict) -> None:
+    """Save Chat."""
     chats_dir = get_chats_dir(project_path)
     _ensure_dir(chats_dir)
     chat_file = chats_dir / f"{chat_id}.json"

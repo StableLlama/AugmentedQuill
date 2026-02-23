@@ -49,6 +49,7 @@ class SetImageMetadataParams(BaseModel):
 
 
 async def _tool_generate_image_description(filename: str, payload: dict) -> str:
+    """Tool Generate Image Description."""
     from augmentedquill.services.llm import llm
     from augmentedquill.utils.image_helpers import get_images_dir, update_image_metadata
 
@@ -127,6 +128,7 @@ async def _tool_generate_image_description(filename: str, payload: dict) -> str:
     description="List all images in the project with their filenames, descriptions, titles, and placeholder status."
 )
 async def list_images(params: ListImagesParams, payload: dict, mutations: dict):
+    """List Images."""
     from augmentedquill.utils.image_helpers import get_project_images
 
     imgs = get_project_images()
@@ -158,6 +160,7 @@ async def generate_image_description(
 async def create_image_placeholder(
     params: CreateImagePlaceholderParams, payload: dict, mutations: dict
 ):
+    """Create Image Placeholder."""
     from augmentedquill.utils.image_helpers import update_image_metadata
 
     filename = f"placeholder_{uuid.uuid4().hex[:8]}.png"
@@ -176,6 +179,7 @@ async def create_image_placeholder(
 async def set_image_metadata(
     params: SetImageMetadataParams, payload: dict, mutations: dict
 ):
+    """Set Image Metadata."""
     from augmentedquill.utils.image_helpers import update_image_metadata
 
     update_image_metadata(

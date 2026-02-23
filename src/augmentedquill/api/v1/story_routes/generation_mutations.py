@@ -26,6 +26,7 @@ router = APIRouter(tags=["Story"])
 
 @router.post("/story/story-summary")
 async def api_story_story_summary(request: Request) -> JSONResponse:
+    """Api Story Story Summary."""
     try:
         payload = await parse_json_body(request)
         mode = (payload.get("mode") or "").lower()
@@ -37,6 +38,7 @@ async def api_story_story_summary(request: Request) -> JSONResponse:
 
 @router.post("/story/summary")
 async def api_story_summary(request: Request) -> JSONResponse:
+    """Api Story Summary."""
     try:
         payload = await parse_json_body(request)
         chap_id = payload.get("chap_id")
@@ -51,6 +53,7 @@ async def api_story_summary(request: Request) -> JSONResponse:
 
 @router.post("/story/write")
 async def api_story_write(request: Request) -> JSONResponse:
+    """Api Story Write."""
     try:
         payload = await parse_json_body(request)
         chap_id = payload.get("chap_id")
@@ -62,6 +65,7 @@ async def api_story_write(request: Request) -> JSONResponse:
 
 @router.post("/story/continue")
 async def api_story_continue(request: Request) -> JSONResponse:
+    """Api Story Continue."""
     try:
         payload = await parse_json_body(request)
         chap_id = payload.get("chap_id")

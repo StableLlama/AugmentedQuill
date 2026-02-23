@@ -19,6 +19,7 @@ from augmentedquill.services.llm.llm import add_llm_log, create_log_entry
 
 
 async def proxy_openai_models(payload: dict) -> JSONResponse:
+    """Proxy Openai Models."""
     base_url = (payload or {}).get("base_url") or ""
     api_key = (payload or {}).get("api_key") or ""
     timeout_s = (payload or {}).get("timeout_s") or 60

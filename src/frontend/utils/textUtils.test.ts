@@ -4,7 +4,10 @@
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
-// Purpose: Tests for text utilities.
+
+/**
+ * Tests for text utilities.
+ */
 
 import { describe, it, expect } from 'vitest';
 import { computeContentWithSeparator } from './textUtils';

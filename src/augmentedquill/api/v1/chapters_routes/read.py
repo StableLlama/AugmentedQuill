@@ -30,6 +30,7 @@ async def api_chapters() -> ChaptersListResponse:
 async def api_chapter_content(
     chap_id: int = FastAPIPath(..., ge=0)
 ) -> ChapterDetailResponse:
+    """Api Chapter Content."""
     _, path, _ = _chapter_by_id_or_404(chap_id)
     active = get_active_project_dir()
     chapter = chapter_detail_payload(active, chap_id, path)

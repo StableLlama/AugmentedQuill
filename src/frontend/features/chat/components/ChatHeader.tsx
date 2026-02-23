@@ -4,7 +4,10 @@
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
-// Purpose: Defines the chat header controls so chat layout remains modular and maintainable.
+
+/**
+ * Defines the chat header controls so chat layout remains modular and maintainable.
+ */
 
 import React from 'react';
 import { Ghost, Globe, History, Plus, Settings2, Sparkles, Trash2 } from 'lucide-react';

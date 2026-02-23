@@ -129,6 +129,7 @@ async def unified_chat_stream(
     log_entry: dict | None = None,
 ) -> AsyncIterator[dict]:
     # Keep tests monkeypatching augmentedquill.services.llm.llm.httpx effective.
+    """Unified Chat Stream."""
     _llm_stream_ops.httpx = httpx
     async for chunk in _llm_stream_ops.unified_chat_stream(
         messages=messages,
@@ -159,6 +160,7 @@ async def unified_chat_complete(
     temperature: float = 0.7,
     max_tokens: int | None = None,
 ) -> dict:
+    """Unified Chat Complete."""
     _llm_completion_ops.httpx = httpx
     return await _llm_completion_ops.unified_chat_complete(
         messages=messages,
@@ -183,6 +185,7 @@ async def openai_chat_complete(
     timeout_s: int,
     extra_body: dict | None = None,
 ) -> dict:
+    """Openai Chat Complete."""
     _llm_completion_ops.httpx = httpx
     return await _llm_completion_ops.openai_chat_complete(
         messages=messages,
@@ -204,6 +207,7 @@ async def openai_completions(
     n: int = 1,
     extra_body: dict | None = None,
 ) -> dict:
+    """Openai Completions."""
     _llm_completion_ops.httpx = httpx
     return await _llm_completion_ops.openai_completions(
         prompt=prompt,
@@ -224,6 +228,7 @@ async def openai_chat_complete_stream(
     model_id: str,
     timeout_s: int,
 ) -> AsyncIterator[str]:
+    """Openai Chat Complete Stream."""
     _llm_completion_ops.httpx = httpx
     async for chunk in _llm_completion_ops.openai_chat_complete_stream(
         messages=messages,
@@ -244,6 +249,7 @@ async def openai_completions_stream(
     timeout_s: int,
     extra_body: dict | None = None,
 ) -> AsyncIterator[str]:
+    """Openai Completions Stream."""
     _llm_completion_ops.httpx = httpx
     async for chunk in _llm_completion_ops.openai_completions_stream(
         prompt=prompt,

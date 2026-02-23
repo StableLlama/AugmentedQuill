@@ -31,6 +31,7 @@ from augmentedquill.services.story.story_api_state_ops import (
 
 
 def prepare_story_summary_generation(payload: dict, mode: str) -> dict:
+    """Prepare Story Summary Generation."""
     mode = (mode or "").lower()
     if mode not in ("discard", "update", ""):
         raise HTTPException(status_code=400, detail="mode must be discard|update")
@@ -66,6 +67,7 @@ def prepare_story_summary_generation(payload: dict, mode: str) -> dict:
 
 
 def prepare_chapter_summary_generation(payload: dict, chap_id: int, mode: str) -> dict:
+    """Prepare Chapter Summary Generation."""
     if not isinstance(chap_id, int):
         raise HTTPException(status_code=400, detail="chap_id is required")
 
@@ -108,6 +110,7 @@ def prepare_chapter_summary_generation(payload: dict, chap_id: int, mode: str) -
 
 
 def prepare_write_chapter_generation(payload: dict, chap_id: int) -> dict:
+    """Prepare Write Chapter Generation."""
     if not isinstance(chap_id, int):
         raise HTTPException(status_code=400, detail="chap_id is required")
 
@@ -147,6 +150,7 @@ def prepare_write_chapter_generation(payload: dict, chap_id: int) -> dict:
 
 
 def prepare_continue_chapter_generation(payload: dict, chap_id: int) -> dict:
+    """Prepare Continue Chapter Generation."""
     if not isinstance(chap_id, int):
         raise HTTPException(status_code=400, detail="chap_id is required")
 

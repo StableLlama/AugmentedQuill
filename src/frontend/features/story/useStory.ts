@@ -4,7 +4,10 @@
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
-// Purpose: Defines the use story unit so this responsibility stays isolated, testable, and easy to evolve.
+
+/**
+ * Defines the use story unit so this responsibility stays isolated, testable, and easy to evolve.
+ */
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { StoryState, Chapter, Book } from '../../types';

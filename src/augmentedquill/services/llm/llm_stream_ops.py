@@ -40,6 +40,7 @@ async def unified_chat_stream(
     max_tokens: int | None = None,
     log_entry: dict | None = None,
 ) -> AsyncIterator[dict]:
+    """Unified Chat Stream."""
     url = str(base_url).rstrip("/") + "/chat/completions"
     headers: Dict[str, str] = {"Content-Type": "application/json"}
     if api_key:

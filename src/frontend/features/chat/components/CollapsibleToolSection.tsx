@@ -4,7 +4,10 @@
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
-// Purpose: Defines a reusable collapsible section for chat tool/debug payload rendering.
+
+/**
+ * Defines a reusable collapsible section for chat tool/debug payload rendering.
+ */
 
 import React, { useEffect, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';

@@ -29,6 +29,7 @@ def list_active_chats():
 
 
 def load_active_chat(chat_id: str):
+    """Load Active Chat."""
     project_dir = get_active_project_dir()
     if not project_dir:
         raise HTTPException(status_code=404, detail="No active project")
@@ -39,6 +40,7 @@ def load_active_chat(chat_id: str):
 
 
 def save_active_chat(chat_id: str, data: dict):
+    """Save Active Chat."""
     project_dir = get_active_project_dir()
     if not project_dir:
         raise HTTPException(status_code=404, detail="No active project")
@@ -48,6 +50,7 @@ def save_active_chat(chat_id: str, data: dict):
 
 
 def delete_active_chat(chat_id: str):
+    """Delete Active Chat."""
     project_dir = get_active_project_dir()
     if not project_dir:
         raise HTTPException(status_code=404, detail="No active project")

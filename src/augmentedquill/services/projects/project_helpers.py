@@ -60,7 +60,6 @@ def normalize_story_for_frontend(story: dict) -> dict:
                                 b_copy["id"] = b_copy.get("folder")
 
                             if not b_copy.get("id"):
-                                # Filesystem order fallback preserves legacy projects
                                 # that predate explicit IDs.
                                 if i < len(folders):
                                     b_copy["id"] = folders[i]
@@ -70,6 +69,7 @@ def normalize_story_for_frontend(story: dict) -> dict:
     # Conflict IDs are synthesized when missing so editing and reordering
     # remain stable in the frontend.
     def _handle_chapters(chapters):
+        """Handle Chapters."""
         if not isinstance(chapters, list):
             return
         for chap in chapters:

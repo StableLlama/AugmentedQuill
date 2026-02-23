@@ -28,6 +28,7 @@ router = APIRouter(tags=["Story"])
 
 @router.post("/story/title")
 async def api_story_title(request: Request) -> JSONResponse:
+    """Api Story Title."""
     try:
         payload = await parse_json_body(request)
         title = str(payload.get("title", "")).strip()
@@ -48,6 +49,7 @@ async def api_story_title(request: Request) -> JSONResponse:
 
 @router.post("/story/settings")
 async def api_story_settings(request: Request) -> JSONResponse:
+    """Api Story Settings."""
     try:
         payload = await parse_json_body(request)
 
@@ -73,6 +75,7 @@ async def api_story_settings(request: Request) -> JSONResponse:
 
 @router.post("/story/metadata")
 async def api_story_metadata(request: Request) -> JSONResponse:
+    """Api Story Metadata."""
     try:
         payload = await parse_json_body(request)
 
@@ -110,6 +113,7 @@ async def api_story_metadata(request: Request) -> JSONResponse:
 async def api_book_metadata(
     request: Request, book_id: str = FastAPIPath(...)
 ) -> JSONResponse:
+    """Api Book Metadata."""
     try:
         payload = await parse_json_body(request)
 

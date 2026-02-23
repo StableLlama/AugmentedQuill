@@ -4,7 +4,10 @@
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
-// Purpose: Tests centralized frontend error notifier behavior.
+
+/**
+ * Tests centralized frontend error notifier behavior.
+ */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { formatError, notifyError } from './errorNotifier';

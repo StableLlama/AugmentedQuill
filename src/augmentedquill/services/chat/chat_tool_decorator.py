@@ -68,6 +68,7 @@ def chat_tool(
     """
 
     def decorator(func: Callable) -> Callable:
+        """Decorator."""
         tool_name = name or func.__name__
 
         # Extract parameter schema from function signature
@@ -123,6 +124,7 @@ def chat_tool(
         async def wrapper(
             args_obj: dict, call_id: str, payload: dict, mutations: dict
         ) -> dict:
+            """Wrapper."""
             try:
                 # Validate and parse arguments using Pydantic
                 params = params_type.model_validate(args_obj)

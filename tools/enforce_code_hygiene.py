@@ -58,7 +58,7 @@ def split_pascal_camel(word: str) -> str:
     return re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", word)
 
 
-def infer_purpose(path: Path, marker: str) -> str:
+def infer_purpose(path: Path) -> str:
     stem = (
         split_pascal_camel(path.stem.replace("_", " ").replace("-", " "))
         .lower()
@@ -67,10 +67,7 @@ def infer_purpose(path: Path, marker: str) -> str:
     stem = re.sub(r"\s+", " ", stem)
     if not stem:
         stem = "module"
-    return (
-        f"{marker} Purpose: Defines the {stem} unit so this responsibility stays isolated,"
-        " testable, and easy to evolve."
-    )
+    return f"Defines the {stem} unit so this responsibility stays isolated, testable, and easy to evolve."
 
 
 def detect_shebang(lines: list[str], is_python: bool) -> tuple[str | None, list[str]]:
@@ -98,7 +95,7 @@ def extract_existing_purpose(lines: list[str], marker: str) -> str | None:
     for line in lines[:40]:
         match = purpose_re.match(line)
         if match:
-            return f"{marker} Purpose: {match.group(1).strip()}"
+            return match.group(1).strip()
     return None
 
 
@@ -128,14 +125,32 @@ def normalize_file(path: Path) -> FileUpdate:
     remaining = strip_existing_header(remaining, marker)
     remaining = strip_leading_purpose(remaining, marker)
 
-    purpose_line = preserved_purpose or infer_purpose(path, marker)
+    purpose_text = preserved_purpose or infer_purpose(path)
 
     new_lines: list[str] = []
     if shebang:
         new_lines.append(shebang)
     new_lines.extend(header)
-    new_lines.append(purpose_line)
     new_lines.append("")
+
+    has_docstring = False
+    if is_python:
+        if remaining and remaining[0].startswith('"""'):
+            has_docstring = True
+    else:
+        if remaining and remaining[0].strip() == "/**":
+            has_docstring = True
+
+    if not has_docstring:
+        if is_python:
+            new_lines.append(f'"""{purpose_text}"""')
+            new_lines.append("")
+        else:
+            new_lines.append("/**")
+            new_lines.append(f" * {purpose_text}")
+            new_lines.append(" */")
+            new_lines.append("")
+
     new_lines.extend(remaining)
 
     new_text = newline.join(new_lines).rstrip() + newline

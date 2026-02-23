@@ -78,6 +78,7 @@ async def search_sourcebook(
 async def get_sourcebook_entry(
     params: GetSourcebookEntryParams, payload: dict, mutations: dict
 ):
+    """Get Sourcebook Entry."""
     entry = sourcebook_get_entry(params.name_or_id)
     if not entry:
         return {"error": "Not found"}
@@ -88,6 +89,7 @@ async def get_sourcebook_entry(
 async def create_sourcebook_entry(
     params: CreateSourcebookEntryParams, payload: dict, mutations: dict
 ):
+    """Create Sourcebook Entry."""
     new_entry = sourcebook_create_entry(
         name=params.name,
         description=params.description,
@@ -105,6 +107,7 @@ async def create_sourcebook_entry(
 async def update_sourcebook_entry(
     params: UpdateSourcebookEntryParams, payload: dict, mutations: dict
 ):
+    """Update Sourcebook Entry."""
     result = sourcebook_update_entry(
         name_or_id=params.name_or_id,
         name=params.name,
@@ -121,6 +124,7 @@ async def update_sourcebook_entry(
 async def delete_sourcebook_entry(
     params: DeleteSourcebookEntryParams, payload: dict, mutations: dict
 ):
+    """Delete Sourcebook Entry."""
     deleted = sourcebook_delete_entry(params.name_or_id)
     if deleted:
         mutations["story_changed"] = True

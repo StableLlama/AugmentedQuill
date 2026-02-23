@@ -11,6 +11,7 @@ import json as _json
 
 
 def tool_message(name: str, call_id: str, content) -> dict:
+    """Tool Message."""
     return {
         "role": "tool",
         "tool_call_id": call_id,

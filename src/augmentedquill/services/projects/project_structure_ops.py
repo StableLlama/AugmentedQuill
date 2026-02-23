@@ -156,6 +156,7 @@ def change_project_type_in_project(active: Path, new_type: str) -> Tuple[bool, s
     def _convert_project_type(
         current_old_type: str, target_type: str
     ) -> Tuple[bool, str]:
+        """Convert Project Type."""
         local_story = load_story_config(story_path) or {}
         local_old_type = local_story.get("project_type", "novel")
 

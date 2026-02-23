@@ -23,6 +23,7 @@ def update_book_metadata_in_project(
     notes: str = None,
     private_notes: str = None,
 ) -> None:
+    """Update Book Metadata In Project."""
     story_path = active / "story.json"
     story = load_story_config(story_path) or {}
 
@@ -68,6 +69,7 @@ def update_story_metadata_in_project(
     notes: str = None,
     private_notes: str = None,
 ) -> None:
+    """Update Story Metadata In Project."""
     story_path = active / "story.json"
     story = load_story_config(story_path) or {}
 
@@ -86,6 +88,7 @@ def update_story_metadata_in_project(
 
 
 def read_story_content_in_project(active: Path) -> str:
+    """Read Story Content In Project."""
     story = load_story_config(active / "story.json") or {}
     project_type = story.get("project_type", "novel")
 
@@ -101,6 +104,7 @@ def read_story_content_in_project(active: Path) -> str:
 
 
 def write_story_content_in_project(active: Path, content: str) -> None:
+    """Write Story Content In Project."""
     story = load_story_config(active / "story.json") or {}
     project_type = story.get("project_type", "novel")
 

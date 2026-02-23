@@ -4,7 +4,10 @@
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
-// Purpose: Defines the chapters unit so this responsibility stays isolated, testable, and easy to evolve.
+
+/**
+ * Defines the chapters unit so this responsibility stays isolated, testable, and easy to evolve.
+ */
 
 import { Conflict } from '../../types';
 import { ChapterDetailResponse, ChapterListResponse } from '../apiTypes';

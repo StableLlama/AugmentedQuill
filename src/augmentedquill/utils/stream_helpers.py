@@ -19,6 +19,7 @@ class ChannelFilter:
     """Stateful filter to separate thinking/analysis from final content."""
 
     def __init__(self):
+        """Init  ."""
         self.current_channel = "final"
         self.buffer = ""
         # Combined pattern for all tags we care about

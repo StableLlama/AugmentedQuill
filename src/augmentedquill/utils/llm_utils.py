@@ -33,6 +33,7 @@ async def verify_model_capabilities(
     headers["Content-Type"] = "application/json"
 
     async def check_vision(client):
+        """Check Vision."""
         try:
             payload = {
                 "model": model_id,
@@ -59,6 +60,7 @@ async def verify_model_capabilities(
             return False
 
     async def check_function_calling(client):
+        """Check Function Calling."""
         try:
             payload = {
                 "model": model_id,

@@ -22,6 +22,7 @@ def delete_project_under_root(
     projects_root: Path,
     current_registry: Dict,
 ) -> Tuple[bool, str, str, List[str]]:
+    """Delete Project Under Root."""
     if not name:
         return False, "Project name is required", "", []
     if (
@@ -66,6 +67,7 @@ def delete_project_under_root(
 
 
 def validate_project_dir_data(path: Path) -> Tuple[bool, str]:
+    """Validate Project Dir Data."""
     if not path.exists():
         return False, "does_not_exist"
     if not path.is_dir():
@@ -113,6 +115,7 @@ def initialize_project_dir_data(
     project_type: str,
     now_iso: str,
 ) -> None:
+    """Initialize Project Dir Data."""
     path.mkdir(parents=True, exist_ok=True)
     story_path = path / "story.json"
 
@@ -147,6 +150,7 @@ def list_projects_under_root(
     projects_root: Path,
     validate_project_dir: Callable[[Path], object],
 ) -> List[Dict[str, str | bool]]:
+    """List Projects Under Root."""
     if not projects_root.exists():
         return []
 
@@ -187,6 +191,7 @@ def create_project_under_root(
     initialize_project: Callable[[Path, str, str], None],
     validate_project: Callable[[Path], object],
 ) -> Tuple[bool, str, Path | None]:
+    """Create Project Under Root."""
     if not name:
         return False, "Project name is required", None
     if name.strip() != name or name in (".", ".."):
@@ -221,6 +226,7 @@ def select_project_under_root(
     initialize_project: Callable[[Path, str, str], None],
     validate_project: Callable[[Path], object],
 ) -> Tuple[bool, str, Path | None]:
+    """Select Project Under Root."""
     if not name:
         return False, "Project name is required", None
 

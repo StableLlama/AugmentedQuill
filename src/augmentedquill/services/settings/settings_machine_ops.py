@@ -25,6 +25,7 @@ def auth_headers(api_key: str | None) -> dict[str, str]:
 
 
 def parse_connection_payload(payload: dict | None) -> tuple[str, str | None, int]:
+    """Parse Connection Payload."""
     base_url = (payload or {}).get("base_url") or ""
     api_key = (payload or {}).get("api_key") or None
     timeout_s = (payload or {}).get("timeout_s")
@@ -38,6 +39,7 @@ def parse_connection_payload(payload: dict | None) -> tuple[str, str | None, int
 async def list_remote_models(
     *, base_url: str, api_key: str | None, timeout_s: int
 ) -> tuple[bool, list[str], str | None]:
+    """List Remote Models."""
     url = normalize_base_url(base_url) + "/models"
     headers = auth_headers(api_key)
     log_entry = create_log_entry(url, "GET", headers, None)
@@ -91,6 +93,7 @@ async def list_remote_models(
 async def remote_model_exists(
     *, base_url: str, api_key: str | None, model_id: str, timeout_s: int
 ) -> tuple[bool, str | None]:
+    """Remote Model Exists."""
     base = normalize_base_url(base_url)
     model_id = str(model_id or "").strip()
     if not model_id:

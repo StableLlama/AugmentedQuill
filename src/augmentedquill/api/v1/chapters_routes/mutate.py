@@ -25,6 +25,7 @@ router = APIRouter(tags=["Chapters"])
 async def api_update_chapter_metadata(
     request: Request, chap_id: int = FastAPIPath(..., ge=0)
 ):
+    """Api Update Chapter Metadata."""
     active = get_active_project_dir()
     if not active:
         return error_json("No active project", status_code=400)
@@ -69,6 +70,7 @@ async def api_update_chapter_metadata(
 async def api_update_chapter_title(
     request: Request, chap_id: int = FastAPIPath(..., ge=0)
 ):
+    """Api Update Chapter Title."""
     active = get_active_project_dir()
     if not active:
         return error_json("No active project", status_code=400)
@@ -104,6 +106,7 @@ async def api_update_chapter_title(
 
 @router.post("/chapters")
 async def api_create_chapter(request: Request):
+    """Api Create Chapter."""
     active = get_active_project_dir()
     if not active:
         return error_json("No active project", status_code=400)
@@ -143,6 +146,7 @@ async def api_create_chapter(request: Request):
 async def api_update_chapter_content(
     request: Request, chap_id: int = FastAPIPath(..., ge=0)
 ):
+    """Api Update Chapter Content."""
     payload = await parse_json_body(request)
     if "content" not in payload:
         return error_json("content is required", status_code=400)
@@ -162,6 +166,7 @@ async def api_update_chapter_content(
 async def api_update_chapter_summary(
     request: Request, chap_id: int = FastAPIPath(..., ge=0)
 ):
+    """Api Update Chapter Summary."""
     active = get_active_project_dir()
     if not active:
         return error_json("No active project", status_code=400)
@@ -194,6 +199,7 @@ async def api_update_chapter_summary(
 
 @router.delete("/chapters/{chap_id}")
 async def api_delete_chapter(chap_id: int = FastAPIPath(..., ge=0)):
+    """Api Delete Chapter."""
     from augmentedquill.services.projects.projects import delete_chapter
 
     try:
@@ -207,6 +213,7 @@ async def api_delete_chapter(chap_id: int = FastAPIPath(..., ge=0)):
 
 @router.post("/chapters/reorder")
 async def api_reorder_chapters(request: Request):
+    """Api Reorder Chapters."""
     active = get_active_project_dir()
     if not active:
         return error_json("No active project", status_code=400)
@@ -226,6 +233,7 @@ async def api_reorder_chapters(request: Request):
 
 @router.post("/books/reorder")
 async def api_reorder_books(request: Request):
+    """Api Reorder Books."""
     active = get_active_project_dir()
     if not active:
         return error_json("No active project", status_code=400)

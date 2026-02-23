@@ -60,6 +60,7 @@ async def get_sourcebook() -> List[SourcebookEntry]:
 
 @router.post("/sourcebook")
 async def create_sourcebook_entry(entry: SourcebookEntryCreate) -> SourcebookEntry:
+    """Create Sourcebook Entry."""
     active = get_active_project_dir()
     if not active:
         raise HTTPException(status_code=400, detail="No active project")
@@ -79,6 +80,7 @@ async def create_sourcebook_entry(entry: SourcebookEntryCreate) -> SourcebookEnt
 async def update_sourcebook_entry(
     entry_name: str, updates: SourcebookEntryUpdate
 ) -> SourcebookEntry:
+    """Update Sourcebook Entry."""
     active = get_active_project_dir()
     if not active:
         raise HTTPException(status_code=400, detail="No active project")
@@ -99,6 +101,7 @@ async def update_sourcebook_entry(
 
 @router.delete("/sourcebook/{entry_name}")
 async def delete_sourcebook_entry(entry_name: str):
+    """Delete Sourcebook Entry."""
     active = get_active_project_dir()
     if not active:
         raise HTTPException(status_code=400, detail="No active project")

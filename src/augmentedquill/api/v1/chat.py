@@ -11,7 +11,6 @@ API endpoints for chat sessions and conversational interactions with the LLM wri
 """
 
 import datetime
-import base64
 import augmentedquill.services.llm.llm as llm
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -21,6 +20,7 @@ from augmentedquill.services.projects.projects import get_active_project_dir
 from augmentedquill.services.llm.llm import add_llm_log, create_log_entry
 from augmentedquill.services.chat.chat_tool_dispatcher import exec_chat_tool
 from augmentedquill.services.chat.chat_tools_schema import get_story_tools
+from augmentedquill.services.chat.chat_api_helpers import inject_project_images
 from augmentedquill.services.chat.chat_api_stream_ops import (
     normalize_chat_messages,
     resolve_stream_model_context,
@@ -145,65 +145,6 @@ async def api_chat_tools(request: Request) -> JSONResponse:
     )
 
 
-async def _inject_project_images(messages: list[dict]):
-    if not messages:
-        return
-
-    last_msg = messages[-1]
-    if last_msg.get("role") != "user":
-        return
-
-    content = last_msg.get("content")
-    if not isinstance(content, str):
-        return
-
-    active = get_active_project_dir()
-    if not active:
-        return
-
-    images_dir = active / "images"
-    if not images_dir.exists():
-        return
-
-    found_images = []
-    # Restrict lookup to known image types so user text cannot trigger
-    # accidental binary reads from unrelated project files.
-    allowed = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
-
-    for f in images_dir.iterdir():
-        if f.is_file() and f.suffix.lower() in allowed:
-            # Filename matching keeps image attachment explicit and user-controlled.
-            if f.name in content:
-                found_images.append(f)
-
-    if not found_images:
-        return
-
-    # Preserve original text and append matched images as multimodal payload items.
-    new_content = [{"type": "text", "text": content}]
-
-    for path in found_images:
-        try:
-            mime = "image/png"
-            if path.suffix.lower() in [".jpg", ".jpeg"]:
-                mime = "image/jpeg"
-            elif path.suffix.lower() == ".webp":
-                mime = "image/webp"
-            elif path.suffix.lower() == ".gif":
-                mime = "image/gif"
-
-            with open(path, "rb") as f:
-                b64 = base64.b64encode(f.read()).decode("utf-8")
-
-            new_content.append(
-                {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}}
-            )
-        except Exception:
-            pass
-
-    last_msg["content"] = new_content
-
-
 @router.post("/chat/stream")
 async def api_chat_stream(request: Request) -> StreamingResponse:
     """Stream chat with the configured OpenAI-compatible model.
@@ -245,7 +186,7 @@ async def api_chat_stream(request: Request) -> StreamingResponse:
 
     # Inject images if referenced in the last user message and supported
     if is_multimodal:
-        await _inject_project_images(req_messages)
+        await inject_project_images(req_messages)
 
     # Prepend system message if not present
     ensure_system_message_if_missing(
@@ -298,6 +239,7 @@ async def api_chat_stream(request: Request) -> StreamingResponse:
     add_llm_log(log_entry)
 
     async def _gen():
+        """Gen."""
         async for chunk in llm.unified_chat_stream(
             messages=req_messages,
             base_url=base_url,
@@ -334,6 +276,7 @@ async def api_load_chat(chat_id: str):
 
 @router.post("/chats/{chat_id}")
 async def api_save_chat(chat_id: str, request: Request):
+    """Api Save Chat."""
     try:
         data = await request.json()
     except Exception:

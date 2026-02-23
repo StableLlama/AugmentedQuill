@@ -4,7 +4,10 @@
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
-// Purpose: Defines specialized chat tool result views for web-search and page-visit responses.
+
+/**
+ * Defines specialized chat tool result views for web-search and page-visit responses.
+ */
 
 import React from 'react';
 import { ArrowRight, Globe } from 'lucide-react';

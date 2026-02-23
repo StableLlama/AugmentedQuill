@@ -4,7 +4,10 @@
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
-// Purpose: Defines center controls in app header to keep top-level header composition concise.
+
+/**
+ * Defines center controls in app header to keep top-level header composition concise.
+ */
 
 import React from 'react';
 import {
