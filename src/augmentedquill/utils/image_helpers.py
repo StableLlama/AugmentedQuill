@@ -47,11 +47,6 @@ def save_image_metadata(data: dict):
         (d / "metadata.json").write_text(json.dumps(payload, indent=2), "utf-8")
 
 
-def get_image_entry(filename: str) -> dict:
-    meta = load_image_metadata()
-    return meta.get(filename, {})
-
-
 def update_image_metadata(filename: str, description: str = None, title: str = None):
     """Update Image Metadata."""
     meta = load_image_metadata()

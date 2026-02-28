@@ -13,10 +13,7 @@ from augmentedquill.services.llm.llm import llm_logs
 router = APIRouter(prefix="/debug", tags=["debug"])
 
 
-@router.get("/llm_logs")
-async def get_llm_logs():
-    """Return the list of LLM communication logs."""
-    return llm_logs
+router.add_api_route("/llm_logs", endpoint=lambda: llm_logs, methods=["GET"])
 
 
 @router.delete("/llm_logs")

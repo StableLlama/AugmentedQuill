@@ -140,10 +140,9 @@ async def api_story_summary_stream(request: Request):
         prepared["story"]["chapters"] = prepared["chapters_data"]
         save_story_config(prepared["story_path"], prepared["story"])
 
-    return _as_streaming_response(
-        lambda: stream_collect_and_persist(
-            lambda: _create_gen_source(prepared), _persist
-        )
+    return StreamingResponse(
+        stream_collect_and_persist(lambda: _create_gen_source(prepared), _persist),
+        media_type="text/event-stream",
     )
 
 
@@ -156,10 +155,9 @@ async def api_story_write_stream(request: Request):
     def _persist(content: str) -> None:
         prepared["path"].write_text(content, encoding="utf-8")
 
-    return _as_streaming_response(
-        lambda: stream_collect_and_persist(
-            lambda: _create_gen_source(prepared), _persist
-        )
+    return StreamingResponse(
+        stream_collect_and_persist(lambda: _create_gen_source(prepared), _persist),
+        media_type="text/event-stream",
     )
 
 

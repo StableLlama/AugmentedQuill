@@ -19,7 +19,6 @@ from augmentedquill.services.projects.projects import (
     select_project,
 )
 from augmentedquill.services.chat.chat_session_helpers import (
-    get_chats_dir,
     list_chats,
     load_chat,
     save_chat,
@@ -59,7 +58,7 @@ class ChatSessionsTest(TestCase):
 
         # Save
         save_chat(self.project_path, chat_id, chat_data)
-        chats_dir = get_chats_dir(self.project_path)
+        chats_dir = self.project_path / "chats"
         self.assertTrue((chats_dir / f"{chat_id}.json").exists())
 
         # List

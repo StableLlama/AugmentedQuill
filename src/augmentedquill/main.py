@@ -65,14 +65,14 @@ def create_app() -> FastAPI:
     api_v1_router.include_router(sourcebook_router)
 
     # JSON REST APIs to serve dynamic data to the frontend (no server-side injection in HTML)
-    @api_v1_router.get("/health")
-    async def api_health() -> dict:
-        return {"status": "ok"}
-
-    @api_v1_router.get("/machine")
-    async def api_machine() -> dict:
-        machine = load_machine_config(CONFIG_DIR / "machine.json")
-        return machine or {}
+    api_v1_router.add_api_route(
+        "/health", endpoint=lambda: {"status": "ok"}, methods=["GET"]
+    )
+    api_v1_router.add_api_route(
+        "/machine",
+        endpoint=lambda: load_machine_config(CONFIG_DIR / "machine.json") or {},
+        methods=["GET"],
+    )
 
     app.include_router(api_v1_router)
 

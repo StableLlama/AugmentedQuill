@@ -22,10 +22,6 @@ from augmentedquill.services.chapters.chapter_helpers import (
 )
 
 
-def _ensure_dir(path: Path) -> None:
-    path.mkdir(parents=True, exist_ok=True)
-
-
 def create_new_chapter_in_project(
     active: Path, title: str = "", book_id: str = None
 ) -> int:
@@ -66,7 +62,7 @@ def create_new_chapter_in_project(
 
         book_dir = active / "books" / book_id
         chapters_dir = book_dir / "chapters"
-        _ensure_dir(chapters_dir)
+        (chapters_dir).mkdir(parents=True, exist_ok=True)
 
         existing = [path for path in chapters_dir.glob("*.txt") if path.is_file()]
         max_index = 0
@@ -105,7 +101,7 @@ def create_new_chapter_in_project(
 
     filename = f"{next_idx:04d}.txt"
     chapters_dir = active / "chapters"
-    _ensure_dir(chapters_dir)
+    (chapters_dir).mkdir(parents=True, exist_ok=True)
     path = chapters_dir / filename
     path.write_text("", encoding="utf-8")
 
@@ -137,8 +133,8 @@ def create_new_book_in_project(active: Path, title: str) -> str:
     save_story_config(story_path, story)
 
     book_dir = active / "books" / book_id
-    _ensure_dir(book_dir / "chapters")
-    _ensure_dir(book_dir / "images")
+    (book_dir / "chapters").mkdir(parents=True, exist_ok=True)
+    (book_dir / "images").mkdir(parents=True, exist_ok=True)
     (book_dir / "book_content.md").write_text("", encoding="utf-8")
 
     return book_id
@@ -182,7 +178,7 @@ def change_project_type_in_project(active: Path, new_type: str) -> Tuple[bool, s
                 content = content_path.read_text(encoding="utf-8")
                 os.remove(content_path)
 
-            _ensure_dir(active / "chapters")
+            (active / "chapters").mkdir(parents=True, exist_ok=True)
             (active / "chapters" / "0001.txt").write_text(content, encoding="utf-8")
 
             local_story["project_type"] = "novel"
@@ -215,10 +211,10 @@ def change_project_type_in_project(active: Path, new_type: str) -> Tuple[bool, s
             book_title = "Book 1"
 
             books_dir = active / "books"
-            _ensure_dir(books_dir)
+            (books_dir).mkdir(parents=True, exist_ok=True)
             book_dir = books_dir / book_id
-            _ensure_dir(book_dir / "chapters")
-            _ensure_dir(book_dir / "images")
+            (book_dir / "chapters").mkdir(parents=True, exist_ok=True)
+            (book_dir / "images").mkdir(parents=True, exist_ok=True)
 
             chapters_dir = active / "chapters"
             if chapters_dir.exists():
@@ -256,8 +252,8 @@ def change_project_type_in_project(active: Path, new_type: str) -> Tuple[bool, s
                 book_id = book.get("id") or book.get("folder")
                 book_dir = active / "books" / book_id
 
-                _ensure_dir(active / "chapters")
-                _ensure_dir(active / "images")
+                (active / "chapters").mkdir(parents=True, exist_ok=True)
+                (active / "images").mkdir(parents=True, exist_ok=True)
 
                 if (book_dir / "chapters").exists():
                     for file_path in (book_dir / "chapters").glob("*"):

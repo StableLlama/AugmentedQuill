@@ -9,7 +9,6 @@
  * Defines the books unit so this responsibility stays isolated, testable, and easy to evolve.
  */
 
-import { ListImagesResponse } from '../apiTypes';
 import { fetchJson, postJson } from './shared';
 
 export const booksApi = {
@@ -26,32 +25,6 @@ export const booksApi = {
       '/books/delete',
       { name: id },
       'Failed to delete book'
-    );
-  },
-
-  uploadImage: async (file: File) => {
-    const formData = new FormData();
-    formData.append('file', file);
-    return fetchJson<{ ok: boolean; filename: string; url: string }>(
-      '/projects/images/upload',
-      { method: 'POST', body: formData },
-      'Failed to upload image'
-    );
-  },
-
-  listImages: async () => {
-    return fetchJson<ListImagesResponse>(
-      '/projects/images/list',
-      undefined,
-      'Failed to list images'
-    );
-  },
-
-  deleteImage: async (filename: string) => {
-    return postJson<{ ok: boolean }>(
-      '/projects/images/delete',
-      { filename },
-      'Failed to delete image'
     );
   },
 

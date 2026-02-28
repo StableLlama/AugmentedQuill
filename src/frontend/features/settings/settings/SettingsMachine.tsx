@@ -106,6 +106,40 @@ export const SettingsMachine: React.FC<SettingsMachineProps> = ({
     );
   };
 
+  const renderSlider = (
+    label: string,
+    field: 'temperature' | 'topP',
+    min: number,
+    max: number,
+    step: number
+  ) => {
+    if (!activeProvider) return null;
+    return (
+      <div className="space-y-2">
+        <div
+          className={`flex justify-between text-xs ${
+            isLight ? 'text-brand-gray-600' : 'text-brand-gray-400'
+          }`}
+        >
+          <span>{label}</span> <span>{activeProvider[field]}</span>
+        </div>
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={activeProvider[field]}
+          onChange={(e) =>
+            onUpdateProvider(activeProvider.id, {
+              [field]: Number(e.target.value),
+            })
+          }
+          className="w-full accent-brand-500"
+        />
+      </div>
+    );
+  };
+
   const activeProvider = localSettings.providers.find(
     (p) => p.id === editingProviderId
   );
@@ -594,50 +628,8 @@ export const SettingsMachine: React.FC<SettingsMachineProps> = ({
                   Parameters
                 </h4>
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <div
-                      className={`flex justify-between text-xs ${
-                        isLight ? 'text-brand-gray-600' : 'text-brand-gray-400'
-                      }`}
-                    >
-                      <span>Temperature</span> <span>{activeProvider.temperature}</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="0"
-                      max="2"
-                      step="0.1"
-                      value={activeProvider.temperature}
-                      onChange={(e) =>
-                        onUpdateProvider(activeProvider.id, {
-                          temperature: Number(e.target.value),
-                        })
-                      }
-                      className="w-full accent-brand-500"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <div
-                      className={`flex justify-between text-xs ${
-                        isLight ? 'text-brand-gray-600' : 'text-brand-gray-400'
-                      }`}
-                    >
-                      <span>Top P</span> <span>{activeProvider.topP}</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="0"
-                      max="1"
-                      step="0.05"
-                      value={activeProvider.topP}
-                      onChange={(e) =>
-                        onUpdateProvider(activeProvider.id, {
-                          topP: Number(e.target.value),
-                        })
-                      }
-                      className="w-full accent-brand-500"
-                    />
-                  </div>
+                  {renderSlider('Temperature', 'temperature', 0, 2, 0.1)}
+                  {renderSlider('Top P', 'topP', 0, 1, 0.05)}
                 </div>
               </div>
 

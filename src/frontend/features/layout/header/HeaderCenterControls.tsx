@@ -74,6 +74,47 @@ export const HeaderCenterControls: React.FC<HeaderCenterControlsProps> = ({
   const { isLight, iconColor, iconHover, dividerColor, buttonActive, currentTheme } =
     themeTokens;
 
+  const renderHeadingButtons = (withWidthName = '') => (
+    <>
+      {['h1', 'h2', 'h3'].map((h) => (
+        <button
+          key={h}
+          onClick={() => handleFormat(h)}
+          className={`${getFormatButtonClass(h)} font-serif font-bold text-xs ${withWidthName}`}
+          title={withWidthName ? `Heading ${h.charAt(1)}` : undefined}
+        >
+          {h.toUpperCase()}
+        </button>
+      ))}
+    </>
+  );
+
+  const renderBlockButtons = (withTitle = false, additionalClass = '') => (
+    <>
+      <button
+        onClick={() => handleFormat('quote')}
+        className={`${getFormatButtonClass('quote')} ${additionalClass}`.trim()}
+        title={withTitle ? 'Blockquote' : undefined}
+      >
+        <Quote size={16} />
+      </button>
+      <button
+        onClick={() => handleFormat('ul')}
+        className={`${getFormatButtonClass('ul')} ${additionalClass}`.trim()}
+        title={withTitle ? 'List' : undefined}
+      >
+        <List size={16} />
+      </button>
+      <button
+        onClick={() => handleFormat('ol')}
+        className={`${getFormatButtonClass('ol')} ${additionalClass}`.trim()}
+        title={withTitle ? 'Numbered List' : undefined}
+      >
+        <ListOrdered size={16} />
+      </button>
+    </>
+  );
+
   return (
     <div className="flex-1 flex justify-center items-center min-w-0 px-2 space-x-2 md:space-x-4">
       <div className="relative">
@@ -247,49 +288,9 @@ export const HeaderCenterControls: React.FC<HeaderCenterControlsProps> = ({
         <div className={`w-px h-4 mx-1 ${dividerColor}`}></div>
 
         <div className="hidden xl:flex items-center space-x-0.5">
-          <button
-            onClick={() => handleFormat('h1')}
-            className={`${getFormatButtonClass('h1')} font-serif font-bold text-xs w-8`}
-            title="Heading 1"
-          >
-            H1
-          </button>
-          <button
-            onClick={() => handleFormat('h2')}
-            className={`${getFormatButtonClass('h2')} font-serif font-bold text-xs w-8`}
-            title="Heading 2"
-          >
-            H2
-          </button>
-          <button
-            onClick={() => handleFormat('h3')}
-            className={`${getFormatButtonClass('h3')} font-serif font-bold text-xs w-8`}
-            title="Heading 3"
-          >
-            H3
-          </button>
+          {renderHeadingButtons('w-8')}
           <div className={`w-px h-4 mx-1 ${dividerColor}`}></div>
-          <button
-            onClick={() => handleFormat('quote')}
-            className={getFormatButtonClass('quote')}
-            title="Blockquote"
-          >
-            <Quote size={16} />
-          </button>
-          <button
-            onClick={() => handleFormat('ul')}
-            className={getFormatButtonClass('ul')}
-            title="List"
-          >
-            <List size={16} />
-          </button>
-          <button
-            onClick={() => handleFormat('ol')}
-            className={getFormatButtonClass('ol')}
-            title="Numbered List"
-          >
-            <ListOrdered size={16} />
-          </button>
+          {renderBlockButtons(true)}
         </div>
 
         <div className="xl:hidden relative">
@@ -320,42 +321,8 @@ export const HeaderCenterControls: React.FC<HeaderCenterControlsProps> = ({
                     : 'bg-brand-gray-800 border-brand-gray-700'
                 }`}
               >
-                <button
-                  onClick={() => handleFormat('h1')}
-                  className={`${getFormatButtonClass('h1')} font-serif font-bold text-xs`}
-                >
-                  H1
-                </button>
-                <button
-                  onClick={() => handleFormat('h2')}
-                  className={`${getFormatButtonClass('h2')} font-serif font-bold text-xs`}
-                >
-                  H2
-                </button>
-                <button
-                  onClick={() => handleFormat('h3')}
-                  className={`${getFormatButtonClass('h3')} font-serif font-bold text-xs`}
-                >
-                  H3
-                </button>
-                <button
-                  onClick={() => handleFormat('quote')}
-                  className={getFormatButtonClass('quote')}
-                >
-                  <Quote size={16} />
-                </button>
-                <button
-                  onClick={() => handleFormat('ul')}
-                  className={getFormatButtonClass('ul')}
-                >
-                  <List size={16} />
-                </button>
-                <button
-                  onClick={() => handleFormat('ol')}
-                  className={getFormatButtonClass('ol')}
-                >
-                  <ListOrdered size={16} />
-                </button>
+                {renderHeadingButtons()}
+                {renderBlockButtons()}
               </div>
             </>
           )}

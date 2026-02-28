@@ -58,11 +58,6 @@ from augmentedquill.core.config import (
 )
 
 
-def get_registry_path() -> Path:
-    # Re-evaluate environment at call time to make tests able to redirect location
-    return Path(os.getenv("AUGQ_PROJECTS_REGISTRY", str(CONFIG_DIR / "projects.json")))
-
-
 def get_projects_root() -> Path:
     """Return the root directory where projects (stories) are stored.
 
@@ -79,13 +74,23 @@ class ProjectInfo:
 
 
 def load_registry() -> Dict:
-    return load_registry_from_path(get_registry_path())
+    return load_registry_from_path(
+        Path(os.getenv("AUGQ_PROJECTS_REGISTRY", str(CONFIG_DIR / "projects.json")))
+    )
 
 
 def set_active_project(path: Path) -> None:
     reg = load_registry()
-    current, recent = set_active_project_in_registry(get_registry_path(), path, reg)
-    save_registry_to_path(get_registry_path(), current, recent)
+    current, recent = set_active_project_in_registry(
+        Path(os.getenv("AUGQ_PROJECTS_REGISTRY", str(CONFIG_DIR / "projects.json"))),
+        path,
+        reg,
+    )
+    save_registry_to_path(
+        Path(os.getenv("AUGQ_PROJECTS_REGISTRY", str(CONFIG_DIR / "projects.json"))),
+        current,
+        recent,
+    )
 
 
 def get_active_project_dir() -> Path | None:
@@ -110,7 +115,13 @@ def delete_project(name: str) -> Tuple[bool, str]:
         current_registry=load_registry(),
     )
     if ok:
-        save_registry_to_path(get_registry_path(), current, recent)
+        save_registry_to_path(
+            Path(
+                os.getenv("AUGQ_PROJECTS_REGISTRY", str(CONFIG_DIR / "projects.json"))
+            ),
+            current,
+            recent,
+        )
     return ok, msg
 
 

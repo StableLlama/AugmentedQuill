@@ -10,6 +10,18 @@
  */
 
 import { Dispatch, SetStateAction, useRef } from 'react';
+
+const createAssistantMessage = (
+  id: string,
+  result: { text?: string; thinking?: string; functionCalls?: any[] }
+): ChatMessage => ({
+  id,
+  role: 'model',
+  text: result.text || '',
+  thinking: result.thinking,
+  tool_calls: result.functionCalls,
+});
+
 import { v4 as uuidv4 } from 'uuid';
 
 import { api } from '../../services/api';
@@ -131,13 +143,7 @@ export function useChatExecution({
           }
         }
 
-        const assistantMessage: ChatMessage = {
-          id: currentMsgId,
-          role: 'model',
-          text: result.text || '',
-          thinking: result.thinking,
-          tool_calls: result.functionCalls,
-        };
+        const assistantMessage = createAssistantMessage(currentMsgId, result);
 
         upsertChatMessage(currentMsgId, assistantMessage);
 
@@ -200,13 +206,7 @@ export function useChatExecution({
       }
 
       if (!stopSignalRef.current) {
-        const botMessage: ChatMessage = {
-          id: currentMsgId,
-          role: 'model',
-          text: result.text || '',
-          thinking: result.thinking,
-          tool_calls: result.functionCalls,
-        };
+        const botMessage = createAssistantMessage(currentMsgId, result);
         upsertChatMessage(currentMsgId, botMessage);
       }
     } catch (error: unknown) {

@@ -59,12 +59,9 @@ def _interpolate_env(value: Any) -> Any:
     Non-string types are returned unchanged.
     """
     if isinstance(value, str):
-
-        def replace(match: re.Match[str]) -> str:
-            var = match.group(1)
-            return os.getenv(var, match.group(0))  # leave placeholder if unset
-
-        return _ENV_PATTERN.sub(replace, value)
+        return _ENV_PATTERN.sub(
+            lambda match: os.getenv(match.group(1), match.group(0)), value
+        )
     if isinstance(value, dict):
         return {k: _interpolate_env(v) for k, v in value.items()}
     if isinstance(value, list):
