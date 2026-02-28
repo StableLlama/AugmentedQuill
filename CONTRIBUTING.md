@@ -7,15 +7,15 @@ Thank you for your interest in contributing to AugmentedQuill! We welcome contri
 1.  **Search for existing issues**: Before starting work, check if there's already an issue or pull request for what you're planning.
 2.  **Open an issue**: If you find a bug or have a feature request, please open an issue first to discuss it.
 3.  **Fork the repository**: Create your own fork and work on a feature branch.
-4.  **Follow code hygiene**: Ensure your code follows the project's hygiene standards (see `doc/ORGANIZATION.md`).
+4.  **Follow code hygiene**: Ensure your code follows the project's hygiene standards (see `docs/ORGANIZATION.md`).
     ```bash
     python tools/enforce_code_hygiene.py .
-    python tools/check_copyright.py .
+    pre-commit run --all-files
     ```
 5.  **Run tests**: Make sure all tests pass before submitting.
     ```bash
     pytest
-    cd frontend && npm run test
+    cd src/frontend && npm run test
     ```
 6.  **Submit a Pull Request**: Provide a clear description of your changes.
 

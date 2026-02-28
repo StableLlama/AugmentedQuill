@@ -10,8 +10,8 @@
 Configuration loading utilities for AugmentedQuill.
 
 Conventions:
-- Machine-specific config: config/machine.json
-- Story-specific config: config/story.json
+- Machine-specific config: resources/config/machine.json
+- Story-specific config: resources/config/story.json
 - Environment variables override JSON values.
 - JSON values can reference environment variables using ${VAR_NAME} placeholders.
 

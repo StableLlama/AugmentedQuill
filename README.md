@@ -81,14 +81,14 @@ If you want to modify the frontend and see changes on the fly:
 
 Configuration is JSON-based with environment variable precedence and interpolation.
 
-- Machine-specific config (API credentials/endpoints): config/machine.json
-- Story-specific config (active project): config/story.json
+- Machine-specific config (API credentials/endpoints): resources/config/machine.json
+- Story-specific config (active project): resources/config/story.json
 - Environment variables always override JSON values. JSON may include placeholders like ${OPENAI_API_KEY}.
 
-Sample files can be found under config/examples/:
+Sample files can be found under resources/config/examples/:
 
-- config/examples/machine.json
-- config/examples/story.json
+- resources/config/examples/machine.json
+- resources/config/examples/story.json
 
 Machine config supports multiple OpenAI model endpoints:
 

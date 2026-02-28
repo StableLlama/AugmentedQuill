@@ -35,7 +35,7 @@ jobs:
     - name: Build Frontend
       run: |
         cd src/frontend
-        npm install
+        npm ci
         npm run build
 
     - name: Build with PyInstaller

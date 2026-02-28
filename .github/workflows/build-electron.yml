@@ -49,7 +49,7 @@ jobs:
     - name: Build Frontend
       run: |
         cd src/frontend
-        npm install
+        npm ci
         npm run build
 
     - name: Build Backend with PyInstaller (Directory Mode)
@@ -59,10 +59,10 @@ jobs:
     - name: Build Electron App
       run: |
         cd electron
-        npm install
+        npm ci
         npm run dist
       env:
-        GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Upload Artifact (Windows)
       if: runner.os == 'Windows'
