@@ -189,10 +189,10 @@ async def unified_chat_stream(
                                     yield {"tool_calls": message["tool_calls"]}
 
                             yield {"done": True}
-                        except Exception as e:
+                        except Exception:
                             yield {
                                 "error": "Failed to parse response",
-                                "message": str(e),
+                                "message": "An error occurred while processing the response.",
                             }
                         break
 
@@ -265,6 +265,9 @@ async def unified_chat_stream(
 
         except Exception as e:
             if log_entry:
-                log_entry["response"]["error"] = str(e)
-            yield {"error": "Connection error", "message": str(e)}
+                log_entry["response"]["error_detail"] = str(e)
+                log_entry["response"][
+                    "error"
+                ] = "An internal error occurred during the LLM request."
+            yield {"error": "Connection error", "message": "An error occurred."}
             break

@@ -47,5 +47,6 @@ def create_log_entry(
             "chunks": [] if streaming else None,
             "full_content": "" if streaming else None,
             "body": None if not streaming else None,
+            "error_detail": None,
         },
     }

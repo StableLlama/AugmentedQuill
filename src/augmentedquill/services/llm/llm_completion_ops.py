@@ -184,7 +184,10 @@ async def _execute_llm_request(url, headers, body, timeout_s):
             return resp_json
         except Exception as e:
             log_entry["timestamp_end"] = datetime.datetime.now().isoformat()
-            log_entry["response"]["error"] = str(e)
+            log_entry["response"]["error_detail"] = str(e)
+            log_entry["response"][
+                "error"
+            ] = "An internal error occurred during the LLM request."
             raise
 
 
@@ -324,7 +327,10 @@ async def openai_chat_complete_stream(
                             log_entry["response"]["full_content"] += content
                             yield content
         except Exception as e:
-            log_entry["response"]["error"] = str(e)
+            log_entry["response"]["error_detail"] = str(e)
+            log_entry["response"][
+                "error"
+            ] = "An internal error occurred during the LLM request."
             raise
         finally:
             log_entry["timestamp_end"] = datetime.datetime.now().isoformat()
@@ -401,7 +407,10 @@ async def openai_completions_stream(
                             log_entry["response"]["full_content"] += content
                             yield content
         except Exception as e:
-            log_entry["response"]["error"] = str(e)
+            log_entry["response"]["error_detail"] = str(e)
+            log_entry["response"][
+                "error"
+            ] = "An internal error occurred during the LLM request."
             raise
         finally:
             log_entry["timestamp_end"] = datetime.datetime.now().isoformat()
