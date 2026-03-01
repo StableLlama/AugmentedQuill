@@ -237,26 +237,32 @@ async def api_chat_stream(request: Request) -> StreamingResponse:
 
     async def _gen():
         """Gen."""
-        async for chunk in llm.unified_chat_stream(
-            messages=req_messages,
-            base_url=base_url,
-            api_key=api_key,
-            model_id=model_id,
-            timeout_s=timeout_s,
-            supports_function_calling=supports_function_calling,
-            tools=story_tools,
-            tool_choice=tool_choice if tool_choice != "none" else None,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            log_entry=log_entry,
-        ):
-            # Transform to client expected format
-            if "content" in chunk:
-                yield f"data: {_json.dumps({'content': chunk['content']})}\n\n"
-            if "thinking" in chunk:
-                yield f"data: {_json.dumps({'thinking': chunk['thinking']})}\n\n"
-            if "tool_calls" in chunk:
-                yield f"data: {_json.dumps({'tool_calls': chunk['tool_calls']})}\n\n"
+        try:
+            async for chunk in llm.unified_chat_stream(
+                messages=req_messages,
+                base_url=base_url,
+                api_key=api_key,
+                model_id=model_id,
+                timeout_s=timeout_s,
+                supports_function_calling=supports_function_calling,
+                tools=story_tools,
+                tool_choice=tool_choice if tool_choice != "none" else None,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                log_entry=log_entry,
+            ):
+                # Transform to client expected format
+                if "content" in chunk:
+                    yield f"data: {_json.dumps({'content': chunk['content']})}\n\n"
+                if "thinking" in chunk:
+                    yield f"data: {_json.dumps({'thinking': chunk['thinking']})}\n\n"
+                if "tool_calls" in chunk:
+                    yield f"data: {_json.dumps({'tool_calls': chunk['tool_calls']})}\n\n"
+        except Exception:
+            # Mask internal errors to prevent information exposure
+            yield f"data: {_json.dumps({'error': 'An internal chat stream error occurred.'})}\n\n"
+        finally:
+            yield "data: [DONE]\n\n"
 
     return StreamingResponse(_gen(), media_type="text/event-stream")
 

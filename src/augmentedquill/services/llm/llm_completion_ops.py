@@ -169,11 +169,21 @@ async def unified_chat_complete(
 
 async def _execute_llm_request(url, headers, body, timeout_s):
     # Security: Ensure sensitive headers (like Authorization) are masked BEFORE logging
+    # We also mask common keys in the body that might contain credentials
     safe_log_headers = {
-        k: (v if k.lower() != "authorization" else "REDACTED")
+        k: (v if k.lower() not in ("authorization", "x-api-key") else "REDACTED")
         for k, v in headers.items()
     }
-    log_entry = create_log_entry(url, "POST", safe_log_headers, body)
+
+    # Clone body to avoid mutating original and mask potentially sensitive fields
+    safe_body = body
+    if isinstance(body, dict):
+        safe_body = body.copy()
+        for key in ["api_key", "secret", "password"]:
+            if key in safe_body:
+                safe_body[key] = "REDACTED"
+
+    log_entry = create_log_entry(url, "POST", safe_log_headers, safe_body)
     add_llm_log(log_entry)
 
     timeout_obj = build_timeout(timeout_s)
