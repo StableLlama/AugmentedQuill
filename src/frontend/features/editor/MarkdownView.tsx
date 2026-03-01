@@ -13,6 +13,7 @@ import React from 'react';
 import { AlertTriangle } from 'lucide-react';
 // @ts-ignore
 import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 
 interface MarkdownViewProps {
   content: string;
@@ -42,10 +43,16 @@ export const MarkdownView: React.FC<MarkdownViewProps> = ({
   simple = false,
 }) => {
   if (!simple) {
+    const rawHtml = marked.parse(content) as string;
+    const cleanHtml = DOMPurify.sanitize(rawHtml, {
+      ADD_TAGS: ['img'],
+      ADD_ATTR: ['src', 'alt', 'title', 'class'],
+    });
+
     return (
       <div
         className={`prose-editor whitespace-normal ${className}`}
-        dangerouslySetInnerHTML={{ __html: marked.parse(content) as string }}
+        dangerouslySetInnerHTML={{ __html: cleanHtml }}
       />
     );
   }

@@ -196,7 +196,12 @@ async def import_project_response(file: UploadFile) -> JSONResponse:
     try:
         content = await file.read()
         with zipfile.ZipFile(io.BytesIO(content)) as zf:
-            zf.extractall(temp_dir)
+            for member in zf.infolist():
+                # Prevent Path Traversal (ZipSlip)
+                member_path = Path(member.filename)
+                if member_path.is_absolute() or ".." in member_path.parts:
+                    continue
+                zf.extract(member, temp_dir)
 
         if not (temp_dir / "story.json").exists():
             shutil.rmtree(temp_dir)

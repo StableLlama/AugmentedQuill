@@ -47,3 +47,51 @@ class ChapterDetailResponse(BaseModel):
     notes: str
     private_notes: str
     conflicts: list[Any]
+
+
+class ChapterMetadataUpdate(BaseModel):
+    """Request body for updating chapter metadata."""
+
+    title: str | None = None
+    summary: str | None = None
+    notes: str | None = None
+    private_notes: str | None = None
+    conflicts: list[Any] | None = None
+
+
+class ChapterTitleUpdate(BaseModel):
+    """Request body for updating chapter title."""
+
+    title: str
+
+
+class ChapterCreate(BaseModel):
+    """Request body for creating a new chapter."""
+
+    title: str
+    content: str | None = ""
+    book_id: str | None = None
+
+
+class ChapterContentUpdate(BaseModel):
+    """Request body for updating chapter content."""
+
+    content: str
+
+
+class ChapterSummaryUpdate(BaseModel):
+    """Request body for updating chapter summary."""
+
+    summary: str
+
+
+class ChaptersReorderRequest(BaseModel):
+    """Request body for reordering chapters."""
+
+    chapter_ids: list[int]
+
+
+class BooksReorderRequest(BaseModel):
+    """Request body for reordering books."""
+
+    book_ids: list[str]

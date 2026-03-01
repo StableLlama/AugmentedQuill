@@ -7,11 +7,19 @@
 
 """Defines the mutate unit so this responsibility stays isolated, testable, and easy to evolve."""
 
-from fastapi import APIRouter, Path as FastAPIPath, Request
+from fastapi import APIRouter, Path as FastAPIPath
 from fastapi.responses import JSONResponse
 
-from augmentedquill.api.v1.chapters_routes.common import parse_json_body
 from augmentedquill.api.v1.http_responses import error_json
+from augmentedquill.models.chapters import (
+    BooksReorderRequest,
+    ChapterContentUpdate,
+    ChapterCreate,
+    ChapterMetadataUpdate,
+    ChapterSummaryUpdate,
+    ChapterTitleUpdate,
+    ChaptersReorderRequest,
+)
 from augmentedquill.services.chapters.chapter_helpers import _chapter_by_id_or_404
 from augmentedquill.services.chapters.chapters_api_ops import (
     reorder_books_in_project,
@@ -22,8 +30,6 @@ from augmentedquill.services.projects.projects import (
     delete_chapter,
     get_active_project_dir,
     update_chapter_metadata,
-    write_chapter_content,
-    write_chapter_summary,
     write_chapter_title,
 )
 
@@ -32,40 +38,21 @@ router = APIRouter(tags=["Chapters"])
 
 @router.put("/chapters/{chap_id}/metadata")
 async def api_update_chapter_metadata(
-    request: Request, chap_id: int = FastAPIPath(..., ge=0)
+    body: ChapterMetadataUpdate, chap_id: int = FastAPIPath(..., ge=0)
 ):
     """Api Update Chapter Metadata."""
     active = get_active_project_dir()
     if not active:
         return error_json("No active project", status_code=400)
 
-    payload = await parse_json_body(request)
-
-    title = payload.get("title")
-    summary = payload.get("summary")
-    notes = payload.get("notes")
-    private_notes = payload.get("private_notes")
-    conflicts = payload.get("conflicts")
-
-    if title is not None:
-        title = str(title).strip()
-    if summary is not None:
-        summary = str(summary).strip()
-    if notes is not None:
-        notes = str(notes)
-    if private_notes is not None:
-        private_notes = str(private_notes)
-    if conflicts is not None and not isinstance(conflicts, list):
-        return error_json("conflicts must be a list", status_code=400)
-
     try:
         update_chapter_metadata(
             chap_id,
-            title=title,
-            summary=summary,
-            notes=notes,
-            private_notes=private_notes,
-            conflicts=conflicts,
+            title=body.title.strip() if body.title is not None else None,
+            summary=body.summary.strip() if body.summary is not None else None,
+            notes=body.notes,
+            private_notes=body.private_notes,
+            conflicts=body.conflicts,
         )
     except ValueError as exc:
         return error_json(str(exc), status_code=404)
@@ -77,19 +64,14 @@ async def api_update_chapter_metadata(
 
 @router.put("/chapters/{chap_id}/title")
 async def api_update_chapter_title(
-    request: Request, chap_id: int = FastAPIPath(..., ge=0)
+    body: ChapterTitleUpdate, chap_id: int = FastAPIPath(..., ge=0)
 ):
     """Api Update Chapter Title."""
     active = get_active_project_dir()
     if not active:
         return error_json("No active project", status_code=400)
 
-    payload = await parse_json_body(request)
-    new_title = payload.get("title")
-    if new_title is None:
-        return error_json("title is required", status_code=400)
-
-    new_title_str = str(new_title).strip()
+    new_title_str = body.title.strip()
     if new_title_str.lower() == "[object object]":
         new_title_str = ""
 
@@ -112,21 +94,20 @@ async def api_update_chapter_title(
 
 
 @router.post("/chapters")
-async def api_create_chapter(request: Request):
+async def api_create_chapter(body: ChapterCreate):
     """Api Create Chapter."""
     active = get_active_project_dir()
     if not active:
         return error_json("No active project", status_code=400)
 
-    payload = await parse_json_body(request)
-    title = str(payload.get("title", "")).strip()
-    content = payload.get("content") or ""
-    book_id = payload.get("book_id")
+    title = body.title.strip()
 
     try:
-        chap_id = create_new_chapter(title, book_id=book_id)
-        if content:
-            write_chapter_content(chap_id, str(content))
+        chap_id = create_new_chapter(title, book_id=body.book_id)
+        if body.content:
+            from augmentedquill.services.projects.projects import write_chapter_content
+
+            write_chapter_content(chap_id, body.content)
     except ValueError as exc:
         return error_json(str(exc), status_code=400)
     except Exception as exc:
@@ -137,7 +118,7 @@ async def api_create_chapter(request: Request):
             "ok": True,
             "id": chap_id,
             "title": title,
-            "book_id": book_id,
+            "book_id": body.book_id,
             "summary": "",
             "message": "Chapter created",
         }
@@ -146,18 +127,13 @@ async def api_create_chapter(request: Request):
 
 @router.put("/chapters/{chap_id}/content")
 async def api_update_chapter_content(
-    request: Request, chap_id: int = FastAPIPath(..., ge=0)
+    body: ChapterContentUpdate, chap_id: int = FastAPIPath(..., ge=0)
 ):
     """Api Update Chapter Content."""
-    payload = await parse_json_body(request)
-    if "content" not in payload:
-        return error_json("content is required", status_code=400)
-
-    new_content = str(payload.get("content", ""))
     _, path, _ = _chapter_by_id_or_404(chap_id)
 
     try:
-        path.write_text(new_content, encoding="utf-8")
+        path.write_text(body.content, encoding="utf-8")
     except Exception as exc:
         return error_json(f"Failed to write chapter: {exc}", status_code=500)
 
@@ -166,21 +142,17 @@ async def api_update_chapter_content(
 
 @router.put("/chapters/{chap_id}/summary")
 async def api_update_chapter_summary(
-    request: Request, chap_id: int = FastAPIPath(..., ge=0)
+    body: ChapterSummaryUpdate, chap_id: int = FastAPIPath(..., ge=0)
 ):
     """Api Update Chapter Summary."""
     active = get_active_project_dir()
     if not active:
         return error_json("No active project", status_code=400)
 
-    payload = await parse_json_body(request)
-    if "summary" not in payload:
-        return error_json("summary is required", status_code=400)
-
-    new_summary = str(payload.get("summary", "")).strip()
-
     try:
-        write_chapter_summary(chap_id, new_summary)
+        from augmentedquill.services.projects.projects import write_chapter_summary
+
+        write_chapter_summary(chap_id, body.summary.strip())
     except ValueError as exc:
         return error_json(str(exc), status_code=404)
 
@@ -191,7 +163,7 @@ async def api_update_chapter_summary(
             "chapter": {
                 "id": chap_id,
                 "filename": path.name,
-                "summary": new_summary,
+                "summary": body.summary.strip(),
             },
         }
     )
@@ -210,15 +182,14 @@ async def api_delete_chapter(chap_id: int = FastAPIPath(..., ge=0)):
 
 
 @router.post("/chapters/reorder")
-async def api_reorder_chapters(request: Request):
+async def api_reorder_chapters(body: ChaptersReorderRequest):
     """Api Reorder Chapters."""
     active = get_active_project_dir()
     if not active:
         return error_json("No active project", status_code=400)
 
-    payload = await parse_json_body(request)
     try:
-        reorder_chapters_in_project(active, payload)
+        reorder_chapters_in_project(active, body.model_dump())
     except LookupError as exc:
         return error_json(str(exc), status_code=404)
     except ValueError as exc:
@@ -230,15 +201,14 @@ async def api_reorder_chapters(request: Request):
 
 
 @router.post("/books/reorder")
-async def api_reorder_books(request: Request):
+async def api_reorder_books(body: BooksReorderRequest):
     """Api Reorder Books."""
     active = get_active_project_dir()
     if not active:
         return error_json("No active project", status_code=400)
 
-    payload = await parse_json_body(request)
     try:
-        reorder_books_in_project(active, payload)
+        reorder_books_in_project(active, body.model_dump())
     except ValueError as exc:
         return error_json(str(exc), status_code=400)
     except Exception as exc:

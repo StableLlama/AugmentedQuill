@@ -44,10 +44,25 @@ def create_app() -> FastAPI:
 
     app = FastAPI(title="AugmentedQuill")
 
+    # Dynamic CORS origin handler to support variable ports
+    async def get_origins(request: Request) -> list[str]:
+        origin = request.headers.get("origin")
+        if not origin:
+            return []
+
+        # Allow localhost/127.0.0.1 on any port in development context
+        # In a real production setup, one might restrict this further.
+        if origin.startswith(("http://localhost:", "http://127.0.0.1:")) or origin in (
+            "http://localhost",
+            "http://127.0.0.1",
+        ):
+            return [origin]
+        return []
+
     # Add CORS middleware
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # In production, specify allowed origins
+        allow_origin_regex=r"http://(localhost|127\.0\.0\.1)(:\d+)?",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
