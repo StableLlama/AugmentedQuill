@@ -28,6 +28,7 @@ def update_book_metadata_in_project(
     # Security: Prevent path traversal
     if not book_id:
         raise ValueError("book_id is required")
+    book_id = os.path.basename(book_id)
 
     story_path = active / "story.json"
     story = load_story_config(story_path) or {}

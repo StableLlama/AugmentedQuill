@@ -7,6 +7,8 @@
 
 """Defines the story tools unit so this responsibility stays isolated, testable, and easy to evolve."""
 
+import os
+
 import json as _json
 
 from pydantic import BaseModel, Field
@@ -176,9 +178,13 @@ async def get_book_metadata(
     active = get_active_project_dir()
     story = load_story_config((active / "story.json") if active else None) or {}
     books = story.get("books", [])
-    target = next((b for b in books if b.get("id") == params.book_id), None)
+
+    # Security: Ensure book_id has no path traversal components
+    book_id = os.path.basename(params.book_id) if params.book_id else ""
+
+    target = next((b for b in books if b.get("id") == book_id), None)
     if not target:
-        return {"error": f"Book ID {params.book_id} not found"}
+        return {"error": f"Book ID {book_id} not found"}
     return {
         "title": target.get("title", ""),
         "summary": target.get("summary", ""),
