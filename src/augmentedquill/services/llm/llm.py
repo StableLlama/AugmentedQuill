@@ -156,6 +156,7 @@ async def unified_chat_complete(
     tool_choice: str | None = None,
     temperature: float = 0.7,
     max_tokens: int | None = None,
+    skip_validation: bool = False,
 ) -> dict:
     """Unified Chat Complete."""
     _llm_completion_ops.httpx = httpx
@@ -170,6 +171,7 @@ async def unified_chat_complete(
         tool_choice=tool_choice,
         temperature=temperature,
         max_tokens=max_tokens,
+        skip_validation=skip_validation,
     )
 
 
@@ -181,6 +183,7 @@ async def openai_chat_complete(
     model_id: str,
     timeout_s: int,
     extra_body: dict | None = None,
+    skip_validation: bool = False,
 ) -> dict:
     """Openai Chat Complete."""
     _llm_completion_ops.httpx = httpx
@@ -191,6 +194,7 @@ async def openai_chat_complete(
         model_id=model_id,
         timeout_s=timeout_s,
         extra_body=extra_body,
+        skip_validation=skip_validation,
     )
 
 
@@ -203,6 +207,7 @@ async def openai_completions(
     timeout_s: int,
     n: int = 1,
     extra_body: dict | None = None,
+    skip_validation: bool = False,
 ) -> dict:
     """Openai Completions."""
     _llm_completion_ops.httpx = httpx
@@ -214,6 +219,7 @@ async def openai_completions(
         timeout_s=timeout_s,
         n=n,
         extra_body=extra_body,
+        skip_validation=skip_validation,
     )
 
 
@@ -224,6 +230,7 @@ async def openai_chat_complete_stream(
     api_key: str | None,
     model_id: str,
     timeout_s: int,
+    skip_validation: bool = False,
 ) -> AsyncIterator[str]:
     """Openai Chat Complete Stream."""
     _llm_completion_ops.httpx = httpx
@@ -233,6 +240,7 @@ async def openai_chat_complete_stream(
         api_key=api_key,
         model_id=model_id,
         timeout_s=timeout_s,
+        skip_validation=skip_validation,
     ):
         yield chunk
 
@@ -245,6 +253,7 @@ async def openai_completions_stream(
     model_id: str,
     timeout_s: int,
     extra_body: dict | None = None,
+    skip_validation: bool = False,
 ) -> AsyncIterator[str]:
     """Openai Completions Stream."""
     _llm_completion_ops.httpx = httpx
@@ -255,5 +264,6 @@ async def openai_completions_stream(
         model_id=model_id,
         timeout_s=timeout_s,
         extra_body=extra_body,
+        skip_validation=skip_validation,
     ):
         yield chunk

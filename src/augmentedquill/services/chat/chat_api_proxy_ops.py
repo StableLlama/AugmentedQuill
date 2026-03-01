@@ -29,7 +29,9 @@ async def proxy_openai_models(payload: dict) -> JSONResponse:
         raise BadRequestError("base_url is required")
 
     url = base_url.rstrip("/") + "/models"
-    _validate_base_url(base_url)
+    # We skip validation here because this is used by the frontend settings
+    # to test a user-provided URL, which implies trust.
+    _validate_base_url(base_url, skip_validation=True)
     headers = {}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"

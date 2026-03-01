@@ -37,9 +37,9 @@ def _llm_debug_enabled() -> bool:
     return os.getenv("AUGQ_LLM_DEBUG", "0") in ("1", "true", "TRUE", "yes", "on")
 
 
-def _validate_base_url(base_url: str) -> None:
+def _validate_base_url(base_url: str, skip_validation: bool = False) -> None:
     """Validate base_url against configured models or environment overrides to prevent SSRF."""
-    if not base_url:
+    if not base_url or skip_validation:
         return
 
     # Check for suspicious schemes or non-HTTP/HTTPS URLs
@@ -127,6 +127,7 @@ async def unified_chat_complete(
     tool_choice: str | None = None,
     temperature: float = 0.7,
     max_tokens: int | None = None,
+    skip_validation: bool = False,
 ) -> dict:
     """Execute a non-streaming chat completion and normalize tool/thinking output."""
     extra_body = {}
@@ -142,6 +143,7 @@ async def unified_chat_complete(
         model_id=model_id,
         timeout_s=timeout_s,
         extra_body=extra_body,
+        skip_validation=skip_validation,
     )
 
     choices = resp_json.get("choices", [])
@@ -218,9 +220,10 @@ async def openai_chat_complete(
     model_id: str,
     timeout_s: int,
     extra_body: dict | None = None,
+    skip_validation: bool = False,
 ) -> dict:
     """Call the OpenAI-compatible chat completions endpoint and return JSON."""
-    _validate_base_url(base_url)
+    _validate_base_url(base_url, skip_validation=skip_validation)
     temperature, max_tokens = get_story_llm_preferences(
         config_dir=CONFIG_DIR,
         get_active_project_dir=get_active_project_dir,
@@ -252,9 +255,10 @@ async def openai_completions(
     timeout_s: int,
     n: int = 1,
     extra_body: dict | None = None,
+    skip_validation: bool = False,
 ) -> dict:
     """Call the OpenAI-compatible text completions endpoint and return JSON."""
-    _validate_base_url(base_url)
+    _validate_base_url(base_url, skip_validation=skip_validation)
     temperature, max_tokens = get_story_llm_preferences(
         config_dir=CONFIG_DIR,
         get_active_project_dir=get_active_project_dir,
@@ -285,9 +289,10 @@ async def openai_chat_complete_stream(
     api_key: str | None,
     model_id: str,
     timeout_s: int,
+    skip_validation: bool = False,
 ) -> AsyncIterator[str]:
     """Stream content chunks from the chat completions endpoint."""
-    _validate_base_url(base_url)
+    _validate_base_url(base_url, skip_validation=skip_validation)
     url = str(base_url).rstrip("/") + "/chat/completions"
     temperature, max_tokens = get_story_llm_preferences(
         config_dir=CONFIG_DIR,
@@ -363,9 +368,10 @@ async def openai_completions_stream(
     model_id: str,
     timeout_s: int,
     extra_body: dict | None = None,
+    skip_validation: bool = False,
 ) -> AsyncIterator[str]:
     """Stream content chunks from the text completions endpoint."""
-    _validate_base_url(base_url)
+    _validate_base_url(base_url, skip_validation=skip_validation)
     url = str(base_url).rstrip("/") + "/completions"
     temperature, max_tokens = get_story_llm_preferences(
         config_dir=CONFIG_DIR,

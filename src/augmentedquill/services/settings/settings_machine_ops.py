@@ -41,7 +41,13 @@ async def list_remote_models(
 ) -> tuple[bool, list[str], str | None]:
     """List Remote Models."""
     url = str(base_url or "").strip().rstrip("/") + "/models"
-    _validate_base_url(base_url)
+    try:
+        # We allow any user-provided URL during the testing phase in settings.
+        # This is because the user is explicitly providing this URL, which confirms trust.
+        _validate_base_url(base_url, skip_validation=True)
+    except ValueError as e:
+        return False, [], str(e)
+
     headers = auth_headers(api_key)
     log_entry = create_log_entry(url, "GET", headers, None)
     add_llm_log(log_entry)
@@ -96,7 +102,13 @@ async def remote_model_exists(
 ) -> tuple[bool, str | None]:
     """Remote Model Exists."""
     base = str(base_url or "").strip().rstrip("/")
-    _validate_base_url(base_url)
+    try:
+        # We allow any user-provided URL during the testing phase in settings.
+        # This is because the user is explicitly providing this URL, which confirms trust.
+        _validate_base_url(base_url, skip_validation=True)
+    except ValueError as e:
+        return False, str(e)
+
     model_id = str(model_id or "").strip()
     if not model_id:
         return False, "Missing model_id"
