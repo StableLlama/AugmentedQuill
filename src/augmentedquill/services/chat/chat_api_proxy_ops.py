@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse
 
 from augmentedquill.services.exceptions import BadRequestError, UpstreamError
 from augmentedquill.services.llm.llm import add_llm_log, create_log_entry
+from augmentedquill.services.llm.llm_completion_ops import _validate_base_url
 
 
 async def proxy_openai_models(payload: dict) -> JSONResponse:
@@ -28,6 +29,7 @@ async def proxy_openai_models(payload: dict) -> JSONResponse:
         raise BadRequestError("base_url is required")
 
     url = base_url.rstrip("/") + "/models"
+    _validate_base_url(base_url)
     headers = {}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"

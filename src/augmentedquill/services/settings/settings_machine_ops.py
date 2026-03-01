@@ -14,6 +14,7 @@ import datetime
 import httpx
 
 from augmentedquill.services.llm.llm import add_llm_log, create_log_entry
+from augmentedquill.services.llm.llm_completion_ops import _validate_base_url
 
 
 def auth_headers(api_key: str | None) -> dict[str, str]:
@@ -40,6 +41,7 @@ async def list_remote_models(
 ) -> tuple[bool, list[str], str | None]:
     """List Remote Models."""
     url = str(base_url or "").strip().rstrip("/") + "/models"
+    _validate_base_url(base_url)
     headers = auth_headers(api_key)
     log_entry = create_log_entry(url, "GET", headers, None)
     add_llm_log(log_entry)
@@ -94,6 +96,7 @@ async def remote_model_exists(
 ) -> tuple[bool, str | None]:
     """Remote Model Exists."""
     base = str(base_url or "").strip().rstrip("/")
+    _validate_base_url(base_url)
     model_id = str(model_id or "").strip()
     if not model_id:
         return False, "Missing model_id"

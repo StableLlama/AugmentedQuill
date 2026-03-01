@@ -28,6 +28,13 @@ def create_log_entry(
     url: str, method: str, headers: Dict[str, str], body: Any, streaming: bool = False
 ) -> Dict[str, Any]:
     """Create a new log entry structure."""
+    safe_body = body
+    if isinstance(body, dict):
+        safe_body = body.copy()
+        for key in ["api_key", "secret", "password"]:
+            if key in safe_body:
+                safe_body[key] = "REDACTED"
+
     return {
         "id": str(uuid.uuid4()),
         "timestamp_start": datetime.datetime.now().isoformat(),
@@ -36,10 +43,10 @@ def create_log_entry(
             "url": url,
             "method": method,
             "headers": {
-                k: ("***" if k.lower() == "authorization" else v)
+                k: ("***" if k.lower() in ("authorization", "x-api-key") else v)
                 for k, v in headers.items()
             },
-            "body": body,
+            "body": safe_body,
         },
         "response": {
             "status_code": None,
