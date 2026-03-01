@@ -12,10 +12,15 @@ from __future__ import annotations
 from typing import Any, Dict, AsyncIterator
 import datetime
 import os
+import re
 
 import httpx
 
-from augmentedquill.core.config import load_story_config, CONFIG_DIR
+from augmentedquill.core.config import (
+    load_story_config,
+    CONFIG_DIR,
+    load_machine_config,
+)
 from augmentedquill.services.projects.projects import get_active_project_dir
 from augmentedquill.utils.llm_parsing import (
     parse_complete_assistant_output,
@@ -31,6 +36,43 @@ from augmentedquill.services.llm.llm_request_helpers import (
 def _llm_debug_enabled() -> bool:
     """Return whether verbose LLM request/response logging is enabled."""
     return os.getenv("AUGQ_LLM_DEBUG", "0") in ("1", "true", "TRUE", "yes", "on")
+
+
+def _validate_base_url(base_url: str) -> None:
+    """Validate base_url against configured models or environment overrides to prevent SSRF."""
+    if not base_url:
+        return
+
+    # 1. Check environment overrides (trusted)
+    overrides = [
+        os.getenv("OPENAI_BASE_URL"),
+        os.getenv("ANTHROPIC_BASE_URL"),
+        os.getenv("GOOGLE_BASE_URL"),
+    ]
+    if any(base_url == ov for ov in overrides if ov):
+        return
+
+    # 2. Check machine.json models
+    config_path = os.path.join(CONFIG_DIR, "machine.json")
+    machine_config = load_machine_config(config_path)
+    if machine_config:
+        all_models = (
+            machine_config.get("openai", {}).get("models", [])
+            + machine_config.get("anthropic", {}).get("models", [])
+            + machine_config.get("google", {}).get("models", [])
+        )
+        for model in all_models:
+            if model.get("base_url") == base_url:
+                return
+
+    # 3. Allow localhost/127.0.0.1 for local inference servers (e.g. Ollama, LM Studio)
+    local_pattern = re.compile(
+        r"^https?://(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?(/.*)?$"
+    )
+    if local_pattern.match(base_url):
+        return
+
+    raise ValueError(f"Untrusted base_url: {base_url}")
 
 
 def _prepare_llm_request(
@@ -111,10 +153,16 @@ async def _execute_llm_request(url, headers, body, timeout_s):
 
     timeout_obj = build_timeout(timeout_s)
 
+    # Security: Ensure sensitive headers (like Authorization) are masked in debug logs
+    safe_headers = {
+        k: (v if k.lower() != "authorization" else "REDACTED")
+        for k, v in log_entry["request"]["headers"].items()
+    }
+
     if _llm_debug_enabled():
         print(
             "LLM REQUEST:",
-            {"url": url, "headers": log_entry["request"]["headers"], "body": body},
+            {"url": url, "headers": safe_headers, "body": body},
         )
 
     async with httpx.AsyncClient(timeout=timeout_obj) as client:
@@ -145,6 +193,7 @@ async def openai_chat_complete(
     extra_body: dict | None = None,
 ) -> dict:
     """Call the OpenAI-compatible chat completions endpoint and return JSON."""
+    _validate_base_url(base_url)
     temperature, max_tokens = get_story_llm_preferences(
         config_dir=CONFIG_DIR,
         get_active_project_dir=get_active_project_dir,
@@ -178,6 +227,7 @@ async def openai_completions(
     extra_body: dict | None = None,
 ) -> dict:
     """Call the OpenAI-compatible text completions endpoint and return JSON."""
+    _validate_base_url(base_url)
     temperature, max_tokens = get_story_llm_preferences(
         config_dir=CONFIG_DIR,
         get_active_project_dir=get_active_project_dir,
@@ -210,6 +260,7 @@ async def openai_chat_complete_stream(
     timeout_s: int,
 ) -> AsyncIterator[str]:
     """Stream content chunks from the chat completions endpoint."""
+    _validate_base_url(base_url)
     url = str(base_url).rstrip("/") + "/chat/completions"
     temperature, max_tokens = get_story_llm_preferences(
         config_dir=CONFIG_DIR,

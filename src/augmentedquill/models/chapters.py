@@ -89,6 +89,7 @@ class ChaptersReorderRequest(BaseModel):
     """Request body for reordering chapters."""
 
     chapter_ids: list[int]
+    book_id: str | None = None
 
 
 class BooksReorderRequest(BaseModel):

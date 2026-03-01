@@ -193,6 +193,9 @@ async def api_reorder_chapters(body: ChaptersReorderRequest):
     except LookupError as exc:
         return error_json(str(exc), status_code=404)
     except ValueError as exc:
+        import logging
+
+        logging.error(f"Reorder Error: {exc}")
         return error_json(str(exc), status_code=400)
     except Exception as exc:
         return error_json(f"Failed to update story.json: {exc}", status_code=500)

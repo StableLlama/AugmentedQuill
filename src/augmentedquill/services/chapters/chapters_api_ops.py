@@ -94,6 +94,7 @@ def reorder_chapters_in_project(active: Path, payload: dict) -> None:
     if project_type == "series":
         book_id = payload.get("book_id")
         if not book_id:
+            # Check if this project is a series but the request came without book_id
             raise ValueError("book_id required for series projects")
 
         chapter_ids = payload.get("chapter_ids", [])

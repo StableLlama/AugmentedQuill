@@ -45,17 +45,12 @@ async def reorder_chapters(
 ):
     """Reorder Chapters."""
     from augmentedquill.api.v1.chapters_routes.mutate import api_reorder_chapters
+    from augmentedquill.models.chapters import ChaptersReorderRequest
 
-    request_payload = {"chapter_ids": params.chapter_ids}
-    if params.book_id:
-        request_payload["book_id"] = params.book_id
-
-    class MockRequest:
-        async def json(self):
-            return request_payload
-
-    mock_request = MockRequest()
-    result = await api_reorder_chapters(mock_request)
+    request_body = ChaptersReorderRequest(
+        chapter_ids=params.chapter_ids, book_id=params.book_id
+    )
+    result = await api_reorder_chapters(request_body)
 
     if result.status_code == 200:
         mutations["story_changed"] = True
@@ -72,13 +67,10 @@ async def reorder_chapters(
 async def reorder_books(params: ReorderBooksParams, payload: dict, mutations: dict):
     """Reorder Books."""
     from augmentedquill.api.v1.chapters_routes.mutate import api_reorder_books
+    from augmentedquill.models.chapters import BooksReorderRequest
 
-    class MockRequest:
-        async def json(self):
-            return {"book_ids": params.book_ids}
-
-    mock_request = MockRequest()
-    result = await api_reorder_books(mock_request)
+    request_body = BooksReorderRequest(book_ids=params.book_ids)
+    result = await api_reorder_books(request_body)
 
     if result.status_code == 200:
         mutations["story_changed"] = True

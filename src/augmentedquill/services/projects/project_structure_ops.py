@@ -60,7 +60,15 @@ def create_new_chapter_in_project(
             current_count = len(target_book.get("chapters", []))
             final_title = f"Chapter {current_count + 1}"
 
+        # Security: Prevent path traversal by ensuring book_id is a simple name
+        if not book_id or ".." in book_id or "/" in book_id or "\\" in book_id:
+            raise ValueError(f"Invalid book_id: {book_id}")
+
         book_dir = active / "books" / book_id
+        # Double check the dir is actually within the books directory
+        if not book_dir.resolve().is_relative_to((active / "books").resolve()):
+            raise ValueError(f"Access denied to book directory: {book_id}")
+
         chapters_dir = book_dir / "chapters"
         (chapters_dir).mkdir(parents=True, exist_ok=True)
 
@@ -250,7 +258,14 @@ def change_project_type_in_project(active: Path, new_type: str) -> Tuple[bool, s
             if books:
                 book = books[0]
                 book_id = book.get("id") or book.get("folder")
+                # Security: Prevent path traversal by ensuring book_id is a simple name
+                if not book_id or ".." in book_id or "/" in book_id or "\\" in book_id:
+                    raise ValueError(f"Invalid book_id: {book_id}")
+
                 book_dir = active / "books" / book_id
+                # Double check the dir is actually within the books directory
+                if not book_dir.resolve().is_relative_to((active / "books").resolve()):
+                    raise ValueError(f"Access denied to book directory: {book_id}")
 
                 (active / "chapters").mkdir(parents=True, exist_ok=True)
                 (active / "images").mkdir(parents=True, exist_ok=True)

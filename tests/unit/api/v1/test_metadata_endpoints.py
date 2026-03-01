@@ -93,7 +93,8 @@ class MetadataEndpointsTest(TestCase):
         chap_id = create_new_chapter("My Chapter")
         payload = {"conflicts": "not a list"}
         resp = self.client.put(f"/api/v1/chapters/{chap_id}/metadata", json=payload)
-        self.assertEqual(resp.status_code, 400)
+        # 422 is returned by FastAPI/Pydantic when validation fails
+        self.assertEqual(resp.status_code, 422)
 
     def test_update_chapter_metadata_missing_entry(self):
         """Test that update works even if the metadata entry is missing from story.json."""
