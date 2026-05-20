@@ -445,8 +445,9 @@ export function useProjectManagement({
       language: string = 'en'
     ): Promise<void> => {
       try {
+        const trimmedName = name.trim();
         const previousProjectId = storyId;
-        const result = await api.projects.create(name, type, language);
+        const result = await api.projects.create(trimmedName, type, language);
         if (!result.ok) return;
 
         const listing = await api.projects.list();
@@ -456,7 +457,7 @@ export function useProjectManagement({
 
         if (result.story) {
           const mappedStory: StoryState = mapSelectStoryToState(
-            name,
+            trimmedName,
             result.story,
             (result.story.chapters ?? []).map(
               (
@@ -498,18 +499,18 @@ export function useProjectManagement({
           handleNewChat(false);
 
           recordHistoryEntry?.({
-            label: `Create project: ${name}`,
+            label: `Create project: ${trimmedName}`,
             onUndo: async (): Promise<void> => {
-              await api.projects.delete(name);
+              await api.projects.delete(trimmedName);
               await refreshProjects();
-              if (previousProjectId && previousProjectId !== name) {
+              if (previousProjectId && previousProjectId !== trimmedName) {
                 await handleLoadProject(previousProjectId);
               }
             },
             onRedo: async (): Promise<void> => {
-              await api.projects.create(name, type, language);
+              await api.projects.create(trimmedName, type, language);
               await refreshProjects();
-              await handleLoadProject(name);
+              await handleLoadProject(trimmedName);
             },
           });
         }

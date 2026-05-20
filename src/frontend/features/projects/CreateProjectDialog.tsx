@@ -206,7 +206,8 @@ export const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
             <Button
               variant="primary"
               onClick={(): void => {
-                if (name.trim()) onCreate(name, type, language);
+                const trimmedName = name.trim();
+                if (trimmedName) onCreate(trimmedName, type, language);
               }}
               disabled={!name.trim()}
               theme={theme}

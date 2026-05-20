@@ -89,6 +89,31 @@ class ProjectLifecycleOpsTest(TestCase):
             assert second is not None
             self.assertNotEqual(first, second)
 
+    def test_create_project_under_root_trims_whitespace(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+
+            def init_project(path, title, ptype, language):
+                initialize_project_dir_data(
+                    path, title, ptype, "2026-01-01T00:00:00", language
+                )
+
+            def validate_project(path):
+                ok, reason = validate_project_dir_data(path)
+                return SimpleNamespace(is_valid=ok, reason=reason)
+
+            ok, msg, project_path = create_project_under_root(
+                "  The Boarding School  ",
+                "novel",
+                root,
+                init_project,
+                validate_project,
+                "en",
+            )
+            self.assertTrue(ok, msg)
+            assert project_path is not None
+            self.assertEqual(project_path.name, "The Boarding School")
+
     def test_select_project_under_root_paths(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

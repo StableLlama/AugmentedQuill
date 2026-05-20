@@ -23,16 +23,13 @@ def delete_project_under_root(
     current_registry: Dict,
 ) -> Tuple[bool, str, str, List[str]]:
     """Delete Project Under Root."""
-    if not name:
+    clean_name = str(name or "").strip()
+    if not clean_name:
         return False, "Project name is required", "", []
-    if (
-        any(ch in name for ch in ("/", "\\"))
-        or name.strip() != name
-        or name in (".", "..")
-    ):
+    if any(ch in clean_name for ch in ("/", "\\")) or clean_name in (".", ".."):
         return False, "Invalid project name", "", []
 
-    project_path = projects_root / name
+    project_path = projects_root / clean_name
     if not project_path.exists() or not project_path.is_dir():
         return False, "Project does not exist", "", []
 
@@ -208,13 +205,15 @@ def create_project_under_root(
     language: str = "en",
 ) -> Tuple[bool, str, Path | None]:
     """Create Project Under Root."""
-    if not name:
+    clean_name = str(name or "").strip()
+    if not clean_name:
         return False, "Project name is required", None
-    if name.strip() != name or name in (".", ".."):
+    if clean_name in (".", ".."):
         return False, "Invalid project name", None
 
     safe_name = "".join(
-        char if char.isalnum() or char in (" ", "-", "_") else "_" for char in name
+        char if char.isalnum() or char in (" ", "-", "_") else "_"
+        for char in clean_name
     ).strip()
     if not safe_name:
         safe_name = "Untitled_Project"
@@ -243,17 +242,14 @@ def select_project_under_root(
     validate_project: Callable[[Path], object],
 ) -> Tuple[bool, str, Path | None]:
     """Select Project Under Root."""
-    if not name:
+    clean_name = str(name or "").strip()
+    if not clean_name:
         return False, "Project name is required", None
 
-    if (
-        any(ch in name for ch in ("/", "\\"))
-        or name.strip() != name
-        or name in (".", "..")
-    ):
+    if any(ch in clean_name for ch in ("/", "\\")) or clean_name in (".", ".."):
         return False, "Invalid project name", None
 
-    project_path = projects_root / name
+    project_path = projects_root / clean_name
     if not project_path.exists():
         projects_root.mkdir(parents=True, exist_ok=True)
         initialize_project(project_path, name, "novel")
