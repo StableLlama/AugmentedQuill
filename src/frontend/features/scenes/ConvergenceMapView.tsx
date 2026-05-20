@@ -50,6 +50,7 @@ interface ConvergenceMapViewProps {
   onSelectScene: (id: SceneId | null) => void;
   onSelectionChange?: (ids: ReadonlySet<SceneId>) => void;
   onEditScene?: (id: SceneId) => void;
+  onAssignSceneTimeline?: (sceneId: SceneId, timelineId: string) => Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -411,6 +412,7 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
   onSelectScene,
   onSelectionChange,
   onEditScene,
+  onAssignSceneTimeline,
 }: ConvergenceMapViewProps) => {
   const { t } = useTranslation();
   const { isLight } = useTheme();
@@ -577,6 +579,128 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
       ),
     [sortedScenes, sourcebookEntries, sceneEpochNanosecondsById]
   );
+
+  const [draggingSceneId, setDraggingSceneId] = useState<SceneId | null>(null);
+  const [dragHoverLane, setDragHoverLane] = useState<number | null>(null);
+  const [pendingTimelineAssignments, setPendingTimelineAssignments] = useState<
+    Map<SceneId, number>
+  >(new Map());
+
+  const getClosestTimelineLane = useCallback(
+    (clientX: number, svg: SVGSVGElement | null): number | null => {
+      if (!svg) return null;
+      const rect = svg.getBoundingClientRect();
+      const x = clientX - rect.left;
+      let bestLane: number | null = null;
+      let bestDist = Infinity;
+      timelinePanelModel.laneNumbers.forEach((laneNumber: number) => {
+        const laneX = TL_LANE_START_X + laneNumber * TL_LANE_GAP;
+        const dist = Math.abs(x - laneX);
+        if (dist < bestDist) {
+          bestDist = dist;
+          bestLane = laneNumber;
+        }
+      });
+      return bestLane;
+    },
+    [timelinePanelModel.laneNumbers]
+  );
+
+  const handleTimelineDotPointerDown = useCallback(
+    (sceneId: SceneId) =>
+      (event: React.PointerEvent<SVGCircleElement>): void => {
+        event.stopPropagation();
+        event.preventDefault();
+        const target = event.currentTarget;
+        if (target.setPointerCapture) {
+          target.setPointerCapture(event.pointerId);
+        }
+        setDraggingSceneId(sceneId);
+        const lane = getClosestTimelineLane(event.clientX, target.ownerSVGElement);
+        setDragHoverLane(lane);
+      },
+    [getClosestTimelineLane]
+  );
+
+  const handleTimelinePointerMove = useCallback(
+    (event: React.PointerEvent<SVGSVGElement>): void => {
+      if (draggingSceneId === null) return;
+      const lane = getClosestTimelineLane(event.clientX, event.currentTarget);
+      setDragHoverLane(lane);
+    },
+    [draggingSceneId, getClosestTimelineLane]
+  );
+
+  const commitTimelineAssignment = useCallback(
+    async (sceneId: SceneId, lane: number | null): Promise<void> => {
+      if (lane === null || onAssignSceneTimeline === undefined) return;
+      const timelineId = timelinePanelModel.timelineIdByLane.get(lane);
+      if (!timelineId) return;
+      const scene = scenes.find((item: Scene) => item.id === sceneId);
+      if (!scene) return;
+      const currentTimelineId = scene.timeline_id ?? 'main';
+      if (currentTimelineId === timelineId) {
+        return;
+      }
+
+      setPendingTimelineAssignments(
+        (prev: Map<SceneId, number>): Map<SceneId, number> => {
+          const next = new Map(prev);
+          next.set(sceneId, lane);
+          return next;
+        }
+      );
+
+      try {
+        await onAssignSceneTimeline(sceneId, timelineId);
+      } catch (error) {
+        console.error(error);
+        setPendingTimelineAssignments(
+          (prev: Map<SceneId, number>): Map<SceneId, number> => {
+            const next = new Map(prev);
+            next.delete(sceneId);
+            return next;
+          }
+        );
+      }
+    },
+    [onAssignSceneTimeline, scenes, timelinePanelModel.timelineIdByLane]
+  );
+
+  useEffect(() => {
+    if (pendingTimelineAssignments.size === 0) return;
+
+    const next = new Map(pendingTimelineAssignments);
+    let hasChanged = false;
+
+    next.forEach((laneNumber: number, sceneId: SceneId): void => {
+      const currentLane = timelinePanelModel.laneBySceneId.get(sceneId);
+      if (currentLane === laneNumber) {
+        next.delete(sceneId);
+        hasChanged = true;
+      }
+    });
+
+    if (hasChanged) {
+      setPendingTimelineAssignments(next);
+    }
+  }, [pendingTimelineAssignments, timelinePanelModel.laneBySceneId]);
+
+  const handleTimelinePointerUp = useCallback(
+    (event: React.PointerEvent<SVGSVGElement>): void => {
+      if (draggingSceneId === null) return;
+      const lane = getClosestTimelineLane(event.clientX, event.currentTarget);
+      commitTimelineAssignment(draggingSceneId, lane);
+      setDraggingSceneId(null);
+      setDragHoverLane(lane);
+    },
+    [commitTimelineAssignment, draggingSceneId, getClosestTimelineLane]
+  );
+
+  const handleTimelinePointerCancel = useCallback((): void => {
+    setDraggingSceneId(null);
+    setDragHoverLane(null);
+  }, []);
 
   // -------------------------------------------------------------------------
   // Snake path data (computed from measured layouts)
@@ -1275,7 +1399,7 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
 
         {/* Left chronological timeline panel */}
         <div
-          className="pointer-events-none absolute left-0 top-0 z-20 overflow-hidden"
+          className="absolute left-0 top-0 z-20 overflow-hidden"
           style={{
             width: timelinePanelWidth,
             height: timelineOverlayHeight > 0 ? `${timelineOverlayHeight}px` : '100%',
@@ -1284,8 +1408,15 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
           <svg
             width={timelinePanelWidth}
             height={timelineOverlayHeight > 0 ? timelineOverlayHeight : '100%'}
-            style={{ overflow: 'visible', userSelect: 'none' }}
+            style={{
+              overflow: 'visible',
+              userSelect: 'none',
+              cursor: draggingSceneId ? 'ew-resize' : 'default',
+            }}
             aria-hidden="true"
+            onPointerMove={handleTimelinePointerMove}
+            onPointerUp={handleTimelinePointerUp}
+            onPointerCancel={handleTimelinePointerCancel}
           >
             {/* Vertical track lines for all timelines */}
             {timelinePanelModel.laneNumbers.map((laneNumber: number) => {
@@ -1354,6 +1485,24 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
                 />
               );
             })}
+            {/* Drag hover lane highlight */}
+            {dragHoverLane !== null &&
+              (() => {
+                const laneX = timelineLaneXByNumber.get(dragHoverLane);
+                if (laneX === undefined) return null;
+                return (
+                  <line
+                    x1={laneX}
+                    y1={0}
+                    x2={laneX}
+                    y2={timelineOverlayHeight}
+                    stroke={trackColor}
+                    strokeWidth={6}
+                    opacity={0.14}
+                    pointerEvents="none"
+                  />
+                );
+              })()}
             {/* Scene position dots */}
             {sortedScenes.map((scene: Scene) => {
               const layout = cardLayouts.get(scene.id);
@@ -1362,16 +1511,36 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
               if (!layout) return null;
               if (laneX === undefined) return null;
               const overriddenX = timelineSceneDotXOverrides.get(scene.id);
+              const targetX = overriddenX ?? laneX;
+              const pendingLane = pendingTimelineAssignments.get(scene.id);
+              const previewX =
+                draggingSceneId === scene.id && dragHoverLane !== null
+                  ? timelineLaneXByNumber.get(dragHoverLane)
+                  : pendingLane !== undefined
+                    ? timelineLaneXByNumber.get(pendingLane)
+                    : targetX;
+              const cx = previewX ?? targetX;
               const cy = layout.y + layout.h / 2;
               return (
-                <circle
-                  key={scene.id}
-                  cx={overriddenX ?? laneX}
-                  cy={cy}
-                  r={TL_DOT_R}
-                  fill={solidFill}
-                  opacity={0.8}
-                />
+                <g key={scene.id} data-scene-dot-id={scene.id}>
+                  <circle
+                    cx={cx}
+                    cy={cy}
+                    r={TL_DOT_R + 8}
+                    fill="transparent"
+                    pointerEvents="all"
+                    onPointerDown={handleTimelineDotPointerDown(scene.id)}
+                  />
+                  <circle
+                    cx={cx}
+                    cy={cy}
+                    r={TL_DOT_R}
+                    fill={solidFill}
+                    opacity={0.8}
+                    style={{ cursor: 'ew-resize' }}
+                    pointerEvents="none"
+                  />
+                </g>
               );
             })}
             {/* Time travel arrows */}

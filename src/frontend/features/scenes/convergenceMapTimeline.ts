@@ -27,6 +27,7 @@ export interface TimelineJumpEvent {
 
 export interface TimelinePanelModel {
   laneBySceneId: Map<SceneId, number>;
+  timelineIdByLane: Map<number, string>;
   events: TimelineJumpEvent[];
   laneNumbers: number[];
 }
@@ -120,16 +121,6 @@ const sortCandidateEvents = (
   if (a.departureEpochNs < b.departureEpochNs) return -1;
   if (a.departureEpochNs > b.departureEpochNs) return 1;
   return 0;
-};
-
-const buildSourcebookEntryById = (
-  sourcebookEntries: SourcebookEntry[]
-): ReadonlyMap<string, SourcebookEntry> => {
-  const map = new Map<string, SourcebookEntry>();
-  sourcebookEntries.forEach((entry: SourcebookEntry): void => {
-    map.set(entry.id, entry);
-  });
-  return map;
 };
 
 const findExactSceneAtEpochInTimeline = (
@@ -360,7 +351,10 @@ export const buildTimelinePanelModel = (
     laneBySceneId.set(scene.id, laneByTimelineId.get(timelineId) ?? 0);
   });
 
-  const sourcebookEntryById = buildSourcebookEntryById(sourcebookEntries);
+  const timelineIdByLane = new Map<number, string>();
+  laneByTimelineId.forEach((lane: number, timelineId: string): void => {
+    timelineIdByLane.set(lane, timelineId);
+  });
 
   const timeTravelEntries = sourcebookEntries.filter(
     (entry: SourcebookEntry): boolean => entry.category === 'Time Travel'
@@ -450,5 +444,5 @@ export const buildTimelinePanelModel = (
     new Set<number>([...laneBySceneId.values(), ...usedLanes.values()])
   ).sort((a: number, b: number) => a - b);
 
-  return { laneBySceneId, events, laneNumbers };
+  return { laneBySceneId, timelineIdByLane, events, laneNumbers };
 };

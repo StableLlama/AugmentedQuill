@@ -315,6 +315,22 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
     [editingSceneId, patchScene, recordSceneHistory, scenes]
   );
 
+  const handleAssignSceneTimeline = useCallback(
+    async (sceneId: SceneId, timelineId: string): Promise<void> => {
+      try {
+        const updated = await api.scenes.update(sceneId, {
+          timeline_id: timelineId,
+        } as SceneUpdatePayload);
+        patchScene(updated as Scene);
+        recordSceneHistory('Update scene', applyScenePatch(scenes, updated as Scene));
+      } catch (err) {
+        notifyError(t('Update scene'), err);
+        throw err;
+      }
+    },
+    [patchScene, recordSceneHistory, scenes, t]
+  );
+
   // ---- Delete from editor ----
   const handleDeleteScene = useCallback(async (): Promise<void> => {
     if (!editingSceneId) return;
@@ -889,6 +905,7 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
             onSelectScene={handleSelectScene}
             onSelectionChange={handleMultipleSelectScenes}
             onEditScene={setEditingSceneId}
+            onAssignSceneTimeline={handleAssignSceneTimeline}
           />
         )}
       </div>

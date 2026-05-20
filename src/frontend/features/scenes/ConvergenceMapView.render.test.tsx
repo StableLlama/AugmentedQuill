@@ -12,7 +12,7 @@
 // @vitest-environment jsdom
 
 import React from 'react';
-import { cleanup, render, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { I18nextProvider } from 'react-i18next';
 import { beforeAll, afterEach, describe, expect, it, vi } from 'vitest';
 import i18n from '../app/i18n';
@@ -180,10 +180,8 @@ beforeAll(() => {
   }
   vi.stubGlobal('ResizeObserver', ResizeObserverMock);
 
-  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
-    this: HTMLElement
-  ): DOMRect {
-    const laneId = this.getAttribute('data-lane-id');
+  const mockGetBoundingClientRect = function (this: Element): DOMRect {
+    const laneId = this.getAttribute?.('data-lane-id');
     if (laneId === 'Bob') {
       return {
         x: 200,
@@ -198,7 +196,7 @@ beforeAll(() => {
       } as DOMRect;
     }
 
-    if (this.getAttribute('aria-label') === 'Prose narrative order') {
+    if (this.getAttribute?.('aria-label') === 'Prose narrative order') {
       return {
         x: 0,
         y: 0,
@@ -212,7 +210,7 @@ beforeAll(() => {
       } as DOMRect;
     }
 
-    if (this.getAttribute('data-lane-track') === 'true') {
+    if (this.getAttribute?.('data-lane-track') === 'true') {
       return {
         x: 0,
         y: 0,
@@ -237,7 +235,14 @@ beforeAll(() => {
       height: 0,
       toJSON: () => ({}),
     } as DOMRect;
-  });
+  };
+
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
+    mockGetBoundingClientRect as unknown as () => DOMRect
+  );
+  vi.spyOn(SVGSVGElement.prototype, 'getBoundingClientRect').mockImplementation(
+    mockGetBoundingClientRect as unknown as () => DOMRect
+  );
 
   vi.spyOn(HTMLElement.prototype, 'offsetTop', 'get').mockImplementation(function (
     this: HTMLElement
@@ -315,5 +320,54 @@ describe('ConvergenceMapView render ordering', () => {
     );
 
     expect(circleYs).toEqual(['120', '220', '170']);
+  });
+
+  it('assigns a scene to a different timeline when the timeline dot is dragged left or right', async () => {
+    const onAssignSceneTimeline = vi.fn();
+    const { container } = wrap(
+      <ConvergenceMapView
+        scenes={scenes}
+        sourcebookEntries={[bobEntry]}
+        projectType="series"
+        chapters={chapters}
+        books={books}
+        primarySelectedSceneId={null}
+        onSelectScene={(): void => undefined}
+        onAssignSceneTimeline={onAssignSceneTimeline}
+      />
+    );
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-scene-dot-id="13"]')).toBeTruthy();
+    });
+
+    const timelineSvg = container.querySelector('svg[aria-hidden="true"]');
+    const dotGroup = container.querySelector('[data-scene-dot-id="13"]');
+    expect(timelineSvg).toBeTruthy();
+    expect(dotGroup).toBeTruthy();
+
+    fireEvent.pointerDown(dotGroup?.querySelector('circle') as Element, {
+      pointerId: 1,
+      clientX: 50,
+      clientY: 150,
+    });
+    fireEvent.pointerMove(timelineSvg as Element, {
+      pointerId: 1,
+      clientX: 10,
+      clientY: 150,
+    });
+
+    const movedDot = dotGroup?.querySelectorAll('circle')[1] as SVGCircleElement | null;
+    expect(movedDot).toBeTruthy();
+    expect(movedDot?.getAttribute('cx')).toBe('8');
+    expect(onAssignSceneTimeline).not.toHaveBeenCalled();
+
+    fireEvent.pointerUp(timelineSvg as Element, {
+      pointerId: 1,
+      clientX: 10,
+      clientY: 150,
+    });
+
+    expect(onAssignSceneTimeline).toHaveBeenCalledWith(13, 'main');
   });
 });
