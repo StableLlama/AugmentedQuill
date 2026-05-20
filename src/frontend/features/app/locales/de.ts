@@ -545,6 +545,7 @@ export const de = {
       'Ursprungsdatum festlegen (Geburt / Erschaffung)',
     Status: 'Status',
     'Scene status': 'Szenenstatus',
+    'Scene status: ID {{id}}': 'Szenenstatus: ID {{id}}',
     active: 'aktiv',
     inactive: 'inaktiv',
     draft: 'Entwurf',

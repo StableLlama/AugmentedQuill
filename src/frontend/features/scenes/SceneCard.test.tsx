@@ -334,6 +334,19 @@ describe('SceneCard — scene time indicator', () => {
     expect(indicator?.getAttribute('title')).toContain('International:');
   });
 
+  it('includes the scene id in the status dot tooltip and labels it as an ID', () => {
+    const scene = makeScene({ id: 'scene-123' });
+    const { container } = renderCard(scene);
+    const statusDot = container.querySelector<HTMLElement>(
+      '[data-scene-status-indicator]'
+    );
+
+    expect(statusDot).toBeTruthy();
+    expect(statusDot?.getAttribute('title')).toContain('Scene status');
+    expect(statusDot?.getAttribute('title')).toContain('ID');
+    expect(statusDot?.getAttribute('title')).toContain('scene-123');
+  });
+
   it('does not show a scene time icon for invalid temporal values', () => {
     const scene = makeScene({
       scene_time: { temporal_zoned_datetime: 'not-a-valid-temporal-value' },

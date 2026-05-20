@@ -543,6 +543,7 @@ export const en = {
     'Set origin date (birth / creation)': 'Set origin date (birth / creation)',
     Status: 'Status',
     'Scene status': 'Scene status',
+    'Scene status: ID {{id}}': 'Scene status: ID {{id}}',
     active: 'active',
     inactive: 'inactive',
     draft: 'draft',

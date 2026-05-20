@@ -548,6 +548,7 @@ export const es = {
 
     Status: 'Estado',
     'Scene status': 'Estado de la escena',
+    'Scene status: ID {{id}}': 'Estado de la escena: ID {{id}}',
     active: 'activo',
     inactive: 'inactivo',
     draft: 'borrador',

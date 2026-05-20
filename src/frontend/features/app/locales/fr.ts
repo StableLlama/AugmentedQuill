@@ -554,6 +554,7 @@ export const fr = {
 
     Status: 'Statut',
     'Scene status': 'Statut de la scène',
+    'Scene status: ID {{id}}': 'Statut de la scène : ID {{id}}',
     active: 'actif',
     inactive: 'inactif',
     draft: 'brouillon',

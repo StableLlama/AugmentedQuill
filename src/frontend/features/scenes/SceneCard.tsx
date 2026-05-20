@@ -420,8 +420,10 @@ export const SceneCard: React.FC<SceneCardProps> = ({
         {/* status dot */}
         <div className="flex items-center gap-1.5 mb-1.5">
           <span
+            data-scene-status-indicator="true"
             className={`w-2 h-2 rounded-full flex-shrink-0 ${statusDot}`}
-            title={t('Scene status')}
+            title={t('Scene status: ID {{id}}', { id: scene.id })}
+            aria-label={t('Scene status: ID {{id}}', { id: scene.id })}
           />
         </div>
 
