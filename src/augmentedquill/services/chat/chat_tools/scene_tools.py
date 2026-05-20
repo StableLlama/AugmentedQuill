@@ -168,9 +168,12 @@ class ManageScenesParams(BaseModel):
         "action='list' to list scenes, action='get' with scene_id to retrieve one "
         "scene, action='create' with create_data to create a scene, action='update' "
         "with scene_id and update_data to modify a scene, and action='delete' with "
-        "scene_id to remove a scene. For update_data.scene_time, you can pass a "
-        "Temporal object, {'value': ...}, or a plain ISO-like string such as "
-        "'1985-11-05', '1985-11-05T20:00', or '1985-11-05T20:00:00Z'."
+        "scene_id to remove a scene. When creating scenes, include relevant "
+        "sourcebook_entry_ids and a formal scene_time whenever the chronology can "
+        "be inferred; otherwise express relative ordering with order_before/order_after. "
+        "For update_data.scene_time, you can pass a Temporal object, {'value': ...}, "
+        "or a plain ISO-like string such as '1985-11-05', '1985-11-05T20:00', or "
+        "'1985-11-05T20:00:00Z'."
     ),
     allowed_roles=(CHAT_ROLE, EDITING_ROLE),
     capability="metadata-write",

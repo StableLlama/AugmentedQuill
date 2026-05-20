@@ -120,6 +120,14 @@ class ManageSourcebookEntryData(BaseModel):
         default_factory=list,
         description="Optional list of image IDs to associate with this entry.",
     )
+    relations: list[dict] | None = Field(
+        None,
+        description=(
+            "Optional list of relation objects to attach to this entry at creation time. "
+            "Each relation may include target_id, relation_type, direction ('forward' or 'reverse'), "
+            "and optional chapter/book bounds. Use relations to keep new sourcebook entries logically linked to existing world knowledge."
+        ),
+    )
     origin_date: str | None = Field(
         None,
         description=(
@@ -240,7 +248,7 @@ class ManageSourcebookParams(BaseModel):
         "action='get' (name_or_id), action='create' (entry_data), action='update' "
         "(name_or_id + update_data), action='delete' (name_or_id), "
         "action='add_relation' (relation_data), or action='remove_relation' "
-        "(relation_data)."
+        "(relation_data). For action='create', entry_data may include relations to attach the new sourcebook entry into the existing world model."
     ),
     allowed_roles=(CHAT_ROLE, EDITING_ROLE),
     capability="sourcebook-read",
@@ -303,6 +311,7 @@ async def manage_sourcebook(
             category=params.entry_data.category,
             synonyms=params.entry_data.synonyms,
             images=params.entry_data.images,
+            relations=params.entry_data.relations,
             origin_date=params.entry_data.origin_date,
         )
         if "error" not in new_entry:

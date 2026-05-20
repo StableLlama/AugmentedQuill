@@ -236,7 +236,7 @@ class SceneCreateRequest(BaseModel):
         default_factory=list,
         description=(
             "Sourcebook entry IDs needed to ground the scene's facts, setting, or "
-            "canon references."
+            "canon references. Always include relevant sourcebook entries when creating a scene so the scene remains connected to existing world knowledge."
         ),
     )
     location: Optional[str] = Field(
@@ -250,8 +250,7 @@ class SceneCreateRequest(BaseModel):
     scene_time: Optional[SceneChronologyTime] = Field(
         None,
         description=(
-            "Formal timeline position for the scene. Prefer this when ordering "
-            "matters. Accepts ISO-like timestamps and normalizes them."
+            "Formal timeline position for the scene. Always set this when the scene can be placed on the story timeline; if an exact timestamp is not known, use order_before/order_after to capture relative chronology. Accepts ISO-like timestamps and normalizes them."
         ),
     )
     timeline_id: str = Field(

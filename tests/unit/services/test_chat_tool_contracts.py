@@ -247,6 +247,10 @@ class ChatToolContractsTest(TestCase):
             )
             self.assertIn("action", properties)
             self.assertIn("relation_data", properties)
+            if tool.get("function", {}).get("name") == "manage_sourcebook":
+                self.assertIn(
+                    "relations", properties.get("entry_data", {}).get("properties", {})
+                )
 
     def test_manage_scenes_update_schema_exposes_patch_fields(self):
         tools = get_registered_tool_schemas(model_type="CHAT", project_type="series")
@@ -309,11 +313,19 @@ class ChatToolContractsTest(TestCase):
         )
         self.assertIn("sourcebook/character IDs", passive_description)
 
+        sourcebook_entry_ids_description = create_props.get(
+            "sourcebook_entry_ids", {}
+        ).get("description", "")
+        self.assertIn(
+            "Always include relevant sourcebook entries",
+            sourcebook_entry_ids_description,
+        )
+
         scene_time_description = create_props.get("scene_time", {}).get(
             "description", ""
         )
         self.assertIn("Formal timeline position", scene_time_description)
-        self.assertIn("normalizes them", scene_time_description)
+        self.assertIn("relative chronology", scene_time_description)
 
         prose_link_description = create_props.get("prose_link", {}).get(
             "description", ""
