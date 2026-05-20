@@ -293,34 +293,21 @@ describe('buildTimelinePanelModel', () => {
     expect(model.laneNumbers).toEqual([0, 1, 2]);
   });
 
-  it('prefers sourcebook entries over scene event fan-out', () => {
-    const sceneWithEvent = makeScene(
+  it('does not build jumps from legacy scene-local time travel events', () => {
+    const sceneWithLegacyEvent = makeScene(
       1,
       '2026-05-16T13:57:11+00:00[UTC][u-ca=gregory]',
-      'main',
-      ['16->10']
+      'main'
     ) as Scene & {
-      time_travel_events: Array<{ target_datetime?: string }>;
+      time_travel_events?: Array<{ target_datetime?: string }>;
     };
-    sceneWithEvent.time_travel_events = [
+    sceneWithLegacyEvent.time_travel_events = [
       { target_datetime: '2026-05-10T13:58:26+00:00[UTC][u-ca=gregory]' },
-      { target_datetime: '2026-05-09T13:58:26+00:00[UTC][u-ca=gregory]' },
     ];
 
-    const scenes: Scene[] = [sceneWithEvent];
-    const entries: SourcebookEntry[] = [
-      makeEntry(
-        '16->10',
-        '2026-05-16T13:57:11+00:00[UTC][u-ca=gregory]',
-        '2026-05-10T13:58:26+00:00[UTC][u-ca=gregory]',
-        true,
-        'main'
-      ),
-    ];
+    const scenes: Scene[] = [sceneWithLegacyEvent];
+    const model = buildTimelinePanelModel(scenes, [], buildEpochMap(scenes));
 
-    const model = buildTimelinePanelModel(scenes, entries, buildEpochMap(scenes));
-
-    expect(model.events).toHaveLength(1);
-    expect(model.events[0]?.entryId).toBe('16->10');
+    expect(model.events).toHaveLength(0);
   });
 });

@@ -127,23 +127,6 @@ class SceneBeat(BaseModel):
     )
 
 
-class SceneTimeTravelEvent(BaseModel):
-    """A scene-local time travel event recorded in story.json."""
-
-    entry_refs: list[str] = Field(
-        default_factory=list,
-        description="Sourcebook entry refs involved in the jump.",
-    )
-    target_datetime: Optional[str] = Field(
-        None,
-        description="Target datetime for the jump, if specified.",
-    )
-    relative_description: Optional[str] = Field(
-        None,
-        description="Relative time travel description, if the jump is relative.",
-    )
-
-
 class SceneChronologyTime(BaseModel):
     """Scene-local timeline point represented as a Temporal ZonedDateTime string."""
 
@@ -210,9 +193,6 @@ class Scene(BaseModel):
     tag_personal_datetimes: list[SceneTagPersonalDatetime] = Field(
         default_factory=list
     )  # per-tag personal age overrides (supports duplicate characters)
-    time_travel_events: list[SceneTimeTravelEvent] = Field(
-        default_factory=list
-    )  # scene-local time travel events
 
 
 # ---------------------------------------------------------------------------
@@ -330,10 +310,6 @@ class SceneCreateRequest(BaseModel):
             "ordering. Leave empty unless you need those overrides."
         ),
     )
-    time_travel_events: list[SceneTimeTravelEvent] = Field(
-        default_factory=list,
-        description="Scene-local time travel events recorded for this scene.",
-    )
 
 
 class SceneUpdateRequest(BaseModel):
@@ -414,13 +390,6 @@ class SceneUpdateRequest(BaseModel):
             "field unchanged, or an explicit list to replace it."
         ),
     )  # None = no change
-    time_travel_events: Optional[list[SceneTimeTravelEvent]] = Field(
-        default=None,
-        description=(
-            "Replacement scene-local time travel events. Use None to leave the "
-            "field unchanged, or an explicit list to replace it."
-        ),
-    )
 
 
 class SceneLinkProseRequest(BaseModel):

@@ -17,7 +17,6 @@ from augmentedquill.models.scene import (
     SceneCreateRequest,
     SceneLinkProseRequest,
     SceneProseLink,
-    SceneTimeTravelEvent,
     SceneUpdateRequest,
     SceneUpdateProseContentRequest,
 )
@@ -120,29 +119,6 @@ def test_scene_prose_links_are_runtime_only_and_not_persisted(
 
     assert "prose_link" not in persisted
     assert persisted["beats"][0].get("prose_link") is None
-
-
-def test_scene_time_travel_events_are_persisted(project_dir: Path) -> None:
-    scene = create_scene(
-        project_dir,
-        SceneCreateRequest(
-            summary="Time travel scene",
-            time_travel_events=[
-                SceneTimeTravelEvent(
-                    entry_refs=["Doc Brown", "Marty McFly"],
-                    target_datetime="1955-11-05T20:00:00Z",
-                    relative_description=None,
-                )
-            ],
-        ),
-    )
-
-    refreshed = get_scene(project_dir, scene["id"])
-    assert refreshed is not None
-    events = refreshed.get("time_travel_events") or []
-    assert len(events) == 1
-    assert events[0]["target_datetime"] == "1955-11-05T20:00:00Z"
-    assert events[0]["entry_refs"] == ["Doc Brown", "Marty McFly"]
 
 
 def test_update_scene_persists_timeline_id(project_dir: Path) -> None:

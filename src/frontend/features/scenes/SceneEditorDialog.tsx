@@ -399,7 +399,9 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
     const known = new Set<string>();
     knownAgesForRef.forEach((values: string[], key: string): void => {
       if (!key.endsWith(`::${role}::${trimmedRef}`)) return;
-      values.forEach((value: string): void => known.add(value));
+      values.forEach((value: string) => {
+        known.add(value);
+      });
     });
 
     const existingValues = Array.from(known).sort((a: string, b: string) =>

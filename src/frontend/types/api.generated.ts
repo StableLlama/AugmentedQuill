@@ -2862,8 +2862,6 @@ export interface components {
       status: string;
       /** Tag Personal Datetimes */
       tag_personal_datetimes?: components['schemas']['SceneTagPersonalDatetime'][];
-      /** Time Travel Events */
-      time_travel_events?: components['schemas']['SceneTimeTravelEvent'][];
     };
     /**
      * SceneBeat
@@ -3000,11 +2998,6 @@ export interface components {
        * @description Per-tag personal age overrides used for time-travel or age-specific ordering. Leave empty unless you need those overrides.
        */
       tag_personal_datetimes?: components['schemas']['SceneTagPersonalDatetime'][];
-      /**
-       * Time Travel Events
-       * @description Scene-local time travel events recorded for this scene.
-       */
-      time_travel_events?: components['schemas']['SceneTimeTravelEvent'][];
     };
     /**
      * SceneDetectBoundariesRequest
@@ -3179,27 +3172,6 @@ export interface components {
       personal_age: string;
     };
     /**
-     * SceneTimeTravelEvent
-     * @description A scene-local time travel event recorded in story.json.
-     */
-    SceneTimeTravelEvent: {
-      /**
-       * Entry Refs
-       * @description Sourcebook entry refs involved in the jump.
-       */
-      entry_refs?: string[];
-      /**
-       * Target Datetime
-       * @description Target datetime for the jump, if specified.
-       */
-      target_datetime?: string | null;
-      /**
-       * Relative Description
-       * @description Relative time travel description, if the jump is relative.
-       */
-      relative_description?: string | null;
-    };
-    /**
      * SceneUpdateProseContentRequest
      * @description Payload for replacing the prose text between a scene's inline markers.
      */
@@ -3298,11 +3270,6 @@ export interface components {
       tag_personal_datetimes?:
         | components['schemas']['SceneTagPersonalDatetime'][]
         | null;
-      /**
-       * Time Travel Events
-       * @description Replacement scene-local time travel events. Use None to leave the field unchanged, or an explicit list to replace it.
-       */
-      time_travel_events?: components['schemas']['SceneTimeTravelEvent'][] | null;
     };
     /**
      * SceneWriteRequest

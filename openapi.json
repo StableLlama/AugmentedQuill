@@ -6858,13 +6858,6 @@
             },
             "type": "array",
             "title": "Tag Personal Datetimes"
-          },
-          "time_travel_events": {
-            "items": {
-              "$ref": "#/components/schemas/SceneTimeTravelEvent"
-            },
-            "type": "array",
-            "title": "Time Travel Events"
           }
         },
         "type": "object",
@@ -7091,14 +7084,6 @@
             "type": "array",
             "title": "Tag Personal Datetimes",
             "description": "Per-tag personal age overrides used for time-travel or age-specific ordering. Leave empty unless you need those overrides."
-          },
-          "time_travel_events": {
-            "items": {
-              "$ref": "#/components/schemas/SceneTimeTravelEvent"
-            },
-            "type": "array",
-            "title": "Time Travel Events",
-            "description": "Scene-local time travel events recorded for this scene."
           }
         },
         "type": "object",
@@ -7409,45 +7394,6 @@
         "title": "SceneTagPersonalDatetime",
         "description": "Personal age override for one specific tag instance in a scene.\n\n``role`` is ``'active'``, ``'passive'``, or ``'sourcebook'``.\n``ref`` is the character name (for active/passive) or sourcebook entry ID\n(for sourcebook).\n``index`` is the 0-based position within the role's list \u2013 this allows\nthe same character to appear multiple times in one scene (e.g. a time\ntraveller meeting their younger self).\n``personal_age`` is a human-readable age string such as ``'17y'``,\n``'17y 3m'``, ``'5m 12d'``, or ``'30d'``."
       },
-      "SceneTimeTravelEvent": {
-        "properties": {
-          "entry_refs": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Entry Refs",
-            "description": "Sourcebook entry refs involved in the jump."
-          },
-          "target_datetime": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Target Datetime",
-            "description": "Target datetime for the jump, if specified."
-          },
-          "relative_description": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Relative Description",
-            "description": "Relative time travel description, if the jump is relative."
-          }
-        },
-        "type": "object",
-        "title": "SceneTimeTravelEvent",
-        "description": "A scene-local time travel event recorded in story.json."
-      },
       "SceneUpdateProseContentRequest": {
         "properties": {
           "text": {
@@ -7696,21 +7642,6 @@
             ],
             "title": "Tag Personal Datetimes",
             "description": "Replacement per-tag personal age overrides. Use None to leave the field unchanged, or an explicit list to replace it."
-          },
-          "time_travel_events": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/SceneTimeTravelEvent"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Time Travel Events",
-            "description": "Replacement scene-local time travel events. Use None to leave the field unchanged, or an explicit list to replace it."
           }
         },
         "type": "object",

@@ -436,9 +436,6 @@ def _normalise_scene(raw: dict[str, Any]) -> dict[str, Any]:
     else:
         raw["timeline_id"] = "main"
     raw.setdefault("tag_personal_datetimes", [])
-    raw.pop("personal_datetimes", None)
-    if not isinstance(raw.get("time_travel_events"), list):
-        raw["time_travel_events"] = []
 
     if not isinstance(raw.get("pinboard_x"), (int, float)):
         raw["pinboard_x"] = 100.0

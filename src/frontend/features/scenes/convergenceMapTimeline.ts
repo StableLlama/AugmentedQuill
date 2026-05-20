@@ -13,16 +13,6 @@ import type { Scene, SceneId } from '../../types';
 import type { SourcebookEntry } from '../../types/domain';
 import { parseZonedDateTime } from '../../utils/temporal';
 
-type SceneTimeTravelEvent = {
-  entry_refs?: string[];
-  target_datetime?: string | null;
-  relative_description?: string | null;
-};
-
-type SceneWithTimeTravelEvents = Scene & {
-  time_travel_events?: SceneTimeTravelEvent[];
-};
-
 export interface TimelineJumpEvent {
   entryId: string;
   entryName: string;
@@ -427,85 +417,6 @@ export const buildTimelinePanelModel = (
       destinationTimelineId,
     });
   });
-
-  if (candidateEvents.length === 0) {
-    const seenSceneFallbackKeys = new Set<string>();
-
-    sortedScenes.forEach((scene: Scene): void => {
-      const sceneWithEvents = scene as SceneWithTimeTravelEvents;
-      const timeTravelEvents = sceneWithEvents.time_travel_events ?? [];
-      const departureEpochNs = sceneEpochNanosecondsById.get(scene.id);
-      if (timeTravelEvents.length === 0 || departureEpochNs === undefined) {
-        return;
-      }
-
-      timeTravelEvents.forEach((timeTravelEvent: SceneTimeTravelEvent): void => {
-        const destinationEpochNs = parseEpochNs(timeTravelEvent.target_datetime);
-        if (destinationEpochNs === null) {
-          return;
-        }
-
-        const referencedEntry = (timeTravelEvent.entry_refs ?? [])
-          .map((entryId: string): SourcebookEntry | undefined =>
-            sourcebookEntryById.get(entryId)
-          )
-          .find(
-            (entry: SourcebookEntry | undefined): entry is SourcebookEntry =>
-              !!entry && entry.category === 'Time Travel'
-          );
-
-        const fallbackEntry = {
-          id: `scene-${scene.id}-${destinationEpochNs.toString()}`,
-          name: `Scene ${scene.id}`,
-          synonyms: [],
-          description: '',
-          images: [],
-          category: 'Time Travel',
-        } as SourcebookEntry;
-
-        const eventEntry = referencedEntry ?? fallbackEntry;
-        const createsNewTimeline = !!referencedEntry?.creates_new_timeline;
-        const sourceTimelineId = resolveSourceTimelineId(
-          eventEntry,
-          createsNewTimeline,
-          scene
-        );
-        const destinationTimelineId = createsNewTimeline
-          ? getBranchTimelineId(eventEntry)
-          : sourceTimelineId;
-
-        const eventKey = [
-          eventEntry.id,
-          departureEpochNs.toString(),
-          destinationEpochNs.toString(),
-          sourceTimelineId,
-          destinationTimelineId,
-        ].join('|');
-        if (seenSceneFallbackKeys.has(eventKey)) {
-          return;
-        }
-        seenSceneFallbackKeys.add(eventKey);
-
-        const destinationScene = findExactSceneAtEpochInTimeline(
-          sortedScenes,
-          destinationEpochNs,
-          destinationTimelineId,
-          sceneEpochNanosecondsById
-        );
-
-        candidateEvents.push({
-          entry: eventEntry,
-          departureScene: scene,
-          destinationScene,
-          departureEpochNs,
-          destinationEpochNs,
-          createsNewTimeline,
-          sourceTimelineId,
-          destinationTimelineId,
-        });
-      });
-    });
-  }
 
   candidateEvents.sort(sortCandidateEvents);
 
