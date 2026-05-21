@@ -58,7 +58,7 @@ type UseAppChatRuntimeParams = {
   ) => Promise<'stop' | 'continue' | 'unlimited'>;
   handleChapterSelect: (chapterId: string | null) => void;
   openAndExpandStory: () => void;
-  openSceneEditorDialog: (sceneId: SceneId) => void;
+  openSceneEditorDialog: (sceneId: SceneId, openedViaTrigger?: boolean) => void;
   openSourcebookEntryDialog: (entryId: string) => void;
   openStoryMetadataDialog: (tab?: MetadataTab) => void;
   openChapterMetadataDialog: (chapterId: string, initialTab?: MetadataTab) => void;
@@ -87,7 +87,7 @@ type ToolMutationPayload = ChatToolExecutionResponse & {
 type MutationNavigationCallbacks = {
   handleChapterSelect: (chapterId: string | null) => void;
   openAndExpandStory: () => void;
-  openSceneEditorDialog: (sceneId: SceneId) => void;
+  openSceneEditorDialog: (sceneId: SceneId, openedViaTrigger?: boolean) => void;
   openSourcebookEntryDialog: (entryId: string) => void;
   openStoryMetadataDialog: (tab?: MetadataTab) => void;
   openChapterMetadataDialog: (chapterId: string, initialTab?: MetadataTab) => void;
@@ -114,7 +114,7 @@ export function handleSessionMutationClick(
     if (mutation.targetId) {
       const sceneId = Number(mutation.targetId);
       if (Number.isInteger(sceneId)) {
-        openSceneEditorDialog(sceneId);
+        openSceneEditorDialog(sceneId, true);
       }
     }
   } else if (mutation.type === 'story') {

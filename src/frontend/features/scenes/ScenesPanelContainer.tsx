@@ -194,6 +194,8 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
   const { selectedSceneId, handleSelectScene, handleMultipleSelectScenes } =
     useSceneProseSync(scenes, currentChapter, editorRef);
 
+  const dialogOpenedViaTrigger =
+    sceneEditorDialog.openedViaTrigger && sceneEditorDialog.isOpen;
   const editingScene = editingSceneId
     ? (scenes.find((s: Scene) => s.id === editingSceneId) ?? null)
     : null;
@@ -915,6 +917,7 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
         <SceneEditorDialog
           scene={editingScene}
           isOpen={true}
+          openedViaTrigger={dialogOpenedViaTrigger}
           onClose={() => setEditingSceneId(null)}
           onSave={handleSaveScene}
           onDelete={handleDeleteScene}

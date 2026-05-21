@@ -46,6 +46,7 @@ export interface SceneEditorDialogState {
   isOpen: boolean;
   version: number;
   sceneId: SceneId | null;
+  openedViaTrigger: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -90,7 +91,7 @@ export interface UIStoreState {
   closeSourcebookDialog: () => void;
   openChapterMetadataDialog: (chapterId: string, initialTab?: MetadataTab) => void;
   closeChapterMetadataDialog: () => void;
-  openSceneEditorDialog: (sceneId: SceneId) => void;
+  openSceneEditorDialog: (sceneId: SceneId, openedViaTrigger?: boolean) => void;
   closeSceneEditorDialog: () => void;
 
   setWorkspaceMode: (
@@ -149,6 +150,7 @@ export const useUIStore = create<UIStoreState>()(
         isOpen: false,
         version: 0,
         sceneId: null,
+        openedViaTrigger: false,
       },
 
       // ── Editor UI flags (not persisted) ─────────────────────────────────
@@ -264,12 +266,13 @@ export const useUIStore = create<UIStoreState>()(
           chapterMetadataDialog: { ...s.chapterMetadataDialog, isOpen: false },
         })),
 
-      openSceneEditorDialog: (sceneId: SceneId) =>
+      openSceneEditorDialog: (sceneId: SceneId, openedViaTrigger: boolean = false) =>
         set((s: UIStoreState) => ({
           sceneEditorDialog: {
             isOpen: true,
             version: s.sceneEditorDialog.version + 1,
             sceneId,
+            openedViaTrigger,
           },
         })),
 
@@ -279,6 +282,7 @@ export const useUIStore = create<UIStoreState>()(
             ...s.sceneEditorDialog,
             isOpen: false,
             sceneId: null,
+            openedViaTrigger: false,
           },
         })),
 
@@ -388,6 +392,7 @@ export function resetUIStore(): void {
       isOpen: false,
       version: 0,
       sceneId: null,
+      openedViaTrigger: false,
     },
     viewMode: 'raw' as ViewMode,
     showWhitespace: false,
@@ -413,7 +418,7 @@ export const uiStoreActions = {
   openChapterMetadataDialog: (chapterId: string, initialTab?: MetadataTab) =>
     useUIStore.getState().openChapterMetadataDialog(chapterId, initialTab),
   closeChapterMetadataDialog: () => useUIStore.getState().closeChapterMetadataDialog(),
-  openSceneEditorDialog: (sceneId: SceneId) =>
-    useUIStore.getState().openSceneEditorDialog(sceneId),
+  openSceneEditorDialog: (sceneId: SceneId, openedViaTrigger: boolean = false) =>
+    useUIStore.getState().openSceneEditorDialog(sceneId, openedViaTrigger),
   closeSceneEditorDialog: () => useUIStore.getState().closeSceneEditorDialog(),
 };

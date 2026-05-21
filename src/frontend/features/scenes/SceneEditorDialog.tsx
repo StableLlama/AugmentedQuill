@@ -13,7 +13,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import { Clock } from 'lucide-react';
+import { Clock, MessageSquareDiff } from 'lucide-react';
 import type {
   Scene,
   SceneBeat,
@@ -24,6 +24,8 @@ import type {
 } from '../../types';
 import { useThemeClasses } from '../layout/ThemeContext';
 import { useFocusTrap } from '../layout/useFocusTrap';
+import { CodeMirrorEditor } from '../editor/CodeMirrorEditor';
+import type { EditorView } from '@codemirror/view';
 import { useScenes, useStoryLanguage, useStoryStore } from '../../stores/storyStore';
 import type { StoryStoreState } from '../../stores/storyStore';
 import { SourcebookHoverCard } from '../sourcebook/SourcebookHoverCard';
@@ -142,6 +144,8 @@ interface SceneEditorDialogProps {
   onUnlinkProse?: (sceneId: SceneId) => Promise<void>;
   /** Open sourcebook dialog for an entry id. */
   onOpenSourcebookEntry?: (entryId: string) => void;
+  openedViaTrigger?: boolean;
+  summaryEditorRef?: React.Ref<EditorView | null>;
 }
 
 const normalizeToken = (value: string): string => value.trim().toLowerCase();
@@ -168,6 +172,8 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
   onWriteScene,
   onUnlinkProse,
   onOpenSourcebookEntry,
+  openedViaTrigger = false,
+  summaryEditorRef,
 }: SceneEditorDialogProps) => {
   const { t, i18n } = useTranslation();
   const tc = useThemeClasses();
@@ -198,8 +204,14 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
     return map;
   }, [sourcebookEntries]);
 
+  const baselineScene = useStoryStore(
+    (s: StoryStoreState): Scene | null =>
+      s.baselineState.scenes?.find((candidate: Scene) => candidate.id === scene.id) ??
+      null
+  );
   const [summary, setSummary] = useState(scene.summary);
   const [beats, setBeats] = useState<SceneBeat[]>(scene.beats);
+  const [showDiff, setShowDiff] = useState(true);
   const [activeTokens, setActiveTokens] = useState<CharToken[]>(
     scene.active_characters.map((name: string, i: number): CharToken => {
       const dt = scene.tag_personal_datetimes?.find(
@@ -504,6 +516,7 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
     setConfirmDelete(false);
     setPendingSourcebookEntryId(null);
     setHoveredEntry(null);
+    setShowDiff(Boolean(openedViaTrigger || baselineScene));
 
     initialSnapshotRef.current = {
       summary: scene.summary,
@@ -516,7 +529,7 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
       sceneTimeValue: scene.scene_time?.temporal_zoned_datetime ?? null,
       timelineId: scene.timeline_id ?? 'main',
     };
-  }, [isOpen, scene, getLinkedProseText]);
+  }, [isOpen, scene, getLinkedProseText, openedViaTrigger, baselineScene]);
 
   useEffect((): void => {
     if (hoveredEntry && availableImages.length === 0) {
@@ -546,6 +559,66 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
   })();
   const parsedSceneTime = parseZonedDateTime(sceneTimeValue);
   const displayLocale = storyLanguage || i18n.resolvedLanguage || i18n.language;
+  const summaryBaseline = baselineScene?.summary ?? (openedViaTrigger ? '' : undefined);
+  const baselineBeats = baselineScene?.beats ?? [];
+  const baselineActiveCharacters = baselineScene?.active_characters ?? [];
+  const baselinePassiveCharacters = baselineScene?.passive_characters ?? [];
+  const baselineSourcebookIds = baselineScene?.sourcebook_entry_ids ?? [];
+  const baselineSceneTimeValue =
+    baselineScene?.scene_time?.temporal_zoned_datetime ?? null;
+  const baselineTimelineId = baselineScene
+    ? normalizeTimelineId(baselineScene.timeline_id)
+    : null;
+  const baselineColorTag = baselineScene?.color_tag ?? null;
+  const baselineStatus = baselineScene?.status;
+
+  const beatsChanged =
+    showDiff &&
+    !arraysEqual(
+      beats.map((beat: SceneBeat) => beat.text),
+      baselineBeats.map((beat: SceneBeat) => beat.text)
+    );
+  const activeCharactersChanged =
+    showDiff &&
+    !arraysEqual(
+      activeTokens.map((token: CharToken) => token.name),
+      baselineActiveCharacters
+    );
+  const passiveCharactersChanged =
+    showDiff &&
+    !arraysEqual(
+      passiveTokens.map((token: CharToken) => token.name),
+      baselinePassiveCharacters
+    );
+  const sourcebookChanged =
+    showDiff &&
+    !arraysEqual(
+      sourcebookTags.map((tag: SourcebookTag) => tag.id),
+      baselineSourcebookIds
+    );
+  const sceneTimeChanged = showDiff && sceneTimeValue !== baselineSceneTimeValue;
+  const timelineChanged =
+    showDiff &&
+    (baselineTimelineId === null
+      ? timelineId !== MAIN_TIMELINE_ID
+      : normalizeTimelineId(timelineId) !== baselineTimelineId);
+  const colorTagChanged =
+    showDiff && (baselineScene ? colorTag !== baselineColorTag : colorTag !== null);
+  const statusChanged = showDiff && baselineScene ? status !== baselineStatus : false;
+
+  const diffSectionCls = (changed: boolean): string =>
+    changed
+      ? `rounded-md ring-2 ring-brand-500/30 ${tc.isLight ? 'bg-brand-50' : 'bg-brand-gray-800'}`
+      : '';
+  const diffItemCls = (changed: boolean): string =>
+    changed
+      ? `rounded-md ${tc.isLight ? 'bg-brand-50 p-2' : 'bg-brand-gray-800/60 p-2'}`
+      : '';
+  const diffTagCls = (changed: boolean): string =>
+    changed
+      ? `${tc.isLight ? 'bg-brand-100' : 'bg-brand-gray-800'} ring-1 ring-brand-500/20`
+      : '';
+
   const inputCls = `w-full px-3 py-2 rounded-md border ${tc.border} ${tc.input} ${tc.text} text-sm focus:outline-none focus:ring-2 focus:ring-brand-500`;
   const labelCls = `block text-xs font-semibold uppercase tracking-wide ${tc.muted} mb-1`;
   const sectionCls = `space-y-2 pb-4 border-b ${tc.border}`;
@@ -850,31 +923,51 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
           className={`flex items-center justify-between px-5 py-3 border-b ${tc.border} flex-shrink-0`}
         >
           <h2 className={`text-base font-semibold ${tc.text}`}>{t('Edit Scene')}</h2>
-          <button
-            type="button"
-            aria-label={t('Close scene editor')}
-            onClick={onClose}
-            className={`p-1.5 rounded-md hover:bg-brand-gray-100 dark:hover:bg-brand-gray-800 ${tc.text}`}
-          >
-            ✕
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              aria-label={t('Toggle diff view')}
+              aria-pressed={showDiff}
+              title={showDiff ? t('Hide diff highlights') : t('Show diff highlights')}
+              onClick={(): void => setShowDiff((value: boolean): boolean => !value)}
+              className={`p-1.5 rounded-md transition-colors ${tc.text} hover:bg-brand-gray-100 dark:hover:bg-brand-gray-800`}
+            >
+              <MessageSquareDiff size={18} />
+            </button>
+            <button
+              type="button"
+              aria-label={t('Close scene editor')}
+              onClick={onClose}
+              className={`p-1.5 rounded-md hover:bg-brand-gray-100 dark:hover:bg-brand-gray-800 ${tc.text}`}
+            >
+              ✕
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
           <div className={sectionCls}>
             <label className={labelCls}>{t('Scene Summary')}</label>
-            <textarea
-              className={inputCls}
-              rows={3}
-              placeholder={t('Scene summary...')}
-              value={summary}
-              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>): void =>
-                setSummary(e.target.value)
-              }
-            />
+            <div
+              className={`rounded-md border ${tc.border} ${tc.input} overflow-hidden`}
+            >
+              <CodeMirrorEditor
+                ref={summaryEditorRef}
+                value={summary}
+                onChange={setSummary}
+                baselineValue={summaryBaseline}
+                showDiff={showDiff}
+                searchHighlightRanges={[]}
+                language={storyLanguage}
+                spellCheck={true}
+                mode="markdown"
+                className={`${inputCls} min-h-[120px]`}
+                placeholder={t('Scene summary...')}
+              />
+            </div>
           </div>
 
-          <div className={sectionCls}>
+          <div className={`${sectionCls} ${diffSectionCls(beatsChanged)}`}>
             <div className="flex items-center justify-between">
               <label className={labelCls}>{t('Beats')}</label>
               <button
@@ -885,39 +978,54 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
                 + {t('Add Beat')}
               </button>
             </div>
-            {beats.map((beat: SceneBeat, idx: number) => (
-              <div key={beat.id} className="flex gap-2 items-start">
-                <textarea
-                  className={`${inputCls} flex-1`}
-                  rows={2}
-                  placeholder={t('Beat text...')}
-                  value={beat.text}
-                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>): void =>
-                    updateBeat(idx, e.target.value)
-                  }
-                />
-                <button
-                  type="button"
-                  aria-label={t('Delete Beat')}
-                  onClick={(): void => deleteBeat(idx)}
-                  className={`mt-1 p-1.5 rounded-md hover:bg-red-100 dark:hover:bg-red-900/40 ${tc.muted}`}
+            {beats.map((beat: SceneBeat, idx: number) => {
+              const beatChanged =
+                showDiff && beat.text !== (baselineBeats[idx]?.text ?? '');
+              return (
+                <div
+                  key={beat.id}
+                  data-diff={beatChanged ? 'changed' : undefined}
+                  className={`${diffItemCls(beatChanged)} flex gap-2 items-start`}
                 >
-                  ✕
-                </button>
-              </div>
-            ))}
+                  <textarea
+                    className={`${inputCls} flex-1`}
+                    rows={2}
+                    placeholder={t('Beat text...')}
+                    value={beat.text}
+                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>): void =>
+                      updateBeat(idx, e.target.value)
+                    }
+                  />
+                  <button
+                    type="button"
+                    aria-label={t('Delete Beat')}
+                    onClick={(): void => deleteBeat(idx)}
+                    className={`mt-1 p-1.5 rounded-md hover:bg-red-100 dark:hover:bg-red-900/40 ${tc.muted}`}
+                  >
+                    ✕
+                  </button>
+                </div>
+              );
+            })}
           </div>
 
-          <div className={sectionCls}>
+          <div
+            className={`${sectionCls} ${diffSectionCls(activeCharactersChanged || passiveCharactersChanged)}`}
+          >
             <div>
               <label className={labelCls}>{t('Active Characters')}</label>
               <div className={`rounded-md border ${tc.border} ${tc.input} p-2`}>
                 <div className="flex flex-wrap gap-2">
                   {activeTokens.map((token: CharToken, idx: number) => {
                     const matched = entryByName.get(normalizeToken(token.name));
+                    const tokenChanged =
+                      showDiff &&
+                      (idx >= baselineActiveCharacters.length ||
+                        baselineActiveCharacters[idx] !== token.name);
                     return (
                       <div
                         key={`active-${idx}`}
+                        data-diff={tokenChanged ? 'changed' : undefined}
                         role="button"
                         tabIndex={0}
                         onDoubleClick={(): void =>
@@ -935,7 +1043,7 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
                           matched ? openHoverForEntry(e, matched) : undefined
                         }
                         onMouseLeave={closeHoverCard}
-                        className={`inline-flex items-center gap-1 px-2 py-1 rounded border text-xs ${matched ? 'bg-brand-500/10 border-brand-500/40' : `${tc.bg} ${tc.border}`}`}
+                        className={`inline-flex items-center gap-1 px-2 py-1 rounded border text-xs ${diffTagCls(tokenChanged)} ${matched ? `${tc.surface} border-brand-500/40` : `${tc.bg} ${tc.border}`}`}
                         title={
                           matched
                             ? t('Double click to open sourcebook entry')
@@ -1016,7 +1124,7 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
                     <button
                       key={`active-sug-${entry.id}`}
                       type="button"
-                      className={`w-full text-left px-2 py-1.5 text-xs ${tc.text} hover:bg-brand-500/10`}
+                      className={`w-full text-left px-2 py-1.5 text-xs ${tc.text} ${tc.isLight ? 'hover:bg-brand-500/10' : 'hover:bg-brand-gray-800'}`}
                       onClick={(): void => {
                         addActiveToken(entry.name);
                         setActiveInput('');
@@ -1035,9 +1143,14 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
                 <div className="flex flex-wrap gap-2">
                   {passiveTokens.map((token: CharToken, idx: number) => {
                     const matched = entryByName.get(normalizeToken(token.name));
+                    const tokenChanged =
+                      showDiff &&
+                      (idx >= baselinePassiveCharacters.length ||
+                        baselinePassiveCharacters[idx] !== token.name);
                     return (
                       <div
                         key={`passive-${idx}`}
+                        data-diff={tokenChanged ? 'changed' : undefined}
                         role="button"
                         tabIndex={0}
                         onDoubleClick={(): void =>
@@ -1055,7 +1168,7 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
                           matched ? openHoverForEntry(e, matched) : undefined
                         }
                         onMouseLeave={closeHoverCard}
-                        className={`inline-flex items-center gap-1 px-2 py-1 rounded border text-xs ${matched ? 'bg-brand-500/10 border-brand-500/40' : `${tc.bg} ${tc.border}`}`}
+                        className={`inline-flex items-center gap-1 px-2 py-1 rounded border text-xs ${diffTagCls(tokenChanged)} ${matched ? `${tc.surface} border-brand-500/40` : `${tc.bg} ${tc.border}`}`}
                         title={
                           matched
                             ? t('Double click to open sourcebook entry')
@@ -1136,7 +1249,7 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
                     <button
                       key={`passive-sug-${entry.id}`}
                       type="button"
-                      className={`w-full text-left px-2 py-1.5 text-xs ${tc.text} hover:bg-brand-500/10`}
+                      className={`w-full text-left px-2 py-1.5 text-xs ${tc.text} ${tc.isLight ? 'hover:bg-brand-500/10' : 'hover:bg-brand-gray-800'}`}
                       onClick={(): void => {
                         addPassiveToken(entry.name);
                         setPassiveInput('');
@@ -1150,16 +1263,21 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
             </div>
           </div>
 
-          <div className={sectionCls}>
+          <div className={`${sectionCls} ${diffSectionCls(sourcebookChanged)}`}>
             <label className={labelCls}>{t('Sourcebook')}</label>
             <div className={`rounded-md border ${tc.border} ${tc.input} p-2`}>
               <div className="flex flex-wrap gap-2">
-                {sourcebookTags.map((tag: SourcebookTag) => {
+                {sourcebookTags.map((tag: SourcebookTag, idx: number) => {
                   const entry = entryById.get(tag.id);
                   if (!entry) return null;
+                  const tagChanged =
+                    showDiff &&
+                    (idx >= baselineSourcebookIds.length ||
+                      baselineSourcebookIds[idx] !== tag.id);
                   return (
                     <div
                       key={`sourcebook-${entry.id}`}
+                      data-diff={tagChanged ? 'changed' : undefined}
                       role="button"
                       tabIndex={0}
                       onDoubleClick={(): void => handleTagDoubleClick(entry.id)}
@@ -1173,7 +1291,7 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
                         openHoverForEntry(e, entry)
                       }
                       onMouseLeave={closeHoverCard}
-                      className="inline-flex items-center gap-1 px-2 py-1 rounded border text-xs bg-brand-500/10 border-brand-500/40"
+                      className={`inline-flex items-center gap-1 px-2 py-1 rounded border text-xs ${diffTagCls(tagChanged)} ${tc.surface} border-brand-500/40`}
                       title={t('Double click to open sourcebook entry')}
                     >
                       <span className={tc.text}>{entry.name}</span>
@@ -1250,7 +1368,7 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
                   <button
                     key={`sourcebook-sug-${entry.id}`}
                     type="button"
-                    className={`w-full text-left px-2 py-1.5 text-xs ${tc.text} hover:bg-brand-500/10 flex items-center justify-between`}
+                    className={`w-full text-left px-2 py-1.5 text-xs ${tc.text} ${tc.isLight ? 'hover:bg-brand-500/10' : 'hover:bg-brand-gray-800'} flex items-center justify-between`}
                     onClick={(): void => {
                       addSourcebookTag(entry.id);
                       setSourcebookInput('');
@@ -1264,7 +1382,9 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
             )}
           </div>
 
-          <div className={sectionCls}>
+          <div
+            className={`${sectionCls} ${diffSectionCls(sceneTimeChanged || timelineChanged)}`}
+          >
             <div className="flex items-center justify-between mb-2">
               <label className={labelCls}>{t('Time')}</label>
               <div className="flex gap-2">
@@ -1289,7 +1409,7 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
             <div className="mb-2">
               <label className={labelCls}>{t('Timeline')}</label>
               <select
-                className={inputCls}
+                className={`${inputCls} ${timelineChanged ? 'ring-2 ring-brand-500/30' : ''}`}
                 value={timelineId}
                 onChange={(event: React.ChangeEvent<HTMLSelectElement>): void =>
                   setTimelineId(event.target.value)
@@ -1332,7 +1452,7 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
             )}
           </div>
 
-          <div className={sectionCls}>
+          <div className={`${sectionCls} ${diffSectionCls(colorTagChanged)}`}>
             <label className={labelCls}>{t('Color Tag')}</label>
             <div className="flex flex-wrap gap-2">
               <button
@@ -1353,10 +1473,10 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
             </div>
           </div>
 
-          <div className={sectionCls}>
+          <div className={`${sectionCls} ${diffSectionCls(statusChanged)}`}>
             <label className={labelCls}>{t('Status')}</label>
             <select
-              className={inputCls}
+              className={`${inputCls} ${statusChanged ? 'ring-2 ring-brand-500/30' : ''}`}
               value={status}
               aria-label={t('Scene status')}
               onChange={onStatusChange}

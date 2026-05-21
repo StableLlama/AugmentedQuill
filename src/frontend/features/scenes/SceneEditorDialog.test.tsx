@@ -18,6 +18,7 @@
 import React from 'react';
 import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
 import { I18nextProvider } from 'react-i18next';
+import type { EditorView } from '@codemirror/view';
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import i18n from '../app/i18n';
 import { SceneEditorDialog } from './SceneEditorDialog';
@@ -42,8 +43,16 @@ vi.mock('../../stores/storyStore', () => ({
   useScenes: vi.fn(() => [] as Scene[]),
   useStoryLanguage: vi.fn(() => 'en'),
   useStoryStore: vi.fn(
-    (selector: (state: { story: { sourcebook: SourcebookEntry[] } }) => unknown) =>
-      selector({ story: { sourcebook: sourcebookEntriesState } })
+    (
+      selector: (state: {
+        story: { sourcebook: SourcebookEntry[] };
+        baselineState: { scenes: Scene[] };
+      }) => unknown
+    ) =>
+      selector({
+        story: { sourcebook: sourcebookEntriesState },
+        baselineState: { scenes: [] },
+      })
   ),
 }));
 
@@ -119,6 +128,42 @@ describe('SceneEditorDialog rendering', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
+  it('opens diff view when triggered by an LLM scene mutation', () => {
+    wrap(
+      <SceneEditorDialog
+        scene={makeScene({ summary: 'AI-updated scene summary' })}
+        isOpen={true}
+        openedViaTrigger={true}
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+      />
+    );
+    const diffButton = screen.getByRole('button', { name: /Toggle diff view/i });
+    expect(diffButton).toBeTruthy();
+    expect(diffButton.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('highlights added beats in diff view', () => {
+    wrap(
+      <SceneEditorDialog
+        scene={makeScene({
+          summary: 'AI scene',
+          beats: [{ id: 'beat-1', text: 'New beat' }],
+        })}
+        isOpen={true}
+        openedViaTrigger={true}
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+      />
+    );
+
+    const beatTextarea = screen.getByDisplayValue('New beat');
+    const beatRow = beatTextarea.closest('div[data-diff="changed"]');
+    expect(beatRow).toBeTruthy();
+  });
+
   it('renders the dialog when isOpen is true', () => {
     wrap(
       <SceneEditorDialog
@@ -142,8 +187,8 @@ describe('SceneEditorDialog rendering', () => {
         onDelete={NOOP_DELETE}
       />
     );
-    const textarea = screen.getByDisplayValue('Opening act');
-    expect(textarea).toBeTruthy();
+    const editor = screen.getByRole('textbox', { name: /Scene summary/i });
+    expect(editor.textContent).toContain('Opening act');
   });
 });
 
@@ -157,6 +202,7 @@ describe('SceneEditorDialog save flow', () => {
       async (_updates: Partial<Omit<Scene, 'id'>>) => undefined
     );
     const onClose = vi.fn();
+    const summaryRef = React.createRef<EditorView | null>();
 
     wrap(
       <SceneEditorDialog
@@ -165,12 +211,17 @@ describe('SceneEditorDialog save flow', () => {
         onClose={onClose}
         onSave={onSave}
         onDelete={NOOP_DELETE}
+        summaryEditorRef={summaryRef}
       />
     );
 
-    // Change the summary
-    const textarea = screen.getByDisplayValue('Original');
-    fireEvent.change(textarea, { target: { value: 'Updated summary' } });
+    // Change the summary using the CodeMirror editor's direct view reference.
+    await act(async () => {
+      const view = summaryRef.current;
+      view?.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: 'Updated summary' },
+      });
+    });
 
     const saveBtn = screen.getByRole('button', { name: /Save/i });
     await act(async () => {
@@ -368,7 +419,8 @@ describe('SceneEditorDialog state reset', () => {
       />
     );
 
-    expect(screen.getByDisplayValue('Scene A')).toBeTruthy();
+    const editorA = screen.getByRole('textbox', { name: /Scene summary/i });
+    expect(editorA.textContent).toContain('Scene A');
 
     rerender(
       <I18nextProvider i18n={i18n}>
@@ -382,8 +434,9 @@ describe('SceneEditorDialog state reset', () => {
       </I18nextProvider>
     );
 
-    expect(screen.getByDisplayValue('Scene B')).toBeTruthy();
-    expect(screen.queryByDisplayValue('Scene A')).toBeNull();
+    const editorB = screen.getByRole('textbox', { name: /Scene summary/i });
+    expect(editorB.textContent).toContain('Scene B');
+    expect(editorB.textContent).not.toContain('Scene A');
   });
 
   it('resets proseDirty flag when dialog re-opens for new scene', async () => {
@@ -548,9 +601,7 @@ describe('SceneEditorDialog sourcebook navigation safety', () => {
       />
     );
 
-    fireEvent.change(screen.getByDisplayValue('Test scene'), {
-      target: { value: 'Changed summary' },
-    });
+    fireEvent.click(screen.getByRole('button', { name: /\+ Add Beat/i }));
     fireEvent.doubleClick(screen.getByText('Aether'));
 
     expect(screen.getByText(/You have unsaved scene changes/i)).toBeTruthy();
