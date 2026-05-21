@@ -39,6 +39,34 @@ def normalize_validate_story_config(
     if not merged.get("format"):
         merged["format"] = "markdown"
 
+    sourcebook_relations = merged.get("sourcebook_relations")
+    if isinstance(sourcebook_relations, list):
+        normalized_relations = []
+        for relation in sourcebook_relations:
+            if not isinstance(relation, dict):
+                normalized_relations.append(relation)
+                continue
+
+            raw_relation = relation.get("relation")
+            if isinstance(raw_relation, list) and len(raw_relation) == 3:
+                source, relation_text, target = raw_relation
+                source = source.strip() if isinstance(source, str) else ""
+                relation_text = (
+                    relation_text.strip() if isinstance(relation_text, str) else ""
+                )
+                target = target.strip() if isinstance(target, str) else ""
+
+                normalized_relation = dict(relation)
+                normalized_relation["relation"] = relation_text
+                if not normalized_relation.get("source_id"):
+                    normalized_relation["source_id"] = source
+                if not normalized_relation.get("target_id"):
+                    normalized_relation["target_id"] = target
+                normalized_relations.append(normalized_relation)
+            else:
+                normalized_relations.append(relation)
+        merged["sourcebook_relations"] = normalized_relations
+
     if not isinstance(merged.get("project_type"), str):
         if isinstance(merged.get("books"), list) and merged.get("books"):
             merged["project_type"] = "series"

@@ -2629,6 +2629,113 @@ class ChatToolsTest(TestCase):
         self.assertIn("error", content)
         self.assertIn("No update fields provided", content.get("error", ""))
 
+    def test_update_sourcebook_entry_supports_relations_in_update_data(self):
+        self._bootstrap_project()
+        self._post_single_tool(
+            "create_sourcebook_entry",
+            {
+                "name": "Sofia",
+                "description": "A researcher",
+                "category": "Character",
+            },
+        )
+        self._post_single_tool(
+            "create_sourcebook_entry",
+            {
+                "name": "Igor",
+                "description": "A peer",
+                "category": "Character",
+            },
+        )
+        result = self._post_single_tool(
+            "update_sourcebook_entry",
+            {
+                "name_or_id": "Sofia",
+                "relations": [
+                    {
+                        "target_id": "Igor",
+                        "relation": "is a peer of",
+                    }
+                ],
+            },
+        )
+        payload = result.get("appended_messages") or []
+        self.assertEqual(len(payload), 1)
+        content = json.loads(payload[0]["content"])
+        self.assertNotIn("error", content)
+        self.assertEqual(content.get("name"), "Sofia")
+        relations = content.get("relations") or []
+        self.assertEqual(len(relations), 1)
+        self.assertEqual(
+            relations[0].get("relation"), ["Sofia", "is a peer of", "Igor"]
+        )
+
+    def test_update_sourcebook_entry_supports_tuple_style_relations_in_update_data(
+        self,
+    ):
+        self._bootstrap_project()
+        self._post_single_tool(
+            "create_sourcebook_entry",
+            {
+                "name": "Dimitri (The Senior)",
+                "description": "Senior student",
+                "category": "Character",
+            },
+        )
+        self._post_single_tool(
+            "create_sourcebook_entry",
+            {
+                "name": "Igor",
+                "description": "Peer student",
+                "category": "Character",
+            },
+        )
+        self._post_single_tool(
+            "create_sourcebook_entry",
+            {
+                "name": "The Boarding School",
+                "description": "School setting",
+                "category": "Location",
+            },
+        )
+        result = self._post_single_tool(
+            "update_sourcebook_entry",
+            {
+                "name_or_id": "Dimitri (The Senior)",
+                "relations": [
+                    {
+                        "relation": [
+                            "Dimitri (The Senior)",
+                            "is a senior student at",
+                            "The Boarding School",
+                        ]
+                    },
+                    {
+                        "relation": [
+                            "Dimitri (The Senior)",
+                            "oversees/mentors",
+                            "Igor",
+                        ]
+                    },
+                ],
+            },
+        )
+        payload = result.get("appended_messages") or []
+        self.assertEqual(len(payload), 1)
+        content = json.loads(payload[0]["content"])
+        self.assertNotIn("error", content)
+        self.assertEqual(content.get("name"), "Dimitri (The Senior)")
+        relations = content.get("relations") or []
+        self.assertEqual(len(relations), 2)
+        self.assertEqual(
+            relations[0].get("relation"),
+            ["Dimitri (The Senior)", "is a senior student at", "The Boarding School"],
+        )
+        self.assertEqual(
+            relations[1].get("relation"),
+            ["Dimitri (The Senior)", "oversees/mentors", "Igor"],
+        )
+
     def test_update_story_metadata_invalid_patch_shape_fails_validation(self):
         self._bootstrap_project()
         result = self._post_single_tool(

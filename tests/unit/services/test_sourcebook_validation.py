@@ -24,6 +24,11 @@ from augmentedquill.services.chat.chat_tool_decorator import (
     get_tool_function,
 )
 from augmentedquill.services.projects.projects import select_project
+from augmentedquill.core.config import load_story_config
+from augmentedquill.services.story.config_story_ops import (
+    normalize_validate_story_config,
+)
+from augmentedquill.core.config import CURRENT_SCHEMA_VERSION, _get_story_schema
 
 
 class SourcebookValidationTest(TestCase):
@@ -211,6 +216,84 @@ class SourcebookValidationTest(TestCase):
     def test_update_with_invalid_id_returns_error(self):
         result = sourcebook_update_entry("nonexistent", name="Foo")
         self.assertIn("error", result)
+
+    def test_normalize_tuple_style_sourcebook_relations_at_load(self):
+        merged = {
+            "metadata": {"version": CURRENT_SCHEMA_VERSION},
+            "project_title": "Test Project",
+            "format": "markdown",
+            "sourcebook": {},
+            "sourcebook_relations": [
+                {
+                    "relation": [
+                        "Dimitri (The Senior)",
+                        "is a senior student at",
+                        "The Boarding School",
+                    ],
+                    "source_id": "Dimitri (The Senior)",
+                    "target_id": "",
+                }
+            ],
+        }
+
+        normalized = normalize_validate_story_config(
+            merged=merged,
+            path_label="test",
+            current_schema_version=CURRENT_SCHEMA_VERSION,
+            schema_loader=_get_story_schema,
+        )
+
+        self.assertEqual(
+            normalized["sourcebook_relations"][0]["relation"],
+            "is a senior student at",
+        )
+        self.assertEqual(
+            normalized["sourcebook_relations"][0]["target_id"],
+            "The Boarding School",
+        )
+
+    def test_load_story_config_migrates_tuple_style_relations_to_v5(self):
+        story_path = self.pdir / "story.json"
+        story_data = {
+            "metadata": {"version": 4},
+            "project_title": "Test Project",
+            "format": "markdown",
+            "sourcebook": {},
+            "sourcebook_relations": [
+                {
+                    "relation": [
+                        "Dimitri (The Senior)",
+                        "is a senior student at",
+                        "The Boarding School",
+                    ],
+                    "source_id": "Dimitri (The Senior)",
+                    "target_id": "",
+                }
+            ],
+        }
+        story_path.write_text(json.dumps(story_data), encoding="utf-8")
+
+        loaded = load_story_config(story_path)
+        self.assertEqual(loaded.get("metadata", {}).get("version"), 5)
+        self.assertEqual(
+            loaded["sourcebook_relations"][0]["relation"],
+            "is a senior student at",
+        )
+        self.assertEqual(
+            loaded["sourcebook_relations"][0]["target_id"],
+            "The Boarding School",
+        )
+
+        persisted = json.loads(story_path.read_text(encoding="utf-8"))
+        self.assertEqual(persisted.get("metadata", {}).get("version"), 5)
+        self.assertEqual(
+            persisted["sourcebook_relations"][0]["relation"],
+            "is a senior student at",
+        )
+        self.assertEqual(
+            persisted["sourcebook_relations"][0]["target_id"],
+            "The Boarding School",
+        )
 
     def test_update_with_invalid_fields_returns_error(self):
         # Create valid entry

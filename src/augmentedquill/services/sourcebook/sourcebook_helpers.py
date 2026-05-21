@@ -65,6 +65,63 @@ def _get_entry_relations(entry_id: str, story: dict) -> list[dict]:
     return out
 
 
+def _normalize_relation_input(entry_id: str, relation: dict) -> dict:
+    """Normalize a sourcebook relation payload from tool data."""
+    if not isinstance(relation, dict):
+        raise ValueError("Invalid relation: relation must be an object.")
+
+    normalized: dict[str, str | None] = {}
+    raw_relation = relation.get("relation")
+
+    if isinstance(raw_relation, list):
+        if len(raw_relation) != 3 or not all(
+            isinstance(item, str) for item in raw_relation
+        ):
+            raise ValueError(
+                "Invalid relation shape: expected [source, relation, target] strings."
+            )
+        source, relation_type, target = [item.strip() for item in raw_relation]
+        normalized["relation"] = relation_type
+
+        direction = (
+            str(relation.get("direction", "forward") or "forward").strip().lower()
+        )
+        if direction == "reverse":
+            normalized["source_id"] = target
+            normalized["target_id"] = entry_id
+        else:
+            if source.lower() == entry_id.lower():
+                normalized["source_id"] = entry_id
+                normalized["target_id"] = target
+            elif target.lower() == entry_id.lower():
+                normalized["source_id"] = source
+                normalized["target_id"] = entry_id
+                normalized["direction"] = "reverse"
+            else:
+                normalized["source_id"] = entry_id
+                normalized["target_id"] = target
+    else:
+        normalized["relation"] = str(raw_relation or "")
+        direction = (
+            str(relation.get("direction", "forward") or "forward").strip().lower()
+        )
+        if direction == "reverse":
+            normalized["source_id"] = relation.get("target_id") or relation.get(
+                "source_id"
+            )
+            normalized["target_id"] = entry_id
+            normalized["direction"] = "reverse"
+        else:
+            normalized["source_id"] = entry_id
+            normalized["target_id"] = relation.get("target_id")
+
+    for key in ("start_chapter", "end_chapter", "start_book", "end_book"):
+        if key in relation and relation.get(key) is not None:
+            normalized[key] = relation.get(key)
+
+    return normalized
+
+
 def _update_global_relations(
     entry_id: str, new_relations: list[dict] | None, story: dict
 ) -> Any:
@@ -82,20 +139,21 @@ def _update_global_relations(
 
     # Add new relations
     for r in new_relations:
-        d = r.get("direction", "forward")
+        normalized = _normalize_relation_input(entry_id, r)
+        d = normalized.get("direction", "forward")
         new_r = {
-            "relation": r.get("relation", ""),
-            "start_chapter": r.get("start_chapter"),
-            "end_chapter": r.get("end_chapter"),
-            "start_book": r.get("start_book"),
-            "end_book": r.get("end_book"),
+            "relation": normalized.get("relation", ""),
+            "start_chapter": normalized.get("start_chapter"),
+            "end_chapter": normalized.get("end_chapter"),
+            "start_book": normalized.get("start_book"),
+            "end_book": normalized.get("end_book"),
         }
         if d == "reverse":
-            new_r["source_id"] = r.get("target_id", "")
+            new_r["source_id"] = normalized.get("source_id", "")
             new_r["target_id"] = entry_id
         else:
             new_r["source_id"] = entry_id
-            new_r["target_id"] = r.get("target_id", "")
+            new_r["target_id"] = normalized.get("target_id", "")
 
         filtered_rels.append({k: v for k, v in new_r.items() if v is not None})
 

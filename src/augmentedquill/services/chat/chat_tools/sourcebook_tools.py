@@ -165,6 +165,15 @@ class ManageSourcebookUpdateData(ToolModel):
         None,
         description="Optional patch operation for images (add/remove/set/clear).",
     )
+    relations: list[dict] | None = Field(
+        None,
+        description=(
+            "Optional list of relation objects to replace the entry's existing relations. "
+            "Each relation may include target_id, relation_type, direction ('forward' or 'reverse'), "
+            "and optional chapter/book bounds. Tuple-style relations of the form "
+            "['Source', 'relation', 'Target'] are also accepted and normalized."
+        ),
+    )
     origin_date: str | None = Field(
         None,
         description=(
@@ -249,7 +258,8 @@ class ManageSourcebookParams(ToolModel):
         "action='get' (name_or_id), action='create' (entry_data), action='update' "
         "(name_or_id + update_data), action='delete' (name_or_id), "
         "action='add_relation' (relation_data), or action='remove_relation' "
-        "(relation_data). For action='create', entry_data may include relations to attach the new sourcebook entry into the existing world model."
+        "(relation_data). For action='create', entry_data may include relations to attach the new sourcebook entry into the existing world model. "
+        "For action='update', update_data may include relations to replace an entry's existing relations."
     ),
     allowed_roles=(CHAT_ROLE, EDITING_ROLE),
     capability="sourcebook-read",
@@ -339,6 +349,7 @@ async def manage_sourcebook(
             and params.update_data.synonyms_patch is None
             and params.update_data.images is None
             and params.update_data.images_patch is None
+            and params.update_data.relations is None
             and params.update_data.origin_date is None
         ):
             return {
@@ -381,6 +392,7 @@ async def manage_sourcebook(
             category=params.update_data.category,
             synonyms=synonyms_value,
             images=images_value,
+            relations=params.update_data.relations,
             origin_date=params.update_data.origin_date,
         )
         if "error" not in result:

@@ -251,6 +251,9 @@ class ChatToolContractsTest(TestCase):
                 self.assertIn(
                     "relations", properties.get("entry_data", {}).get("properties", {})
                 )
+                self.assertIn(
+                    "relations", properties.get("update_data", {}).get("properties", {})
+                )
 
     def test_manage_scenes_update_schema_exposes_patch_fields(self):
         tools = get_registered_tool_schemas(model_type="CHAT", project_type="series")

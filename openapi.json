@@ -6897,7 +6897,7 @@
         "type": "object",
         "required": ["text"],
         "title": "SceneBeat",
-        "description": "A single beat within a scene \u2013 a discrete micro-action or plot step.\n    "
+        "description": "A single beat within a scene \u2013 a discrete micro-action or plot step."
       },
       "SceneBoundaryAssignment": {
         "properties": {
@@ -6943,7 +6943,7 @@
         "type": "object",
         "required": ["temporal_zoned_datetime"],
         "title": "SceneChronologyTime",
-        "description": "Scene-local timeline point represented as a Temporal ZonedDateTime string.\n    "
+        "description": "Scene-local timeline point represented as a Temporal ZonedDateTime string."
       },
       "SceneCreateRequest": {
         "properties": {
@@ -7107,7 +7107,7 @@
         "additionalProperties": false,
         "type": "object",
         "title": "SceneCreateRequest",
-        "description": "Payload for creating a new scene.\n    "
+        "description": "Payload for creating a new scene."
       },
       "SceneDetectBoundariesRequest": {
         "properties": {
@@ -7669,7 +7669,7 @@
         "additionalProperties": false,
         "type": "object",
         "title": "SceneUpdateRequest",
-        "description": "Payload for updating an existing scene.\n    "
+        "description": "Payload for updating an existing scene."
       },
       "SceneWriteRequest": {
         "properties": {
