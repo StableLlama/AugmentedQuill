@@ -11,7 +11,8 @@ from typing import Any, Literal
 
 import json as _json
 
-from pydantic import AliasChoices, BaseModel, Field
+from pydantic import AliasChoices, Field
+from augmentedquill.services.chat.chat_tool_decorator import ToolModel
 
 from augmentedquill.core.config import load_story_config
 from augmentedquill.services.chat.chat_tool_decorator import (
@@ -31,7 +32,7 @@ from augmentedquill.services.projects.projects import (
 # Pydantic models for tool parameters
 
 
-class DeleteBookParams(BaseModel):
+class DeleteBookParams(ToolModel):
     """Parameters for deleting a book from a series."""
 
     book_id: str = Field(..., description="The UUID of the book to delete")
@@ -40,13 +41,13 @@ class DeleteBookParams(BaseModel):
     )
 
 
-class CreateNewBookParams(BaseModel):
+class CreateNewBookParams(ToolModel):
     """Parameters for creating a new book in a series."""
 
     title: str = Field(..., description="The title of the new book")
 
 
-class ManageProjectCreateData(BaseModel):
+class ManageProjectCreateData(ToolModel):
     """Payload for project creation."""
 
     name: str = Field(..., description="The project directory name")
@@ -57,7 +58,7 @@ class ManageProjectCreateData(BaseModel):
     )
 
 
-class ManageProjectDeleteData(BaseModel):
+class ManageProjectDeleteData(ToolModel):
     """Payload for project deletion."""
 
     name: str = Field(..., description="The project directory name to delete")
@@ -67,7 +68,7 @@ class ManageProjectDeleteData(BaseModel):
     )
 
 
-class ManageProjectTypeData(BaseModel):
+class ManageProjectTypeData(ToolModel):
     """Payload for project type changes."""
 
     new_type: str = Field(
@@ -76,7 +77,7 @@ class ManageProjectTypeData(BaseModel):
     )
 
 
-class ManageProjectParams(BaseModel):
+class ManageProjectParams(ToolModel):
     """Action router parameters for manage_project."""
 
     action: Literal["get_overview", "create", "list", "delete", "change_type"] = Field(

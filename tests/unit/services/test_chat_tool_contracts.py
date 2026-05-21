@@ -432,6 +432,79 @@ class ChatToolContractsTest(TestCase):
         )
         self.assertTrue(any(scene.get("id") == scene_id for scene in listed))
 
+    def test_manage_scenes_update_rejects_unknown_update_fields(self):
+        created = self._call_tool(
+            "manage_scenes",
+            {
+                "action": "create",
+                "create_data": {
+                    "summary": "Opening",
+                },
+            },
+            model_type="CHAT",
+        )
+        scene_id = created.get("id")
+        self.assertTrue(scene_id)
+
+        content = self._call_tool(
+            "manage_scenes",
+            {
+                "action": "update",
+                "scene_id": scene_id,
+                "update_data": {
+                    "notes": "Focus on this moment",
+                    "summary": "The Social ...",
+                },
+            },
+            model_type="CHAT",
+        )
+
+        self.assertEqual(content.get("error"), "Invalid parameters")
+        details = content.get("details") or []
+        self.assertTrue(
+            any(d.get("type") == "extra_forbidden" for d in details),
+            msg=f"Expected extra_forbidden detail, got {details}",
+        )
+        self.assertTrue(
+            any(d.get("loc") == ["update_data", "notes"] for d in details),
+            msg=f"Expected notes field location, got {details}",
+        )
+
+    def test_manage_scenes_create_rejects_invalid_prose_link_chapter_id(self):
+        content = self._call_tool(
+            "manage_scenes",
+            {
+                "action": "create",
+                "create_data": {
+                    "summary": "The Physical Education Class",
+                    "location": "The Classroom",
+                    "prose_link": {
+                        "scope_type": "chapter",
+                        "chapter_id": "}, ",
+                    },
+                },
+            },
+            model_type="CHAT",
+        )
+
+        self.assertEqual(content.get("error"), "Invalid parameters")
+        details = content.get("details") or []
+        self.assertTrue(
+            any(d.get("type") == "value_error" for d in details),
+            msg=f"Expected value_error detail, got {details}",
+        )
+        self.assertTrue(
+            any(
+                d.get("loc")
+                in (
+                    ["create_data", "prose_link"],
+                    ["create_data", "prose_link", "chapter_id"],
+                )
+                for d in details
+            ),
+            msg=f"Expected prose_link chapter_id detail location, got {details}",
+        )
+
     def test_manage_scenes_update_accepts_scene_time_shorthand_string(self):
         created = self._call_tool(
             "manage_scenes",

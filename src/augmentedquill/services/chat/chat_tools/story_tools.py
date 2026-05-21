@@ -11,7 +11,8 @@ from typing import Any, Literal
 
 import os
 
-from pydantic import BaseModel, Field
+from pydantic import Field
+from augmentedquill.services.chat.chat_tool_decorator import ToolModel
 
 from augmentedquill.core.config import load_story_config
 from augmentedquill.services.chat.chat_session_helpers import load_chat, save_chat
@@ -47,19 +48,19 @@ from augmentedquill.services.chat.chat_tools.metadata_patching import (
 # Pydantic models for tool parameters
 
 
-class WriteStoryContentParams(BaseModel):
+class WriteStoryContentParams(ToolModel):
     """Parameters for writing story content."""
 
     content: str = Field(..., description="The new content for the story")
 
 
-class GetBookMetadataParams(BaseModel):
+class GetBookMetadataParams(ToolModel):
     """Parameters for getting book metadata."""
 
     book_id: str = Field(..., description="The UUID of the book")
 
 
-class UpdateBookMetadataParams(BaseModel):
+class UpdateBookMetadataParams(ToolModel):
     """Parameters for updating book metadata."""
 
     book_id: str = Field(..., description="The UUID of the book to update")
@@ -76,7 +77,7 @@ class UpdateBookMetadataParams(BaseModel):
     )
 
 
-class ReadBookContentParams(BaseModel):
+class ReadBookContentParams(ToolModel):
     """Parameters for reading book content."""
 
     book_id: str = Field(..., description="The UUID of the book")
@@ -94,20 +95,20 @@ class ReadBookContentParams(BaseModel):
     )
 
 
-class WriteBookContentParams(BaseModel):
+class WriteBookContentParams(ToolModel):
     """Parameters for writing book content."""
 
     book_id: str = Field(..., description="The UUID of the book")
     content: str = Field(..., description="The new content for the book")
 
 
-class ReadEditingScratchpadParams(BaseModel):
+class ReadEditingScratchpadParams(ToolModel):
     """Parameters for reading the EDITING scratchpad (no parameters needed)."""
 
     pass
 
 
-class WriteEditingScratchpadParams(BaseModel):
+class WriteEditingScratchpadParams(ToolModel):
     """Parameters for writing to the EDITING scratchpad."""
 
     content: str = Field(
@@ -116,7 +117,7 @@ class WriteEditingScratchpadParams(BaseModel):
     )
 
 
-class ManageStoryCoreReadData(BaseModel):
+class ManageStoryCoreReadData(ToolModel):
     """Payload for story content reads."""
 
     start: int = Field(
@@ -133,7 +134,7 @@ class ManageStoryCoreReadData(BaseModel):
     )
 
 
-class ManageStoryCoreUpdateData(BaseModel):
+class ManageStoryCoreUpdateData(ToolModel):
     """Payload for story metadata updates."""
 
     title: str | None = Field(None, description="The new story title")
@@ -170,7 +171,7 @@ class ManageStoryCoreUpdateData(BaseModel):
     )
 
 
-class ManageStoryCoreSyncData(BaseModel):
+class ManageStoryCoreSyncData(ToolModel):
     """Payload for story summary synchronization."""
 
     mode: str = Field(
@@ -179,7 +180,7 @@ class ManageStoryCoreSyncData(BaseModel):
     )
 
 
-class ManageStoryCoreParams(BaseModel):
+class ManageStoryCoreParams(ToolModel):
     """Action router parameters for manage_story_core."""
 
     action: Literal[
@@ -205,7 +206,7 @@ class ManageStoryCoreParams(BaseModel):
     )
 
 
-class ManageScratchpadWriteData(BaseModel):
+class ManageScratchpadWriteData(ToolModel):
     """Payload for scratchpad writes."""
 
     content: str = Field(
@@ -218,7 +219,7 @@ class ManageScratchpadWriteData(BaseModel):
     )
 
 
-class ManageScratchpadParams(BaseModel):
+class ManageScratchpadParams(ToolModel):
     """Action router parameters for manage_scratchpad."""
 
     action: Literal["read", "write"] = Field(

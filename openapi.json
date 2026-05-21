@@ -4489,6 +4489,7 @@
             "title": "Book Ids"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": ["book_ids"],
         "title": "BooksReorderRequest",
@@ -4782,6 +4783,7 @@
             "title": "Book Id"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": ["chapter_ids"],
         "title": "ChaptersReorderRequest",
@@ -6557,6 +6559,7 @@
             "title": "Active Chapter Id"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": ["query", "replacement"],
         "title": "ReplaceAllRequest",
@@ -6697,6 +6700,7 @@
             "description": "Zero-based index of the match within this section+field"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "query",
@@ -6889,10 +6893,11 @@
             "description": "Optional link from this beat to a specific prose range."
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": ["text"],
         "title": "SceneBeat",
-        "description": "A single beat within a scene \u2013 a discrete micro-action or plot step."
+        "description": "A single beat within a scene \u2013 a discrete micro-action or plot step.\n    "
       },
       "SceneBoundaryAssignment": {
         "properties": {
@@ -6920,12 +6925,25 @@
             "type": "string",
             "title": "Temporal Zoned Datetime",
             "description": "Normalized ISO 8601 timestamp for the scene's chronology."
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value",
+            "description": "Optional shorthand scene time string accepted by the tool. When provided, it is normalized into temporal_zoned_datetime."
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": ["temporal_zoned_datetime"],
         "title": "SceneChronologyTime",
-        "description": "Scene-local timeline point represented as a Temporal ZonedDateTime string."
+        "description": "Scene-local timeline point represented as a Temporal ZonedDateTime string.\n    "
       },
       "SceneCreateRequest": {
         "properties": {
@@ -6965,7 +6983,7 @@
             },
             "type": "array",
             "title": "Sourcebook Entry Ids",
-            "description": "Sourcebook entry IDs needed to ground the scene's facts, setting, or canon references."
+            "description": "Sourcebook entry IDs needed to ground the scene's facts, setting, or canon references. Always include relevant sourcebook entries when creating a scene so the scene remains connected to existing world knowledge."
           },
           "location": {
             "anyOf": [
@@ -7000,7 +7018,7 @@
                 "type": "null"
               }
             ],
-            "description": "Formal timeline position for the scene. Prefer this when ordering matters. Accepts ISO-like timestamps and normalizes them."
+            "description": "Formal timeline position for the scene. Always set this when the scene can be placed on the story timeline; if an exact timestamp is not known, use order_before/order_after to capture relative chronology. Accepts ISO-like timestamps and normalizes them."
           },
           "timeline_id": {
             "type": "string",
@@ -7086,9 +7104,10 @@
             "description": "Per-tag personal age overrides used for time-travel or age-specific ordering. Leave empty unless you need those overrides."
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "title": "SceneCreateRequest",
-        "description": "Payload for creating a new scene."
+        "description": "Payload for creating a new scene.\n    "
       },
       "SceneDetectBoundariesRequest": {
         "properties": {
@@ -7227,6 +7246,7 @@
         "properties": {
           "scope_type": {
             "type": "string",
+            "enum": ["story", "chapter"],
             "title": "Scope Type",
             "description": "Which content scope the scene is linked to: 'story' or 'chapter'."
           },
@@ -7279,6 +7299,7 @@
             "description": "Computed end offset within the linked content file."
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": ["scope_type"],
         "title": "SceneProseLink",
@@ -7389,10 +7410,11 @@
             "description": "Human-readable age such as '17y', '17y 3m', or '30d'."
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": ["role", "ref", "personal_age"],
         "title": "SceneTagPersonalDatetime",
-        "description": "Personal age override for one specific tag instance in a scene.\n\n``role`` is ``'active'``, ``'passive'``, or ``'sourcebook'``.\n``ref`` is the character name (for active/passive) or sourcebook entry ID\n(for sourcebook).\n``index`` is the 0-based position within the role's list \u2013 this allows\nthe same character to appear multiple times in one scene (e.g. a time\ntraveller meeting their younger self).\n``personal_age`` is a human-readable age string such as ``'17y'``,\n``'17y 3m'``, ``'5m 12d'``, or ``'30d'``."
+        "description": "Personal age override for a single scene tag.\n\n``role`` is ``'active'``, ``'passive'``, or ``'sourcebook'``.\n``ref`` is the character name (for active/passive) or sourcebook entry ID\n(for sourcebook).\n``index`` is the 0-based position within the role's list \u2013 this allows\nthe same character to appear multiple times in one scene (e.g. a time\ntraveller meeting their younger self).\n``personal_age`` is a human-readable age string such as ``'17y'``,\n``'17y 3m'``, ``'5m 12d'``, or ``'30d'``."
       },
       "SceneUpdateProseContentRequest": {
         "properties": {
@@ -7644,9 +7666,10 @@
             "description": "Replacement per-tag personal age overrides. Use None to leave the field unchanged, or an explicit list to replace it."
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "title": "SceneUpdateRequest",
-        "description": "Payload for updating an existing scene (full replacement)."
+        "description": "Payload for updating an existing scene.\n    "
       },
       "SceneWriteRequest": {
         "properties": {
@@ -7804,6 +7827,7 @@
             "description": "Chapter ID to use when scope is current_chapter"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": ["query"],
         "title": "SearchOptions",

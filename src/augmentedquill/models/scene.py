@@ -20,10 +20,11 @@ never persisted in ``story.json``.
 
 from __future__ import annotations
 
+import re
 import uuid
 from typing import Any, Literal, Optional, TypeAlias
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from augmentedquill.models.temporal_utils import normalize_temporal_value
 
@@ -33,8 +34,12 @@ _normalize_scene_temporal_value = normalize_temporal_value
 SceneId: TypeAlias = int
 
 
+def _is_safe_link_identifier(value: str) -> bool:
+    return bool(re.fullmatch(r"[A-Za-z0-9_.-]+", value or ""))
+
+
 class SceneTagPersonalDatetime(BaseModel):
-    """Personal age override for one specific tag instance in a scene.
+    """Personal age override for a single scene tag.
 
     ``role`` is ``'active'``, ``'passive'``, or ``'sourcebook'``.
     ``ref`` is the character name (for active/passive) or sourcebook entry ID
@@ -45,6 +50,8 @@ class SceneTagPersonalDatetime(BaseModel):
     ``personal_age`` is a human-readable age string such as ``'17y'``,
     ``'17y 3m'``, ``'5m 12d'``, or ``'30d'``.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     role: Literal["active", "passive", "sourcebook"] = Field(
         ..., description="Which tag list this override applies to."
@@ -88,7 +95,9 @@ class SceneProseLink(BaseModel):
     and are excluded from disk storage.
     """
 
-    scope_type: str = Field(
+    model_config = ConfigDict(extra="forbid")
+
+    scope_type: Literal["story", "chapter"] = Field(
         ...,
         description="Which content scope the scene is linked to: 'story' or 'chapter'.",
     )
@@ -100,6 +109,31 @@ class SceneProseLink(BaseModel):
         None,
         description="Book ID when the linked prose belongs to a book chapter.",
     )
+
+    @model_validator(mode="after")
+    def _validate_scope(self) -> "SceneProseLink":
+        if self.scope_type == "chapter":
+            if not self.chapter_id or not self.chapter_id.strip():
+                raise ValueError("chapter_id is required when scope_type='chapter'")
+            if not _is_safe_link_identifier(self.chapter_id):
+                raise ValueError(
+                    "chapter_id must only contain letters, digits, '-', '_', or '.'."
+                )
+            if (
+                self.book_id is not None
+                and self.book_id != ""
+                and not _is_safe_link_identifier(self.book_id)
+            ):
+                raise ValueError(
+                    "book_id must only contain letters, digits, '-', '_', or '.'."
+                )
+        else:
+            if self.chapter_id not in (None, ""):
+                raise ValueError("chapter_id must be omitted when scope_type='story'")
+            if self.book_id not in (None, ""):
+                raise ValueError("book_id must be omitted when scope_type='story'")
+        return self
+
     # Computed at read time from file markers; never written to story.json.
     start_offset: Optional[int] = Field(
         None,
@@ -113,6 +147,8 @@ class SceneProseLink(BaseModel):
 
 class SceneBeat(BaseModel):
     """A single beat within a scene – a discrete micro-action or plot step."""
+
+    model_config = ConfigDict(extra="forbid")
 
     id: str = Field(
         default_factory=lambda: str(uuid.uuid4()),
@@ -130,8 +166,17 @@ class SceneBeat(BaseModel):
 class SceneChronologyTime(BaseModel):
     """Scene-local timeline point represented as a Temporal ZonedDateTime string."""
 
+    model_config = ConfigDict(extra="forbid")
+
     temporal_zoned_datetime: str = Field(
         ..., description="Normalized ISO 8601 timestamp for the scene's chronology."
+    )
+    value: str | None = Field(
+        None,
+        description=(
+            "Optional shorthand scene time string accepted by the tool. "
+            "When provided, it is normalized into temporal_zoned_datetime."
+        ),
     )
 
     @model_validator(mode="before")
@@ -202,6 +247,8 @@ class Scene(BaseModel):
 
 class SceneCreateRequest(BaseModel):
     """Payload for creating a new scene."""
+
+    model_config = ConfigDict(extra="forbid")
 
     summary: str = Field(
         default="",
@@ -312,7 +359,9 @@ class SceneCreateRequest(BaseModel):
 
 
 class SceneUpdateRequest(BaseModel):
-    """Payload for updating an existing scene (full replacement)."""
+    """Payload for updating an existing scene."""
+
+    model_config = ConfigDict(extra="forbid")
 
     summary: Optional[str] = Field(
         None,

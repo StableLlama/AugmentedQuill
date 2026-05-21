@@ -13,7 +13,8 @@ These tools are available to the CHAT and EDITING model roles.
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import Field
+from augmentedquill.services.chat.chat_tool_decorator import ToolModel
 
 from augmentedquill.services.chat.chat_tool_decorator import (
     CHAT_ROLE,
@@ -22,7 +23,7 @@ from augmentedquill.services.chat.chat_tool_decorator import (
 )
 
 
-class SearchAndReplaceParams(BaseModel):
+class SearchAndReplaceParams(ToolModel):
     """Action router parameters for search_and_replace."""
 
     action: Literal["search", "replace"] = Field(

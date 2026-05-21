@@ -10,7 +10,8 @@
 from typing import Any
 import json
 
-from pydantic import AliasChoices, BaseModel, Field
+from pydantic import AliasChoices, Field
+from augmentedquill.services.chat.chat_tool_decorator import ToolModel
 
 from augmentedquill.core.config import load_story_config
 from augmentedquill.core.prompts import get_user_prompt
@@ -154,7 +155,7 @@ def _build_sourcebook_entries_context(entry_names: list[str], language: str) -> 
 # ============================================================================
 
 
-class CallWritingLlmParams(BaseModel):
+class CallWritingLlmParams(ToolModel):
     """Represents the CallWritingLlmParams type."""
 
     instruction: str = Field(
@@ -477,7 +478,7 @@ async def call_writing_llm(
 # ============================================================================
 
 
-class CallEditingAssistantParams(BaseModel):
+class CallEditingAssistantParams(ToolModel):
     """Represents the CallEditingAssistantParams type."""
 
     task: str = Field(

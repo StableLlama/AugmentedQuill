@@ -13,7 +13,8 @@ import base64
 import uuid
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import Field
+from augmentedquill.services.chat.chat_tool_decorator import ToolModel
 
 from augmentedquill.services.chat.chat_tool_decorator import (
     CHAT_ROLE,
@@ -25,14 +26,14 @@ from augmentedquill.services.chat.chat_tool_decorator import (
 # Pydantic models for tool parameters
 
 
-class ManageImagesCreateData(BaseModel):
+class ManageImagesCreateData(ToolModel):
     """Payload for creating image placeholders."""
 
     description: str = Field(..., description="Description of the desired image")
     title: str | None = Field(None, description="Optional title for the image")
 
 
-class ManageImagesMetadataData(BaseModel):
+class ManageImagesMetadataData(ToolModel):
     """Payload for setting image metadata."""
 
     filename: str = Field(..., description="The filename of the image")
@@ -40,7 +41,7 @@ class ManageImagesMetadataData(BaseModel):
     description: str | None = Field(None, description="New description for the image")
 
 
-class ManageImagesParams(BaseModel):
+class ManageImagesParams(ToolModel):
     """Action router parameters for manage_images."""
 
     action: Literal[
@@ -268,7 +269,7 @@ async def manage_images(
 # ---------------------------------------------------------------------------
 
 
-class InsertImageInChapterParams(BaseModel):
+class InsertImageInChapterParams(ToolModel):
     """Parameters for inserting an image reference into a chapter."""
 
     chap_id: int = Field(..., description="The numeric ID of the chapter.")

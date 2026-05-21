@@ -11,12 +11,17 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import ConfigDict, Field, model_validator
+from augmentedquill.services.chat.chat_tool_decorator import ToolModel
 
 
-class ConflictEntry(BaseModel):
+class ConflictEntry(ToolModel):
     """Structured conflict entry used by chapter and story metadata tools."""
 
+    id: str | None = Field(
+        None,
+        description="Optional stable conflict identifier. If omitted, a new one may be assigned.",
+    )
     description: str = Field(
         ..., description="Short description of the unresolved story conflict."
     )
@@ -30,7 +35,7 @@ class ConflictEntry(BaseModel):
     )
 
 
-class TextPatch(BaseModel):
+class TextPatch(ToolModel):
     """Patch operation for text fields."""
 
     operation: Literal["replace", "append", "prepend", "replace_text"] = Field(
@@ -75,7 +80,7 @@ class TextPatch(BaseModel):
         return self
 
 
-class StringListPatch(BaseModel):
+class StringListPatch(ToolModel):
     """Patch operation for string list fields (tags, synonyms, images)."""
 
     set: list[str] | None = Field(
@@ -97,7 +102,7 @@ class StringListPatch(BaseModel):
     )
 
 
-class ConflictPatchOperation(BaseModel):
+class ConflictPatchOperation(ToolModel):
     """One atomic conflict-list change."""
 
     model_config = ConfigDict(extra="forbid")
@@ -173,7 +178,7 @@ class ConflictPatchOperation(BaseModel):
         return self
 
 
-class ConflictListPatch(BaseModel):
+class ConflictListPatch(ToolModel):
     """Patch operation for conflict list fields."""
 
     operations: list[ConflictPatchOperation] = Field(

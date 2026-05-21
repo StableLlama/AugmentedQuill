@@ -11,7 +11,8 @@ from typing import Any
 
 import json as _json
 
-from pydantic import BaseModel, Field
+from pydantic import Field
+from augmentedquill.services.chat.chat_tool_decorator import ToolModel
 
 from augmentedquill.core.config import load_story_config
 from augmentedquill.services.chapters.chapter_helpers import (
@@ -149,7 +150,7 @@ def compose_current_chapter_state(payload: dict) -> dict | None:
 # ============================================================================
 
 
-class GetChapterMetadataParams(BaseModel):
+class GetChapterMetadataParams(ToolModel):
     """Represents the GetChapterMetadataParams type."""
 
     chap_id: int | None = Field(
@@ -166,7 +167,7 @@ class GetChapterMetadataParams(BaseModel):
     )
 
 
-class UpdateChapterMetadataParams(BaseModel):
+class UpdateChapterMetadataParams(ToolModel):
     """Represents the UpdateChapterMetadataParams type."""
 
     chap_id: int = Field(..., description="The chapter ID to update metadata for")
@@ -209,13 +210,13 @@ class UpdateChapterMetadataParams(BaseModel):
     )
 
 
-class GetChapterSummariesParams(BaseModel):
+class GetChapterSummariesParams(ToolModel):
     """Represents the GetChapterSummariesParams type."""
 
     pass
 
 
-class GetChapterContentParams(BaseModel):
+class GetChapterContentParams(ToolModel):
     """Represents the GetChapterContentParams type."""
 
     chap_id: int | None = Field(
@@ -236,20 +237,20 @@ class GetChapterContentParams(BaseModel):
     )
 
 
-class GetCurrentChapterParams(BaseModel):
+class GetCurrentChapterParams(ToolModel):
     """No parameters required, active chapter is inferred from context."""
 
     pass
 
 
-class WriteChapterContentParams(BaseModel):
+class WriteChapterContentParams(ToolModel):
     """Represents the WriteChapterContentParams type."""
 
     chap_id: int = Field(..., description="The chapter ID to write content to")
     content: str = Field(..., description="The content to write")
 
 
-class ReplaceTextInChapterParams(BaseModel):
+class ReplaceTextInChapterParams(ToolModel):
     """Represents the ReplaceTextInChapterParams type."""
 
     chap_id: int = Field(..., description="The chapter ID to edit")
@@ -257,14 +258,14 @@ class ReplaceTextInChapterParams(BaseModel):
     new_text: str = Field(..., description="The new text to insert instead")
 
 
-class WriteChapterSummaryParams(BaseModel):
+class WriteChapterSummaryParams(ToolModel):
     """Represents the WriteChapterSummaryParams type."""
 
     chap_id: int = Field(..., description="The chapter ID to write summary to")
     summary: str = Field(..., description="The summary to write")
 
 
-class SyncSummaryParams(BaseModel):
+class SyncSummaryParams(ToolModel):
     """Represents the SyncSummaryParams type."""
 
     chap_id: int = Field(..., description="The chapter ID to generate summary for")
@@ -274,7 +275,7 @@ class SyncSummaryParams(BaseModel):
     )
 
 
-class WriteChapterParams(BaseModel):
+class WriteChapterParams(ToolModel):
     """Represents the WriteChapterParams type."""
 
     chap_id: int = Field(
@@ -282,13 +283,13 @@ class WriteChapterParams(BaseModel):
     )
 
 
-class ContinueChapterParams(BaseModel):
+class ContinueChapterParams(ToolModel):
     """Represents the ContinueChapterParams type."""
 
     chap_id: int = Field(..., description="The chapter ID to continue writing")
 
 
-class CreateNewChapterParams(BaseModel):
+class CreateNewChapterParams(ToolModel):
     """Represents the CreateNewChapterParams type."""
 
     title: str = Field("", description="The title for the new chapter")
@@ -297,33 +298,33 @@ class CreateNewChapterParams(BaseModel):
     )
 
 
-class GetChapterHeadingParams(BaseModel):
+class GetChapterHeadingParams(ToolModel):
     """Represents the GetChapterHeadingParams type."""
 
     chap_id: int = Field(..., description="The chapter ID to get heading for")
 
 
-class WriteChapterHeadingParams(BaseModel):
+class WriteChapterHeadingParams(ToolModel):
     """Represents the WriteChapterHeadingParams type."""
 
     chap_id: int = Field(..., description="The chapter ID to write heading to")
     heading: str = Field(..., description="The heading to write")
 
 
-class GetChapterSummaryParams(BaseModel):
+class GetChapterSummaryParams(ToolModel):
     """Represents the GetChapterSummaryParams type."""
 
     chap_id: int = Field(..., description="The chapter ID to get summary for")
 
 
-class DeleteChapterParams(BaseModel):
+class DeleteChapterParams(ToolModel):
     """Represents the DeleteChapterParams type."""
 
     chap_id: int = Field(..., description="The chapter ID to delete")
     confirm: bool = Field(False, description="Set to true to confirm deletion")
 
 
-class RecommendMetadataUpdatesParams(BaseModel):
+class RecommendMetadataUpdatesParams(ToolModel):
     """Represents the RecommendMetadataUpdatesParams type."""
 
     story_summary: str | None = Field(
@@ -695,7 +696,7 @@ async def replace_text_in_chapter(
 MARKER = "~~~"
 
 
-class InsertTextAtMarkerParams(BaseModel):
+class InsertTextAtMarkerParams(ToolModel):
     """Parameters for inserting text at the fixed marker in a chapter."""
 
     chap_id: int = Field(..., description="The numeric ID of the chapter.")
@@ -745,7 +746,7 @@ async def insert_text_at_marker(
     }
 
 
-class ApplyChapterReplacementsParams(BaseModel):
+class ApplyChapterReplacementsParams(ToolModel):
     """Parameters for applying multiple replacements in a chapter."""
 
     chap_id: int = Field(..., description="The numeric ID of the chapter.")

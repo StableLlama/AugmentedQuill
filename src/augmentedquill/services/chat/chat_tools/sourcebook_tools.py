@@ -9,7 +9,8 @@
 
 from typing import Any, List, Literal, Union
 
-from pydantic import BaseModel, Field
+from pydantic import Field
+from augmentedquill.services.chat.chat_tool_decorator import ToolModel
 
 from augmentedquill.services.chat.chat_tool_decorator import (
     CHAT_ROLE,
@@ -103,7 +104,7 @@ def _strip_internal_sourcebook_fields_list(entries: list[dict]) -> list[dict]:
 # Pydantic models for tool parameters
 
 
-class ManageSourcebookEntryData(BaseModel):
+class ManageSourcebookEntryData(ToolModel):
     """Payload for creating sourcebook entries."""
 
     name: str = Field(..., description="The name of the sourcebook entry")
@@ -140,7 +141,7 @@ class ManageSourcebookEntryData(BaseModel):
     )
 
 
-class ManageSourcebookUpdateData(BaseModel):
+class ManageSourcebookUpdateData(ToolModel):
     """Payload for updating sourcebook entries."""
 
     name: str | None = Field(None, description="New name for the entry")
@@ -176,7 +177,7 @@ class ManageSourcebookUpdateData(BaseModel):
     )
 
 
-class ManageSourcebookRelationData(BaseModel):
+class ManageSourcebookRelationData(ToolModel):
     """Payload for adding/removing a directed sourcebook relation."""
 
     source_id: str = Field(..., description="The name/ID of the source entry.")
@@ -199,7 +200,7 @@ class ManageSourcebookRelationData(BaseModel):
     )
 
 
-class ManageSourcebookParams(BaseModel):
+class ManageSourcebookParams(ToolModel):
     """Action router parameters for manage_sourcebook."""
 
     action: Literal[

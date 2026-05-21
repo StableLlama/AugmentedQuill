@@ -25,7 +25,7 @@ from collections.abc import Callable
 from copy import deepcopy
 from typing import Any, get_args, get_origin
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from augmentedquill.services.exceptions import ServiceError
 
@@ -33,6 +33,13 @@ CHAT_ROLE = "CHAT"
 EDITING_ROLE = "EDITING"
 WRITING_ROLE = "WRITING"
 MODEL_ROLES = (CHAT_ROLE, EDITING_ROLE, WRITING_ROLE)
+
+
+class ToolModel(BaseModel):
+    """Base model for chat tool argument classes that rejects unknown fields."""
+
+    model_config = ConfigDict(extra="forbid")
+
 
 _TOOL_REGISTRY: dict[str, dict[str, Any]] = {}
 
@@ -260,7 +267,10 @@ def chat_tool(
                 f"Tool function {tool_name} 'params' must be annotated with a Pydantic BaseModel"
             )
 
-        schema = _inline_local_refs(_simplify_schema(params_type.model_json_schema()))
+        original_schema = params_type.model_json_schema()
+        simplified_schema = _inline_local_refs(
+            _simplify_schema(deepcopy(original_schema))
+        )
         tool_def = {
             "type": "function",
             "function": {
@@ -268,15 +278,15 @@ def chat_tool(
                 "description": description,
                 "parameters": {
                     "type": "object",
-                    "properties": schema.get("properties", {}),
-                    "required": schema.get("required", []),
+                    "properties": simplified_schema.get("properties", {}),
+                    "required": simplified_schema.get("required", []),
                     "additionalProperties": False,
                 },
             },
         }
 
-        allowed_params = set((schema.get("properties") or {}).keys())
-        required_params = set(schema.get("required") or [])
+        allowed_params = set((simplified_schema.get("properties") or {}).keys())
+        required_params = set(simplified_schema.get("required") or [])
 
         async def wrapper(
             args_obj: dict, call_id: str, payload: dict, mutations: dict

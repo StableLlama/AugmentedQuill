@@ -2903,6 +2903,11 @@ export interface components {
        * @description Normalized ISO 8601 timestamp for the scene's chronology.
        */
       temporal_zoned_datetime: string;
+      /**
+       * Value
+       * @description Optional shorthand scene time string accepted by the tool. When provided, it is normalized into temporal_zoned_datetime.
+       */
+      value?: string | null;
     };
     /**
      * SceneCreateRequest
@@ -2932,7 +2937,7 @@ export interface components {
       passive_characters?: string[];
       /**
        * Sourcebook Entry Ids
-       * @description Sourcebook entry IDs needed to ground the scene's facts, setting, or canon references.
+       * @description Sourcebook entry IDs needed to ground the scene's facts, setting, or canon references. Always include relevant sourcebook entries when creating a scene so the scene remains connected to existing world knowledge.
        */
       sourcebook_entry_ids?: string[];
       /**
@@ -2945,7 +2950,7 @@ export interface components {
        * @description Human-readable scene time string when a formal chronology is not needed.
        */
       time?: string | null;
-      /** @description Formal timeline position for the scene. Prefer this when ordering matters. Accepts ISO-like timestamps and normalizes them. */
+      /** @description Formal timeline position for the scene. Always set this when the scene can be placed on the story timeline; if an exact timestamp is not known, use order_before/order_after to capture relative chronology. Accepts ISO-like timestamps and normalizes them. */
       scene_time?: components['schemas']['SceneChronologyTime'] | null;
       /**
        * Timeline Id
@@ -3076,8 +3081,9 @@ export interface components {
       /**
        * Scope Type
        * @description Which content scope the scene is linked to: 'story' or 'chapter'.
+       * @enum {string}
        */
-      scope_type: string;
+      scope_type: 'story' | 'chapter';
       /**
        * Chapter Id
        * @description Chapter ID when scope_type='chapter'. Leave empty for story scope.
@@ -3136,7 +3142,7 @@ export interface components {
     };
     /**
      * SceneTagPersonalDatetime
-     * @description Personal age override for one specific tag instance in a scene.
+     * @description Personal age override for a single scene tag.
      *
      *     ``role`` is ``'active'``, ``'passive'``, or ``'sourcebook'``.
      *     ``ref`` is the character name (for active/passive) or sourcebook entry ID
@@ -3181,7 +3187,7 @@ export interface components {
     };
     /**
      * SceneUpdateRequest
-     * @description Payload for updating an existing scene (full replacement).
+     * @description Payload for updating an existing scene.
      */
     SceneUpdateRequest: {
       /**

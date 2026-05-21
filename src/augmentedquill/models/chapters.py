@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class ChapterSummary(BaseModel):
@@ -88,11 +88,15 @@ class ChapterSummaryUpdate(BaseModel):
 class ChaptersReorderRequest(BaseModel):
     """Request body for reordering chapters."""
 
+    model_config = ConfigDict(extra="forbid")
+
     chapter_ids: list[int]
     book_id: str | None = None
 
 
 class BooksReorderRequest(BaseModel):
     """Request body for reordering books."""
+
+    model_config = ConfigDict(extra="forbid")
 
     book_ids: list[str]

@@ -9,7 +9,8 @@
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import ConfigDict, Field
+from augmentedquill.services.chat.chat_tool_decorator import ToolModel
 
 from augmentedquill.models.scene import (
     SceneBeat,
@@ -41,8 +42,10 @@ from augmentedquill.services.scenes.scene_service import (
 )
 
 
-class ManageScenesUpdateData(BaseModel):
+class ManageScenesUpdateData(ToolModel):
     """Payload for scene updates supporting full and partial patch operations."""
+
+    model_config = ConfigDict(extra="forbid")
 
     summary: str | None = Field(None, description="Optional full replacement summary.")
     summary_patch: TextPatch | None = Field(
@@ -137,7 +140,7 @@ class ManageScenesUpdateData(BaseModel):
     )
 
 
-class ManageScenesParams(BaseModel):
+class ManageScenesParams(ToolModel):
     """Action router parameters for manage_scenes."""
 
     action: Literal["list", "get", "create", "update", "delete"] = Field(
