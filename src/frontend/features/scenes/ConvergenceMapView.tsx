@@ -814,6 +814,62 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
     [filteredScenes, chapterOrderMap]
   );
 
+  const chapterById = useMemo(
+    (): Map<string, Chapter> =>
+      new Map(chapters.map((chapter: Chapter) => [chapter.id, chapter])),
+    [chapters]
+  );
+
+  const bookById = useMemo(
+    (): Map<string, Book> =>
+      new Map((books ?? []).map((book: Book) => [book.id, book])),
+    [books]
+  );
+
+  const proseSceneChapterById = useMemo((): Map<SceneId, string | null> => {
+    const chapterRuns = proseOrderedScenes.map((scene: Scene) => {
+      const link = scene.prose_link;
+      if (!link || link.scope_type !== 'chapter') return null;
+      const chapterId =
+        typeof link.chapter_id === 'string'
+          ? link.chapter_id.trim()
+          : String(link.chapter_id ?? '');
+      return chapterId.length > 0 ? chapterId : null;
+    });
+
+    const map = new Map<SceneId, string | null>();
+    proseOrderedScenes.forEach((scene: Scene, index: number): void => {
+      const directChapterId = chapterRuns[index];
+      if (directChapterId) {
+        map.set(scene.id, directChapterId);
+        return;
+      }
+
+      let previousChapterId: string | null = null;
+      for (let i = index - 1; i >= 0; i -= 1) {
+        if (chapterRuns[i]) {
+          previousChapterId = chapterRuns[i];
+          break;
+        }
+      }
+      if (previousChapterId) {
+        map.set(scene.id, previousChapterId);
+        return;
+      }
+
+      let nextChapterId: string | null = null;
+      for (let i = index + 1; i < chapterRuns.length; i += 1) {
+        if (chapterRuns[i]) {
+          nextChapterId = chapterRuns[i];
+          break;
+        }
+      }
+      map.set(scene.id, nextChapterId);
+    });
+
+    return map;
+  }, [proseOrderedScenes]);
+
   const proseSnakeWidth = useMemo(() => {
     const { snakeWidth } = buildSnakePath(proseOrderedScenes, cardLayouts, 0);
     return snakeWidth;
@@ -890,6 +946,67 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
     );
     return { pathData, proseScenes: proseOrderedScenes, sceneXById, snakeWidth };
   }, [laneCenterXById, proseOrderedScenes, cardLayouts]);
+
+  const proseBreakMarkers = useMemo(() => {
+    if (!proseSnakePath) return [] as Array<{ x: number; y: number; lines: 1 | 2 }>;
+
+    const markers: Array<{ x: number; y: number; lines: 1 | 2 }> = [];
+    for (let i = 1; i < proseOrderedScenes.length; i += 1) {
+      const previousScene = proseOrderedScenes[i - 1];
+      const currentScene = proseOrderedScenes[i];
+      const previousLayout = cardLayouts.get(previousScene.id);
+      const currentLayout = cardLayouts.get(currentScene.id);
+      if (!previousLayout || !currentLayout) continue;
+
+      const previousChapterId = proseSceneChapterById.get(previousScene.id) ?? null;
+      const currentChapterId = proseSceneChapterById.get(currentScene.id) ?? null;
+      if (
+        !previousChapterId ||
+        !currentChapterId ||
+        previousChapterId === currentChapterId
+      ) {
+        continue;
+      }
+
+      const previousBookId = chapterById.get(previousChapterId)?.book_id ?? null;
+      const currentBookId = chapterById.get(currentChapterId)?.book_id ?? null;
+      const previousBook = previousBookId
+        ? (bookById.get(previousBookId) ?? null)
+        : null;
+      const currentBook = currentBookId ? (bookById.get(currentBookId) ?? null) : null;
+      const hasBookBreak =
+        projectType === 'series' &&
+        previousBook?.id !== undefined &&
+        currentBook?.id !== undefined &&
+        previousBook.id !== currentBook.id;
+
+      const previousX = proseSnakePath.sceneXById.get(previousScene.id);
+      const currentX = proseSnakePath.sceneXById.get(currentScene.id);
+      const markerX =
+        previousX !== undefined && currentX !== undefined
+          ? (previousX + currentX) / 2
+          : (currentX ?? previousX);
+      if (markerX === undefined) {
+        continue;
+      }
+
+      markers.push({
+        x: markerX,
+        y: (getLayoutCenterY(previousLayout) + getLayoutCenterY(currentLayout)) / 2,
+        lines: hasBookBreak ? 2 : 1,
+      });
+    }
+
+    return markers;
+  }, [
+    proseSnakePath,
+    proseOrderedScenes,
+    cardLayouts,
+    proseSceneChapterById,
+    chapterById,
+    bookById,
+    projectType,
+  ]);
 
   useEffect(() => {
     const raf = requestAnimationFrame(() => {
@@ -1531,6 +1648,35 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
                       />
                     );
                   })}
+                  {proseBreakMarkers.map(
+                    (marker: { x: number; y: number; lines: 1 | 2 }) => (
+                      <g
+                        key={`prose-break-${marker.x}-${marker.y}`}
+                        data-prose-break={marker.lines === 2 ? 'book' : 'chapter'}
+                      >
+                        <line
+                          x1={marker.x - 8}
+                          y1={marker.y - (marker.lines === 2 ? 1.5 : 0)}
+                          x2={marker.x + 8}
+                          y2={marker.y - (marker.lines === 2 ? 1.5 : 0)}
+                          stroke={proseTrackColor}
+                          strokeWidth={1.5}
+                          opacity={PROSE_SNAKE_OPACITY}
+                        />
+                        {marker.lines === 2 && (
+                          <line
+                            x1={marker.x - 8}
+                            y1={marker.y + 1.5}
+                            x2={marker.x + 8}
+                            y2={marker.y + 1.5}
+                            stroke={proseTrackColor}
+                            strokeWidth={1.5}
+                            opacity={PROSE_SNAKE_OPACITY}
+                          />
+                        )}
+                      </g>
+                    )
+                  )}
                 </g>
               )}
               {snakePaths.map((sp: (typeof snakePaths)[number]) => {

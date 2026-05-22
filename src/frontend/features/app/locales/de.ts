@@ -49,6 +49,9 @@ export const de = {
     Summary: 'Zusammenfassung',
     Notes: 'Notizen',
     Conflicts: 'Konflikte',
+    'Scenes in this chapter': 'Szenen in diesem Kapitel',
+    'No scenes currently assigned to this chapter.':
+      'Diesem Kapitel sind aktuell keine Szenen zugeordnet.',
     'Jump to match in editor': 'Zur Stelle im Editor springen',
     'Navigate to chapter': 'Zum Kapitel navigieren',
     'Open story metadata': 'Geschichte-Metadaten öffnen',
@@ -115,6 +118,7 @@ export const de = {
     // ChapterList
     'No summary available...': 'Keine Zusammenfassung verfügbar...',
     'Untitled Chapter': 'Unbenanntes Kapitel',
+    'Untitled Scene': 'Unbenannte Szene',
     'Edit Metadata': 'Metadaten bearbeiten',
     'Delete Chapter': 'Kapitel löschen',
     'Edit Chapter: {{title}}': 'Kapitel bearbeiten: {{title}}',
@@ -568,6 +572,11 @@ export const de = {
     'Reset Zoom': 'Zoom zurücksetzen',
     'Alt+drag to create cause': 'Alt+Ziehen zum Erstellen einer Ursache',
     'Scene {{index}}': 'Szene {{index}}',
+    'Scene {{index}} of {{total}}': 'Szene {{index}} von {{total}}',
+    'Chapter position {{index}} of {{total}}':
+      'Kapitelposition {{index}} von {{total}}',
+    'Previous scene': 'Vorherige Szene',
+    'Next scene': 'Nächste Szene',
     'Linked Prose': 'Verknüpfter Prosa',
     'Unlink prose': 'Prosa trennen',
     'Open in split mode to edit linked prose':

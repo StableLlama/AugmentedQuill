@@ -29,9 +29,10 @@ import { I18nextProvider } from 'react-i18next';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import i18n from '../app/i18n';
 import { ScenesPanelContainer } from './ScenesPanelContainer';
+import { normalizeChapterId } from './sceneSortUtils';
 import { resetUIStore, useUIStore } from '../../stores/uiStore';
 import type { Scene, SceneProseLink, SceneId } from '../../types';
-import type { WritingUnit } from '../../types/domain';
+import type { WritingUnit, Chapter, Book } from '../../types/domain';
 import type { EditorHandle } from '../editor/Editor';
 import type { ProseBoundaryCallback } from '../editor/CodeMirrorEditor';
 
@@ -47,6 +48,11 @@ beforeEach(() => {
     removeItem: vi.fn(),
     clear: vi.fn(),
   });
+  chaptersMetaMock.mockReturnValue([]);
+  booksMetaMock.mockReturnValue([]);
+  projectTypeState.value = 'novel';
+  apiMock.chapters.get.mockReset();
+  apiMock.chapters.get.mockResolvedValue({ content: '' });
 });
 
 // ---------------------------------------------------------------------------
@@ -57,6 +63,9 @@ const {
   patchSceneMock,
   recordHistoryEntryMock,
   useScenesMock,
+  projectTypeState,
+  chaptersMetaMock,
+  booksMetaMock,
   apiMock,
   captured,
   proseSyncState,
@@ -65,7 +74,15 @@ const {
   const patchSceneMock = vi.fn();
   const recordHistoryEntryMock = vi.fn();
   const useScenesMock = vi.fn(() => [] as Scene[]);
+  const projectTypeState = {
+    value: 'novel' as 'short-story' | 'novel' | 'series',
+  };
+  const chaptersMetaMock = vi.fn(() => [] as Chapter[]);
+  const booksMetaMock = vi.fn(() => [] as Book[]);
   const apiMock = {
+    chapters: {
+      get: vi.fn(),
+    },
     scenes: {
       create: vi.fn(),
       update: vi.fn(),
@@ -101,6 +118,9 @@ const {
     patchSceneMock,
     recordHistoryEntryMock,
     useScenesMock,
+    projectTypeState,
+    chaptersMetaMock,
+    booksMetaMock,
     apiMock,
     captured,
     proseSyncState,
@@ -111,9 +131,9 @@ const {
 vi.mock('../../stores/storyStore', () => ({
   useScenes: () => useScenesMock(),
   useStoryStore: () => patchSceneMock,
-  useStoryMeta: () => ({ projectType: 'novel' }),
-  useStoryChaptersListMeta: () => [],
-  useStoryBooks: () => [],
+  useStoryMeta: () => ({ projectType: projectTypeState.value }),
+  useStoryChaptersListMeta: () => chaptersMetaMock(),
+  useStoryBooks: () => booksMetaMock(),
 }));
 
 vi.mock('../layout/ThemeContext', () => ({
@@ -199,6 +219,10 @@ interface NarrativeHandlers {
     sourceSceneId: SceneId,
     targetSceneId: SceneId,
     placeBefore: boolean
+  ) => Promise<void>;
+  onDropScenesOnChapter?: (
+    sourceSceneIds: SceneId[],
+    chapterId: string
   ) => Promise<void>;
 }
 
@@ -1298,6 +1322,150 @@ describe('handleNarrativeReorder (drag-reorder user interaction)', () => {
     });
   }
 
+  it('[E2E] links scene via external chapter-drop window event', async () => {
+    chaptersMetaMock.mockReturnValue([
+      {
+        id: 'ch-2',
+        title: 'Chapter 2',
+        summary: '',
+        content: 'Target chapter prose.',
+      } as Chapter,
+    ]);
+
+    const unlinked = makeScene({ id: 'u', order_index: 1, prose_link: null });
+    apiMock.scenes.linkProse.mockResolvedValueOnce([
+      makeScene({
+        id: 'u',
+        order_index: 1,
+        prose_link: makeProseLink({ scope_type: 'chapter', chapter_id: 'ch-2' }),
+      }),
+    ]);
+
+    await renderNarrative([unlinked]);
+
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent('aq-scene-drop-chapter', {
+          detail: {
+            sourceSceneIds: ['u'],
+            chapterId: 'ch-2',
+          },
+        })
+      );
+      await Promise.resolve();
+    });
+
+    expect(apiMock.scenes.linkProse).toHaveBeenCalledWith('u', {
+      scope_type: 'chapter',
+      chapter_id: 'ch-2',
+      book_id: null,
+      start_offset: 'Target chapter prose.'.length - 1,
+      end_offset: 'Target chapter prose.'.length,
+    });
+  });
+
+  it('[E2E] ignores malformed external chapter-drop event payloads', async () => {
+    chaptersMetaMock.mockReturnValue([
+      {
+        id: 'ch-2',
+        title: 'Chapter 2',
+        summary: '',
+        content: 'Target chapter prose.',
+      } as Chapter,
+    ]);
+
+    const unlinked = makeScene({ id: 'u', order_index: 1, prose_link: null });
+    await renderNarrative([unlinked]);
+
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent('aq-scene-drop-chapter', {
+          detail: {
+            sourceSceneIds: 'u',
+            chapterId: 2,
+          },
+        })
+      );
+      await Promise.resolve();
+    });
+
+    expect(apiMock.scenes.linkProse).not.toHaveBeenCalled();
+    expect(apiMock.scenes.reorderProse).not.toHaveBeenCalled();
+  });
+
+  it('[E2E] handles multi-scene external chapter-drop with mixed unlinked and cross-chapter sources', async () => {
+    chaptersMetaMock.mockReturnValue([
+      {
+        id: 'ch-1',
+        title: 'Chapter 1',
+        summary: '',
+        content: 'Chapter 1 prose.',
+      } as Chapter,
+      {
+        id: 'ch-2',
+        title: 'Chapter 2',
+        summary: '',
+        content: 'Chapter 2 prose.',
+      } as Chapter,
+    ]);
+
+    const targetLinked = makeScene({
+      id: 'a',
+      order_index: 1,
+      prose_link: makeProseLink({ scope_type: 'chapter', chapter_id: 'ch-2' }),
+    });
+    const unlinked = makeScene({ id: 'u', order_index: 2, prose_link: null });
+    const linkedSource = makeScene({
+      id: 's',
+      order_index: 3,
+      prose_link: makeProseLink({ scope_type: 'chapter', chapter_id: 'ch-1' }),
+    });
+
+    apiMock.scenes.linkProse.mockResolvedValueOnce([
+      makeScene({
+        id: 'u',
+        order_index: 2,
+        prose_link: makeProseLink({ scope_type: 'chapter', chapter_id: 'ch-2' }),
+      }),
+    ]);
+    apiMock.scenes.reorderProse.mockResolvedValueOnce({
+      scenes: [linkedSource, targetLinked],
+      scope_type: 'chapter',
+      chapter_id: 'ch-2',
+      book_id: null,
+      scope_start: 0,
+      scope_end: 10,
+      rebuilt_text: 'moved',
+    });
+
+    await renderNarrative([targetLinked, unlinked, linkedSource]);
+
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent('aq-scene-drop-chapter', {
+          detail: {
+            sourceSceneIds: ['u', 's'],
+            chapterId: 'ch-2',
+          },
+        })
+      );
+      await Promise.resolve();
+    });
+
+    expect(apiMock.scenes.linkProse).toHaveBeenCalledWith('u', {
+      scope_type: 'chapter',
+      chapter_id: 'ch-2',
+      book_id: null,
+      start_offset: 29,
+      end_offset: 30,
+    });
+    expect(apiMock.scenes.reorderProse).toHaveBeenCalledWith({
+      source_scene_id: 's',
+      target_scene_id: 'a',
+      place_before: true,
+    });
+  });
+
   it.each([
     { label: 'none selected and no active scene', selectedSceneId: null },
     { label: 'source scene active', selectedSceneId: 'b' },
@@ -1500,6 +1668,785 @@ describe('handleNarrativeReorder (drag-reorder user interaction)', () => {
     expect(apiMock.scenes.reorderProse).toHaveBeenCalledTimes(1);
     expect(patchSceneMock).not.toHaveBeenCalled();
   });
+
+  it('[VALID] moves an unlinked scene into the dropped chapter run', async () => {
+    chaptersMetaMock.mockReturnValue([
+      {
+        id: 'ch-1',
+        title: 'Chapter 1',
+        summary: '',
+        content: 'Chapter 1 prose.',
+      } as Chapter,
+    ]);
+
+    const chapterStart = makeScene({
+      id: 'a',
+      order_index: 1,
+      prose_link: makeProseLink({ scope_type: 'chapter', chapter_id: 'ch-1' }),
+    });
+    const unlinkedBetween = makeScene({ id: 'u', order_index: 2, prose_link: null });
+    const chapterEnd = makeScene({
+      id: 'b',
+      order_index: 3,
+      prose_link: makeProseLink({ scope_type: 'chapter', chapter_id: 'ch-1' }),
+    });
+
+    apiMock.scenes.linkProse.mockResolvedValueOnce([
+      makeScene({
+        id: 'u',
+        order_index: 2,
+        prose_link: makeProseLink({ scope_type: 'chapter', chapter_id: 'ch-1' }),
+      }),
+    ]);
+
+    await renderNarrative([chapterStart, unlinkedBetween, chapterEnd]);
+
+    await act(async () => {
+      await nv().onDropScenesOnChapter?.(['u'], 'ch-1');
+    });
+
+    expect(apiMock.scenes.linkProse).toHaveBeenCalledWith('u', {
+      scope_type: 'chapter',
+      chapter_id: 'ch-1',
+      book_id: null,
+      start_offset: 29,
+      end_offset: 30,
+    });
+  });
+
+  it('[VALID] reorders newly linked scene even when backend link response starts at 0..1', async () => {
+    chaptersMetaMock.mockReturnValue([
+      {
+        id: 'ch-1',
+        title: 'Chapter 1',
+        summary: '',
+        content: '',
+      } as Chapter,
+      {
+        id: 'ch-3',
+        title: 'Chapter 3',
+        summary: '',
+        content: '',
+      } as Chapter,
+    ]);
+
+    const chapter1Scene = makeScene({
+      id: 'c1',
+      order_index: 1,
+      prose_link: makeProseLink({ scope_type: 'chapter', chapter_id: 'ch-1' }),
+    });
+    const sourceUnlinked = makeScene({ id: 'u', order_index: 2, prose_link: null });
+    const chapter3Anchor = makeScene({
+      id: 'c3',
+      order_index: 3,
+      prose_link: makeProseLink({ scope_type: 'chapter', chapter_id: 'ch-3' }),
+    });
+
+    apiMock.scenes.linkProse.mockResolvedValueOnce([
+      makeScene({
+        id: 'u',
+        order_index: 2,
+        prose_link: makeProseLink({
+          scope_type: 'chapter',
+          chapter_id: 'ch-3',
+          start_offset: 0,
+          end_offset: 1,
+        }),
+      }),
+    ]);
+    apiMock.scenes.reorderProse.mockResolvedValueOnce({
+      scenes: [
+        makeScene({
+          id: 'u',
+          order_index: 2,
+          prose_link: makeProseLink({ scope_type: 'chapter', chapter_id: 'ch-3' }),
+        }),
+        chapter3Anchor,
+      ],
+      scope_type: 'chapter',
+      chapter_id: 'ch-3',
+      book_id: null,
+      scope_start: 0,
+      scope_end: 10,
+      rebuilt_text: 'moved',
+    });
+
+    await renderNarrative([chapter1Scene, sourceUnlinked, chapter3Anchor]);
+
+    await act(async () => {
+      await nv().onDropScenesOnChapter?.(['u'], 'ch-3');
+    });
+
+    expect(apiMock.scenes.linkProse).toHaveBeenCalledTimes(1);
+    expect(apiMock.scenes.reorderProse).toHaveBeenCalledWith({
+      source_scene_id: 'u',
+      target_scene_id: 'c3',
+      place_before: false,
+    });
+  });
+
+  it('[VALID] uses directly linked chapter scenes as drop anchors', async () => {
+    chaptersMetaMock.mockReturnValue([
+      {
+        id: 'ch-1',
+        title: 'Chapter 1',
+        summary: '',
+        content: '',
+      } as Chapter,
+      {
+        id: 'ch-2',
+        title: 'Chapter 2',
+        summary: '',
+        content: '',
+      } as Chapter,
+    ]);
+
+    const targetLinked = makeScene({
+      id: 'a',
+      order_index: 1,
+      prose_link: makeProseLink({ scope_type: 'chapter', chapter_id: 'ch-1' }),
+    });
+    const inferredTrailingUnlinked = makeScene({
+      id: 'u',
+      order_index: 2,
+      prose_link: null,
+    });
+    const source = makeScene({
+      id: 's',
+      order_index: 3,
+      prose_link: makeProseLink({ scope_type: 'chapter', chapter_id: 'ch-2' }),
+    });
+
+    apiMock.scenes.reorderProse.mockResolvedValueOnce({
+      scenes: [source, targetLinked],
+      scope_type: 'chapter',
+      chapter_id: 'ch-1',
+      book_id: null,
+      scope_start: 0,
+      scope_end: 10,
+      rebuilt_text: 'moved',
+    });
+
+    await renderNarrative([targetLinked, inferredTrailingUnlinked, source]);
+
+    await act(async () => {
+      await nv().onDropScenesOnChapter?.(['s'], 'ch-1');
+    });
+
+    expect(apiMock.scenes.reorderProse).toHaveBeenCalledWith({
+      source_scene_id: 's',
+      target_scene_id: 'a',
+      place_before: false,
+    });
+  });
+
+  it('[VALID] links dropped unlinked scenes when the target chapter has no linked scenes', async () => {
+    chaptersMetaMock.mockReturnValue([
+      {
+        id: 'ch-1',
+        title: 'Chapter 1',
+        summary: '',
+        content: 'Existing chapter prose.',
+      } as Chapter,
+      {
+        id: 'ch-2',
+        title: 'Chapter 2',
+        summary: '',
+        content: 'Target chapter prose.',
+      } as Chapter,
+    ]);
+
+    const linkedInOtherChapter = makeScene({
+      id: 'a',
+      order_index: 1,
+      prose_link: makeProseLink({ scope_type: 'chapter', chapter_id: 'ch-1' }),
+    });
+    const unlinked = makeScene({ id: 'u', order_index: 2, prose_link: null });
+
+    apiMock.scenes.linkProse.mockResolvedValueOnce([
+      makeScene({
+        id: 'u',
+        order_index: 2,
+        prose_link: makeProseLink({ scope_type: 'chapter', chapter_id: 'ch-2' }),
+      }),
+    ]);
+
+    await renderNarrative([linkedInOtherChapter, unlinked]);
+
+    await act(async () => {
+      await nv().onDropScenesOnChapter?.(['u'], 'ch-2');
+    });
+
+    expect(apiMock.scenes.linkProse).toHaveBeenCalledWith('u', {
+      scope_type: 'chapter',
+      chapter_id: 'ch-2',
+      book_id: null,
+      start_offset: 'Target chapter prose.'.length - 1,
+      end_offset: 'Target chapter prose.'.length,
+    });
+  });
+
+  it('[VALID] links dropped unlinked scenes with a valid range when target chapter content is empty', async () => {
+    chaptersMetaMock.mockReturnValue([
+      {
+        id: 'ch-2',
+        title: 'Chapter 2',
+        summary: '',
+        content: '',
+      } as Chapter,
+    ]);
+
+    const unlinked = makeScene({ id: 'u', order_index: 2, prose_link: null });
+
+    apiMock.scenes.linkProse.mockResolvedValueOnce([
+      makeScene({
+        id: 'u',
+        order_index: 2,
+        prose_link: makeProseLink({ scope_type: 'chapter', chapter_id: 'ch-2' }),
+      }),
+    ]);
+
+    await renderNarrative([unlinked]);
+
+    await act(async () => {
+      await nv().onDropScenesOnChapter?.(['u'], 'ch-2');
+    });
+
+    expect(apiMock.scenes.linkProse).toHaveBeenCalledWith('u', {
+      scope_type: 'chapter',
+      chapter_id: 'ch-2',
+      book_id: null,
+      start_offset: 0,
+      end_offset: 1,
+    });
+  });
+
+  it('[VALID] mixed multi-drop links unlinked scenes and reorders only linked scenes', async () => {
+    chaptersMetaMock.mockReturnValue([
+      {
+        id: 'ch-1',
+        title: 'Chapter 1',
+        summary: '',
+        content: 'Chapter 1 prose.',
+      } as Chapter,
+      {
+        id: 'ch-2',
+        title: 'Chapter 2',
+        summary: '',
+        content: 'Chapter 2 prose.',
+      } as Chapter,
+    ]);
+
+    const targetA = makeScene({
+      id: 'a',
+      order_index: 1,
+      prose_link: makeProseLink({ scope_type: 'chapter', chapter_id: 'ch-2' }),
+    });
+    const targetB = makeScene({
+      id: 'b',
+      order_index: 2,
+      prose_link: makeProseLink({ scope_type: 'chapter', chapter_id: 'ch-2' }),
+    });
+    const unlinked = makeScene({ id: 'u', order_index: 3, prose_link: null });
+    const linkedSource = makeScene({
+      id: 's',
+      order_index: 4,
+      prose_link: makeProseLink({ scope_type: 'chapter', chapter_id: 'ch-1' }),
+    });
+
+    apiMock.scenes.linkProse.mockResolvedValueOnce([
+      makeScene({
+        id: 'u',
+        order_index: 3,
+        prose_link: makeProseLink({ scope_type: 'chapter', chapter_id: 'ch-2' }),
+      }),
+    ]);
+    apiMock.scenes.reorderProse.mockResolvedValueOnce({
+      scenes: [linkedSource, targetB],
+      scope_type: 'chapter',
+      chapter_id: 'ch-2',
+      book_id: null,
+      scope_start: 0,
+      scope_end: 10,
+      rebuilt_text: 'moved',
+    });
+
+    await renderNarrative([targetA, targetB, unlinked, linkedSource]);
+
+    await act(async () => {
+      await nv().onDropScenesOnChapter?.(['u', 's'], 'ch-2');
+    });
+
+    expect(apiMock.scenes.linkProse).toHaveBeenCalledWith('u', {
+      scope_type: 'chapter',
+      chapter_id: 'ch-2',
+      book_id: null,
+      start_offset: 29,
+      end_offset: 30,
+    });
+    expect(apiMock.scenes.reorderProse).toHaveBeenCalledTimes(1);
+    expect(apiMock.scenes.reorderProse).toHaveBeenCalledWith({
+      source_scene_id: 's',
+      target_scene_id: 'a',
+      place_before: true,
+    });
+  });
+
+  it('[VALID] falls back to chapter detail content length for numeric chapter ids', async () => {
+    chaptersMetaMock.mockReturnValue([
+      {
+        id: '3',
+        title: 'Chapter 3',
+        summary: '',
+        content: '',
+      } as Chapter,
+    ]);
+    apiMock.chapters.get.mockResolvedValueOnce({
+      id: 3,
+      title: 'Chapter 3',
+      filename: 'chapter_3.md',
+      content: 'Longer content from chapter detail endpoint.',
+      summary: '',
+      notes: '',
+      private_notes: '',
+      conflicts: [],
+    });
+
+    const unlinked = makeScene({ id: 'u', order_index: 2, prose_link: null });
+
+    apiMock.scenes.linkProse.mockResolvedValueOnce([
+      makeScene({
+        id: 'u',
+        order_index: 2,
+        prose_link: makeProseLink({ scope_type: 'chapter', chapter_id: '3' }),
+      }),
+    ]);
+
+    await renderNarrative([unlinked]);
+
+    await act(async () => {
+      await nv().onDropScenesOnChapter?.(['u'], '3');
+    });
+
+    const chapterDetailLength = 'Longer content from chapter detail endpoint.'.length;
+    expect(apiMock.chapters.get).toHaveBeenCalledWith(3);
+    expect(apiMock.scenes.linkProse).toHaveBeenCalledWith('u', {
+      scope_type: 'chapter',
+      chapter_id: '3',
+      book_id: null,
+      start_offset: chapterDetailLength - 1,
+      end_offset: chapterDetailLength,
+    });
+  });
+
+  it('[VALID] uses existing target chapter tail offsets when chapter list content is empty', async () => {
+    chaptersMetaMock.mockReturnValue([
+      {
+        id: '3',
+        title: 'Chapter 3',
+        summary: '',
+        content: '',
+      } as Chapter,
+    ]);
+
+    const targetTailScene = makeScene({
+      id: 'a',
+      order_index: 1,
+      prose_link: makeProseLink({
+        scope_type: 'chapter',
+        chapter_id: '3',
+        start_offset: 40,
+        end_offset: 60,
+      }),
+    });
+    const unlinked = makeScene({ id: 'u', order_index: 2, prose_link: null });
+
+    apiMock.scenes.linkProse.mockResolvedValueOnce([
+      makeScene({
+        id: 'u',
+        order_index: 2,
+        prose_link: makeProseLink({ scope_type: 'chapter', chapter_id: '3' }),
+      }),
+    ]);
+
+    await renderNarrative([targetTailScene, unlinked]);
+
+    await act(async () => {
+      await nv().onDropScenesOnChapter?.(['u'], '3');
+    });
+
+    expect(apiMock.scenes.linkProse).toHaveBeenCalledWith('u', {
+      scope_type: 'chapter',
+      chapter_id: '3',
+      book_id: null,
+      start_offset: 59,
+      end_offset: 60,
+    });
+  });
+
+  type SourceState = 'unlinked' | 'same' | 'before' | 'behind';
+  type MatrixProjectKind =
+    | 'short-story-invalid'
+    | 'novel-valid'
+    | 'novel-invalid-book-chapter'
+    | 'series-valid'
+    | 'series-invalid-missing-book';
+
+  interface MatrixProjectConfig {
+    projectType: 'short-story' | 'novel' | 'series';
+    chapters: Chapter[];
+    books: Book[];
+    targetChapterId: string;
+    expectValid: boolean;
+  }
+
+  const matrixProjectConfigs: Record<MatrixProjectKind, MatrixProjectConfig> = {
+    'short-story-invalid': {
+      projectType: 'short-story',
+      chapters: [],
+      books: [],
+      targetChapterId: 'ch-2',
+      expectValid: false,
+    },
+    'novel-valid': {
+      projectType: 'novel',
+      chapters: [
+        { id: 'ch-1', title: 'Chapter 1', summary: '', content: '' } as Chapter,
+        { id: 'ch-2', title: 'Chapter 2', summary: '', content: '' } as Chapter,
+        { id: 'ch-3', title: 'Chapter 3', summary: '', content: '' } as Chapter,
+      ],
+      books: [],
+      targetChapterId: 'ch-2',
+      expectValid: true,
+    },
+    'novel-invalid-book-chapter': {
+      projectType: 'novel',
+      chapters: [
+        {
+          id: 'ch-2',
+          title: 'Chapter 2',
+          summary: '',
+          content: '',
+          book_id: 'book-a',
+        } as Chapter,
+      ],
+      books: [{ id: 'book-a', title: 'Book A', chapters: [] as Chapter[] } as Book],
+      targetChapterId: 'ch-2',
+      expectValid: false,
+    },
+    'series-valid': {
+      projectType: 'series',
+      chapters: [
+        {
+          id: 'ch-1',
+          title: 'Book A Chapter 1',
+          summary: '',
+          content: '',
+          book_id: 'book-a',
+        } as Chapter,
+        {
+          id: 'ch-2',
+          title: 'Book B Chapter 1',
+          summary: '',
+          content: '',
+          book_id: 'book-b',
+        } as Chapter,
+        {
+          id: 'ch-3',
+          title: 'Book C Chapter 1',
+          summary: '',
+          content: '',
+          book_id: 'book-c',
+        } as Chapter,
+      ],
+      books: [
+        { id: 'book-a', title: 'Book A', chapters: [] as Chapter[] } as Book,
+        { id: 'book-b', title: 'Book B', chapters: [] as Chapter[] } as Book,
+        { id: 'book-c', title: 'Book C', chapters: [] as Chapter[] } as Book,
+      ],
+      targetChapterId: 'ch-2',
+      expectValid: true,
+    },
+    'series-invalid-missing-book': {
+      projectType: 'series',
+      chapters: [
+        {
+          id: 'ch-2',
+          title: 'Broken Book Chapter',
+          summary: '',
+          content: '',
+          book_id: 'book-missing',
+        } as Chapter,
+      ],
+      books: [{ id: 'book-a', title: 'Book A', chapters: [] as Chapter[] } as Book],
+      targetChapterId: 'ch-2',
+      expectValid: false,
+    },
+  };
+
+  const sourceStateCases: Array<[SourceState, SourceState]> = [
+    ['unlinked', 'same'],
+    ['unlinked', 'before'],
+    ['unlinked', 'behind'],
+    ['same', 'before'],
+    ['same', 'behind'],
+    ['before', 'behind'],
+    ['unlinked', 'unlinked'],
+    ['same', 'same'],
+    ['before', 'before'],
+    ['behind', 'behind'],
+  ];
+
+  const matrixCases = [
+    ...(
+      [
+        'short-story-invalid',
+        'novel-valid',
+        'novel-invalid-book-chapter',
+        'series-valid',
+        'series-invalid-missing-book',
+      ] as MatrixProjectKind[]
+    ).map((project: MatrixProjectKind): [MatrixProjectKind, [SourceState]] => [
+      project,
+      ['unlinked'],
+    ]),
+    ...(
+      [
+        'short-story-invalid',
+        'novel-valid',
+        'novel-invalid-book-chapter',
+        'series-valid',
+        'series-invalid-missing-book',
+      ] as MatrixProjectKind[]
+    ).map((project: MatrixProjectKind): [MatrixProjectKind, [SourceState]] => [
+      project,
+      ['same'],
+    ]),
+    ...(
+      [
+        'short-story-invalid',
+        'novel-valid',
+        'novel-invalid-book-chapter',
+        'series-valid',
+        'series-invalid-missing-book',
+      ] as MatrixProjectKind[]
+    ).map((project: MatrixProjectKind): [MatrixProjectKind, [SourceState]] => [
+      project,
+      ['before'],
+    ]),
+    ...(
+      [
+        'short-story-invalid',
+        'novel-valid',
+        'novel-invalid-book-chapter',
+        'series-valid',
+        'series-invalid-missing-book',
+      ] as MatrixProjectKind[]
+    ).map((project: MatrixProjectKind): [MatrixProjectKind, [SourceState]] => [
+      project,
+      ['behind'],
+    ]),
+    ...(
+      [
+        'short-story-invalid',
+        'novel-valid',
+        'novel-invalid-book-chapter',
+        'series-valid',
+        'series-invalid-missing-book',
+      ] as MatrixProjectKind[]
+    ).flatMap(
+      (
+        project: MatrixProjectKind
+      ): Array<[MatrixProjectKind, [SourceState, SourceState]]> =>
+        sourceStateCases.map(
+          (
+            pair: [SourceState, SourceState]
+          ): [MatrixProjectKind, [SourceState, SourceState]] => [project, pair]
+        )
+    ),
+  ];
+
+  function makeDropSource(
+    id: string,
+    state: SourceState,
+    orderIndex: number,
+    targetChapterId: string
+  ): Scene {
+    if (state === 'unlinked') {
+      return makeScene({ id, order_index: orderIndex, prose_link: null });
+    }
+    if (state === 'same') {
+      return makeScene({
+        id,
+        order_index: orderIndex,
+        prose_link: makeProseLink({
+          scope_type: 'chapter',
+          chapter_id: targetChapterId,
+        }),
+      });
+    }
+    return makeScene({
+      id,
+      order_index: orderIndex,
+      prose_link: makeProseLink({
+        scope_type: 'chapter',
+        chapter_id: state === 'before' ? 'ch-1' : 'ch-3',
+      }),
+    });
+  }
+
+  it.each(matrixCases)(
+    '[MATRIX] project=%s sourceStates=%j',
+    async (projectKind: MatrixProjectKind, sourceStates: SourceState[]) => {
+      const projectConfig = matrixProjectConfigs[projectKind];
+      projectTypeState.value = projectConfig.projectType;
+      chaptersMetaMock.mockReturnValue(projectConfig.chapters);
+      booksMetaMock.mockReturnValue(projectConfig.books);
+
+      const targetAnchor = makeScene({
+        id: 'target-anchor',
+        order_index: 100,
+        prose_link: makeProseLink({
+          scope_type: 'chapter',
+          chapter_id: projectConfig.targetChapterId,
+        }),
+      });
+      const trailingTarget = makeScene({
+        id: 'target-trailing',
+        order_index: 110,
+        prose_link: makeProseLink({
+          scope_type: 'chapter',
+          chapter_id: projectConfig.targetChapterId,
+        }),
+      });
+
+      const sourceScenes = sourceStates.map(
+        (state: SourceState, index: number): Scene =>
+          makeDropSource(
+            `source-${index + 1}`,
+            state,
+            index + 1,
+            projectConfig.targetChapterId
+          )
+      );
+
+      const scenes = [...sourceScenes, targetAnchor, trailingTarget];
+
+      apiMock.scenes.linkProse.mockImplementation(
+        async (
+          sourceId: SceneId,
+          payload: {
+            scope_type: string;
+            chapter_id: string | null;
+            book_id?: string | null;
+            start_offset: number;
+            end_offset: number;
+          }
+        ): Promise<Scene[]> => [
+          makeScene({
+            id: sourceId,
+            prose_link: makeProseLink({
+              scope_type: 'chapter',
+              chapter_id: payload.chapter_id,
+              book_id: payload.book_id ?? null,
+              start_offset: payload.start_offset,
+              end_offset: payload.end_offset,
+            }),
+          }),
+        ]
+      );
+
+      apiMock.scenes.reorderProse.mockImplementation(
+        async (request: {
+          source_scene_id: SceneId;
+          target_scene_id: SceneId;
+          place_before: boolean;
+        }) => ({
+          scenes: [
+            makeScene({
+              id: request.source_scene_id,
+              prose_link: makeProseLink({
+                scope_type: 'chapter',
+                chapter_id: projectConfig.targetChapterId,
+              }),
+            }),
+            makeScene({
+              id: request.target_scene_id,
+              prose_link: makeProseLink({
+                scope_type: 'chapter',
+                chapter_id: projectConfig.targetChapterId,
+              }),
+            }),
+          ],
+          scope_type: 'chapter',
+          chapter_id: projectConfig.targetChapterId,
+          book_id: null,
+          scope_start: 0,
+          scope_end: 10,
+          rebuilt_text: 'moved',
+        })
+      );
+
+      await renderNarrative(scenes);
+
+      await act(async () => {
+        await nv().onDropScenesOnChapter?.(
+          sourceScenes.map((scene: Scene): SceneId => scene.id),
+          projectConfig.targetChapterId
+        );
+      });
+
+      if (!projectConfig.expectValid) {
+        expect(apiMock.scenes.linkProse).not.toHaveBeenCalled();
+        expect(apiMock.scenes.reorderProse).not.toHaveBeenCalled();
+        return;
+      }
+
+      const expectedUnlinkedCount = sourceStates.filter(
+        (state: SourceState): boolean => state === 'unlinked'
+      ).length;
+      expect(apiMock.scenes.linkProse).toHaveBeenCalledTimes(expectedUnlinkedCount);
+      apiMock.scenes.linkProse.mock.calls.forEach(
+        (
+          call: [
+            SceneId,
+            {
+              scope_type: string;
+              chapter_id: string | null;
+              book_id?: string | null;
+              start_offset: number;
+              end_offset: number;
+            },
+          ]
+        ): void => {
+          const payload = call[1];
+          expect(payload.scope_type).toBe('chapter');
+          expect(payload.chapter_id).toBe(projectConfig.targetChapterId);
+        }
+      );
+
+      const expectedCrossChapterIds = sourceScenes
+        .filter((scene: Scene): boolean => {
+          const chapterId = normalizeChapterId(scene.prose_link?.chapter_id);
+          return (
+            scene.prose_link !== null && chapterId !== projectConfig.targetChapterId
+          );
+        })
+        .map((scene: Scene): SceneId => scene.id);
+
+      for (const sourceId of expectedCrossChapterIds) {
+        expect(apiMock.scenes.reorderProse.mock.calls).toEqual(
+          expect.arrayContaining([
+            [
+              expect.objectContaining({
+                source_scene_id: sourceId,
+              }),
+            ],
+          ])
+        );
+      }
+    }
+  );
 });
 
 // ============================================================================

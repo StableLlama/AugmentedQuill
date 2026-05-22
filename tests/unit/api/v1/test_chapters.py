@@ -10,6 +10,7 @@
 import json
 from pathlib import Path
 from augmentedquill.services.projects.projects import select_project
+from augmentedquill.services.scenes.scene_service import list_scenes
 from tests.unit.api.v1.api_test_case import ApiTestCase
 
 
@@ -207,6 +208,204 @@ class ChaptersApiTest(ApiTestCase):
 
         pdir = self.projects_root / "delete_chap"
         self.assertFalse((pdir / "chapters" / "0001.txt").exists())
+
+    def test_delete_middle_chapter_moves_linked_scene_to_previous_chapter(self):
+        ok, msg = select_project("delete_middle_moves_scene")
+        self.assertTrue(ok, msg)
+        pdir = self.projects_root / "delete_middle_moves_scene"
+        chdir = pdir / "chapters"
+        chdir.mkdir(parents=True, exist_ok=True)
+
+        (chdir / "0001.txt").write_text("Chapter 1 prose.", encoding="utf-8")
+        (chdir / "0002.txt").write_text(
+            "<!--scene:1:start-->Chapter 2 linked prose.<!--scene:1:end-->",
+            encoding="utf-8",
+        )
+        (chdir / "0003.txt").write_text("Chapter 3 prose.", encoding="utf-8")
+
+        story = {
+            "metadata": {"version": 2},
+            "project_title": "Delete Middle",
+            "format": "markdown",
+            "project_type": "novel",
+            "chapters": [
+                {"title": "Chapter 1", "filename": "0001.txt"},
+                {"title": "Chapter 2", "filename": "0002.txt"},
+                {"title": "Chapter 3", "filename": "0003.txt"},
+            ],
+            "scenes": {"1": {"summary": "Linked scene"}},
+        }
+        (pdir / "story.json").write_text(json.dumps(story), encoding="utf-8")
+
+        r = self.client.delete("/api/v1/chapters/2")
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.json()["ok"])
+
+        self.assertFalse((chdir / "0002.txt").exists())
+        chapter1_text = (chdir / "0001.txt").read_text(encoding="utf-8")
+        self.assertIn("<!--scene:1:start-->", chapter1_text)
+        self.assertIn("<!--scene:1:end-->", chapter1_text)
+
+        scenes = list_scenes(pdir)
+        scene = scenes[0]
+        self.assertEqual(scene["id"], 1)
+        self.assertEqual(scene["prose_link"]["scope_type"], "chapter")
+        self.assertEqual(scene["prose_link"]["chapter_id"], "1")
+
+    def test_delete_first_chapter_moves_linked_scene_to_next_chapter(self):
+        ok, msg = select_project("delete_first_moves_scene")
+        self.assertTrue(ok, msg)
+        pdir = self.projects_root / "delete_first_moves_scene"
+        chdir = pdir / "chapters"
+        chdir.mkdir(parents=True, exist_ok=True)
+
+        (chdir / "0001.txt").write_text(
+            "<!--scene:1:start-->Chapter 1 linked prose.<!--scene:1:end-->",
+            encoding="utf-8",
+        )
+        (chdir / "0002.txt").write_text("Chapter 2 prose.", encoding="utf-8")
+
+        story = {
+            "metadata": {"version": 2},
+            "project_title": "Delete First",
+            "format": "markdown",
+            "project_type": "novel",
+            "chapters": [
+                {"title": "Chapter 1", "filename": "0001.txt"},
+                {"title": "Chapter 2", "filename": "0002.txt"},
+            ],
+            "scenes": {"1": {"summary": "Linked scene"}},
+        }
+        (pdir / "story.json").write_text(json.dumps(story), encoding="utf-8")
+
+        r = self.client.delete("/api/v1/chapters/1")
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.json()["ok"])
+
+        self.assertFalse((chdir / "0001.txt").exists())
+        chapter2_text = (chdir / "0002.txt").read_text(encoding="utf-8")
+        self.assertIn("<!--scene:1:start-->", chapter2_text)
+        self.assertIn("<!--scene:1:end-->", chapter2_text)
+
+        scenes = list_scenes(pdir)
+        scene = scenes[0]
+        self.assertEqual(scene["id"], 1)
+        self.assertEqual(scene["prose_link"]["scope_type"], "chapter")
+        self.assertEqual(scene["prose_link"]["chapter_id"], "1")
+
+    def test_delete_last_chapter_unlinks_linked_scene(self):
+        ok, msg = select_project("delete_last_unlinks_scene")
+        self.assertTrue(ok, msg)
+        pdir = self.projects_root / "delete_last_unlinks_scene"
+        chdir = pdir / "chapters"
+        chdir.mkdir(parents=True, exist_ok=True)
+
+        (chdir / "0001.txt").write_text(
+            "<!--scene:1:start-->Only linked prose.<!--scene:1:end-->",
+            encoding="utf-8",
+        )
+
+        story = {
+            "metadata": {"version": 2},
+            "project_title": "Delete Last",
+            "format": "markdown",
+            "project_type": "novel",
+            "chapters": [
+                {"title": "Chapter 1", "filename": "0001.txt"},
+            ],
+            "scenes": {"1": {"summary": "Linked scene"}},
+        }
+        (pdir / "story.json").write_text(json.dumps(story), encoding="utf-8")
+
+        r = self.client.delete("/api/v1/chapters/1")
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.json()["ok"])
+
+        self.assertFalse((chdir / "0001.txt").exists())
+
+        scenes = list_scenes(pdir)
+        scene = scenes[0]
+        self.assertEqual(scene["id"], 1)
+        self.assertIsNone(scene["prose_link"])
+
+    def test_delete_series_chapter_moves_scene_within_same_book_only(self):
+        ok, msg = select_project("delete_series_same_book")
+        self.assertTrue(ok, msg)
+        pdir = self.projects_root / "delete_series_same_book"
+
+        book_a = "book-a"
+        book_b = "book-b"
+
+        a_chapters_dir = pdir / "books" / book_a / "chapters"
+        b_chapters_dir = pdir / "books" / book_b / "chapters"
+        a_chapters_dir.mkdir(parents=True, exist_ok=True)
+        b_chapters_dir.mkdir(parents=True, exist_ok=True)
+
+        (a_chapters_dir / "0001.txt").write_text("Book A chapter 1.", encoding="utf-8")
+        (a_chapters_dir / "0002.txt").write_text(
+            "<!--scene:1:start-->Book A chapter 2 linked prose.<!--scene:1:end-->",
+            encoding="utf-8",
+        )
+        (b_chapters_dir / "0001.txt").write_text("Book B chapter 1.", encoding="utf-8")
+
+        story = {
+            "metadata": {"version": 2},
+            "project_title": "Delete Series Chapter",
+            "format": "markdown",
+            "project_type": "series",
+            "books": [
+                {
+                    "id": book_a,
+                    "title": "Book A",
+                    "chapters": [
+                        {"title": "A1", "filename": "0001.txt"},
+                        {"title": "A2", "filename": "0002.txt"},
+                    ],
+                },
+                {
+                    "id": book_b,
+                    "title": "Book B",
+                    "chapters": [
+                        {"title": "B1", "filename": "0001.txt"},
+                    ],
+                },
+            ],
+            "scenes": {"1": {"summary": "Linked scene"}},
+        }
+        (pdir / "story.json").write_text(json.dumps(story), encoding="utf-8")
+
+        chapters_before = self.client.get("/api/v1/chapters")
+        self.assertEqual(chapters_before.status_code, 200)
+        chapter_list = chapters_before.json().get("chapters", [])
+        target = next(
+            (
+                chapter
+                for chapter in chapter_list
+                if chapter.get("book_id") == book_a and chapter.get("title") == "A2"
+            ),
+            None,
+        )
+        self.assertIsNotNone(target)
+
+        r = self.client.delete(f"/api/v1/chapters/{target['id']}")
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.json()["ok"])
+
+        self.assertFalse((a_chapters_dir / "0002.txt").exists())
+
+        book_a_ch1 = (a_chapters_dir / "0001.txt").read_text(encoding="utf-8")
+        book_b_ch1 = (b_chapters_dir / "0001.txt").read_text(encoding="utf-8")
+        self.assertIn("<!--scene:1:start-->", book_a_ch1)
+        self.assertIn("<!--scene:1:end-->", book_a_ch1)
+        self.assertNotIn("<!--scene:1:start-->", book_b_ch1)
+        self.assertNotIn("<!--scene:1:end-->", book_b_ch1)
+
+        scenes = list_scenes(pdir)
+        scene = scenes[0]
+        self.assertEqual(scene["id"], 1)
+        self.assertEqual(scene["prose_link"]["scope_type"], "chapter")
+        self.assertEqual(scene["prose_link"]["book_id"], book_a)
+        self.assertEqual(scene["prose_link"]["chapter_id"], "1")
 
     def test_series_project_chapters(self):
         # Create a series project

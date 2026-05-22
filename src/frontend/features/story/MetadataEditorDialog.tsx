@@ -30,7 +30,7 @@ interface Props {
   allowConflicts?: boolean;
   primarySourceLabel?: string;
   primarySourceAvailable?: boolean;
-  initialTab?: 'summary' | 'notes' | 'private' | 'conflicts';
+  initialTab?: 'summary' | 'notes' | 'private' | 'conflicts' | 'scenes';
   onAiGenerate?: (
     action: 'write' | 'update' | 'rewrite',
     onProgress?: (text: string) => void,
@@ -39,6 +39,7 @@ interface Props {
     source?: 'chapter' | 'notes'
   ) => Promise<string | undefined>;
   aiDisabledReason?: string;
+  chapterScenes?: Array<{ id: string; summary: string }>;
 }
 
 /** React component for metadata editor. */
@@ -59,6 +60,7 @@ export function MetadataEditorDialog({
   initialTab,
   onAiGenerate,
   aiDisabledReason,
+  chapterScenes,
 }: Props): import('react/jsx-runtime').JSX.Element {
   const dialogRef = useRef<HTMLDivElement>(null);
   useFocusTrap(true, dialogRef, onClose);
@@ -153,6 +155,7 @@ export function MetadataEditorDialog({
       onUpdateConflict={state.updateConflict}
       onMoveConflict={state.moveConflict}
       onEditorUndoRedo={handleEditorUndoRedo}
+      chapterScenes={chapterScenes}
     />
   );
 }

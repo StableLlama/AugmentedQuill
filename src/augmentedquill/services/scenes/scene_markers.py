@@ -144,6 +144,99 @@ def remap_offset_after_marker_removal(
     return clamped - removed_before
 
 
+def validate_scene_marker_tokens(content: str) -> None:
+    """Validate that every ``<!--scene:...`` token is syntactically complete.
+
+    Raises ``ValueError`` when marker-like text exists but does not match the
+    canonical ``<!--scene:<id>:(start|end)-->`` token shape.
+    """
+    search_pos = 0
+    while True:
+        marker_pos = content.find("<!--scene:", search_pos)
+        if marker_pos < 0:
+            return
+        match = _MARKER_RE.match(content, marker_pos)
+        if match is None:
+            snippet = content[marker_pos : marker_pos + 60].replace("\n", "\\n")
+            raise ValueError(f"Malformed scene marker token near: {snippet}")
+        search_pos = match.end()
+
+
+def snap_offset_outside_markers(content: str, offset: int) -> int:
+    """Return *offset* clamped so it never points inside a marker token.
+
+    If ``offset`` lands inside ``<!--scene:...-->`` the value is moved to the
+    marker end boundary to avoid splitting marker text during insertion.
+    """
+    clamped = max(0, min(offset, len(content)))
+    for match in _MARKER_RE.finditer(content):
+        if match.start() < clamped < match.end():
+            return match.end()
+    return clamped
+
+
+def snap_range_outside_markers(
+    content: str,
+    start: int,
+    end: int,
+    ignored_scene_ids: set[int] | None = None,
+) -> tuple[int, int]:
+    """Return a safe non-empty range that does not overlap marker token text.
+
+    The returned half-open range ``[start, end)`` is clamped to content bounds
+    and shifted right when it intersects any ``<!--scene:...-->`` token.
+    """
+    content_len = len(content)
+    safe_start = max(0, min(start, content_len))
+    safe_end = max(0, min(end, content_len))
+    if safe_start >= safe_end:
+        safe_end = min(content_len, safe_start + 1)
+
+    ignored_ids = ignored_scene_ids or set()
+    markers = [(match, int(match.group(1))) for match in _MARKER_RE.finditer(content)]
+
+    # Move boundaries out of marker interiors first.
+    for match, scene_id in markers:
+        if scene_id in ignored_ids:
+            continue
+        if match.start() < safe_start < match.end():
+            safe_start = match.end()
+        if match.start() < safe_end < match.end():
+            safe_end = match.end()
+    if safe_start >= safe_end:
+        safe_end = min(content_len, safe_start + 1)
+
+    # If the selected range still overlaps token bytes (including boundaries),
+    # push it right until it lands in prose text.
+    max_iterations = len(markers) + 2
+    for _ in range(max_iterations):
+        overlap = next(
+            (
+                marker
+                for marker, scene_id in markers
+                if scene_id not in ignored_ids
+                and safe_start < marker.end()
+                and safe_end > marker.start()
+            ),
+            None,
+        )
+        if overlap is None:
+            break
+        safe_start = overlap.end()
+        safe_end = max(safe_end, safe_start + 1)
+        safe_start = max(0, min(safe_start, content_len))
+        safe_end = max(0, min(safe_end, content_len))
+
+    if safe_start >= safe_end:
+        if safe_start >= content_len:
+            safe_start = max(0, content_len - 1)
+            safe_end = content_len
+        else:
+            safe_end = min(content_len, safe_start + 1)
+
+    return safe_start, safe_end
+
+
 def transfer_scene_markers(existing_content: str, rewritten_content: str) -> str:
     """Transfer scene markers from existing prose to rewritten prose.
 

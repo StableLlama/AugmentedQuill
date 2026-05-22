@@ -17,6 +17,7 @@ from augmentedquill.models.scene import (
     SceneCreateRequest,
     SceneLinkProseRequest,
     SceneProseLink,
+    SceneReorderProseRequest,
     SceneUpdateRequest,
     SceneUpdateProseContentRequest,
 )
@@ -25,6 +26,7 @@ from augmentedquill.services.scenes.scene_service import (
     get_scene,
     link_prose,
     list_scenes,
+    reorder_scene_prose,
     unlink_prose,
     update_scene,
     update_prose_content,
@@ -364,3 +366,573 @@ def test_list_scenes_ignores_empty_markers_in_invalid_chapter_files(
     assert first_link is not None
     assert first_link.get("scope_type") == "story"
     assert second_link is None
+
+
+def test_link_prose_snaps_offsets_that_land_inside_existing_markers(
+    project_dir: Path,
+) -> None:
+    first = create_scene(project_dir, SceneCreateRequest(summary="First"))
+    second = create_scene(project_dir, SceneCreateRequest(summary="Second"))
+
+    link_prose(
+        project_dir,
+        first["id"],
+        SceneLinkProseRequest(scope_type="story", start_offset=0, end_offset=5),
+    )
+
+    content = (project_dir / "content.md").read_text(encoding="utf-8")
+    start_marker_pos = content.index(f"<!--scene:{first['id']}:start-->")
+
+    link_prose(
+        project_dir,
+        second["id"],
+        SceneLinkProseRequest(
+            scope_type="story",
+            start_offset=start_marker_pos + 3,
+            end_offset=start_marker_pos + 8,
+        ),
+    )
+
+    updated = (project_dir / "content.md").read_text(encoding="utf-8")
+    assert "<!--scene:1:st<!--scene:" not in updated
+    spans = parse_scene_spans(updated)
+    assert len(spans) >= 1
+    assert any(span.scene_id == second["id"] for span in spans)
+
+
+def test_link_prose_rejects_malformed_marker_tokens_in_content(
+    project_dir: Path,
+) -> None:
+    scene = create_scene(project_dir, SceneCreateRequest(summary="Broken markers"))
+    (project_dir / "content.md").write_text(
+        "<!--scene:11:end-<!--scene:11:start-->-<!--scene:11:end-->",
+        encoding="utf-8",
+    )
+
+    try:
+        link_prose(
+            project_dir,
+            scene["id"],
+            SceneLinkProseRequest(scope_type="story", start_offset=0, end_offset=1),
+        )
+    except ValueError as exc:
+        assert "Malformed scene marker token" in str(exc)
+        return
+    raise AssertionError("Expected malformed marker content to raise ValueError")
+
+
+def test_link_prose_chapter_range_does_not_wrap_existing_marker_token_bytes(
+    project_dir: Path,
+) -> None:
+    story = json.loads((project_dir / "story.json").read_text(encoding="utf-8"))
+    story["chapters"] = [
+        {
+            "id": "1",
+            "filename": "0001.txt",
+            "title": "Chapter 1",
+            "summary": "",
+            "content": "",
+        }
+    ]
+    (project_dir / "story.json").write_text(json.dumps(story), encoding="utf-8")
+
+    chapters_dir = project_dir / "chapters"
+    chapters_dir.mkdir(parents=True, exist_ok=True)
+    (chapters_dir / "0001.txt").write_text(
+        "<!--scene:3:start-->Alpha<!--scene:3:end-->",
+        encoding="utf-8",
+    )
+
+    scene = create_scene(project_dir, SceneCreateRequest(summary="Target"))
+    link_prose(
+        project_dir,
+        scene["id"],
+        SceneLinkProseRequest(
+            scope_type="chapter",
+            chapter_id="1",
+            start_offset=0,
+            end_offset=1,
+        ),
+    )
+
+    updated = (chapters_dir / "0001.txt").read_text(encoding="utf-8")
+    assert "<!--scene:3:st<!--scene:" not in updated
+    assert "<<!--scene:" not in updated
+    spans = parse_scene_spans(updated)
+    assert any(span.scene_id == scene["id"] for span in spans)
+
+
+def test_link_prose_relink_to_new_chapter_removes_old_chapter_markers(
+    project_dir: Path,
+) -> None:
+    story = json.loads((project_dir / "story.json").read_text(encoding="utf-8"))
+    story["chapters"] = [
+        {
+            "id": "2",
+            "filename": "0002.txt",
+            "title": "Chapter 2",
+            "summary": "",
+            "content": "",
+        },
+        {
+            "id": "3",
+            "filename": "0003.txt",
+            "title": "Chapter 3",
+            "summary": "",
+            "content": "",
+        },
+    ]
+    (project_dir / "story.json").write_text(json.dumps(story), encoding="utf-8")
+
+    chapters_dir = project_dir / "chapters"
+    chapters_dir.mkdir(parents=True, exist_ok=True)
+    chapter2_path = chapters_dir / "0002.txt"
+    chapter3_path = chapters_dir / "0003.txt"
+    chapter2_path.write_text("", encoding="utf-8")
+    chapter3_path.write_text("Gamma", encoding="utf-8")
+
+    scene = create_scene(project_dir, SceneCreateRequest(summary="Scene to move"))
+
+    # Initial link in chapter 3.
+    link_prose(
+        project_dir,
+        scene["id"],
+        SceneLinkProseRequest(
+            scope_type="chapter",
+            chapter_id="3",
+            start_offset=0,
+            end_offset=1,
+        ),
+    )
+
+    # Relink to chapter 2 with edge offsets that previously created duplicates.
+    link_prose(
+        project_dir,
+        scene["id"],
+        SceneLinkProseRequest(
+            scope_type="chapter",
+            chapter_id="2",
+            start_offset=0,
+            end_offset=1,
+        ),
+    )
+
+    chapter2_text = chapter2_path.read_text(encoding="utf-8")
+    chapter3_text = chapter3_path.read_text(encoding="utf-8")
+    scene_start_marker = f"<!--scene:{scene['id']}:start-->"
+    scene_end_marker = f"<!--scene:{scene['id']}:end-->"
+
+    assert scene_start_marker in chapter2_text
+    assert scene_end_marker in chapter2_text
+    assert scene_start_marker not in chapter3_text
+    assert scene_end_marker not in chapter3_text
+
+
+def test_link_prose_resolves_numeric_chapter_id_by_filename_when_ids_missing(
+    project_dir: Path,
+) -> None:
+    # Migrations can drop chapter IDs, so chapter_id-based linking must still
+    # target the chapter file whose numeric filename stem matches the id.
+    story = json.loads((project_dir / "story.json").read_text(encoding="utf-8"))
+    story["chapters"] = [
+        {
+            "filename": "0002.txt",
+            "title": "Chapter 2",
+            "summary": "",
+            "content": "",
+        },
+        {
+            "filename": "0003.txt",
+            "title": "Chapter 3",
+            "summary": "",
+            "content": "",
+        },
+    ]
+    (project_dir / "story.json").write_text(json.dumps(story), encoding="utf-8")
+
+    chapters_dir = project_dir / "chapters"
+    chapters_dir.mkdir(parents=True, exist_ok=True)
+    chapter2_path = chapters_dir / "0002.txt"
+    chapter3_path = chapters_dir / "0003.txt"
+    chapter2_path.write_text("Alpha", encoding="utf-8")
+    chapter3_path.write_text("Beta", encoding="utf-8")
+
+    scene = create_scene(project_dir, SceneCreateRequest(summary="Target chapter 2"))
+    link_prose(
+        project_dir,
+        scene["id"],
+        SceneLinkProseRequest(
+            scope_type="chapter",
+            chapter_id="2",
+            start_offset=0,
+            end_offset=1,
+        ),
+    )
+
+    chapter2_text = chapter2_path.read_text(encoding="utf-8")
+    chapter3_text = chapter3_path.read_text(encoding="utf-8")
+    scene_start_marker = f"<!--scene:{scene['id']}:start-->"
+    scene_end_marker = f"<!--scene:{scene['id']}:end-->"
+
+    assert scene_start_marker in chapter2_text
+    assert scene_end_marker in chapter2_text
+    assert scene_start_marker not in chapter3_text
+    assert scene_end_marker not in chapter3_text
+
+
+def test_link_prose_repeated_chapter_moves_keep_single_scope_marker_invariant(
+    project_dir: Path,
+) -> None:
+    story = json.loads((project_dir / "story.json").read_text(encoding="utf-8"))
+    story["chapters"] = [
+        {
+            "filename": "0001.txt",
+            "title": "Chapter 1",
+            "summary": "",
+            "content": "",
+        },
+        {
+            "filename": "0002.txt",
+            "title": "Chapter 2",
+            "summary": "",
+            "content": "",
+        },
+        {
+            "filename": "0003.txt",
+            "title": "Chapter 3",
+            "summary": "",
+            "content": "",
+        },
+    ]
+    (project_dir / "story.json").write_text(json.dumps(story), encoding="utf-8")
+
+    chapters_dir = project_dir / "chapters"
+    chapters_dir.mkdir(parents=True, exist_ok=True)
+    chapter_paths = {
+        "1": chapters_dir / "0001.txt",
+        "2": chapters_dir / "0002.txt",
+        "3": chapters_dir / "0003.txt",
+    }
+    for chapter_path in chapter_paths.values():
+        chapter_path.write_text("Seed text", encoding="utf-8")
+
+    scene = create_scene(project_dir, SceneCreateRequest(summary="Invariant"))
+    marker_start = f"<!--scene:{scene['id']}:start-->"
+    marker_end = f"<!--scene:{scene['id']}:end-->"
+
+    for target_chapter_id in ["1", "2", "3", "2", "1"]:
+        link_prose(
+            project_dir,
+            scene["id"],
+            SceneLinkProseRequest(
+                scope_type="chapter",
+                chapter_id=target_chapter_id,
+                start_offset=0,
+                end_offset=1,
+            ),
+        )
+
+        files_with_scene = []
+        for chapter_id, chapter_path in chapter_paths.items():
+            chapter_text = chapter_path.read_text(encoding="utf-8")
+            has_scene = marker_start in chapter_text and marker_end in chapter_text
+            if has_scene:
+                files_with_scene.append(chapter_id)
+
+        assert files_with_scene == [target_chapter_id]
+
+
+def test_link_prose_empty_chapter_persists_true_empty_marker_pair(
+    project_dir: Path,
+) -> None:
+    story = json.loads((project_dir / "story.json").read_text(encoding="utf-8"))
+    story["chapters"] = [
+        {
+            "filename": "0002.txt",
+            "title": "Chapter 2",
+            "summary": "",
+            "content": "",
+        }
+    ]
+    (project_dir / "story.json").write_text(json.dumps(story), encoding="utf-8")
+
+    chapters_dir = project_dir / "chapters"
+    chapters_dir.mkdir(parents=True, exist_ok=True)
+    chapter2_path = chapters_dir / "0002.txt"
+    chapter2_path.write_text("", encoding="utf-8")
+
+    scene = create_scene(project_dir, SceneCreateRequest(summary="No empty markers"))
+    link_prose(
+        project_dir,
+        scene["id"],
+        SceneLinkProseRequest(
+            scope_type="chapter",
+            chapter_id="2",
+            start_offset=0,
+            end_offset=1,
+        ),
+    )
+
+    chapter_text = chapter2_path.read_text(encoding="utf-8")
+    assert (
+        f"<!--scene:{scene['id']}:start--><!--scene:{scene['id']}:end-->"
+        in chapter_text
+    )
+    spans = parse_scene_spans(chapter_text)
+    target_span = next((span for span in spans if span.scene_id == scene["id"]), None)
+    assert target_span is not None
+    assert target_span.end == target_span.start
+
+
+def test_link_prose_relink_to_empty_chapter_carries_existing_scene_prose(
+    project_dir: Path,
+) -> None:
+    story = json.loads((project_dir / "story.json").read_text(encoding="utf-8"))
+    story["chapters"] = [
+        {"filename": "0003.txt", "title": "Chapter 3", "summary": "", "content": ""},
+        {"filename": "0004.txt", "title": "Chapter 4", "summary": "", "content": ""},
+    ]
+    (project_dir / "story.json").write_text(json.dumps(story), encoding="utf-8")
+
+    chapters_dir = project_dir / "chapters"
+    chapters_dir.mkdir(parents=True, exist_ok=True)
+    chapter3_path = chapters_dir / "0003.txt"
+    chapter4_path = chapters_dir / "0004.txt"
+    chapter3_path.write_text("", encoding="utf-8")
+    chapter4_path.write_text("X", encoding="utf-8")
+
+    scene = create_scene(project_dir, SceneCreateRequest(summary="Move me"))
+
+    link_prose(
+        project_dir,
+        scene["id"],
+        SceneLinkProseRequest(
+            scope_type="chapter",
+            chapter_id="4",
+            start_offset=0,
+            end_offset=1,
+        ),
+    )
+
+    link_prose(
+        project_dir,
+        scene["id"],
+        SceneLinkProseRequest(
+            scope_type="chapter",
+            chapter_id="3",
+            start_offset=0,
+            end_offset=1,
+        ),
+    )
+
+    chapter3_text = chapter3_path.read_text(encoding="utf-8")
+    chapter4_text = chapter4_path.read_text(encoding="utf-8")
+    scene_start_marker = f"<!--scene:{scene['id']}:start-->"
+    scene_end_marker = f"<!--scene:{scene['id']}:end-->"
+
+    assert f"{scene_start_marker}X{scene_end_marker}" in chapter3_text
+    assert f"{scene_start_marker}\n{scene_end_marker}" not in chapter3_text
+    assert scene_start_marker not in chapter4_text
+    assert scene_end_marker not in chapter4_text
+
+
+def test_link_prose_relink_cleans_stale_duplicate_scene_markers_in_other_chapters(
+    project_dir: Path,
+) -> None:
+    story = json.loads((project_dir / "story.json").read_text(encoding="utf-8"))
+    story["chapters"] = [
+        {"filename": "0003.txt", "title": "Chapter 3", "summary": "", "content": ""},
+        {"filename": "0004.txt", "title": "Chapter 4", "summary": "", "content": ""},
+        {"filename": "0005.txt", "title": "Chapter 5", "summary": "", "content": ""},
+    ]
+    (project_dir / "story.json").write_text(json.dumps(story), encoding="utf-8")
+
+    chapters_dir = project_dir / "chapters"
+    chapters_dir.mkdir(parents=True, exist_ok=True)
+    chapter3_path = chapters_dir / "0003.txt"
+    chapter4_path = chapters_dir / "0004.txt"
+    chapter5_path = chapters_dir / "0005.txt"
+    chapter3_path.write_text("", encoding="utf-8")
+    chapter4_path.write_text("A", encoding="utf-8")
+    chapter5_path.write_text("B", encoding="utf-8")
+
+    scene = create_scene(project_dir, SceneCreateRequest(summary="Deduplicate"))
+
+    link_prose(
+        project_dir,
+        scene["id"],
+        SceneLinkProseRequest(
+            scope_type="chapter",
+            chapter_id="4",
+            start_offset=0,
+            end_offset=1,
+        ),
+    )
+
+    start_token = f"<!--scene:{scene['id']}:start-->"
+    end_token = f"<!--scene:{scene['id']}:end-->"
+    chapter5_path.write_text(
+        f"{start_token}B{end_token}",
+        encoding="utf-8",
+    )
+
+    link_prose(
+        project_dir,
+        scene["id"],
+        SceneLinkProseRequest(
+            scope_type="chapter",
+            chapter_id="3",
+            start_offset=0,
+            end_offset=1,
+        ),
+    )
+
+    chapter3_text = chapter3_path.read_text(encoding="utf-8")
+    chapter4_text = chapter4_path.read_text(encoding="utf-8")
+    chapter5_text = chapter5_path.read_text(encoding="utf-8")
+    assert start_token in chapter3_text
+    assert end_token in chapter3_text
+    assert start_token not in chapter4_text
+    assert end_token not in chapter4_text
+    assert start_token not in chapter5_text
+    assert end_token not in chapter5_text
+
+
+def test_link_prose_rejects_user_reported_malformed_chapter_marker_pattern(
+    project_dir: Path,
+) -> None:
+    story = json.loads((project_dir / "story.json").read_text(encoding="utf-8"))
+    story["chapters"] = [
+        {
+            "filename": "0003.txt",
+            "title": "Chapter 3",
+            "summary": "",
+            "content": "",
+        }
+    ]
+    (project_dir / "story.json").write_text(json.dumps(story), encoding="utf-8")
+
+    chapters_dir = project_dir / "chapters"
+    chapters_dir.mkdir(parents=True, exist_ok=True)
+    chapter3_path = chapters_dir / "0003.txt"
+    chapter3_path.write_text(
+        "<!--scene:10:start--><!--scene:10:end--<!--scene:18:start-->><!--scene:11:start-->><!--scene:11:end--><!--scene:18:end-->",
+        encoding="utf-8",
+    )
+
+    scene = create_scene(project_dir, SceneCreateRequest(summary="Broken chapter"))
+
+    with pytest.raises(ValueError, match="Malformed scene marker token"):
+        link_prose(
+            project_dir,
+            scene["id"],
+            SceneLinkProseRequest(
+                scope_type="chapter",
+                chapter_id="3",
+                start_offset=0,
+                end_offset=1,
+            ),
+        )
+
+
+def test_link_prose_rejects_user_exact_malformed_marker_sequence(
+    project_dir: Path,
+) -> None:
+    story = json.loads((project_dir / "story.json").read_text(encoding="utf-8"))
+    story["chapters"] = [
+        {
+            "filename": "0002.txt",
+            "title": "Chapter 2",
+            "summary": "",
+            "content": "",
+        }
+    ]
+    (project_dir / "story.json").write_text(json.dumps(story), encoding="utf-8")
+
+    chapters_dir = project_dir / "chapters"
+    chapters_dir.mkdir(parents=True, exist_ok=True)
+    chapter2_path = chapters_dir / "0002.txt"
+    chapter2_path.write_text(
+        "<!--scene:15:start--> <!--scene:15:end--<!--scene:6:start-->><!--scene:6:end-->",
+        encoding="utf-8",
+    )
+
+    scene = create_scene(project_dir, SceneCreateRequest(summary="Broken chapter"))
+
+    with pytest.raises(ValueError, match="Malformed scene marker token"):
+        link_prose(
+            project_dir,
+            scene["id"],
+            SceneLinkProseRequest(
+                scope_type="chapter",
+                chapter_id="2",
+                start_offset=0,
+                end_offset=1,
+            ),
+        )
+
+
+def test_reorder_scene_prose_rejects_malformed_target_chapter_markers(
+    project_dir: Path,
+) -> None:
+    story = json.loads((project_dir / "story.json").read_text(encoding="utf-8"))
+    story["chapters"] = [
+        {
+            "filename": "0002.txt",
+            "title": "Chapter 2",
+            "summary": "",
+            "content": "",
+        },
+        {
+            "filename": "0003.txt",
+            "title": "Chapter 3",
+            "summary": "",
+            "content": "",
+        },
+    ]
+    (project_dir / "story.json").write_text(json.dumps(story), encoding="utf-8")
+
+    chapters_dir = project_dir / "chapters"
+    chapters_dir.mkdir(parents=True, exist_ok=True)
+    chapter2_path = chapters_dir / "0002.txt"
+    chapter3_path = chapters_dir / "0003.txt"
+    chapter2_path.write_text("Alpha", encoding="utf-8")
+    chapter3_path.write_text("Bravo", encoding="utf-8")
+
+    source_scene = create_scene(project_dir, SceneCreateRequest(summary="Source"))
+    target_scene = create_scene(project_dir, SceneCreateRequest(summary="Target"))
+
+    link_prose(
+        project_dir,
+        source_scene["id"],
+        SceneLinkProseRequest(
+            scope_type="chapter",
+            chapter_id="2",
+            start_offset=0,
+            end_offset=1,
+        ),
+    )
+    link_prose(
+        project_dir,
+        target_scene["id"],
+        SceneLinkProseRequest(
+            scope_type="chapter",
+            chapter_id="3",
+            start_offset=0,
+            end_offset=1,
+        ),
+    )
+
+    chapter3_path.write_text(
+        "<!--scene:10:start-->\n<!--scene:10:end--\n", encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError, match="Malformed scene marker token"):
+        reorder_scene_prose(
+            project_dir,
+            SceneReorderProseRequest(
+                source_scene_id=source_scene["id"],
+                target_scene_id=target_scene["id"],
+                place_before=True,
+            ),
+        )

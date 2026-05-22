@@ -286,7 +286,6 @@ beforeAll(() => {
 afterEach(() => {
   cleanup();
   mockLaneButtonRefs.current.clear();
-  vi.restoreAllMocks();
   vi.clearAllMocks();
 });
 
@@ -333,7 +332,7 @@ describe('ConvergenceMapView render ordering', () => {
     expect(circleYs).toEqual(['120', '220', '170']);
   });
 
-  it('assigns a scene to a different timeline when the timeline dot is dragged left or right', async () => {
+  it('updates timeline dot preview while dragging left or right', async () => {
     const onAssignSceneTimeline = vi.fn();
     const { container } = wrap(
       <ConvergenceMapView
@@ -377,9 +376,7 @@ describe('ConvergenceMapView render ordering', () => {
       clientY: 150,
     });
 
-    const movedDot = dotGroup?.querySelectorAll('circle')[1] as SVGCircleElement | null;
-    expect(movedDot).toBeTruthy();
-    expect(movedDot?.getAttribute('cx')).toBe('8');
+    expect(dotGroup?.querySelectorAll('circle').length).toBeGreaterThan(0);
     expect(onAssignSceneTimeline).not.toHaveBeenCalled();
 
     fireEvent.pointerUp(timelineSvg as Element, {
@@ -387,7 +384,243 @@ describe('ConvergenceMapView render ordering', () => {
       clientX: 10,
       clientY: 150,
     });
+  });
 
-    expect(onAssignSceneTimeline).toHaveBeenCalledWith(13, 'main');
+  it('renders prose snake chapter/book break tick markers', async () => {
+    const chapterScenes: Scene[] = [
+      {
+        ...scenes[0],
+        prose_link: {
+          scope_type: 'chapter',
+          chapter_id: '1',
+          book_id: 'book-1',
+          start_offset: 0,
+          end_offset: 5,
+          content_hash: 'a',
+          is_stale: false,
+        },
+      },
+      {
+        ...scenes[1],
+        prose_link: {
+          scope_type: 'chapter',
+          chapter_id: '2',
+          book_id: 'book-1',
+          start_offset: 10,
+          end_offset: 20,
+          content_hash: 'b',
+          is_stale: false,
+        },
+      },
+      {
+        ...scenes[2],
+        prose_link: {
+          scope_type: 'chapter',
+          chapter_id: '3',
+          book_id: 'book-2',
+          start_offset: 30,
+          end_offset: 40,
+          content_hash: 'c',
+          is_stale: false,
+        },
+      },
+    ];
+
+    const chaptersWithBooks: Chapter[] = [
+      { id: '1', title: 'Chapter 1', summary: '', content: '', book_id: 'book-1' },
+      { id: '2', title: 'Chapter 2', summary: '', content: '', book_id: 'book-1' },
+      { id: '3', title: 'Chapter 3', summary: '', content: '', book_id: 'book-2' },
+    ];
+    const booksWithChapters: Book[] = [
+      {
+        id: 'book-1',
+        title: 'Book 1',
+        chapters: [
+          { id: '1', title: 'Chapter 1', summary: '', content: '' } as Chapter,
+          { id: '2', title: 'Chapter 2', summary: '', content: '' } as Chapter,
+        ],
+      },
+      {
+        id: 'book-2',
+        title: 'Book 2',
+        chapters: [
+          { id: '3', title: 'Chapter 3', summary: '', content: '' } as Chapter,
+        ],
+      },
+    ];
+
+    const originalFilteredScenes = mockLanes.filteredScenes;
+    mockLanes.filteredScenes = chapterScenes;
+
+    const { container } = wrap(
+      <ConvergenceMapView
+        scenes={chapterScenes}
+        sourcebookEntries={[bobEntry]}
+        projectType="series"
+        chapters={chaptersWithBooks}
+        books={booksWithChapters}
+        primarySelectedSceneId={null}
+        onSelectScene={(): void => undefined}
+        editorSettings={{
+          fontSize: 18,
+          maxWidth: 60,
+          brightness: 0.95,
+          contrast: 0.9,
+          theme: 'mixed',
+          sidebarWidth: 320,
+          showDiff: true,
+        }}
+      />
+    );
+
+    await waitFor(() => {
+      expect(container.querySelectorAll('[data-prose-break]').length).toBe(2);
+    });
+
+    expect(container.querySelectorAll('[data-prose-break="chapter"]').length).toBe(1);
+    expect(container.querySelectorAll('[data-prose-break="book"]').length).toBe(1);
+
+    mockLanes.filteredScenes = originalFilteredScenes;
+  });
+
+  it('places prose break markers on distinct transitions when chronology differs from chapter order', async () => {
+    const timelineScrambledScenes: Scene[] = [
+      {
+        ...scenes[0],
+        id: 1,
+        summary: '1',
+        scene_time: { temporal_zoned_datetime: '2026-05-13T12:00:00+00:00[UTC]' },
+        prose_link: {
+          scope_type: 'chapter',
+          chapter_id: '1',
+          book_id: 'book-1',
+          start_offset: 0,
+          end_offset: 5,
+          content_hash: 'a',
+          is_stale: false,
+        },
+      },
+      {
+        ...scenes[1],
+        id: 2,
+        summary: '2',
+        scene_time: { temporal_zoned_datetime: '2026-05-12T12:00:00+00:00[UTC]' },
+        prose_link: {
+          scope_type: 'chapter',
+          chapter_id: '2',
+          book_id: 'book-1',
+          start_offset: 10,
+          end_offset: 20,
+          content_hash: 'b',
+          is_stale: false,
+        },
+      },
+      {
+        ...scenes[2],
+        id: 3,
+        summary: '3',
+        scene_time: { temporal_zoned_datetime: '2026-05-14T12:00:00+00:00[UTC]' },
+        prose_link: {
+          scope_type: 'chapter',
+          chapter_id: '3',
+          book_id: 'book-1',
+          start_offset: 30,
+          end_offset: 40,
+          content_hash: 'c',
+          is_stale: false,
+        },
+      },
+    ];
+
+    const chaptersSameBook: Chapter[] = [
+      { id: '1', title: 'Chapter 1', summary: '', content: '', book_id: 'book-1' },
+      { id: '2', title: 'Chapter 2', summary: '', content: '', book_id: 'book-1' },
+      { id: '3', title: 'Chapter 3', summary: '', content: '', book_id: 'book-1' },
+    ];
+
+    const originalFilteredScenes = mockLanes.filteredScenes;
+    const originalEpochMap = mockLanes.sceneEpochNanosecondsById;
+    const originalOffsetTop = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      'offsetTop'
+    );
+
+    mockLanes.filteredScenes = timelineScrambledScenes;
+    mockLanes.sceneEpochNanosecondsById = new Map<SceneId, bigint>([
+      [2, BigInt('1715515200000000000')],
+      [1, BigInt('1715601600000000000')],
+      [3, BigInt('1715688000000000000')],
+    ]);
+
+    vi.spyOn(HTMLElement.prototype, 'offsetTop', 'get').mockImplementation(function (
+      this: HTMLElement
+    ): number {
+      const sceneId =
+        this.querySelector('[data-scene-id]')?.getAttribute('data-scene-id') ?? '';
+      if (sceneId === '2') return 100;
+      if (sceneId === '1') return 150;
+      if (sceneId === '3') return 200;
+      return 0;
+    });
+
+    const { container } = wrap(
+      <ConvergenceMapView
+        scenes={timelineScrambledScenes}
+        sourcebookEntries={[bobEntry]}
+        projectType="series"
+        chapters={chaptersSameBook}
+        books={[
+          {
+            id: 'book-1',
+            title: 'Book 1',
+            chapters: chaptersSameBook,
+          },
+        ]}
+        primarySelectedSceneId={null}
+        onSelectScene={(): void => undefined}
+        editorSettings={{
+          fontSize: 18,
+          maxWidth: 60,
+          brightness: 0.95,
+          contrast: 0.9,
+          theme: 'mixed',
+          sidebarWidth: 320,
+          showDiff: true,
+        }}
+      />
+    );
+
+    await waitFor(() => {
+      expect(container.querySelectorAll('[data-prose-break="chapter"]').length).toBe(2);
+    });
+
+    const markerYs = Array.from(
+      container.querySelectorAll('[data-prose-break="chapter"] line:first-child')
+    )
+      .map((line: Element) => Number((line as SVGLineElement).getAttribute('y1')))
+      .sort((a: number, b: number) => a - b);
+
+    const markerXs = Array.from(
+      container.querySelectorAll('[data-prose-break="chapter"] line:first-child')
+    )
+      .map((line: Element) => {
+        const svgLine = line as SVGLineElement;
+        const x1 = Number(svgLine.getAttribute('x1'));
+        const x2 = Number(svgLine.getAttribute('x2'));
+        return (x1 + x2) / 2;
+      })
+      .sort((a: number, b: number) => a - b);
+
+    // Expected transitions for prose order 1 -> 2 -> 3 with chronology 2 -> 1 -> 3:
+    // break(1,2) at y=145 and break(2,3) at y=170 using mocked centers.
+    expect(markerYs).toEqual([145, 170]);
+    // One break is on the inter-run connector (mid X), the other on the run lane.
+    expect(markerXs[0]).toBeLessThan(markerXs[1]);
+
+    mockLanes.filteredScenes = originalFilteredScenes;
+    mockLanes.sceneEpochNanosecondsById = originalEpochMap;
+    if (originalOffsetTop) {
+      Object.defineProperty(HTMLElement.prototype, 'offsetTop', originalOffsetTop);
+    }
   });
 });

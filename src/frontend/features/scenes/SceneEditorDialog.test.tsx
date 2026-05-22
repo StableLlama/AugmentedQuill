@@ -29,10 +29,21 @@ import type {
   SourcebookEntry,
   SceneTagPersonalDatetime,
 } from '../../types';
+import type { Chapter, Book } from '../../types/domain';
 import { TemporalApi } from '../../utils/temporal';
 
 const { sourcebookEntriesState } = vi.hoisted(() => ({
   sourcebookEntriesState: [] as SourcebookEntry[],
+}));
+
+const { baselineScenesState } = vi.hoisted(() => ({
+  baselineScenesState: [] as Scene[],
+}));
+
+const { chapterState, bookState, projectTypeState } = vi.hoisted(() => ({
+  chapterState: [] as Chapter[],
+  bookState: [] as Book[],
+  projectTypeState: { value: 'novel' as 'short-story' | 'novel' | 'series' },
 }));
 
 // ---------------------------------------------------------------------------
@@ -42,6 +53,9 @@ const { sourcebookEntriesState } = vi.hoisted(() => ({
 vi.mock('../../stores/storyStore', () => ({
   useScenes: vi.fn(() => [] as Scene[]),
   useStoryLanguage: vi.fn(() => 'en'),
+  useStoryMeta: vi.fn(() => ({ projectType: projectTypeState.value })),
+  useStoryChaptersListMeta: vi.fn(() => chapterState),
+  useStoryBooks: vi.fn(() => bookState),
   useStoryStore: vi.fn(
     (
       selector: (state: {
@@ -51,7 +65,7 @@ vi.mock('../../stores/storyStore', () => ({
     ) =>
       selector({
         story: { sourcebook: sourcebookEntriesState },
-        baselineState: { scenes: [] },
+        baselineState: { scenes: baselineScenesState },
       })
   ),
 }));
@@ -108,6 +122,10 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   sourcebookEntriesState.splice(0, sourcebookEntriesState.length);
+  baselineScenesState.splice(0, baselineScenesState.length);
+  chapterState.splice(0, chapterState.length);
+  bookState.splice(0, bookState.length);
+  projectTypeState.value = 'novel';
 });
 
 // ---------------------------------------------------------------------------
@@ -164,6 +182,32 @@ describe('SceneEditorDialog rendering', () => {
     expect(beatRow).toBeTruthy();
   });
 
+  it('keeps diff view disabled on normal open even when a baseline scene exists', () => {
+    baselineScenesState.push(
+      makeScene({
+        id: 'scene-baseline',
+        summary: 'Baseline summary',
+      })
+    );
+
+    wrap(
+      <SceneEditorDialog
+        scene={makeScene({
+          id: 'scene-baseline',
+          summary: 'Current summary',
+        })}
+        isOpen={true}
+        openedViaTrigger={false}
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+      />
+    );
+
+    const diffButton = screen.getByRole('button', { name: /Toggle diff view/i });
+    expect(diffButton.getAttribute('aria-pressed')).toBe('false');
+  });
+
   it('renders the dialog when isOpen is true', () => {
     wrap(
       <SceneEditorDialog
@@ -189,6 +233,120 @@ describe('SceneEditorDialog rendering', () => {
     );
     const editor = screen.getByRole('textbox', { name: /Scene summary/i });
     expect(editor.textContent).toContain('Opening act');
+  });
+
+  it('shows scene/chapter/book narrative context badges when available', () => {
+    const mockedUseScenes = vi.mocked(useScenes);
+    chapterState.push(
+      {
+        id: 'ch-1',
+        title: 'Chapter One',
+        summary: '',
+        content: '',
+        book_id: 'book-1',
+      },
+      {
+        id: 'ch-2',
+        title: 'Chapter Two',
+        summary: '',
+        content: '',
+      }
+    );
+    bookState.push({ id: 'book-1', title: 'Book One', chapters: [] as Chapter[] });
+
+    const target = makeScene({
+      id: 'scene-target',
+      summary: 'Target',
+      order_index: 3,
+      prose_link: null,
+    });
+    mockedUseScenes.mockReturnValue([
+      makeScene({
+        id: 'scene-prev',
+        summary: 'Prev',
+        order_index: 1,
+        prose_link: {
+          scope_type: 'chapter',
+          chapter_id: 'ch-1',
+          book_id: 'book-1',
+          start_offset: 0,
+          end_offset: 5,
+          content_hash: 'hash',
+          is_stale: false,
+        },
+      }),
+      target,
+      makeScene({
+        id: 'scene-next',
+        summary: 'Next',
+        order_index: 5,
+        prose_link: {
+          scope_type: 'chapter',
+          chapter_id: 'ch-1',
+          book_id: 'book-1',
+          start_offset: 10,
+          end_offset: 20,
+          content_hash: 'hash',
+          is_stale: false,
+        },
+      }),
+      makeScene({
+        id: 'scene-other',
+        summary: 'Other',
+        order_index: 7,
+        prose_link: {
+          scope_type: 'chapter',
+          chapter_id: 'ch-2',
+          book_id: null,
+          start_offset: 0,
+          end_offset: 5,
+          content_hash: 'hash',
+          is_stale: false,
+        },
+      }),
+    ]);
+
+    wrap(
+      <SceneEditorDialog
+        scene={target}
+        isOpen
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+      />
+    );
+
+    expect(screen.getByText('Scene 2 of 4')).toBeTruthy();
+    expect(screen.getByText('Chapter: Chapter One')).toBeTruthy();
+    expect(screen.getByText('Book: Book One')).toBeTruthy();
+    expect(screen.getByText('Chapter position 2 of 3')).toBeTruthy();
+  });
+
+  it('navigates to previous and next scenes in narrative order', () => {
+    const onNavigateScene = vi.fn();
+    const mockedUseScenes = vi.mocked(useScenes);
+
+    const sceneA = makeScene({ id: 'scene-a', summary: 'A', order_index: 1 });
+    const sceneB = makeScene({ id: 'scene-b', summary: 'B', order_index: 2 });
+    const sceneC = makeScene({ id: 'scene-c', summary: 'C', order_index: 3 });
+    mockedUseScenes.mockReturnValue([sceneA, sceneB, sceneC]);
+
+    wrap(
+      <SceneEditorDialog
+        scene={sceneB}
+        isOpen
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+        onNavigateScene={onNavigateScene}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Previous scene' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Next scene' }));
+
+    expect(onNavigateScene).toHaveBeenNthCalledWith(1, 'scene-a');
+    expect(onNavigateScene).toHaveBeenNthCalledWith(2, 'scene-c');
   });
 });
 

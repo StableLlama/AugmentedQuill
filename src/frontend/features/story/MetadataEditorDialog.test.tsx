@@ -135,6 +135,32 @@ describe('MetadataEditorDialog: rendering and state sync', () => {
     expect(screen.getByText('from Story Draft')).toBeTruthy();
   });
 
+  it('shows chapter scene list in a dedicated tab to the right of Conflicts', async () => {
+    const onSave = vi.fn(async () => undefined);
+    const onClose = vi.fn();
+
+    renderWithI18n(
+      <MetadataEditorDialog
+        type="chapter"
+        title="Edit Chapter Metadata"
+        initialData={{ ...baseData, conflicts: [] }}
+        onSave={onSave}
+        onClose={onClose}
+        onAiGenerate={undefined}
+        chapterScenes={[
+          { id: '1', summary: 'Opening Scene' },
+          { id: '2', summary: 'Resolution Scene' },
+        ]}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Scenes/i }));
+
+    expect(screen.getByText('Scenes in this chapter')).toBeTruthy();
+    expect(screen.getByText('Opening Scene')).toBeTruthy();
+    expect(screen.getByText('Resolution Scene')).toBeTruthy();
+  });
+
   it('sets the story language on editable metadata text inputs', () => {
     const onSave = vi.fn(async () => undefined);
     const onClose = vi.fn();

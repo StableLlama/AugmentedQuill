@@ -107,7 +107,7 @@ export function buildChapterOrderMap(
 }
 
 export function normalizeChapterId(chapterId: unknown): string {
-  if (typeof chapterId === 'string') return chapterId;
+  if (typeof chapterId === 'string') return chapterId.trim();
   if (typeof chapterId === 'number' && Number.isFinite(chapterId))
     return String(chapterId);
   return '';
@@ -130,14 +130,14 @@ export function proseSort(
   sceneB: Scene,
   chapterOrderMap: Map<string, number>
 ): number {
-  // Scenes with no prose link are sorted by their chapter (if in a chapter scope).
-  // Linked scenes are sorted by their chapter first, then by prose start_offset.
-  // Once in the same chapter/scope, use order_index for all.
+  // Linked chapter scenes are grouped by chapter display order first.
+  // Inside a chapter (and for all other combinations), sort by order_index so
+  // unlinked scenes can naturally interleave between linked scenes.
   const linkA = sceneA.prose_link;
   const linkB = sceneB.prose_link;
 
-  let chIdxA = Infinity;
-  let chIdxB = Infinity;
+  let chIdxA: number | null = null;
+  let chIdxB: number | null = null;
 
   if (linkA && linkA.scope_type !== 'story') {
     chIdxA = chapterOrderMap.get(normalizeChapterId(linkA.chapter_id)) ?? Infinity;
@@ -146,11 +146,26 @@ export function proseSort(
     chIdxB = chapterOrderMap.get(normalizeChapterId(linkB.chapter_id)) ?? Infinity;
   }
 
-  if (chIdxA !== chIdxB) return chIdxA < chIdxB ? -1 : 1;
+  if (chIdxA !== null && chIdxB !== null && chIdxA !== chIdxB) {
+    return chIdxA < chIdxB ? -1 : 1;
+  }
 
   const startA = sceneA.prose_link?.start_offset;
   const startB = sceneB.prose_link?.start_offset;
-  if (Number.isFinite(startA) && Number.isFinite(startB) && startA !== startB) {
+
+  const sameScope =
+    linkA &&
+    linkB &&
+    linkA.scope_type === linkB.scope_type &&
+    (linkA.scope_type === 'story' ||
+      normalizeChapterId(linkA.chapter_id) === normalizeChapterId(linkB.chapter_id));
+
+  if (
+    sameScope &&
+    Number.isFinite(startA) &&
+    Number.isFinite(startB) &&
+    startA !== startB
+  ) {
     return Number(startA) - Number(startB);
   }
 

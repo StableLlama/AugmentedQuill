@@ -37,7 +37,7 @@ import { MetadataParams } from './metadataSync';
 import { Button } from '../../components/ui/Button';
 import { CodeMirrorEditor } from '../editor/CodeMirrorEditor';
 
-type MetadataTab = 'summary' | 'notes' | 'private' | 'conflicts';
+type MetadataTab = 'summary' | 'notes' | 'private' | 'conflicts' | 'scenes';
 
 type MetadataAction = 'write' | 'update' | 'rewrite';
 type MetadataAiSource = 'chapter' | 'notes';
@@ -96,6 +96,7 @@ interface MetadataEditorDialogViewProps {
   onUpdateConflict: (id: string, field: keyof Conflict, value: string) => void;
   onMoveConflict: (index: number, direction: 'up' | 'down') => void;
   onEditorUndoRedo: (event: React.KeyboardEvent<HTMLDivElement>) => void;
+  chapterScenes?: Array<{ id: string; summary: string }>;
 }
 
 interface DialogHeaderProps {
@@ -301,6 +302,7 @@ interface TabBarProps {
   activeTab: MetadataTab;
   type: 'story' | 'book' | 'chapter';
   allowConflicts: boolean;
+  chapterScenes: Array<{ id: string; summary: string }>;
   onSetActiveTab: (tab: MetadataTab) => void;
 }
 
@@ -309,6 +311,7 @@ const TabBar: React.FC<TabBarProps> = ({
   activeTab,
   type,
   allowConflicts,
+  chapterScenes,
   onSetActiveTab,
 }: TabBarProps) => {
   const tabClass = (tab: MetadataTab): string =>
@@ -347,6 +350,21 @@ const TabBar: React.FC<TabBarProps> = ({
         >
           <AlertTriangle size={16} />
           {t('Conflicts')}
+        </button>
+      )}
+      {type === 'chapter' && (
+        <button
+          onClick={(): void => onSetActiveTab('scenes')}
+          className={tabClass('scenes')}
+        >
+          <FileText size={16} />
+          {t('Scenes')}
+          <span
+            className="ml-1 inline-flex items-center justify-center rounded-full bg-brand-gray-200 dark:bg-brand-gray-700 px-1.5 py-0.5 text-[10px]"
+            aria-label={t('Scene count: {{count}}', { count: chapterScenes.length })}
+          >
+            {chapterScenes.length}
+          </span>
         </button>
       )}
     </div>
@@ -1147,6 +1165,45 @@ const ConflictsTabContent: React.FC<ConflictsTabContentProps> = ({
   );
 };
 
+interface ScenesTabContentProps {
+  t: (key: string, options?: Record<string, unknown>) => string;
+  chapterScenes: Array<{ id: string; summary: string }>;
+}
+
+const ScenesTabContent: React.FC<ScenesTabContentProps> = ({
+  t,
+  chapterScenes,
+}: ScenesTabContentProps) => {
+  return (
+    <div className="space-y-3">
+      <h3 className="text-sm font-semibold dark:text-brand-gray-300">
+        {t('Scenes in this chapter')}
+      </h3>
+      {chapterScenes.length === 0 ? (
+        <p className="text-sm text-brand-gray-500">
+          {t('No scenes currently assigned to this chapter.')}
+        </p>
+      ) : (
+        <ol className="space-y-1.5 list-decimal list-inside">
+          {chapterScenes.map(
+            (scene: {
+              id: string;
+              summary: string;
+            }): import('react/jsx-runtime').JSX.Element => (
+              <li
+                key={scene.id}
+                className="text-sm text-brand-gray-700 dark:text-brand-gray-300"
+              >
+                {scene.summary}
+              </li>
+            )
+          )}
+        </ol>
+      )}
+    </div>
+  );
+};
+
 export const MetadataEditorDialogView: React.FC<MetadataEditorDialogViewProps> = ({
   title,
   type,
@@ -1198,6 +1255,7 @@ export const MetadataEditorDialogView: React.FC<MetadataEditorDialogViewProps> =
   onUpdateConflict,
   onMoveConflict,
   onEditorUndoRedo,
+  chapterScenes = [],
 }: MetadataEditorDialogViewProps) => {
   const { t } = useTranslation();
   const modalContent = (
@@ -1252,6 +1310,7 @@ export const MetadataEditorDialogView: React.FC<MetadataEditorDialogViewProps> =
               activeTab={activeTab}
               type={type}
               allowConflicts={allowConflicts}
+              chapterScenes={chapterScenes}
               onSetActiveTab={onSetActiveTab}
             />
             <div className="flex-1 p-4 min-h-[500px]">
@@ -1329,6 +1388,9 @@ export const MetadataEditorDialogView: React.FC<MetadataEditorDialogViewProps> =
                   onMoveConflict={onMoveConflict}
                   onSetBaselineData={onSetBaselineData}
                 />
+              )}
+              {activeTab === 'scenes' && type === 'chapter' && (
+                <ScenesTabContent t={t} chapterScenes={chapterScenes} />
               )}
             </div>
           </div>

@@ -13,7 +13,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import { Clock, MessageSquareDiff } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Clock, MessageSquareDiff } from 'lucide-react';
 import type {
   Scene,
   SceneBeat,
@@ -22,17 +22,30 @@ import type {
   SourcebookEntry,
   SceneId,
 } from '../../types';
+import type { Chapter, Book } from '../../types/domain';
 import { useThemeClasses } from '../layout/ThemeContext';
 import { useFocusTrap } from '../layout/useFocusTrap';
 import { CodeMirrorEditor } from '../editor/CodeMirrorEditor';
 import type { EditorView } from '@codemirror/view';
-import { useScenes, useStoryLanguage, useStoryStore } from '../../stores/storyStore';
+import {
+  useScenes,
+  useStoryLanguage,
+  useStoryStore,
+  useStoryMeta,
+  useStoryChaptersListMeta,
+  useStoryBooks,
+} from '../../stores/storyStore';
 import type { StoryStoreState } from '../../stores/storyStore';
 import { SourcebookHoverCard } from '../sourcebook/SourcebookHoverCard';
 import { listProjectImages } from '../sourcebook/sourcebookApi';
 import { ProjectImage } from '../../services/apiTypes';
 import { SceneTemporalDialog } from './SceneTemporalDialog';
-import { getSceneEpochNanoseconds } from './sceneSortUtils';
+import {
+  getSceneEpochNanoseconds,
+  buildChapterOrderMap,
+  proseSort,
+  normalizeChapterId,
+} from './sceneSortUtils';
 import { buildSceneTimelineOptions } from './timelineOptions';
 import {
   parseZonedDateTime,
@@ -146,6 +159,7 @@ interface SceneEditorDialogProps {
   onOpenSourcebookEntry?: (entryId: string) => void;
   openedViaTrigger?: boolean;
   summaryEditorRef?: React.Ref<EditorView | null>;
+  onNavigateScene?: (sceneId: SceneId) => void;
 }
 
 const normalizeToken = (value: string): string => value.trim().toLowerCase();
@@ -178,11 +192,15 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
   onOpenSourcebookEntry,
   openedViaTrigger = false,
   summaryEditorRef,
+  onNavigateScene,
 }: SceneEditorDialogProps) => {
   const { t, i18n } = useTranslation();
   const tc = useThemeClasses();
   const storyLanguage = useStoryLanguage();
   const allScenes = useScenes();
+  const { projectType } = useStoryMeta();
+  const chapters = useStoryChaptersListMeta();
+  const books = useStoryBooks();
   const sourcebookEntriesMaybe = useStoryStore(
     (s: StoryStoreState): SourcebookEntry[] => s.story.sourcebook ?? []
   );
@@ -215,7 +233,7 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
   );
   const [summary, setSummary] = useState(scene.summary);
   const [beats, setBeats] = useState<SceneBeat[]>(scene.beats);
-  const [showDiff, setShowDiff] = useState(true);
+  const [showDiff, setShowDiff] = useState(Boolean(openedViaTrigger));
   const [activeTokens, setActiveTokens] = useState<CharToken[]>(
     scene.active_characters.map((name: string, i: number): CharToken => {
       const dt = scene.tag_personal_datetimes?.find(
@@ -318,6 +336,96 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
     () =>
       buildSceneTimelineOptions(scene, sourcebookEntries, sceneEpochNanosecondsById),
     [scene, sourcebookEntries, sceneEpochNanosecondsById]
+  );
+
+  const narrativeOrderedScenes = useMemo((): Scene[] => {
+    const chapterOrderMap = buildChapterOrderMap(projectType, chapters, books ?? []);
+    return [...allScenes].sort((a: Scene, b: Scene) =>
+      proseSort(a, b, chapterOrderMap)
+    );
+  }, [allScenes, books, chapters, projectType]);
+
+  const chapterById = useMemo(
+    (): Map<string, Chapter> =>
+      new Map(chapters.map((chapter: Chapter) => [chapter.id, chapter])),
+    [chapters]
+  );
+
+  const bookById = useMemo(
+    (): Map<string, Book> =>
+      new Map((books ?? []).map((book: Book) => [book.id, book])),
+    [books]
+  );
+
+  const inferredChapterBySceneId = useMemo((): Map<SceneId, string | null> => {
+    const map = new Map<SceneId, string | null>();
+    const chapterIds = narrativeOrderedScenes.map((candidate: Scene) => {
+      const link = candidate.prose_link;
+      if (!link || link.scope_type !== 'chapter') return null;
+      const chapterId = normalizeChapterId(link.chapter_id);
+      return chapterId.length > 0 ? chapterId : null;
+    });
+
+    narrativeOrderedScenes.forEach((candidate: Scene, index: number): void => {
+      const direct = chapterIds[index];
+      if (direct) {
+        map.set(candidate.id, direct);
+        return;
+      }
+
+      let previousChapterId: string | null = null;
+      for (let i = index - 1; i >= 0; i -= 1) {
+        if (chapterIds[i]) {
+          previousChapterId = chapterIds[i];
+          break;
+        }
+      }
+
+      if (previousChapterId) {
+        map.set(candidate.id, previousChapterId);
+        return;
+      }
+
+      let nextChapterId: string | null = null;
+      for (let i = index + 1; i < chapterIds.length; i += 1) {
+        if (chapterIds[i]) {
+          nextChapterId = chapterIds[i];
+          break;
+        }
+      }
+
+      map.set(candidate.id, nextChapterId);
+    });
+
+    return map;
+  }, [narrativeOrderedScenes]);
+
+  const sceneNarrativeIndex = narrativeOrderedScenes.findIndex(
+    (candidate: Scene): boolean => candidate.id === scene.id
+  );
+  const previousNarrativeScene =
+    sceneNarrativeIndex > 0 ? narrativeOrderedScenes[sceneNarrativeIndex - 1] : null;
+  const nextNarrativeScene =
+    sceneNarrativeIndex >= 0 && sceneNarrativeIndex < narrativeOrderedScenes.length - 1
+      ? narrativeOrderedScenes[sceneNarrativeIndex + 1]
+      : null;
+
+  const sceneChapterId = inferredChapterBySceneId.get(scene.id) ?? null;
+  const sceneChapter = sceneChapterId
+    ? (chapterById.get(sceneChapterId) ?? null)
+    : null;
+  const sceneBook = sceneChapter?.book_id
+    ? (bookById.get(sceneChapter.book_id) ?? null)
+    : null;
+
+  const chapterNarrativeScenes = sceneChapterId
+    ? narrativeOrderedScenes.filter(
+        (candidate: Scene): boolean =>
+          (inferredChapterBySceneId.get(candidate.id) ?? null) === sceneChapterId
+      )
+    : [];
+  const sceneChapterIndex = chapterNarrativeScenes.findIndex(
+    (candidate: Scene): boolean => candidate.id === scene.id
   );
 
   /**
@@ -530,7 +638,7 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
     setConfirmDelete(false);
     setPendingSourcebookEntryId(null);
     setHoveredEntry(null);
-    setShowDiff(Boolean(openedViaTrigger || baselineScene));
+    setShowDiff(Boolean(openedViaTrigger));
 
     initialSnapshotRef.current = {
       summary: scene.summary,
@@ -929,7 +1037,7 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 pt-14"
       role="presentation"
     >
       <div
@@ -937,12 +1045,46 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
         role="dialog"
         aria-modal="true"
         aria-label={t('Edit Scene')}
-        className={`relative flex flex-col w-[96vw] h-[96vh] max-w-none rounded-xl shadow-2xl border ${tc.border} ${tc.bg} overflow-hidden`}
+        className={`relative flex flex-col w-[96vw] h-[calc(100vh-4rem)] max-w-none rounded-xl shadow-2xl border ${tc.border} ${tc.bg} overflow-hidden`}
       >
         <div
           className={`flex items-center justify-between px-5 py-3 border-b ${tc.border} flex-shrink-0`}
         >
-          <h2 className={`text-base font-semibold ${tc.text}`}>{t('Edit Scene')}</h2>
+          <div className="flex items-center gap-2">
+            <h2 className={`text-base font-semibold ${tc.text}`}>{t('Edit Scene')}</h2>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                aria-label={t('Previous scene')}
+                title={t('Previous scene')}
+                onClick={(): void => {
+                  if (previousNarrativeScene && onNavigateScene) {
+                    onNavigateScene(previousNarrativeScene.id);
+                  }
+                }}
+                disabled={!previousNarrativeScene || !onNavigateScene}
+                className={`inline-flex items-center gap-1 px-2 py-1 rounded-md border text-xs ${tc.border} ${tc.text} disabled:opacity-40 disabled:cursor-not-allowed`}
+              >
+                <ChevronLeft size={14} />
+                <span>{t('Previous scene')}</span>
+              </button>
+              <button
+                type="button"
+                aria-label={t('Next scene')}
+                title={t('Next scene')}
+                onClick={(): void => {
+                  if (nextNarrativeScene && onNavigateScene) {
+                    onNavigateScene(nextNarrativeScene.id);
+                  }
+                }}
+                disabled={!nextNarrativeScene || !onNavigateScene}
+                className={`inline-flex items-center gap-1 px-2 py-1 rounded-md border text-xs ${tc.border} ${tc.text} disabled:opacity-40 disabled:cursor-not-allowed`}
+              >
+                <span>{t('Next scene')}</span>
+                <ChevronRight size={14} />
+              </button>
+            </div>
+          </div>
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -962,6 +1104,37 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
             >
               ✕
             </button>
+          </div>
+        </div>
+
+        <div className={`px-5 py-2 border-b ${tc.border}`}>
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            {sceneNarrativeIndex >= 0 && (
+              <span className={`px-2 py-1 rounded-md border ${tc.border} ${tc.text}`}>
+                {t('Scene {{index}} of {{total}}', {
+                  index: sceneNarrativeIndex + 1,
+                  total: narrativeOrderedScenes.length,
+                })}
+              </span>
+            )}
+            {sceneChapter && (
+              <span className={`px-2 py-1 rounded-md border ${tc.border} ${tc.text}`}>
+                {t('Chapter: {{title}}', { title: sceneChapter.title })}
+              </span>
+            )}
+            {sceneBook && (
+              <span className={`px-2 py-1 rounded-md border ${tc.border} ${tc.text}`}>
+                {t('Book: {{title}}', { title: sceneBook.title })}
+              </span>
+            )}
+            {sceneChapterIndex >= 0 && chapterNarrativeScenes.length > 0 && (
+              <span className={`px-2 py-1 rounded-md border ${tc.border} ${tc.text}`}>
+                {t('Chapter position {{index}} of {{total}}', {
+                  index: sceneChapterIndex + 1,
+                  total: chapterNarrativeScenes.length,
+                })}
+              </span>
+            )}
           </div>
         </div>
 

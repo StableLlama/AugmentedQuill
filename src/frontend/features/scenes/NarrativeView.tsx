@@ -39,7 +39,12 @@ import { useSceneSelection } from './useSceneSelection';
 import { useThemeClasses, useTheme } from '../layout/ThemeContext';
 import { useSceneLanes, isCharacterEntry } from './useSceneLanes';
 import { LaneHeader } from './LaneHeader';
-import { buildChapterOrderMap, proseSort, chronologicalSort } from './sceneSortUtils';
+import {
+  buildChapterOrderMap,
+  proseSort,
+  chronologicalSort,
+  normalizeChapterId,
+} from './sceneSortUtils';
 import type { ProjectType } from './sceneSortUtils';
 
 // ---------------------------------------------------------------------------
@@ -63,6 +68,10 @@ interface NarrativeViewProps {
     targetSceneId: SceneId,
     placeBefore: boolean
   ) => Promise<void>;
+  onDropScenesOnChapter?: (
+    sourceSceneIds: SceneId[],
+    chapterId: string
+  ) => Promise<void>;
   initialVisibleLaneEntryIds?: string[];
   initialRemovedReferencedLaneIds?: string[];
   onVisibleLaneEntryIdsChange?: (ids: string[]) => void;
@@ -76,7 +85,12 @@ interface NarrativeViewProps {
 type NarrativeItem =
   | { kind: 'scene'; scene: Scene; sortIndex: number }
   | { kind: 'book-break'; bookId: string; bookTitle: string }
-  | { kind: 'chapter-break'; chapterId: string; chapterTitle: string }
+  | {
+      kind: 'chapter-break';
+      chapterId: string;
+      chapterTitle: string;
+      isLeading: boolean;
+    }
   | { kind: 'unlinked-break' };
 
 interface BreakState {
@@ -90,9 +104,13 @@ function appendChapterBreakItems(
   chapterById: Map<string, Chapter>,
   bookById: Map<string, Book>,
   chapterId: string | null,
-  state: BreakState
+  state: BreakState,
+  hasPreviousScene: boolean
 ): void {
   const chapter = chapterId ? chapterById.get(chapterId) : undefined;
+  if (!chapter) {
+    return;
+  }
   const bookId = chapter?.book_id ?? null;
 
   if (projectType === 'series' && bookId !== state.prevBookId) {
@@ -111,6 +129,7 @@ function appendChapterBreakItems(
       kind: 'chapter-break',
       chapterId: chapterId ?? '',
       chapterTitle: chapter?.title ?? chapterId ?? '',
+      isLeading: !hasPreviousScene,
     });
     state.prevChapterId = chapterId;
   }
@@ -144,7 +163,7 @@ function buildItems(
       insertedUnlinkedBreak = true;
     }
 
-    if (link && link.scope_type === 'chapter') {
+    if (sortMode === 'narrative' && link && link.scope_type === 'chapter') {
       const chapterId = link.chapter_id ?? null;
       appendChapterBreakItems(
         items,
@@ -152,7 +171,8 @@ function buildItems(
         chapterById,
         bookById,
         chapterId,
-        state
+        state,
+        sortIndex > 0
       );
     }
 
@@ -172,48 +192,51 @@ interface BookBreakProps {
 
 const BookBreak: React.FC<BookBreakProps> = ({ title }: BookBreakProps) => {
   const { t } = useTranslation();
-  const tc = useThemeClasses();
   const { isLight } = useTheme();
   return (
     <div
-      className={`flex items-center gap-3 py-3 ${isLight ? 'text-brand-gray-700' : 'text-brand-gray-200'}`}
+      className="py-2"
+      data-break-kind="book"
       role="separator"
       aria-label={t('Book: {{title}}', { title })}
     >
-      <div
-        className={`flex-1 h-px ${isLight ? 'bg-brand-gray-400' : 'bg-brand-gray-500'}`}
-      />
-      <span className={`text-xs font-bold uppercase tracking-widest px-2 ${tc.muted}`}>
-        {t('Book')}
-      </span>
-      <span className="text-sm font-semibold truncate max-w-xs">{title}</span>
-      <div
-        className={`flex-1 h-px ${isLight ? 'bg-brand-gray-400' : 'bg-brand-gray-500'}`}
-      />
+      <div className="space-y-1.5" aria-hidden="true">
+        <div
+          className={`h-px ${isLight ? 'bg-brand-gray-400' : 'bg-brand-gray-500'}`}
+        />
+        <div
+          className={`h-px ${isLight ? 'bg-brand-gray-400' : 'bg-brand-gray-500'}`}
+        />
+      </div>
     </div>
   );
 };
 
 interface ChapterBreakProps {
   title: string;
+  isLeading?: boolean;
 }
 
-const ChapterBreak: React.FC<ChapterBreakProps> = ({ title }: ChapterBreakProps) => {
+const ChapterBreak: React.FC<ChapterBreakProps> = ({
+  title,
+  isLeading = false,
+}: ChapterBreakProps) => {
   const { t } = useTranslation();
   const { isLight } = useTheme();
   return (
     <div
-      className={`flex items-center gap-2 py-2 ${isLight ? 'text-brand-gray-500' : 'text-brand-gray-400'}`}
+      className="py-2"
+      data-break-kind="chapter"
+      data-leading-break={isLeading ? 'true' : undefined}
       role="separator"
       aria-label={t('Chapter: {{title}}', { title })}
     >
-      <div
-        className={`flex-1 h-px ${isLight ? 'bg-brand-gray-200' : 'bg-brand-gray-700'}`}
-      />
-      <span className="text-xs font-medium truncate max-w-xs">{title}</span>
-      <div
-        className={`flex-1 h-px ${isLight ? 'bg-brand-gray-200' : 'bg-brand-gray-700'}`}
-      />
+      {!isLeading && (
+        <div
+          aria-hidden="true"
+          className={`h-px ${isLight ? 'bg-brand-gray-200' : 'bg-brand-gray-700'}`}
+        />
+      )}
     </div>
   );
 };
@@ -260,12 +283,14 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
   onEditScene,
   onDropProse,
   onReorderScene,
+  onDropScenesOnChapter,
   initialVisibleLaneEntryIds,
   initialRemovedReferencedLaneIds,
   onVisibleLaneEntryIdsChange,
   onRemovedReferencedLaneIdsChange,
 }: NarrativeViewProps) => {
   const DRAG_SCENE_MIME = 'application/x-augmentedquill-scene-id';
+  const DRAG_SCENES_MIME = 'application/x-augmentedquill-scene-ids';
   const { t } = useTranslation();
   const { isLight } = useTheme();
 
@@ -316,9 +341,35 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
     [filteredScenes, chapterOrderMap, sortMode, sceneEpochNanosecondsById]
   );
 
+  const [optimisticOrderIds, setOptimisticOrderIds] = useState<SceneId[] | null>(null);
+
+  const displayScenes = useMemo((): Scene[] => {
+    if (!optimisticOrderIds || optimisticOrderIds.length === 0) return sortedScenes;
+    const byId = new Map(
+      sortedScenes.map((scene: Scene): [SceneId, Scene] => [scene.id, scene])
+    );
+    const ordered = optimisticOrderIds
+      .map((id: SceneId): Scene | undefined => byId.get(id))
+      .filter((scene: Scene | undefined): scene is Scene => scene !== undefined);
+    return ordered.length === sortedScenes.length ? ordered : sortedScenes;
+  }, [optimisticOrderIds, sortedScenes]);
+
+  useEffect((): void => {
+    if (!optimisticOrderIds) return;
+    const canonical = sortedScenes.map((scene: Scene): SceneId => scene.id);
+    if (
+      canonical.length === optimisticOrderIds.length &&
+      canonical.every(
+        (id: SceneId, idx: number): boolean => id === optimisticOrderIds[idx]
+      )
+    ) {
+      setOptimisticOrderIds(null);
+    }
+  }, [optimisticOrderIds, sortedScenes]);
+
   // Multi-select state — identical semantics to PinboardView.
   const { selectedSceneIds, activeSceneId, handleCardSelect } = useSceneSelection({
-    displayOrder: sortedScenes,
+    displayOrder: displayScenes,
     primarySelectedSceneId,
     onSelectScene,
     onSelectionChange,
@@ -337,14 +388,14 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
   const items = useMemo(
     () =>
       buildItems(
-        sortedScenes,
+        displayScenes,
         sortMode,
         sceneEpochNanosecondsById,
         projectType,
         chapters,
         books
       ),
-    [sortedScenes, sortMode, sceneEpochNanosecondsById, projectType, chapters, books]
+    [displayScenes, sortMode, sceneEpochNanosecondsById, projectType, chapters, books]
   );
 
   // Build a flat index of scene entries so we can pass the correct 'index' to
@@ -504,20 +555,80 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
 
   const [dragSceneId, setDragSceneId] = useState<SceneId | null>(null);
   const dragSceneIdRef = useRef<SceneId | null>(null);
+  const dragSceneIdsRef = useRef<SceneId[]>([]);
   const [dropHint, setDropHint] = useState<{
     id: SceneId;
     placeBefore: boolean;
   } | null>(null);
-  const resolveDraggedSceneId = useCallback(
-    (eventData: DataTransfer): SceneId | null => {
-      return (
+  const [chapterDropTargetId, setChapterDropTargetId] = useState<string | null>(null);
+
+  const selectedSceneIdsInDisplayOrder = useMemo(
+    () =>
+      displayScenes
+        .map((scene: Scene): SceneId => scene.id)
+        .filter((sceneId: SceneId): boolean => selectedSceneIds.has(sceneId)),
+    [selectedSceneIds, displayScenes]
+  );
+
+  const reorderIdsByPlacement = useCallback(
+    (
+      ids: SceneId[],
+      sourceId: SceneId,
+      targetId: SceneId,
+      placeBefore: boolean
+    ): SceneId[] => {
+      const sourceIndex = ids.indexOf(sourceId);
+      const targetIndex = ids.indexOf(targetId);
+      if (sourceIndex < 0 || targetIndex < 0) return ids;
+
+      const next = [...ids];
+      next.splice(sourceIndex, 1);
+      const adjustedTargetIndex =
+        sourceIndex < targetIndex ? targetIndex - 1 : targetIndex;
+      const insertIndex = placeBefore ? adjustedTargetIndex : adjustedTargetIndex + 1;
+      next.splice(insertIndex, 0, sourceId);
+      return next;
+    },
+    []
+  );
+
+  const resolveDraggedSceneIds = useCallback(
+    (eventData: DataTransfer): SceneId[] => {
+      if (dragSceneIdsRef.current.length > 0) {
+        return dragSceneIdsRef.current;
+      }
+
+      const rawIds = eventData.getData(DRAG_SCENES_MIME);
+      if (rawIds) {
+        try {
+          const parsed = JSON.parse(rawIds) as unknown;
+          if (Array.isArray(parsed)) {
+            return parsed.filter(
+              (value: unknown): value is SceneId =>
+                typeof value === 'number' && Number.isInteger(value)
+            );
+          }
+        } catch {
+          // Ignore malformed payloads.
+        }
+      }
+
+      const single =
         dragSceneIdRef.current ||
         parseSceneId(eventData.getData(DRAG_SCENE_MIME)) ||
         parseSceneId(eventData.getData('text/plain')) ||
-        dragSceneId
-      );
+        dragSceneId;
+      return single ? [single] : [];
     },
-    [DRAG_SCENE_MIME, dragSceneId, parseSceneId]
+    [DRAG_SCENE_MIME, DRAG_SCENES_MIME, dragSceneId, parseSceneId]
+  );
+
+  const resolveDraggedSceneId = useCallback(
+    (eventData: DataTransfer): SceneId | null => {
+      const ids = resolveDraggedSceneIds(eventData);
+      return ids.length > 0 ? ids[0] : null;
+    },
+    [resolveDraggedSceneIds]
   );
   const applyLaneScrollDelta = useCallback((delta: number): boolean => {
     const scroller = bottomLaneScrollRef.current;
@@ -563,23 +674,90 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
 
   const handleSceneDragStart = useCallback(
     (e: React.DragEvent<HTMLDivElement>, sceneId: SceneId): void => {
+      const dragIds =
+        selectedSceneIds.has(sceneId) && selectedSceneIdsInDisplayOrder.length > 1
+          ? selectedSceneIdsInDisplayOrder
+          : [sceneId];
+
       dragSceneIdRef.current = sceneId;
+      dragSceneIdsRef.current = dragIds;
       e.dataTransfer.effectAllowed = 'move';
       // Keep scene id in the drag payload in case React state isn't visible
       // synchronously inside dragover/drop handlers.
       e.dataTransfer.setData(DRAG_SCENE_MIME, String(sceneId));
+      e.dataTransfer.setData(DRAG_SCENES_MIME, JSON.stringify(dragIds));
       e.dataTransfer.setData('text/plain', String(sceneId));
       setDragSceneId(sceneId);
       setDropHint(null);
     },
-    [DRAG_SCENE_MIME]
+    [
+      DRAG_SCENE_MIME,
+      DRAG_SCENES_MIME,
+      selectedSceneIds,
+      selectedSceneIdsInDisplayOrder,
+    ]
   );
 
   const handleSceneDragEnd = useCallback((): void => {
     dragSceneIdRef.current = null;
+    dragSceneIdsRef.current = [];
     setDragSceneId(null);
     setDropHint(null);
+    setChapterDropTargetId(null);
   }, []);
+
+  const handleChapterDragOver = useCallback(
+    (e: React.DragEvent<HTMLDivElement>, chapterId: string): void => {
+      if (!onDropScenesOnChapter) return;
+      const draggedIds = resolveDraggedSceneIds(e.dataTransfer);
+      if (draggedIds.length === 0) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      setChapterDropTargetId(chapterId);
+    },
+    [onDropScenesOnChapter, resolveDraggedSceneIds]
+  );
+
+  const handleChapterDrop = useCallback(
+    async (e: React.DragEvent<HTMLDivElement>, chapterId: string): Promise<void> => {
+      const normalizedChapterId = chapterId.trim();
+      if (!onDropScenesOnChapter || normalizedChapterId.length === 0) return;
+      e.preventDefault();
+      const draggedIds = resolveDraggedSceneIds(e.dataTransfer);
+      if (draggedIds.length === 0) return;
+
+      const currentIds = displayScenes.map((scene: Scene): SceneId => scene.id);
+      const chapterSceneIds = displayScenes
+        .filter((scene: Scene): boolean => {
+          const link = scene.prose_link;
+          return (
+            link?.scope_type === 'chapter' &&
+            normalizeChapterId(link.chapter_id) === normalizedChapterId
+          );
+        })
+        .map((scene: Scene): SceneId => scene.id);
+      if (chapterSceneIds.length > 0) {
+        const withoutDragged = currentIds.filter(
+          (id: SceneId): boolean => !draggedIds.includes(id)
+        );
+        const lastTargetId = chapterSceneIds[chapterSceneIds.length - 1];
+        const targetPos = withoutDragged.indexOf(lastTargetId);
+        if (targetPos >= 0) {
+          const optimistic = [...withoutDragged];
+          optimistic.splice(targetPos + 1, 0, ...draggedIds);
+          setOptimisticOrderIds(optimistic);
+        }
+      }
+
+      dragSceneIdRef.current = null;
+      dragSceneIdsRef.current = [];
+      setDropHint(null);
+      setDragSceneId(null);
+      setChapterDropTargetId(null);
+      await onDropScenesOnChapter(draggedIds, normalizedChapterId);
+    },
+    [displayScenes, onDropScenesOnChapter, resolveDraggedSceneIds]
+  );
 
   const handleSceneDragOver = useCallback(
     (e: React.DragEvent<HTMLDivElement>, sceneId: SceneId): void => {
@@ -606,12 +784,24 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
         dropHint && dropHint.id === targetId ? dropHint.placeBefore : null;
       const rect = e.currentTarget.getBoundingClientRect();
       const placeBefore = hintedPlaceBefore ?? e.clientY < rect.top + rect.height / 2;
+
+      const currentIds = displayScenes.map((scene: Scene): SceneId => scene.id);
+      setOptimisticOrderIds(
+        reorderIdsByPlacement(currentIds, sourceId, targetId, placeBefore)
+      );
+
       dragSceneIdRef.current = null;
       setDropHint(null);
       setDragSceneId(null);
       await onReorderScene?.(sourceId, targetId, placeBefore);
     },
-    [dropHint, onReorderScene, resolveDraggedSceneId]
+    [
+      displayScenes,
+      dropHint,
+      onReorderScene,
+      reorderIdsByPlacement,
+      resolveDraggedSceneId,
+    ]
   );
 
   const handleBottomLaneScroll = useCallback(
@@ -747,10 +937,39 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
             }
             if (item.kind === 'chapter-break') {
               return (
-                <ChapterBreak
+                <div
                   key={`chapter-${item.chapterId}-${renderIdx}`}
-                  title={item.chapterTitle}
-                />
+                  onDragOver={(e: React.DragEvent<HTMLDivElement>): void =>
+                    handleChapterDragOver(e, item.chapterId)
+                  }
+                  onDragEnter={(e: React.DragEvent<HTMLDivElement>): void =>
+                    handleChapterDragOver(e, item.chapterId)
+                  }
+                  onDragLeave={(e: React.DragEvent<HTMLDivElement>): void => {
+                    const relatedTarget = e.relatedTarget;
+                    if (
+                      relatedTarget instanceof Node &&
+                      e.currentTarget.contains(relatedTarget)
+                    ) {
+                      return;
+                    }
+                    setChapterDropTargetId((current: string | null) =>
+                      current === item.chapterId ? null : current
+                    );
+                  }}
+                  onDrop={(e: React.DragEvent<HTMLDivElement>) =>
+                    void handleChapterDrop(e, item.chapterId)
+                  }
+                  className={
+                    chapterDropTargetId === item.chapterId
+                      ? isLight
+                        ? 'rounded-md ring-1 ring-brand-400/70 bg-brand-50/70'
+                        : 'rounded-md ring-1 ring-brand-500/70 bg-brand-900/20'
+                      : ''
+                  }
+                >
+                  <ChapterBreak title={item.chapterTitle} isLeading={item.isLeading} />
+                </div>
               );
             }
             if (item.kind === 'unlinked-break') {

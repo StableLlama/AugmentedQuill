@@ -17,8 +17,10 @@ import { useConfirm } from '../layout/ConfirmDialogContext';
 import { useThemeClasses } from '../layout/ThemeContext';
 import { MetadataEditorDialog } from '../story/MetadataEditorDialog';
 import { useChapterMetadataDialog, useUIStore } from '../../stores/uiStore';
+import { useScenes } from '../../stores/storyStore';
 import { api } from '../../services/api';
 import { diff_match_patch } from 'diff-match-patch';
+import { normalizeChapterId } from '../scenes/sceneSortUtils';
 import {
   Plus,
   Trash2,
@@ -90,12 +92,16 @@ export const ChapterList: React.FC<ChapterListProps> = React.memo(
     baselineChapters = [],
     spellCheck = true,
   }: ChapterListProps) => {
+    const DRAG_SCENE_MIME = 'application/x-augmentedquill-scene-id';
+    const DRAG_SCENES_MIME = 'application/x-augmentedquill-scene-ids';
     const { isLight } = useThemeClasses();
     const { t } = useTranslation();
     const confirm = useConfirm();
     const [expandedBooks, setExpandedBooks] = useState<Record<string, boolean>>({});
     const [newBookTitle, setNewBookTitle] = useState('');
     const [isCreatingBook, setIsCreatingBook] = useState(false);
+    const scenes = useScenes();
+    const [sceneDropChapterId, setSceneDropChapterId] = useState<string | null>(null);
 
     // Keep transient drag state local so failed reorder requests do not corrupt source props.
     const [draggedItem, setDraggedItem] = useState<{
@@ -222,6 +228,80 @@ export const ChapterList: React.FC<ChapterListProps> = React.memo(
       e.dataTransfer.dropEffect = 'move';
     };
 
+    const parseDroppedSceneIds = (dataTransfer: DataTransfer): number[] => {
+      const rawIds = dataTransfer.getData(DRAG_SCENES_MIME);
+      if (rawIds) {
+        try {
+          const parsed = JSON.parse(rawIds) as unknown;
+          if (Array.isArray(parsed)) {
+            return parsed.filter(
+              (value: unknown): value is number =>
+                typeof value === 'number' && Number.isInteger(value)
+            );
+          }
+        } catch {
+          // Ignore malformed payloads.
+        }
+      }
+
+      const single =
+        dataTransfer.getData(DRAG_SCENE_MIME) || dataTransfer.getData('text/plain');
+      const parsedSingle = Number(single);
+      return Number.isInteger(parsedSingle) ? [parsedSingle] : [];
+    };
+
+    const handleChapterSceneDragOver = (
+      e: React.DragEvent,
+      chapterId: string
+    ): boolean => {
+      const droppedSceneIds = parseDroppedSceneIds(e.dataTransfer);
+      if (droppedSceneIds.length > 0) {
+        if (draggedItem) {
+          // A stale internal chapter/book drag state must not block external
+          // scene drops coming from Narrative view.
+          setDraggedItem(null);
+          setDragOverIndex(null);
+          setDragOverBookId(null);
+        }
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        setSceneDropChapterId(chapterId);
+        return true;
+      }
+
+      if (draggedItem) return false;
+      return false;
+    };
+
+    const handleChapterSceneDrop = (e: React.DragEvent, chapterId: string): boolean => {
+      const droppedSceneIds = parseDroppedSceneIds(e.dataTransfer);
+      if (droppedSceneIds.length > 0) {
+        if (draggedItem) {
+          setDraggedItem(null);
+          setDragOverIndex(null);
+          setDragOverBookId(null);
+        }
+        e.preventDefault();
+
+        const normalizedChapterId = normalizeChapterId(chapterId);
+        if (!normalizedChapterId) return true;
+
+        setSceneDropChapterId(null);
+        window.dispatchEvent(
+          new CustomEvent('aq-scene-drop-chapter', {
+            detail: {
+              sourceSceneIds: droppedSceneIds,
+              chapterId: normalizedChapterId,
+            },
+          })
+        );
+        return true;
+      }
+
+      if (draggedItem) return false;
+      return false;
+    };
+
     const handleDrop = (e: React.DragEvent): void => {
       e.preventDefault();
       const targetIdx = dragOverIndex;
@@ -275,12 +355,14 @@ export const ChapterList: React.FC<ChapterListProps> = React.memo(
       setDragOverIndex(null);
       setDragOverBookId(null);
       setDraggedItem(null);
+      setSceneDropChapterId(null);
     };
 
     const handleDragEnd = (): void => {
       setDraggedItem(null);
       setDragOverIndex(null);
       setDragOverBookId(null);
+      setSceneDropChapterId(null);
     };
 
     const toggleBook = (id: string): void => {
@@ -332,6 +414,42 @@ export const ChapterList: React.FC<ChapterListProps> = React.memo(
         return displayBooks.find((b: Book): boolean => b.id === editingMetadata.id);
       }
     }, [editingMetadata, displayChapters, displayBooks]);
+
+    const chapterScenesForEditor = useMemo((): Array<{
+      id: string;
+      summary: string;
+    }> => {
+      if (!editingMetadata || editingMetadata.type !== 'chapter') return [];
+
+      const targetChapterId = normalizeChapterId(editingMetadata.id);
+      if (!targetChapterId) return [];
+
+      return scenes
+        .filter(
+          (scene: Scene): boolean =>
+            scene.prose_link?.scope_type === 'chapter' &&
+            normalizeChapterId(scene.prose_link.chapter_id) === targetChapterId
+        )
+        .sort((a: Scene, b: Scene): number => {
+          const aStart = a.prose_link?.start_offset ?? Number.POSITIVE_INFINITY;
+          const bStart = b.prose_link?.start_offset ?? Number.POSITIVE_INFINITY;
+          if (aStart !== bStart) return aStart - bStart;
+
+          const aOrder = Number.isFinite(a.order_index)
+            ? (a.order_index as number)
+            : Number.POSITIVE_INFINITY;
+          const bOrder = Number.isFinite(b.order_index)
+            ? (b.order_index as number)
+            : Number.POSITIVE_INFINITY;
+          if (aOrder !== bOrder) return aOrder - bOrder;
+
+          return String(a.id).localeCompare(String(b.id));
+        })
+        .map((scene: Scene): { id: string; summary: string } => ({
+          id: String(scene.id),
+          summary: scene.summary?.trim() || t('Untitled Scene'),
+        }));
+    }, [editingMetadata, scenes, t]);
 
     const chapterMetadataDialog = useChapterMetadataDialog();
     useEffect((): void => {
@@ -452,6 +570,12 @@ export const ChapterList: React.FC<ChapterListProps> = React.memo(
             isDragging
               ? 'opacity-20 grayscale border-dashed border-brand-gray-500/50'
               : 'opacity-100'
+          } ${
+            sceneDropChapterId === chapter.id
+              ? isLight
+                ? 'ring-2 ring-brand-400/70 bg-brand-50/80'
+                : 'ring-2 ring-brand-500/70 bg-brand-900/20'
+              : ''
           }`}
         >
           <button
@@ -466,8 +590,26 @@ export const ChapterList: React.FC<ChapterListProps> = React.memo(
                 handleDragEnter(index, chapter.book_id);
               }
             }}
-            onDragOver={handleDragOver}
-            onDrop={handleDrop}
+            onDragOver={(e: React.DragEvent<HTMLButtonElement>): void => {
+              if (handleChapterSceneDragOver(e, chapter.id)) return;
+              handleDragOver(e);
+            }}
+            onDragLeave={(e: React.DragEvent<HTMLButtonElement>): void => {
+              const relatedTarget = e.relatedTarget;
+              if (
+                relatedTarget instanceof Node &&
+                e.currentTarget.contains(relatedTarget)
+              ) {
+                return;
+              }
+              setSceneDropChapterId((current: string | null) =>
+                current === chapter.id ? null : current
+              );
+            }}
+            onDrop={(e: React.DragEvent<HTMLButtonElement>): void => {
+              if (handleChapterSceneDrop(e, chapter.id)) return;
+              handleDrop(e);
+            }}
             onDragEnd={handleDragEnd}
             onClick={(): void => onSelect(chapter.id)}
             aria-current={currentChapterId === chapter.id ? 'true' : undefined}
@@ -620,6 +762,9 @@ export const ChapterList: React.FC<ChapterListProps> = React.memo(
                 : undefined
             }
             languages={languages}
+            chapterScenes={
+              editingMetadata.type === 'chapter' ? chapterScenesForEditor : undefined
+            }
           />
         )}
         <div

@@ -122,4 +122,4 @@ export interface ProviderCapabilities {
   supports_function_calling: boolean;
 }
 
-export type MetadataTab = 'summary' | 'notes' | 'private' | 'conflicts';
+export type MetadataTab = 'summary' | 'notes' | 'private' | 'conflicts' | 'scenes';

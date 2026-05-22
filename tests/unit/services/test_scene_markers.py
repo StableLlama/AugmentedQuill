@@ -12,7 +12,10 @@ from augmentedquill.services.scenes.scene_markers import (
     parse_scene_spans,
     remap_offset_after_marker_removal,
     remove_markers,
+    snap_range_outside_markers,
+    snap_offset_outside_markers,
     transfer_scene_markers,
+    validate_scene_marker_tokens,
     validate_marker_only_edit,
 )
 
@@ -101,3 +104,28 @@ def test_inject_markers_keeps_adjacent_boundaries_as_separate_comments() -> None
     )
     assert "<!--scene:1:end--><!--scene:2:start-->" in output
     assert "<!--scene:2:start-<!--scene:1:end-->->" not in output
+
+
+def test_validate_scene_marker_tokens_rejects_malformed_marker_fragments() -> None:
+    malformed = "<!--scene:11:end-<!--scene:11:start-->-<!--scene:11:end-->"
+    try:
+        validate_scene_marker_tokens(malformed)
+    except ValueError:
+        return
+    raise AssertionError("Expected malformed scene marker token to raise ValueError")
+
+
+def test_snap_offset_outside_markers_moves_inside_offset_to_marker_end() -> None:
+    text = "<!--scene:1:start-->Alpha<!--scene:1:end-->"
+    marker_start = text.index("<!--scene:1:start-->")
+    marker_inside = marker_start + 5
+    marker_end = marker_start + len("<!--scene:1:start-->")
+    assert snap_offset_outside_markers(text, marker_inside) == marker_end
+
+
+def test_snap_range_outside_markers_moves_marker_overlapping_range() -> None:
+    text = "<!--scene:1:start-->Alpha<!--scene:1:end-->"
+    start, end = snap_range_outside_markers(text, 0, 1)
+    marker_end = text.index("<!--scene:1:start-->") + len("<!--scene:1:start-->")
+    assert start >= marker_end
+    assert end > start

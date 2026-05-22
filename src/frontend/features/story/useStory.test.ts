@@ -43,6 +43,12 @@ vi.mock('../../services/api', () => {
       chapters: {
         list: chaptersListMock,
         get: vi.fn(),
+        create: vi.fn(),
+        delete: vi.fn(),
+        updateContent: vi.fn(),
+        updateTitle: vi.fn(),
+        updateSummary: vi.fn(),
+        updateMetadata: vi.fn(),
       },
       story: {
         updateMetadata: vi.fn(),
@@ -743,6 +749,162 @@ describe('buildInitialStoryState', () => {
 
     expect(result.current.story.summary).toBe('Edited summary');
     expect(result.current.baselineState.summary).toBe('Edited summary');
+  });
+
+  it('refreshes scenes after creating a chapter so stale prose links are cleared', async () => {
+    vi.mocked(api.projects.list).mockResolvedValue({
+      available: [],
+      current: null,
+    } as Awaited<ReturnType<typeof api.projects.list>>);
+    vi.mocked(api.projects.select).mockResolvedValue({ ok: false } as Awaited<
+      ReturnType<typeof api.projects.select>
+    >);
+
+    const staleScene = {
+      id: 1,
+      summary: 'Stale scene',
+      prose_link: {
+        scope_type: 'chapter',
+        chapter_id: '1',
+        book_id: null,
+        start_offset: 0,
+        end_offset: 5,
+        content_hash: 'hash',
+        is_stale: false,
+      },
+      order_index: 1,
+      beats: [],
+      active_characters: [],
+      passive_characters: [],
+      sourcebook_entry_ids: [],
+      order_before: [],
+      order_after: [],
+      scene_time: null,
+      timeline_id: 'main',
+      tag_personal_datetimes: [],
+      pinboard_x: 100,
+      pinboard_y: 100,
+      status: 'active',
+    } as unknown as Scene;
+
+    const unlinkedScene = {
+      ...staleScene,
+      prose_link: null,
+    } as Scene;
+
+    vi.mocked(api.chapters.create).mockResolvedValue({
+      ok: true,
+      id: 1,
+      title: 'New Chapter',
+    } as Awaited<ReturnType<typeof api.chapters.create>>);
+    vi.mocked(api.chapters.list).mockResolvedValue({
+      chapters: [
+        {
+          id: 1,
+          title: 'New Chapter',
+          summary: '',
+          filename: '0001.txt',
+        },
+      ],
+    } as Awaited<ReturnType<typeof api.chapters.list>>);
+    vi.mocked(api.forProject('demo').scenes.list).mockResolvedValue([unlinkedScene]);
+
+    const { result } = renderHook(() =>
+      useStory({
+        confirm: async () => true,
+        alert: () => {},
+      })
+    );
+
+    act(() => {
+      result.current.loadStory({
+        ...buildStory('initial'),
+        id: 'demo',
+        title: 'Demo',
+        chapters: [],
+        scenes: [staleScene],
+      });
+    });
+
+    await act(async () => {
+      await result.current.addChapter('New Chapter');
+    });
+
+    expect(result.current.story.scenes[0]?.prose_link).toBeNull();
+  });
+
+  it('refreshes scenes after deleting a chapter so stale prose links are cleared', async () => {
+    vi.mocked(api.projects.list).mockResolvedValue({
+      available: [],
+      current: null,
+    } as Awaited<ReturnType<typeof api.projects.list>>);
+    vi.mocked(api.projects.select).mockResolvedValue({ ok: false } as Awaited<
+      ReturnType<typeof api.projects.select>
+    >);
+
+    const staleScene = {
+      id: 1,
+      summary: 'Stale scene',
+      prose_link: {
+        scope_type: 'chapter',
+        chapter_id: '1',
+        book_id: null,
+        start_offset: 0,
+        end_offset: 5,
+        content_hash: 'hash',
+        is_stale: false,
+      },
+      order_index: 1,
+      beats: [],
+      active_characters: [],
+      passive_characters: [],
+      sourcebook_entry_ids: [],
+      order_before: [],
+      order_after: [],
+      scene_time: null,
+      timeline_id: 'main',
+      tag_personal_datetimes: [],
+      pinboard_x: 100,
+      pinboard_y: 100,
+      status: 'active',
+    } as unknown as Scene;
+
+    const unlinkedScene = {
+      ...staleScene,
+      prose_link: null,
+    } as Scene;
+
+    vi.mocked(api.chapters.delete).mockResolvedValue({
+      ok: true,
+    } as Awaited<ReturnType<typeof api.chapters.delete>>);
+    vi.mocked(api.chapters.list).mockResolvedValue({
+      chapters: [],
+    } as Awaited<ReturnType<typeof api.chapters.list>>);
+    vi.mocked(api.forProject('demo').scenes.list).mockResolvedValue([unlinkedScene]);
+
+    const { result } = renderHook(() =>
+      useStory({
+        confirm: async () => true,
+        alert: () => {},
+      })
+    );
+
+    act(() => {
+      result.current.loadStory({
+        ...buildStory('initial'),
+        id: 'demo',
+        title: 'Demo',
+        chapters: [buildChapter('1', 'chapter')],
+        scenes: [staleScene],
+        currentChapterId: '1',
+      });
+    });
+
+    await act(async () => {
+      await result.current.deleteChapter('1');
+    });
+
+    expect(result.current.story.scenes[0]?.prose_link).toBeNull();
   });
 });
 

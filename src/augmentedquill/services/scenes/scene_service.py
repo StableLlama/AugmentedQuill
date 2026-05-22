@@ -35,6 +35,9 @@ from augmentedquill.services.scenes.scene_markers import (
     parse_scene_spans,
     remap_offset_after_marker_removal,
     remove_markers,
+    snap_range_outside_markers,
+    snap_offset_outside_markers,
+    validate_scene_marker_tokens,
 )
 from augmentedquill.updates.migrate_story_v3 import migrate_project_v3
 from augmentedquill.updates.migrate_story_v4 import migrate_project_v4
@@ -152,7 +155,7 @@ def _marker_locations_by_scene(project_dir: Path) -> dict[SceneId, dict[str, Any
         except OSError:
             continue
         for span in parse_scene_spans(content):
-            if span.end <= span.start:
+            if span.end < span.start:
                 continue
             if span.scene_id in locations:
                 continue
@@ -164,6 +167,43 @@ def _marker_locations_by_scene(project_dir: Path) -> dict[SceneId, dict[str, Any
                 "end_offset": span.end,
             }
     return locations
+
+
+def _assert_scope_marker_tokens_valid(project_dir: Path) -> None:
+    """Fail fast when any prose scope contains malformed marker tokens."""
+    for _, path in _scope_candidates(project_dir):
+        if not path.exists():
+            continue
+        content = path.read_text(encoding="utf-8")
+        validate_scene_marker_tokens(content)
+
+
+def _remove_scene_markers_from_non_target_scopes(
+    project_dir: Path,
+    scene_id: SceneId,
+    target_path: Path,
+) -> str:
+    """Remove *scene_id* markers from every scope file except *target_path*.
+
+    Returns the first non-empty prose payload previously wrapped by the removed
+    scene markers. This allows relinking across scopes without inventing new
+    placeholder text when the target scope is empty.
+    """
+    carried_prose = ""
+    for _, path in _scope_candidates(project_dir):
+        if not path.exists() or path == target_path:
+            continue
+        content = _read_validated_marker_content(path)
+        spans = {span.scene_id: span for span in parse_scene_spans(content)}
+        span = spans.get(scene_id)
+        if span is not None and not carried_prose:
+            payload = content[span.start : span.end]
+            if payload:
+                carried_prose = payload
+        cleaned = remove_markers(content, {scene_id})
+        if cleaned != content:
+            _write_text_atomic(path, cleaned)
+    return carried_prose
 
 
 def _inject_runtime_links_into_scenes_dict(
@@ -260,6 +300,16 @@ def _scene_content_path(project_dir: Path, link: dict[str, Any]) -> Path | None:
                     if cid and cid == chapter_id:
                         return _filename_or_inferred(chapter, chapter_index)
                 if numeric_id is not None:
+                    for chapter_index, chapter in enumerate(chapters):
+                        if not isinstance(chapter, dict):
+                            continue
+                        filename = chapter.get("filename")
+                        if not isinstance(filename, str) or not filename.strip():
+                            continue
+                        stem = Path(filename.strip()).stem
+                        if stem.isdigit() and int(stem) == numeric_id:
+                            return _filename_or_inferred(chapter, chapter_index)
+                if numeric_id is not None:
                     local_index = numeric_id - 1
                     if 0 <= local_index < len(chapters):
                         chapter = chapters[local_index]
@@ -276,6 +326,16 @@ def _scene_content_path(project_dir: Path, link: dict[str, Any]) -> Path | None:
                 cid = str(chapter.get("id") or "").strip()
                 if cid and cid == chapter_id:
                     return _filename_or_inferred(chapter, chapter_index)
+            if numeric_id is not None:
+                for chapter_index, chapter in enumerate(chapters):
+                    if not isinstance(chapter, dict):
+                        continue
+                    filename = chapter.get("filename")
+                    if not isinstance(filename, str) or not filename.strip():
+                        continue
+                    stem = Path(filename.strip()).stem
+                    if stem.isdigit() and int(stem) == numeric_id:
+                        return _filename_or_inferred(chapter, chapter_index)
             numeric_id = _safe_int(chapter_id)
             if numeric_id is not None:
                 index = numeric_id - 1
@@ -351,6 +411,13 @@ def _write_text_atomic(path: Path, content: str) -> None:
     finally:
         if temp_path is not None and temp_path.exists() and not replaced:
             temp_path.unlink(missing_ok=True)
+
+
+def _read_validated_marker_content(path: Path) -> str:
+    """Read prose content and fail fast when marker syntax is malformed."""
+    content = path.read_text(encoding="utf-8")
+    validate_scene_marker_tokens(content)
+    return content
 
 
 def _coerce_scene_id(raw_id: object) -> SceneId | None:
@@ -606,6 +673,7 @@ def update_scene(
 
 def delete_scene(project_dir: Path, scene_id: SceneId) -> bool:
     _migrate_project_latest(project_dir)
+    _assert_scope_marker_tokens_valid(project_dir)
     story_path = project_dir / "story.json"
     story = load_story_config(story_path) or {}
     scenes_dict = _load_scenes_dict(story)
@@ -620,7 +688,7 @@ def delete_scene(project_dir: Path, scene_id: SceneId) -> bool:
         content_path = _scene_content_path(project_dir, link)
         if content_path is not None and content_path.exists():
             try:
-                content = content_path.read_text(encoding="utf-8")
+                content = _read_validated_marker_content(content_path)
                 cleaned = remove_markers(content, {scene_id})
                 if cleaned != content:
                     _write_text_atomic(content_path, cleaned)
@@ -647,6 +715,7 @@ def link_prose(
     request: SceneLinkProseRequest,
 ) -> list[dict[str, Any]]:
     _migrate_project_latest(project_dir)
+    _assert_scope_marker_tokens_valid(project_dir)
     story_path = project_dir / "story.json"
     story = load_story_config(story_path) or {}
     scenes_dict = _load_scenes_dict(story)
@@ -667,9 +736,19 @@ def link_prose(
         content_path.parent.mkdir(parents=True, exist_ok=True)
         content_path.write_text("", encoding="utf-8")
 
-    content = content_path.read_text(encoding="utf-8")
-    new_start = request.start_offset
-    new_end = request.end_offset
+    carried_previous_prose = _remove_scene_markers_from_non_target_scopes(
+        project_dir,
+        target_scene_id,
+        content_path,
+    )
+
+    content = _read_validated_marker_content(content_path)
+    new_start, new_end = snap_range_outside_markers(
+        content,
+        snap_offset_outside_markers(content, request.start_offset),
+        snap_offset_outside_markers(content, request.end_offset),
+        {target_scene_id},
+    )
 
     existing_spans = parse_scene_spans(content)
     unlinked_ids: set[SceneId] = set()
@@ -683,6 +762,16 @@ def link_prose(
     mapped_start = remap_offset_after_marker_removal(content, new_start, remove_ids)
     mapped_end = remap_offset_after_marker_removal(content, new_end, remove_ids)
     stripped = remove_markers(content, remove_ids)
+    if len(stripped) == 0:
+        if carried_previous_prose:
+            stripped = carried_previous_prose
+            mapped_start = 0
+            mapped_end = len(stripped)
+        else:
+            # Preserve truly empty scene prose as a zero-width marker span.
+            stripped = ""
+            mapped_start = 0
+            mapped_end = 0
     linked = inject_markers(stripped, [(target_scene_id, mapped_start, mapped_end)])
     _write_text_atomic(content_path, linked)
 
@@ -742,6 +831,7 @@ def relink_scope_prose(
     inserted markers.
     """
     _migrate_project_latest(project_dir)
+    _assert_scope_marker_tokens_valid(project_dir)
     story_path = project_dir / "story.json"
     story = load_story_config(story_path) or {}
     scenes_dict = _load_scenes_dict(story)
@@ -759,7 +849,7 @@ def relink_scope_prose(
         content_path.parent.mkdir(parents=True, exist_ok=True)
         content_path.write_text("", encoding="utf-8")
 
-    content = content_path.read_text(encoding="utf-8")
+    content = _read_validated_marker_content(content_path)
     stripped = remove_markers(content)
     linked = inject_markers(stripped, assignments)
     _write_text_atomic(content_path, linked)
@@ -812,6 +902,7 @@ def unlink_prose(
     scene_id: SceneId,
 ) -> list[dict[str, Any]]:
     _migrate_project_latest(project_dir)
+    _assert_scope_marker_tokens_valid(project_dir)
     story_path = project_dir / "story.json"
     story = load_story_config(story_path) or {}
     scenes_dict = _load_scenes_dict(story)
@@ -831,7 +922,7 @@ def unlink_prose(
         content_path = _scene_content_path(project_dir, existing_link)
         if content_path is not None and content_path.exists():
             try:
-                content = content_path.read_text(encoding="utf-8")
+                content = _read_validated_marker_content(content_path)
                 cleaned = remove_markers(content, {scene_id})
                 if cleaned != content:
                     _write_text_atomic(content_path, cleaned)
@@ -891,6 +982,7 @@ def update_prose_content(
     payload: SceneUpdateProseContentRequest,
 ) -> dict[str, Any] | None:
     _migrate_project_latest(project_dir)
+    _assert_scope_marker_tokens_valid(project_dir)
     story_path = project_dir / "story.json"
     story = load_story_config(story_path) or {}
     scenes_dict = _load_scenes_dict(story)
@@ -908,7 +1000,7 @@ def update_prose_content(
     if content_path is None or not content_path.exists():
         return None
 
-    content = content_path.read_text(encoding="utf-8")
+    content = _read_validated_marker_content(content_path)
     spans = {s.scene_id: s for s in parse_scene_spans(content)}
     span = spans.get(scene_id)
     if span is None:
@@ -927,6 +1019,7 @@ def reorder_scene_prose(
     request: SceneReorderProseRequest,
 ) -> SceneReorderProseResponse:
     _migrate_project_latest(project_dir)
+    _assert_scope_marker_tokens_valid(project_dir)
     story_path = project_dir / "story.json"
     story = load_story_config(story_path) or {}
     scenes_dict = _load_scenes_dict(story)
@@ -955,7 +1048,7 @@ def reorder_scene_prose(
     same_scope = _same_prose_scope(src_link, tgt_link)
 
     if same_scope:
-        content = src_path.read_text(encoding="utf-8")
+        content = _read_validated_marker_content(src_path)
         spans = {s.scene_id: s for s in parse_scene_spans(content)}
 
         src_span = spans.get(src_id)
@@ -1046,8 +1139,8 @@ def reorder_scene_prose(
             rebuilt_text=rebuilt_text,
         )
 
-    src_content = src_path.read_text(encoding="utf-8")
-    tgt_content = tgt_path.read_text(encoding="utf-8")
+    src_content = _read_validated_marker_content(src_path)
+    tgt_content = _read_validated_marker_content(tgt_path)
 
     src_spans = {s.scene_id: s for s in parse_scene_spans(src_content)}
     tgt_spans = {s.scene_id: s for s in parse_scene_spans(tgt_content)}

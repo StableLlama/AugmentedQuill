@@ -39,7 +39,7 @@ import type {
 } from '../../services/apiClients/scenes';
 import type { ProseDropData } from './types';
 import { useSceneProseSync } from './useSceneProseSync';
-import { buildChapterOrderMap, proseSort } from './sceneSortUtils';
+import { buildChapterOrderMap, proseSort, normalizeChapterId } from './sceneSortUtils';
 import { uiStoreActions, useUIStore } from '../../stores/uiStore';
 import type { UIStoreState } from '../../stores/uiStore';
 
@@ -594,12 +594,12 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
       const targetScene = scenes.find((s: Scene) => s.id === targetSceneId);
       if (!sourceScene || !targetScene) return;
 
-      if (!sourceScene.prose_link && !targetScene.prose_link) {
+      if (!sourceScene.prose_link) {
         await handleUnlinkedNarrativeReorder(sourceSceneId, targetSceneId, placeBefore);
         return;
       }
 
-      if (!sourceScene.prose_link || !targetScene.prose_link) return;
+      if (!targetScene.prose_link) return;
       await handleLinkedProseNarrativeReorder(
         sourceSceneId,
         targetSceneId,
@@ -608,6 +608,274 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
     },
     [handleLinkedProseNarrativeReorder, handleUnlinkedNarrativeReorder, scenes]
   );
+
+  const handleDropScenesOnChapter = useCallback(
+    async (sourceSceneIds: SceneId[], chapterId: string): Promise<void> => {
+      const targetChapterId = normalizeChapterId(chapterId);
+      if (!targetChapterId || sourceSceneIds.length === 0) return;
+
+      const targetChapter = chapters.find(
+        (chapter: Chapter): boolean =>
+          normalizeChapterId(chapter.id) === targetChapterId
+      );
+      if (!targetChapter) return;
+      if (projectType === 'short-story') return;
+      if (projectType !== 'series' && targetChapter.book_id) return;
+      if (projectType === 'series' && targetChapter.book_id) {
+        const chapterBookId = String(targetChapter.book_id).trim();
+        if (
+          chapterBookId.length > 0 &&
+          !(books ?? []).some(
+            (book: Book): boolean => String(book.id).trim() === chapterBookId
+          )
+        ) {
+          return;
+        }
+      }
+
+      const chapterOrderMap = buildChapterOrderMap(projectType, chapters, books ?? []);
+      const sortedScenes = [...scenes].sort((a: Scene, b: Scene) =>
+        proseSort(a, b, chapterOrderMap)
+      );
+
+      const orderedSourceIds = sortedScenes
+        .map((scene: Scene): SceneId => scene.id)
+        .filter((id: SceneId): boolean => sourceSceneIds.includes(id));
+      const newlyLinkedSourceIds = new Set<SceneId>();
+
+      let workingScenes = scenes;
+
+      const unlinkedSourceIds = orderedSourceIds.filter((id: SceneId): boolean => {
+        const source = scenes.find((scene: Scene): boolean => scene.id === id);
+        return !source?.prose_link;
+      });
+
+      const linkUnlinkedScenesToTargetChapter = async (): Promise<boolean> => {
+        if (unlinkedSourceIds.length === 0) return false;
+
+        let chapterContentLength = Math.max(0, (targetChapter?.content ?? '').length);
+        if (chapterContentLength === 0) {
+          const numericChapterId = Number(targetChapterId);
+          if (Number.isInteger(numericChapterId)) {
+            try {
+              const chapterDetail = await api.chapters.get(numericChapterId);
+              chapterContentLength = Math.max(
+                chapterContentLength,
+                chapterDetail.content?.length ?? 0
+              );
+            } catch {
+              // Fall back to link-derived placement when chapter detail is unavailable.
+            }
+          }
+        }
+        const targetBookId = targetChapter?.book_id ?? null;
+        const previousScenesById = new Map<SceneId, Scene>();
+
+        let nextScenes = workingScenes;
+        try {
+          const linkedTargetTailOffset = nextScenes
+            .filter((scene: Scene): boolean => {
+              const link = scene.prose_link;
+              return (
+                link?.scope_type === 'chapter' &&
+                normalizeChapterId(link.chapter_id) === targetChapterId
+              );
+            })
+            .reduce((maxOffset: number, scene: Scene): number => {
+              const link = scene.prose_link;
+              if (!link) return maxOffset;
+              const startOffset = Number(link.start_offset ?? 0);
+              const endOffset = Number(
+                link.end_offset ?? (Number.isFinite(startOffset) ? startOffset + 1 : 1)
+              );
+              return Math.max(maxOffset, startOffset + 1, endOffset);
+            }, 0);
+          const insertionBaseEnd = Math.max(
+            1,
+            chapterContentLength,
+            linkedTargetTailOffset
+          );
+
+          for (const [index, sourceId] of unlinkedSourceIds.entries()) {
+            const chapterLinkEnd = insertionBaseEnd + index;
+            const chapterLinkStart = chapterLinkEnd - 1;
+
+            const sourceScene = nextScenes.find(
+              (scene: Scene): boolean => scene.id === sourceId
+            );
+            if (sourceScene) {
+              previousScenesById.set(sourceId, sourceScene);
+              const optimisticScene: Scene = {
+                ...sourceScene,
+                prose_link: {
+                  scope_type: 'chapter',
+                  chapter_id: targetChapterId,
+                  book_id: targetBookId,
+                  start_offset: chapterLinkStart,
+                  end_offset: chapterLinkEnd,
+                },
+              };
+              patchScene(optimisticScene);
+              nextScenes = applyScenePatch(nextScenes, optimisticScene);
+            }
+
+            const modified = await api.scenes.linkProse(sourceId, {
+              scope_type: 'chapter',
+              chapter_id: targetChapterId,
+              book_id: targetBookId,
+              start_offset: chapterLinkStart,
+              end_offset: chapterLinkEnd,
+            });
+            modified.forEach((scene: Scene): void => {
+              patchScene(scene);
+            });
+            if (
+              modified.some(
+                (scene: Scene): boolean =>
+                  scene.id === sourceId &&
+                  scene.prose_link?.scope_type === 'chapter' &&
+                  normalizeChapterId(scene.prose_link.chapter_id) === targetChapterId
+              )
+            ) {
+              newlyLinkedSourceIds.add(sourceId);
+            }
+            nextScenes = applyScenePatches(nextScenes, modified);
+          }
+          recordSceneHistory('Move scene to chapter', nextScenes);
+          workingScenes = nextScenes;
+        } catch (err) {
+          previousScenesById.forEach((previousScene: Scene): void => {
+            patchScene(previousScene);
+          });
+          notifyError(t('Move scene to chapter'), err);
+          return false;
+        }
+        return true;
+      };
+
+      await linkUnlinkedScenesToTargetChapter();
+
+      // Refresh scene/link state after any linkProse mutations before reordering.
+      const currentScenes = workingScenes;
+      const currentSortedScenes = [...currentScenes].sort((a: Scene, b: Scene) =>
+        proseSort(a, b, chapterOrderMap)
+      );
+      const currentDirectChapterBySceneId = new Map<SceneId, string | null>();
+      currentSortedScenes.forEach((scene: Scene): void => {
+        const link = scene.prose_link;
+        const directChapterId =
+          link?.scope_type === 'chapter'
+            ? normalizeChapterId(link.chapter_id) || null
+            : null;
+        currentDirectChapterBySceneId.set(scene.id, directChapterId);
+      });
+
+      const currentDirectChapterSceneIds = currentSortedScenes
+        .filter(
+          (scene: Scene): boolean =>
+            currentDirectChapterBySceneId.get(scene.id) === targetChapterId
+        )
+        .map((scene: Scene): SceneId => scene.id);
+      if (currentDirectChapterSceneIds.length === 0) return;
+
+      const firstChapterSceneId = currentDirectChapterSceneIds[0];
+      const lastChapterSceneId =
+        currentDirectChapterSceneIds[currentDirectChapterSceneIds.length - 1];
+      const firstChapterIndex = currentSortedScenes.findIndex(
+        (scene: Scene): boolean => scene.id === firstChapterSceneId
+      );
+      const lastChapterIndex = currentSortedScenes.findIndex(
+        (scene: Scene): boolean => scene.id === lastChapterSceneId
+      );
+      if (firstChapterIndex < 0 || lastChapterIndex < 0) return;
+
+      const candidateIds = orderedSourceIds.filter((id: SceneId): boolean => {
+        if (newlyLinkedSourceIds.has(id)) return true;
+        const source = currentScenes.find((scene: Scene): boolean => scene.id === id);
+        if (!source?.prose_link) return false;
+        return currentDirectChapterBySceneId.get(id) !== targetChapterId;
+      });
+      if (candidateIds.length === 0) return;
+
+      const orderedCandidates = currentSortedScenes
+        .map((scene: Scene): SceneId => scene.id)
+        .filter((id: SceneId): boolean => candidateIds.includes(id));
+
+      const beforeChapterIds = orderedCandidates.filter((id: SceneId): boolean => {
+        const sourceIndex = currentSortedScenes.findIndex(
+          (scene: Scene): boolean => scene.id === id
+        );
+        return sourceIndex >= 0 && sourceIndex < firstChapterIndex;
+      });
+
+      const afterChapterIds = orderedCandidates.filter((id: SceneId): boolean => {
+        const sourceIndex = currentSortedScenes.findIndex(
+          (scene: Scene): boolean => scene.id === id
+        );
+        return sourceIndex >= firstChapterIndex;
+      });
+
+      for (const sourceId of beforeChapterIds) {
+        if (sourceId === firstChapterSceneId) continue;
+        const sourceScene = workingScenes.find(
+          (scene: Scene): boolean => scene.id === sourceId
+        );
+        const targetScene = workingScenes.find(
+          (scene: Scene): boolean => scene.id === firstChapterSceneId
+        );
+        if (!sourceScene?.prose_link || !targetScene?.prose_link) continue;
+        await handleLinkedProseNarrativeReorder(sourceId, firstChapterSceneId, true);
+      }
+
+      for (const sourceId of [...afterChapterIds].reverse()) {
+        if (sourceId === lastChapterSceneId) continue;
+        const sourceScene = workingScenes.find(
+          (scene: Scene): boolean => scene.id === sourceId
+        );
+        const targetScene = workingScenes.find(
+          (scene: Scene): boolean => scene.id === lastChapterSceneId
+        );
+        if (!sourceScene?.prose_link || !targetScene?.prose_link) continue;
+        await handleLinkedProseNarrativeReorder(sourceId, lastChapterSceneId, false);
+      }
+    },
+    [
+      books,
+      chapters,
+      handleLinkedProseNarrativeReorder,
+      patchScene,
+      projectType,
+      recordSceneHistory,
+      scenes,
+      t,
+    ]
+  );
+
+  useEffect((): (() => void) => {
+    const handleExternalChapterDrop = (event: Event): void => {
+      const custom = event as CustomEvent<{
+        sourceSceneIds?: SceneId[];
+        chapterId?: string;
+      }>;
+      const sourceSceneIds = custom.detail?.sourceSceneIds;
+      const chapterId = custom.detail?.chapterId;
+      if (!Array.isArray(sourceSceneIds) || typeof chapterId !== 'string') {
+        return;
+      }
+      void handleDropScenesOnChapter(sourceSceneIds, chapterId);
+    };
+
+    window.addEventListener(
+      'aq-scene-drop-chapter',
+      handleExternalChapterDrop as EventListener
+    );
+    return (): void => {
+      window.removeEventListener(
+        'aq-scene-drop-chapter',
+        handleExternalChapterDrop as EventListener
+      );
+    };
+  }, [handleDropScenesOnChapter]);
 
   // ---- Prose-link boundary drag (update start/end offset) ----
   const handleProseBoundaryChange = useCallback(
@@ -903,6 +1171,9 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
             onReorderScene={
               viewMode === 'narrative' ? handleNarrativeReorder : undefined
             }
+            onDropScenesOnChapter={
+              viewMode === 'narrative' ? handleDropScenesOnChapter : undefined
+            }
             initialVisibleLaneEntryIds={sceneLaneState.visibleLaneEntryIds}
             initialRemovedReferencedLaneIds={sceneLaneState.removedReferencedLaneIds}
             onVisibleLaneEntryIdsChange={(ids: string[]): void =>
@@ -957,6 +1228,10 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
           isOpen={true}
           openedViaTrigger={dialogOpenedViaTrigger}
           onClose={() => setEditingSceneId(null)}
+          onNavigateScene={(sceneId: SceneId): void => {
+            setEditingSceneId(sceneId);
+            handleSelectScene(sceneId);
+          }}
           onSave={handleSaveScene}
           onDelete={handleDeleteScene}
           onDeleteCause={handleDeleteCause}

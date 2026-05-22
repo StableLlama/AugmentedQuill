@@ -530,7 +530,6 @@ export const useStory = (dialogs: StoryDialogs = defaultDialogs) => {
   }, [currentChapterId, loadChapterSignal]);
 
   const fetchStory = useCallback(async (): Promise<void> => {
-    if (story.id) return;
     try {
       const projects = await api.projects.list();
       if (projects.current) {
@@ -834,9 +833,21 @@ export const useStory = (dialogs: StoryDialogs = defaultDialogs) => {
         }
 
         const story = latestStoryRef.current;
+        const refreshedScenes = story.id
+          ? await api
+              .forProject(story.id)
+              .scenes.list()
+              .catch((e: unknown): Scene[] => {
+                console.error('Failed to refresh scenes after chapter creation', e);
+                return story.scenes ?? [];
+              })
+          : (story.scenes ?? []);
         const newState: StoryState = {
           ...story,
           chapters: newChapters,
+          scenes: Array.isArray(refreshedScenes)
+            ? refreshedScenes
+            : (story.scenes ?? []),
           currentChapterId: newChapter.id,
           lastUpdated: Date.now(),
         };
@@ -862,6 +873,15 @@ export const useStory = (dialogs: StoryDialogs = defaultDialogs) => {
       // Re-fetch after deletion because positional IDs can shift in series mode.
       const chaptersRes = await api.chapters.list();
       const newChapters: Chapter[] = mapApiChapters(chaptersRes.chapters);
+      const refreshedScenes = story.id
+        ? await api
+            .forProject(story.id)
+            .scenes.list()
+            .catch((e: unknown): Scene[] => {
+              console.error('Failed to refresh scenes after chapter deletion', e);
+              return story.scenes ?? [];
+            })
+        : (story.scenes ?? []);
 
       // Re-anchor via stable file/book coordinates instead of transient numeric IDs.
       let newSelection = null;
@@ -885,6 +905,7 @@ export const useStory = (dialogs: StoryDialogs = defaultDialogs) => {
       const newState: StoryState = {
         ...story,
         chapters: newChapters,
+        scenes: Array.isArray(refreshedScenes) ? refreshedScenes : (story.scenes ?? []),
         currentChapterId: newSelection,
         lastUpdated: Date.now(),
       };
