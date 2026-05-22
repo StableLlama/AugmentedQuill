@@ -1351,21 +1351,56 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
     return rows;
   }, [gapEpochs, sortedScenes, sceneEpochNanosecondsById]);
 
+  const applyLaneScrollDelta = useCallback((delta: number): boolean => {
+    const scroller = bottomLaneScrollRef.current;
+    if (!scroller) return false;
+
+    const maxScrollLeft = Math.max(scroller.scrollWidth - scroller.clientWidth, 0);
+    if (maxScrollLeft <= 0) return false;
+
+    const nextScrollLeft = Math.min(
+      maxScrollLeft,
+      Math.max(0, scroller.scrollLeft + delta)
+    );
+    if (Math.abs(nextScrollLeft - scroller.scrollLeft) < 0.1) return false;
+
+    scroller.scrollLeft = nextScrollLeft;
+    return true;
+  }, []);
+
+  const handleLaneWheelEvent = useCallback(
+    (event: WheelEvent): void => {
+      let delta = event.deltaX;
+      if (Math.abs(delta) < 0.1 && event.shiftKey) {
+        delta = event.deltaY;
+      }
+      if (Math.abs(delta) < 0.1) return;
+
+      if (applyLaneScrollDelta(delta)) {
+        event.preventDefault();
+      }
+    },
+    [applyLaneScrollDelta]
+  );
+
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+
+    root.addEventListener('wheel', handleLaneWheelEvent, { passive: false });
+    return () => {
+      root.removeEventListener('wheel', handleLaneWheelEvent);
+    };
+  }, [handleLaneWheelEvent]);
+
   // -------------------------------------------------------------------------
   // Bottom scroller sync (same as NarrativeView)
   // -------------------------------------------------------------------------
 
-  useEffect(() => {
-    if (!bottomLaneScrollRef.current) return;
-    const el = bottomLaneScrollRef.current;
-    if (Math.abs(el.scrollLeft - laneScrollLeft) > 1) {
-      el.scrollLeft = laneScrollLeft;
-    }
-  }, [laneScrollLeft]);
-
   const handleBottomLaneScroll = useCallback(
     (e: React.UIEvent<HTMLDivElement>): void => {
-      setLaneScrollLeft(e.currentTarget.scrollLeft);
+      const next = e.currentTarget.scrollLeft;
+      setLaneScrollLeft((prev: number) => (Math.abs(prev - next) < 0.1 ? prev : next));
     },
     [setLaneScrollLeft]
   );

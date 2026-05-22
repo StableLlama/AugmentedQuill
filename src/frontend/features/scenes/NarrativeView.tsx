@@ -533,7 +533,6 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
     if (Math.abs(nextScrollLeft - scroller.scrollLeft) < 0.1) return false;
 
     scroller.scrollLeft = nextScrollLeft;
-    setLaneScrollLeft(nextScrollLeft);
     return true;
   }, []);
 
@@ -615,17 +614,10 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
     [dropHint, onReorderScene, resolveDraggedSceneId]
   );
 
-  useEffect(() => {
-    if (!bottomLaneScrollRef.current) return;
-    const current = bottomLaneScrollRef.current;
-    if (Math.abs(current.scrollLeft - laneScrollLeft) > 1) {
-      current.scrollLeft = laneScrollLeft;
-    }
-  }, [laneScrollLeft]);
-
   const handleBottomLaneScroll = useCallback(
     (event: React.UIEvent<HTMLDivElement>): void => {
-      setLaneScrollLeft(event.currentTarget.scrollLeft);
+      const next = event.currentTarget.scrollLeft;
+      setLaneScrollLeft((prev: number) => (Math.abs(prev - next) < 0.1 ? prev : next));
     },
     [setLaneScrollLeft]
   );
