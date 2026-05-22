@@ -153,7 +153,7 @@ export const LaneHeader: React.FC<LaneHeaderProps> = ({
               onClick={(e: React.MouseEvent<HTMLButtonElement>) =>
                 handleLaneSelect(e, entryId, index)
               }
-              style={{ width: buttonWidth }}
+              style={{ width: buttonWidth, minWidth: buttonWidth }}
               className={[
                 'inline-flex flex-col items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium shadow-sm transition-colors',
                 isSelected

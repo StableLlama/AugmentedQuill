@@ -16,6 +16,7 @@ import { Plus } from 'lucide-react';
 import type { EditorView } from '@codemirror/view';
 import type { EditorHandle } from '../editor/Editor';
 import type { Scene, SceneProseLink, StoryState, SceneId } from '../../types';
+import type { EditorSettings } from '../../types/ui';
 import type { WritingUnit } from '../../types/domain';
 import { useScenes } from '../../stores/storyStore';
 import { useStoryStore } from '../../stores/storyStore';
@@ -47,6 +48,7 @@ type ViewMode = 'pinboard' | 'narrative' | 'chronological' | 'convergence-map';
 interface ScenesPanelContainerProps {
   editorRef?: React.RefObject<EditorHandle | null>;
   currentChapter?: WritingUnit | null;
+  editorSettings: EditorSettings;
   recordHistoryEntry?: (params: {
     label: string;
     state?: StoryState;
@@ -151,6 +153,7 @@ function reorderByPlacement<T>(
 export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
   editorRef,
   currentChapter,
+  editorSettings,
   recordHistoryEntry,
 }: ScenesPanelContainerProps) => {
   const { t } = useTranslation();
@@ -161,6 +164,12 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
   );
   const sceneEditorDialog = useUIStore(
     (s: UIStoreState): UIStoreState['sceneEditorDialog'] => s.sceneEditorDialog
+  );
+  const sceneLaneState = useUIStore(
+    (s: UIStoreState): UIStoreState['sceneLaneState'] => s.sceneLaneState
+  );
+  const setSceneLaneState = useUIStore(
+    (s: UIStoreState): UIStoreState['setSceneLaneState'] => s.setSceneLaneState
   );
   const scenes = useScenes();
   const story = useStoryStore((s: StoryStoreState) => s.story);
@@ -894,6 +903,20 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
             onReorderScene={
               viewMode === 'narrative' ? handleNarrativeReorder : undefined
             }
+            initialVisibleLaneEntryIds={sceneLaneState.visibleLaneEntryIds}
+            initialRemovedReferencedLaneIds={sceneLaneState.removedReferencedLaneIds}
+            onVisibleLaneEntryIdsChange={(ids: string[]): void =>
+              setSceneLaneState((prev: UIStoreState['sceneLaneState']) => ({
+                ...prev,
+                visibleLaneEntryIds: ids,
+              }))
+            }
+            onRemovedReferencedLaneIdsChange={(ids: string[]): void =>
+              setSceneLaneState((prev: UIStoreState['sceneLaneState']) => ({
+                ...prev,
+                removedReferencedLaneIds: ids,
+              }))
+            }
           />
         )}
         {viewMode === 'convergence-map' && (
@@ -908,6 +931,21 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
             onSelectionChange={handleMultipleSelectScenes}
             onEditScene={setEditingSceneId}
             onAssignSceneTimeline={handleAssignSceneTimeline}
+            editorSettings={editorSettings}
+            initialVisibleLaneEntryIds={sceneLaneState.visibleLaneEntryIds}
+            initialRemovedReferencedLaneIds={sceneLaneState.removedReferencedLaneIds}
+            onVisibleLaneEntryIdsChange={(ids: string[]): void =>
+              setSceneLaneState((prev: UIStoreState['sceneLaneState']) => ({
+                ...prev,
+                visibleLaneEntryIds: ids,
+              }))
+            }
+            onRemovedReferencedLaneIdsChange={(ids: string[]): void =>
+              setSceneLaneState((prev: UIStoreState['sceneLaneState']) => ({
+                ...prev,
+                removedReferencedLaneIds: ids,
+              }))
+            }
           />
         )}
       </div>

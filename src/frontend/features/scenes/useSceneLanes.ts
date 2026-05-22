@@ -24,7 +24,11 @@ import { getSceneEpochNanoseconds } from './sceneSortUtils';
 // ---------------------------------------------------------------------------
 
 export const LANE_DRAG_MIME = 'application/x-augmentedquill-sourcebook-lane-id';
-const CHARACTER_CATEGORY = 'character';
+export const CHARACTER_CATEGORY = 'character';
+
+export function isCharacterEntry(entry?: SourcebookEntry): boolean {
+  return Boolean(entry && normalizeCategory(entry.category) === CHARACTER_CATEGORY);
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -37,6 +41,10 @@ export interface UseSceneLanesParams {
   sourcebookEntries: SourcebookEntry[];
   onSelectScene: (id: SceneId | null) => void;
   onSelectionChange?: (ids: ReadonlySet<SceneId>) => void;
+  initialVisibleLaneEntryIds?: string[];
+  initialRemovedReferencedLaneIds?: string[];
+  onVisibleLaneEntryIdsChange?: (ids: string[]) => void;
+  onRemovedReferencedLaneIdsChange?: (ids: string[]) => void;
 }
 
 export interface UseSceneLanesResult {
@@ -176,12 +184,16 @@ function useProjectImages(): ProjectImage[] {
 // ---------------------------------------------------------------------------
 // Hook
 // ---------------------------------------------------------------------------
-
+// eslint-disable-next-line max-lines-per-function
 export function useSceneLanes({
   scenes,
   sourcebookEntries,
   onSelectScene,
   onSelectionChange,
+  initialVisibleLaneEntryIds,
+  initialRemovedReferencedLaneIds,
+  onVisibleLaneEntryIdsChange,
+  onRemovedReferencedLaneIdsChange,
 }: UseSceneLanesParams): UseSceneLanesResult {
   const sourcebookEntriesById = useMemo(
     () => new Map(sourcebookEntries.map((entry: SourcebookEntry) => [entry.id, entry])),
@@ -226,18 +238,25 @@ export function useSceneLanes({
     scenes.forEach((scene: Scene) => {
       scene.active_characters.forEach((name: string) => {
         (entryIdsByToken.get(normalizeToken(name)) ?? []).forEach((entryId: string) => {
-          register(scene.id, entryId, 'solid');
+          const entry = sourcebookEntriesById.get(entryId);
+          if (isCharacterEntry(entry)) {
+            register(scene.id, entryId, 'solid');
+          }
         });
       });
 
       scene.passive_characters.forEach((name: string) => {
         (entryIdsByToken.get(normalizeToken(name)) ?? []).forEach((entryId: string) => {
-          register(scene.id, entryId, 'hollow');
+          const entry = sourcebookEntriesById.get(entryId);
+          if (isCharacterEntry(entry)) {
+            register(scene.id, entryId, 'hollow');
+          }
         });
       });
 
       (scene.sourcebook_entry_ids ?? []).forEach((entryId: string) => {
-        if (sourcebookEntriesById.has(entryId)) {
+        const entry = sourcebookEntriesById.get(entryId);
+        if (entry && !isCharacterEntry(entry)) {
           register(scene.id, entryId, 'solid');
         }
       });
@@ -245,7 +264,10 @@ export function useSceneLanes({
       [scene.location, scene.time].forEach((label: string | null | undefined) => {
         (entryIdsByToken.get(normalizeToken(label)) ?? []).forEach(
           (entryId: string) => {
-            register(scene.id, entryId, 'solid');
+            const entry = sourcebookEntriesById.get(entryId);
+            if (entry && !isCharacterEntry(entry)) {
+              register(scene.id, entryId, 'solid');
+            }
           }
         );
       });
@@ -275,11 +297,48 @@ export function useSceneLanes({
   }, [sceneEntryMarkerStyles, scenes, sourcebookEntriesById]);
 
   const [visibleLaneEntryIds, setVisibleLaneEntryIds] = useState<string[]>(
-    referencedCharacterEntryIds
+    initialVisibleLaneEntryIds ?? referencedCharacterEntryIds
   );
   const [removedReferencedLaneIds, setRemovedReferencedLaneIds] = useState<Set<string>>(
-    () => new Set<string>()
+    () => new Set<string>(initialRemovedReferencedLaneIds ?? [])
   );
+
+  const updateVisibleLaneEntryIds = useCallback(
+    (nextIds: string[]): void => {
+      setVisibleLaneEntryIds((prev: string[]) => {
+        if (arraysEqual(prev, nextIds)) return prev;
+        onVisibleLaneEntryIdsChange?.(nextIds);
+        return nextIds;
+      });
+    },
+    [onVisibleLaneEntryIdsChange]
+  );
+
+  const updateRemovedReferencedLaneIds = useCallback(
+    (nextIds: Set<string>): void => {
+      setRemovedReferencedLaneIds((prev: Set<string>) => {
+        const prevArray = [...prev].sort();
+        const nextArray = [...nextIds].sort();
+        if (arraysEqual(prevArray, nextArray)) return prev;
+        onRemovedReferencedLaneIdsChange?.([...nextIds]);
+        return nextIds;
+      });
+    },
+    [onRemovedReferencedLaneIdsChange]
+  );
+
+  useEffect(() => {
+    if (initialVisibleLaneEntryIds) {
+      updateVisibleLaneEntryIds(initialVisibleLaneEntryIds);
+    }
+  }, [initialVisibleLaneEntryIds, updateVisibleLaneEntryIds]);
+
+  useEffect(() => {
+    if (initialRemovedReferencedLaneIds) {
+      updateRemovedReferencedLaneIds(new Set(initialRemovedReferencedLaneIds));
+    }
+  }, [initialRemovedReferencedLaneIds, updateRemovedReferencedLaneIds]);
+
   const [selectedLaneEntryIds, setSelectedLaneEntryIds] = useState<Set<string>>(
     () => new Set<string>()
   );
@@ -306,35 +365,43 @@ export function useSceneLanes({
   const addLaneButtonRef = useRef<HTMLButtonElement | null>(null);
   // Keep removedReferencedLaneIds in sync when sourcebook entries change.
   useEffect(() => {
-    setRemovedReferencedLaneIds((prev: Set<string>) => {
-      const next = new Set<string>();
-      prev.forEach((entryId: string) => {
-        if (
-          sourcebookEntryIds.has(entryId) &&
-          referencedCharacterEntryIds.includes(entryId)
-        ) {
-          next.add(entryId);
-        }
-      });
-      return next.size === prev.size ? prev : next;
+    const next = new Set<string>();
+    removedReferencedLaneIds.forEach((entryId: string) => {
+      if (
+        sourcebookEntryIds.has(entryId) &&
+        referencedCharacterEntryIds.includes(entryId)
+      ) {
+        next.add(entryId);
+      }
     });
-  }, [referencedCharacterEntryIds, sourcebookEntryIds]);
+    updateRemovedReferencedLaneIds(next);
+  }, [
+    referencedCharacterEntryIds,
+    sourcebookEntryIds,
+    removedReferencedLaneIds,
+    updateRemovedReferencedLaneIds,
+  ]);
 
   // Sync visible lanes when sourcebook entries or referenced characters change.
   useEffect(() => {
-    setVisibleLaneEntryIds((prev: string[]) => {
-      const retained = prev.filter((entryId: string) =>
-        sourcebookEntryIds.has(entryId)
-      );
-      const next = [...retained];
-      referencedCharacterEntryIds.forEach((entryId: string) => {
-        if (!removedReferencedLaneIds.has(entryId) && !next.includes(entryId)) {
-          next.push(entryId);
-        }
-      });
-      return arraysEqual(prev, next) ? prev : next;
+    const next = visibleLaneEntryIds.filter((entryId: string) =>
+      sourcebookEntryIds.has(entryId)
+    );
+    referencedCharacterEntryIds.forEach((entryId: string) => {
+      if (!removedReferencedLaneIds.has(entryId) && !next.includes(entryId)) {
+        next.push(entryId);
+      }
     });
-  }, [referencedCharacterEntryIds, removedReferencedLaneIds, sourcebookEntryIds]);
+    if (!arraysEqual(visibleLaneEntryIds, next)) {
+      updateVisibleLaneEntryIds(next);
+    }
+  }, [
+    referencedCharacterEntryIds,
+    removedReferencedLaneIds,
+    sourcebookEntryIds,
+    updateVisibleLaneEntryIds,
+    visibleLaneEntryIds,
+  ]);
 
   // Drop selected lanes that were removed from visible list.
   useEffect(() => {
@@ -487,14 +554,12 @@ export function useSceneLanes({
   const handleLaneRemove = useCallback(
     (entryId: string): void => {
       if (referencedCharacterEntryIds.includes(entryId)) {
-        setRemovedReferencedLaneIds((prev: Set<string>) => {
-          const next = new Set<string>(prev);
-          next.add(entryId);
-          return next;
-        });
+        const next = new Set<string>(removedReferencedLaneIds);
+        next.add(entryId);
+        updateRemovedReferencedLaneIds(next);
       }
-      setVisibleLaneEntryIds((prev: string[]) =>
-        prev.filter((id: string) => id !== entryId)
+      updateVisibleLaneEntryIds(
+        visibleLaneEntryIds.filter((id: string) => id !== entryId)
       );
       setSelectedLaneEntryIds((prev: Set<string>) => {
         if (!prev.has(entryId)) return prev;
@@ -503,23 +568,35 @@ export function useSceneLanes({
         return next;
       });
     },
-    [referencedCharacterEntryIds]
+    [
+      referencedCharacterEntryIds,
+      removedReferencedLaneIds,
+      updateRemovedReferencedLaneIds,
+      updateVisibleLaneEntryIds,
+      visibleLaneEntryIds,
+    ]
   );
 
-  const handleLaneAdd = useCallback((entryId: string): void => {
-    setVisibleLaneEntryIds((prev: string[]) => {
-      if (prev.includes(entryId)) return prev;
-      return [...prev, entryId];
-    });
-    setRemovedReferencedLaneIds((prev: Set<string>) => {
-      if (!prev.has(entryId)) return prev;
-      const next = new Set<string>(prev);
-      next.delete(entryId);
-      return next;
-    });
-    setPickerOpen(false);
-    setPickerQuery('');
-  }, []);
+  const handleLaneAdd = useCallback(
+    (entryId: string): void => {
+      if (!visibleLaneEntryIds.includes(entryId)) {
+        updateVisibleLaneEntryIds([...visibleLaneEntryIds, entryId]);
+      }
+      if (removedReferencedLaneIds.has(entryId)) {
+        const next = new Set<string>(removedReferencedLaneIds);
+        next.delete(entryId);
+        updateRemovedReferencedLaneIds(next);
+      }
+      setPickerOpen(false);
+      setPickerQuery('');
+    },
+    [
+      removedReferencedLaneIds,
+      updateRemovedReferencedLaneIds,
+      updateVisibleLaneEntryIds,
+      visibleLaneEntryIds,
+    ]
+  );
 
   const handleLaneDragStart = useCallback(
     (event: React.DragEvent<HTMLElement>, entryId: string): void => {
@@ -568,14 +645,14 @@ export function useSceneLanes({
       if (!sourceId || sourceId === targetId) return;
       const boundary = getHorizontalDropBoundary(event.currentTarget);
       const placeBefore = event.clientX < boundary.left + boundary.width / 2;
-      setVisibleLaneEntryIds((prev: string[]) =>
-        reorderValues(prev, sourceId, targetId, placeBefore)
+      updateVisibleLaneEntryIds(
+        reorderValues(visibleLaneEntryIds, sourceId, targetId, placeBefore)
       );
       dragLaneEntryIdRef.current = null;
       setDragLaneEntryId(null);
       setLaneDropHint(null);
     },
-    [dragLaneEntryId]
+    [dragLaneEntryId, updateVisibleLaneEntryIds, visibleLaneEntryIds]
   );
 
   const handleBackgroundMouseDown = useCallback(

@@ -22,10 +22,12 @@ import React, {
   useEffect,
 } from 'react';
 import { useTranslation } from 'react-i18next';
+import { FileText } from 'lucide-react';
 import type { Scene, SceneId } from '../../types';
+import type { EditorSettings } from '../../types/ui';
 import type { Chapter, Book, SourcebookEntry } from '../../types/domain';
 import { useTheme } from '../layout/ThemeContext';
-import { useSceneLanes } from './useSceneLanes';
+import { useSceneLanes, isCharacterEntry } from './useSceneLanes';
 import { LaneHeader } from './LaneHeader';
 import { SceneCard } from './SceneCard';
 import { useSceneSelection } from './useSceneSelection';
@@ -51,6 +53,11 @@ interface ConvergenceMapViewProps {
   onSelectionChange?: (ids: ReadonlySet<SceneId>) => void;
   onEditScene?: (id: SceneId) => void;
   onAssignSceneTimeline?: (sceneId: SceneId, timelineId: string) => Promise<void>;
+  initialVisibleLaneEntryIds?: string[];
+  initialRemovedReferencedLaneIds?: string[];
+  onVisibleLaneEntryIdsChange?: (ids: string[]) => void;
+  onRemovedReferencedLaneIdsChange?: (ids: string[]) => void;
+  editorSettings: EditorSettings;
 }
 
 // ---------------------------------------------------------------------------
@@ -73,6 +80,8 @@ const TL_RIGHT_PAD = 8; // px — right breathing room for arrow heads
 const DEFAULT_PLACEHOLDER_ROW_HEIGHT = 84; // px — fallback until card heights are measured
 const PROSE_LANE_ID = '__prose__'; // synthetic lane id for the prose-order snake
 const PROSE_SNAKE_OPACITY = 0.45; // lower opacity to distinguish prose snake from entry snakes
+const DEFAULT_LANE_BUTTON_WIDTH = 144;
+const LANE_HEADER_GAP = 8; // gap-2 between lane header items
 
 // ---------------------------------------------------------------------------
 // Geometry helpers
@@ -84,6 +93,41 @@ type MeasuredRowEntry = { y: number; h: number };
 
 const getLayoutCenterY = (layout: { y: number; h: number }): number => {
   return layout.y + layout.h / 2;
+};
+
+const getPageProseStyle = (
+  settings: EditorSettings
+): {
+  proseTrackColor: string;
+  proseFill: string;
+  proseIconColor: string;
+} => {
+  const pageL = settings.brightness * 100;
+  const pageColor = `hsl(38, 25%, ${pageL}%)`;
+
+  if (settings.theme === 'dark') {
+    const textColor = `rgba(231, 229, 228, ${settings.contrast})`;
+    return {
+      proseTrackColor: textColor,
+      proseFill: 'rgba(231, 229, 228, 0.16)',
+      proseIconColor: pageColor,
+    };
+  }
+
+  if (settings.theme === 'light') {
+    const textColor = `rgba(20, 15, 10, ${settings.contrast})`;
+    return {
+      proseTrackColor: textColor,
+      proseFill: 'rgba(20, 15, 10, 0.12)',
+      proseIconColor: pageColor,
+    };
+  }
+
+  return {
+    proseTrackColor: pageColor,
+    proseFill: `hsla(38, 25%, ${pageL}%, 0.45)`,
+    proseIconColor: pageColor,
+  };
 };
 
 export const compareSnakeSceneOrder = (
@@ -132,11 +176,11 @@ function buildSnakePath(
   proseScenes: Scene[],
   cardLayouts: Map<SceneId, CardLayoutEntry>,
   laneCenterX: number
-): { pathData: string; sceneXById: Map<SceneId, number> } {
+): { pathData: string; sceneXById: Map<SceneId, number>; snakeWidth: number } {
   const sceneXById = new Map<SceneId, number>();
 
   const validScenes = proseScenes.filter((s: Scene) => cardLayouts.has(s.id));
-  if (validScenes.length === 0) return { pathData: '', sceneXById };
+  if (validScenes.length === 0) return { pathData: '', sceneXById, snakeWidth: 0 };
 
   // Normalize consecutive upward prose steps so a new lane starts at the
   // highest marker of that upward chain, then proceeds top-to-bottom.
@@ -188,6 +232,12 @@ function buildSnakePath(
 
   const numRuns = runs.length;
   const startX = laneCenterX - ((numRuns - 1) * TRACK_W) / 2;
+  let minX = laneCenterX;
+  let maxX = laneCenterX;
+  const updateBounds = (x: number): void => {
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+  };
   const parts: string[] = [];
   const processedYs: number[] = [];
 
@@ -201,10 +251,12 @@ function buildSnakePath(
 
       if (runIdx === 0 && j === 0) {
         parts.push(`M ${laneX},${y}`);
+        updateBounds(laneX);
       } else if (j === 0) {
         // Connector already ends at the first point of this run.
       } else {
         parts.push(`L ${laneX},${y}`);
+        updateBounds(laneX);
       }
       sceneXById.set(scene.id, laneX);
       processedYs.push(y);
@@ -236,10 +288,14 @@ function buildSnakePath(
         parts.push(`L ${transitionX},${lastY}`);
         parts.push(`L ${transitionX},${entryY}`);
       }
+      updateBounds(transitionX);
 
       // Top U-turn: half-circle from middle up-lane to next down-lane.
       // Sweep=1 yields the upward bow while reversing direction to downward.
       parts.push(`a ${TURN_R},${TURN_R} 0 0 1 ${TRANSITION_DX},0`);
+
+      updateBounds(transitionX + TRANSITION_DX);
+      updateBounds(nextLaneX);
 
       if (entryY < firstNextY) {
         parts.push(`L ${nextLaneX},${firstNextY}`);
@@ -247,7 +303,8 @@ function buildSnakePath(
     }
   }
 
-  return { pathData: parts.join(' '), sceneXById };
+  const snakeWidth = Math.max(0, maxX - minX);
+  return { pathData: parts.join(' '), sceneXById, snakeWidth };
 }
 
 /**
@@ -413,6 +470,11 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
   onSelectionChange,
   onEditScene,
   onAssignSceneTimeline,
+  initialVisibleLaneEntryIds,
+  initialRemovedReferencedLaneIds,
+  onVisibleLaneEntryIdsChange,
+  onRemovedReferencedLaneIdsChange,
+  editorSettings,
 }: ConvergenceMapViewProps) => {
   const { t } = useTranslation();
   const { isLight } = useTheme();
@@ -423,6 +485,10 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
     sourcebookEntries,
     onSelectScene,
     onSelectionChange,
+    initialVisibleLaneEntryIds,
+    initialRemovedReferencedLaneIds,
+    onVisibleLaneEntryIdsChange,
+    onRemovedReferencedLaneIdsChange,
   });
   const {
     visibleLaneEntryIds,
@@ -433,7 +499,7 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
     laneScrollLeft,
     setLaneScrollLeft,
     handleBackgroundMouseDown,
-    laneButtonRefs,
+    sourcebookEntriesById,
   } = lanes;
 
   // Build chapter order map for chronological Y-axis sorting.
@@ -488,14 +554,44 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
   const [cardLayouts, setCardLayouts] = useState<Map<SceneId, CardLayoutEntry>>(
     new Map()
   );
-  const [laneCenterXById, setLaneCenterXById] = useState<Map<string, number>>(
-    new Map()
-  );
   const [epochGapLayouts, setEpochGapLayouts] = useState<Map<string, MeasuredRowEntry>>(
     new Map()
   );
   const [lanePlaneWidth, setLanePlaneWidth] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
+
+  const cardLayoutsEqual = (
+    a: ReadonlyMap<SceneId, CardLayoutEntry>,
+    b: ReadonlyMap<SceneId, CardLayoutEntry>
+  ): boolean => {
+    if (a.size !== b.size) return false;
+    for (const [key, value] of a) {
+      const other = b.get(key);
+      if (!other) return false;
+      if (
+        other.x !== value.x ||
+        other.y !== value.y ||
+        other.w !== value.w ||
+        other.h !== value.h
+      ) {
+        return false;
+      }
+    }
+    return true;
+  };
+
+  const rowLayoutsEqual = (
+    a: ReadonlyMap<string, MeasuredRowEntry>,
+    b: ReadonlyMap<string, MeasuredRowEntry>
+  ): boolean => {
+    if (a.size !== b.size) return false;
+    for (const [key, value] of a) {
+      const other = b.get(key);
+      if (!other) return false;
+      if (other.y !== value.y || other.h !== value.h) return false;
+    }
+    return true;
+  };
 
   /** Measure all card positions and lane button centers. */
   const measureLayouts = useCallback(() => {
@@ -508,7 +604,9 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
         h: el.offsetHeight,
       });
     });
-    setCardLayouts(nextCards);
+    setCardLayouts((prev: Map<SceneId, CardLayoutEntry>) =>
+      cardLayoutsEqual(prev, nextCards) ? prev : nextCards
+    );
 
     const nextEpochGapLayouts = new Map<string, MeasuredRowEntry>();
     epochGapRefs.current.forEach((el: HTMLDivElement, key: string) => {
@@ -517,56 +615,28 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
         h: el.offsetHeight,
       });
     });
-    setEpochGapLayouts(nextEpochGapLayouts);
-
-    const laneTrackRect = laneTrackRef.current?.getBoundingClientRect();
-    const nextCenters = new Map<string, number>();
-    laneButtonRefs.current.forEach((el: HTMLButtonElement, id: string) => {
-      if (laneTrackRect) {
-        const rect = el.getBoundingClientRect();
-        nextCenters.set(id, rect.left - laneTrackRect.left + rect.width / 2);
-      } else {
-        nextCenters.set(id, el.offsetLeft + el.offsetWidth / 2);
-      }
-    });
-    const proseLaneEl = proseLaneRef.current;
-    if (proseLaneEl) {
-      if (laneTrackRect) {
-        const rect = proseLaneEl.getBoundingClientRect();
-        nextCenters.set(PROSE_LANE_ID, rect.left - laneTrackRect.left + rect.width / 2);
-      } else {
-        nextCenters.set(
-          PROSE_LANE_ID,
-          proseLaneEl.offsetLeft + proseLaneEl.offsetWidth / 2
-        );
-      }
-    }
-    setLaneCenterXById(nextCenters);
-    setLanePlaneWidth(
-      laneTrackRef.current?.scrollWidth ?? laneTrackRef.current?.offsetWidth ?? 0
+    setEpochGapLayouts((prev: Map<string, MeasuredRowEntry>) =>
+      rowLayoutsEqual(prev, nextEpochGapLayouts) ? prev : nextEpochGapLayouts
     );
-    setViewportHeight(innerContainerRef.current?.clientHeight ?? 0);
-  }, [laneButtonRefs]);
 
-  useLayoutEffect(() => {
-    measureLayouts();
-  }, [sortedScenes, visibleLaneEntryIds, measureLayouts]);
-
-  // Re-measure after the browser has painted to catch any deferred CSS layout
-  // settlement (e.g. flex gap, font-triggered reflow) that may cause offsetTop
-  // to be stale during the synchronous useLayoutEffect above.
-  useEffect(() => {
-    const raf = requestAnimationFrame(() => {
-      measureLayouts();
-    });
-    return () => cancelAnimationFrame(raf);
-  }, [sortedScenes, visibleLaneEntryIds, measureLayouts]);
+    const nextLanePlaneWidth =
+      laneTrackRef.current?.scrollWidth ?? laneTrackRef.current?.offsetWidth ?? 0;
+    setLanePlaneWidth((prev: number) =>
+      Math.abs(prev - nextLanePlaneWidth) < 1 ? prev : nextLanePlaneWidth
+    );
+    const nextViewportHeight = innerContainerRef.current?.clientHeight ?? 0;
+    setViewportHeight((prev: number) =>
+      Math.abs(prev - nextViewportHeight) < 1 ? prev : nextViewportHeight
+    );
+  }, []);
 
   useEffect(() => {
-    const el = innerContainerRef.current;
-    if (!el) return;
+    const els = [innerContainerRef.current, laneTrackRef.current].filter(
+      (el: HTMLDivElement | null): el is HTMLDivElement => el !== null
+    );
+    if (els.length === 0) return undefined;
     const ro = new ResizeObserver(measureLayouts);
-    ro.observe(el);
+    els.forEach((el: HTMLDivElement) => ro.observe(el));
     return () => ro.disconnect();
   }, [measureLayouts]);
 
@@ -706,14 +776,10 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
   // Snake path data (computed from measured layouts)
   // -------------------------------------------------------------------------
 
-  const snakePaths = useMemo(() => {
-    return visibleLaneEntryIds.map((entryId: string) => {
-      const centerX = laneCenterXById.get(entryId);
-      if (centerX === undefined) return null;
+  const entrySnakeModelsById = useMemo(() => {
+    const models = new Map<string, { proseScenes: Scene[]; snakeWidth: number }>();
 
-      // Scenes belonging to this lane, sorted by the lane-aware chronology.
-      // Branch timelines come after their parent lane, and scenes within a lane
-      // stay in chronological order.
+    visibleLaneEntryIds.forEach((entryId: string) => {
       const entryScenes = sortedScenes.filter((s: Scene) =>
         markerStyleBySceneId.get(s.id)?.has(entryId)
       );
@@ -726,22 +792,88 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
         );
       });
 
+      const { snakeWidth } = buildSnakePath(proseScenes, cardLayouts, 0);
+      models.set(entryId, { proseScenes, snakeWidth });
+    });
+
+    return models;
+  }, [
+    visibleLaneEntryIds,
+    sortedScenes,
+    markerStyleBySceneId,
+    timelinePanelModel.laneBySceneId,
+    sceneEpochNanosecondsById,
+    cardLayouts,
+  ]);
+
+  const proseOrderedScenes = useMemo(
+    () =>
+      [...filteredScenes].sort((a: Scene, b: Scene) =>
+        proseSort(a, b, chapterOrderMap)
+      ),
+    [filteredScenes, chapterOrderMap]
+  );
+
+  const proseSnakeWidth = useMemo(() => {
+    const { snakeWidth } = buildSnakePath(proseOrderedScenes, cardLayouts, 0);
+    return snakeWidth;
+  }, [proseOrderedScenes, cardLayouts]);
+
+  const laneWidths = useMemo(() => {
+    const widths = new Map<string, number>();
+    entrySnakeModelsById.forEach(
+      (model: { proseScenes: Scene[]; snakeWidth: number }, entryId: string) => {
+        const requiredWidth = Math.max(
+          DEFAULT_LANE_BUTTON_WIDTH,
+          model.snakeWidth + SCENE_CIRCLE_R * 2 + 16
+        );
+        widths.set(entryId, requiredWidth);
+      }
+    );
+    return widths;
+  }, [entrySnakeModelsById]);
+
+  const proseLaneWidth = useMemo(() => {
+    return Math.max(
+      DEFAULT_LANE_BUTTON_WIDTH,
+      proseSnakeWidth + SCENE_CIRCLE_R * 2 + 16
+    );
+  }, [proseSnakeWidth]);
+
+  const laneCenterXById = useMemo(() => {
+    const centers = new Map<string, number>();
+    let xCursor = 0;
+    centers.set(PROSE_LANE_ID, xCursor + proseLaneWidth / 2);
+    xCursor += proseLaneWidth + LANE_HEADER_GAP;
+
+    visibleLaneEntryIds.forEach((entryId: string) => {
+      const laneWidth = laneWidths.get(entryId) ?? DEFAULT_LANE_BUTTON_WIDTH;
+      centers.set(entryId, xCursor + laneWidth / 2);
+      xCursor += laneWidth + LANE_HEADER_GAP;
+    });
+
+    return centers;
+  }, [proseLaneWidth, visibleLaneEntryIds, laneWidths]);
+
+  const snakePaths = useMemo(() => {
+    return visibleLaneEntryIds.map((entryId: string) => {
+      const centerX = laneCenterXById.get(entryId);
+      const model = entrySnakeModelsById.get(entryId);
+      if (centerX === undefined || !model) return null;
+
       const { pathData, sceneXById } = buildSnakePath(
-        proseScenes,
+        model.proseScenes,
         cardLayouts,
         centerX
       );
 
-      return { entryId, pathData, proseScenes, sceneXById };
+      return { entryId, pathData, proseScenes: model.proseScenes, sceneXById };
     });
-  }, [
-    visibleLaneEntryIds,
-    laneCenterXById,
-    sortedScenes,
-    markerStyleBySceneId,
-    cardLayouts,
-    sourcebookEntries,
-  ]);
+  }, [visibleLaneEntryIds, laneCenterXById, entrySnakeModelsById, cardLayouts]);
+
+  useLayoutEffect(() => {
+    measureLayouts();
+  }, [sortedScenes, visibleLaneEntryIds, measureLayouts]);
 
   // -------------------------------------------------------------------------
   // Prose-order snake (shows the narrative/chapter sequence of all scenes)
@@ -751,17 +883,20 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
     const centerX = laneCenterXById.get(PROSE_LANE_ID);
     if (centerX === undefined) return null;
 
-    const proseOrderedScenes = [...filteredScenes].sort((a: Scene, b: Scene) =>
-      proseSort(a, b, chapterOrderMap)
-    );
-
-    const { pathData, sceneXById } = buildSnakePath(
+    const { pathData, sceneXById, snakeWidth } = buildSnakePath(
       proseOrderedScenes,
       cardLayouts,
       centerX
     );
-    return { pathData, proseScenes: proseOrderedScenes, sceneXById };
-  }, [laneCenterXById, filteredScenes, chapterOrderMap, cardLayouts]);
+    return { pathData, proseScenes: proseOrderedScenes, sceneXById, snakeWidth };
+  }, [laneCenterXById, proseOrderedScenes, cardLayouts]);
+
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => {
+      measureLayouts();
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [sortedScenes, visibleLaneEntryIds, measureLayouts]);
 
   // -------------------------------------------------------------------------
   // Time travel arrows for the left timeline panel
@@ -1243,6 +1378,13 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
   const trackColor = isLight ? '#6366f1' : '#a5b4fc';
   const solidFill = isLight ? '#6366f1' : '#a5b4fc';
   const hollowFill = isLight ? '#f8fafc' : '#0f172a';
+  const otherTrackColor = isLight ? '#8b1f3d' : '#f5c3d1';
+  const otherSolidFill = isLight ? '#8b1f3d' : '#f5c3d1';
+  const { proseTrackColor, proseFill, proseIconColor } =
+    getPageProseStyle(editorSettings);
+  const proseHeaderClasses = isLight
+    ? 'border-brand-gray-200 bg-white text-brand-gray-800'
+    : 'border-brand-gray-700 bg-brand-gray-900 text-brand-gray-100';
   const solidStroke = solidFill;
 
   // -------------------------------------------------------------------------
@@ -1267,22 +1409,27 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
           <LaneHeader
             lanes={lanes}
             laneTrackRef={laneTrackRef}
+            laneWidths={laneWidths}
             prefixContent={
               <div
                 ref={proseLaneRef}
-                style={{ width: 144 }}
+                style={{ minWidth: proseLaneWidth }}
                 className={[
                   'inline-flex flex-col items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium shadow-sm flex-shrink-0',
-                  isLight
-                    ? 'border-brand-500 bg-brand-100 text-brand-gray-900'
-                    : 'border-brand-300 bg-brand-gray-800 text-brand-gray-50',
+                  proseHeaderClasses,
                 ].join(' ')}
                 aria-label={t('Prose narrative order')}
               >
                 <span className="block w-full truncate text-center">{t('Prose')}</span>
-                <span
-                  className={`h-12 w-12 rounded-md border border-brand-gray-300/60 flex-shrink-0 ${isLight ? 'bg-brand-gray-100/60' : 'bg-brand-gray-700/40'}`}
-                />
+                <div
+                  className="h-12 w-12 rounded-md border flex items-center justify-center"
+                  style={{
+                    backgroundColor: proseFill,
+                    borderColor: proseTrackColor,
+                  }}
+                >
+                  <FileText className="h-6 w-6" style={{ color: proseIconColor }} />
+                </div>
               </div>
             }
           />
@@ -1292,7 +1439,7 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
       {/* Scrollable content: snake overlay behind full-width cards */}
       <div
         ref={innerContainerRef}
-        className="relative flex-1 overflow-y-auto"
+        className="relative flex-1 overflow-y-auto overflow-x-hidden"
         role="presentation"
         tabIndex={-1}
         onMouseDown={handleBackgroundMouseDown}
@@ -1324,7 +1471,7 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
                   <path
                     d={proseSnakePath.pathData}
                     fill="none"
-                    stroke={trackColor}
+                    stroke={proseTrackColor}
                     strokeWidth={2}
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -1342,8 +1489,8 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
                         cx={cx}
                         cy={cy}
                         r={isPrimary ? SCENE_CIRCLE_R + 2 : SCENE_CIRCLE_R}
-                        fill={hollowFill}
-                        stroke={solidStroke}
+                        fill={proseFill}
+                        stroke={proseTrackColor}
                         strokeWidth={isPrimary ? 2.5 : 1.5}
                         opacity={PROSE_SNAKE_OPACITY}
                       />
@@ -1361,7 +1508,11 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
                     <path
                       d={pathData}
                       fill="none"
-                      stroke={trackColor}
+                      stroke={
+                        isCharacterEntry(sourcebookEntriesById.get(entryId))
+                          ? trackColor
+                          : otherTrackColor
+                      }
                       strokeWidth={2}
                       strokeLinecap="round"
                       strokeLinejoin="round"
@@ -1376,17 +1527,31 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
                       const markerStyle = markerStyleBySceneId
                         .get(scene.id)
                         ?.get(entryId);
-                      const isSolid = markerStyle === 'solid';
+                      const entry = sourcebookEntriesById.get(entryId);
+                      const entryIsCharacter = entry && isCharacterEntry(entry);
+                      const effectiveMarkerStyle = entryIsCharacter
+                        ? markerStyle
+                        : 'solid';
+                      const isSolid = effectiveMarkerStyle === 'solid';
                       const isPrimary = primarySelectedSceneId === scene.id;
+                      const markerFill = isSolid
+                        ? entryIsCharacter
+                          ? solidFill
+                          : otherSolidFill
+                        : hollowFill;
+                      const markerStroke = entryIsCharacter
+                        ? solidStroke
+                        : otherTrackColor;
                       return (
                         <circle
                           key={scene.id}
                           cx={cx}
                           cy={cy}
                           r={isPrimary ? SCENE_CIRCLE_R + 2 : SCENE_CIRCLE_R}
-                          fill={isSolid ? solidFill : hollowFill}
-                          stroke={solidStroke}
+                          fill={markerFill}
+                          stroke={markerStroke}
                           strokeWidth={isPrimary ? 2.5 : 1.5}
+                          opacity={isPrimary ? 0.95 : 0.75}
                         />
                       );
                     })}

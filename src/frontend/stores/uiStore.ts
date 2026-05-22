@@ -15,7 +15,7 @@
  */
 
 import { create, StoreApi } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { createJSONStorage, persist } from 'zustand/middleware';
 import type { MetadataTab, SceneId, ViewMode } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -76,6 +76,25 @@ export interface UIStoreState {
   isViewMenuOpen: boolean;
   isFormatMenuOpen: boolean;
   isMobileFormatMenuOpen: boolean;
+
+  sceneLaneState: {
+    visibleLaneEntryIds: string[];
+    removedReferencedLaneIds: string[];
+  };
+  setSceneLaneState: (
+    state:
+      | {
+          visibleLaneEntryIds: string[];
+          removedReferencedLaneIds: string[];
+        }
+      | ((prev: {
+          visibleLaneEntryIds: string[];
+          removedReferencedLaneIds: string[];
+        }) => {
+          visibleLaneEntryIds: string[];
+          removedReferencedLaneIds: string[];
+        })
+  ) => void;
 
   // ── Actions ───────────────────────────────────────────────────────────────
   setIsChatOpen: (open: boolean | ((prev: boolean) => boolean)) => void;
@@ -161,6 +180,10 @@ export const useUIStore = create<UIStoreState>()(
       isViewMenuOpen: false,
       isFormatMenuOpen: false,
       isMobileFormatMenuOpen: false,
+      sceneLaneState: {
+        visibleLaneEntryIds: [],
+        removedReferencedLaneIds: [],
+      },
 
       // ── Panel actions ────────────────────────────────────────────────────
       setIsChatOpen: (v: boolean | ((prev: boolean) => boolean)) =>
@@ -309,6 +332,32 @@ export const useUIStore = create<UIStoreState>()(
         set((s: UIStoreState): { activeFormats: string[] } => ({
           activeFormats: resolve(v, s.activeFormats),
         })),
+      setSceneLaneState: (
+        state:
+          | {
+              visibleLaneEntryIds: string[];
+              removedReferencedLaneIds: string[];
+            }
+          | ((prev: {
+              visibleLaneEntryIds: string[];
+              removedReferencedLaneIds: string[];
+            }) => {
+              visibleLaneEntryIds: string[];
+              removedReferencedLaneIds: string[];
+            })
+      ) =>
+        set(
+          (
+            s: UIStoreState
+          ): {
+            sceneLaneState: {
+              visibleLaneEntryIds: string[];
+              removedReferencedLaneIds: string[];
+            };
+          } => ({
+            sceneLaneState: resolve(state, s.sceneLaneState),
+          })
+        ),
       setIsViewMenuOpen: (v: boolean | ((prev: boolean) => boolean)) =>
         set((s: UIStoreState): { isViewMenuOpen: boolean } => ({
           isViewMenuOpen: resolve(v, s.isViewMenuOpen),
@@ -324,13 +373,36 @@ export const useUIStore = create<UIStoreState>()(
     }),
     {
       name: 'aq_ui_panels',
+      storage: createJSONStorage(() => {
+        if (
+          typeof localStorage !== 'undefined' &&
+          typeof localStorage.setItem === 'function'
+        ) {
+          return localStorage;
+        }
+
+        return {
+          getItem: (_name: string): string | null => null,
+          setItem: (_name: string, _value: string): void => undefined,
+          removeItem: (_name: string): void => undefined,
+          clear: (): void => undefined,
+        };
+      }),
       // Only persist panel open/close state – dialogs and editor flags are
       // transient and should reset on page load.
       partialize: (
         state: UIStoreState
-      ): { isChatOpen: boolean; isSidebarOpen: boolean } => ({
+      ): {
+        isChatOpen: boolean;
+        isSidebarOpen: boolean;
+        sceneLaneState: {
+          visibleLaneEntryIds: string[];
+          removedReferencedLaneIds: string[];
+        };
+      } => ({
         isChatOpen: state.isChatOpen,
         isSidebarOpen: state.isSidebarOpen,
+        sceneLaneState: state.sceneLaneState,
       }),
     }
   )
@@ -400,6 +472,10 @@ export function resetUIStore(): void {
     isViewMenuOpen: false,
     isFormatMenuOpen: false,
     isMobileFormatMenuOpen: false,
+    sceneLaneState: {
+      visibleLaneEntryIds: [],
+      removedReferencedLaneIds: [],
+    },
   });
 }
 

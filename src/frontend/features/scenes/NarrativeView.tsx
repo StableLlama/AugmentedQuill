@@ -37,7 +37,7 @@ import { CauseArrows } from './ConstraintArrows';
 import type { CardLayoutMap, CardLayout } from './ConstraintArrows';
 import { useSceneSelection } from './useSceneSelection';
 import { useThemeClasses, useTheme } from '../layout/ThemeContext';
-import { useSceneLanes } from './useSceneLanes';
+import { useSceneLanes, isCharacterEntry } from './useSceneLanes';
 import { LaneHeader } from './LaneHeader';
 import { buildChapterOrderMap, proseSort, chronologicalSort } from './sceneSortUtils';
 import type { ProjectType } from './sceneSortUtils';
@@ -63,6 +63,10 @@ interface NarrativeViewProps {
     targetSceneId: SceneId,
     placeBefore: boolean
   ) => Promise<void>;
+  initialVisibleLaneEntryIds?: string[];
+  initialRemovedReferencedLaneIds?: string[];
+  onVisibleLaneEntryIdsChange?: (ids: string[]) => void;
+  onRemovedReferencedLaneIdsChange?: (ids: string[]) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -256,6 +260,10 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
   onEditScene,
   onDropProse,
   onReorderScene,
+  initialVisibleLaneEntryIds,
+  initialRemovedReferencedLaneIds,
+  onVisibleLaneEntryIdsChange,
+  onRemovedReferencedLaneIdsChange,
 }: NarrativeViewProps) => {
   const DRAG_SCENE_MIME = 'application/x-augmentedquill-scene-id';
   const { t } = useTranslation();
@@ -271,6 +279,10 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
     sourcebookEntries,
     onSelectScene,
     onSelectionChange,
+    initialVisibleLaneEntryIds,
+    initialRemovedReferencedLaneIds,
+    onVisibleLaneEntryIdsChange,
+    onRemovedReferencedLaneIdsChange,
   });
   const {
     visibleLaneEntryIds,
@@ -282,6 +294,7 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
     setLaneScrollLeft,
     handleBackgroundMouseDown,
     laneButtonRefs,
+    sourcebookEntriesById,
   } = lanes;
 
   // Build chapter order map for sorting (respects series book ordering).
@@ -348,13 +361,10 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
   }, [items]);
 
   const bgClass = isLight ? 'bg-brand-gray-50' : 'bg-brand-gray-950';
-  const lineClass = isLight ? 'bg-brand-gray-300/80' : 'bg-brand-gray-600/80';
-  const markerSolidClass = isLight
-    ? 'bg-brand-500 border-brand-500'
-    : 'bg-brand-300 border-brand-300';
-  const markerHollowClass = isLight
-    ? 'bg-white border-brand-500'
-    : 'bg-brand-gray-950 border-brand-300';
+  const markerTrackColor = isLight ? '#6366f1' : '#a5b4fc';
+  const markerHollowFill = isLight ? '#f8fafc' : '#0f172a';
+  const otherMarkerTrackColor = isLight ? '#8b1f3d' : '#f5c3d1';
+  const otherMarkerSolidFill = isLight ? '#8b1f3d' : '#f5c3d1';
 
   // -------------------------------------------------------------------------
   // Card position tracking for SVG arrow overlay
@@ -374,6 +384,8 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
   );
   /** Width of the full lane plane, used for SVG overlay and bottom scrollbar. */
   const [lanePlaneWidth, setLanePlaneWidth] = useState(0);
+  /** Height of the full scrollable content area for vertical sourcebook lines. */
+  const [lanePlaneHeight, setLanePlaneHeight] = useState(0);
 
   /** Ref to the inner positioned container (SVG coordinate origin). */
   const innerContainerRef = useRef<HTMLDivElement>(null);
@@ -455,11 +467,11 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
     setCardLayouts(next);
 
     const nextLaneCenters = new Map<string, number>();
-    const laneTrackRect = laneTrackRef.current?.getBoundingClientRect();
+    const overlayRect = innerContainerRef.current?.getBoundingClientRect();
     laneButtonRefs.current.forEach((el: HTMLButtonElement, id: string): void => {
-      if (laneTrackRect) {
+      if (overlayRect) {
         const rect = el.getBoundingClientRect();
-        nextLaneCenters.set(id, rect.left - laneTrackRect.left + rect.width / 2);
+        nextLaneCenters.set(id, rect.left - overlayRect.left + rect.width / 2);
       } else {
         nextLaneCenters.set(id, el.offsetLeft + el.offsetWidth / 2);
       }
@@ -468,6 +480,7 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
     setLanePlaneWidth(
       laneTrackRef.current?.scrollWidth ?? laneTrackRef.current?.offsetWidth ?? 0
     );
+    setLanePlaneHeight(innerContainerRef.current?.scrollHeight ?? 0);
   }, []);
 
   // Measure after each render that changes the item list (scenes added/removed
@@ -638,32 +651,55 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
 
       <div
         ref={innerContainerRef}
-        className="relative flex-1 overflow-y-auto"
+        className="relative flex-1 overflow-y-auto overflow-x-hidden"
         role="presentation"
         tabIndex={-1}
         onMouseDown={handleBackgroundMouseDown}
         onKeyDown={() => {}}
       >
-        <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
+        <div className="pointer-events-none absolute inset-0 z-0">
           <div
             className="relative h-full"
             style={{
               width: lanePlaneWidth > 0 ? `${lanePlaneWidth}px` : '100%',
+              height: lanePlaneHeight > 0 ? `${lanePlaneHeight}px` : '100%',
               transform: `translateX(${-laneScrollLeft}px)`,
             }}
           >
             {visibleLaneEntryIds.map((entryId: string) => {
               const centerX = laneCenterXById.get(entryId);
               if (centerX === undefined) return null;
+              const entry = sourcebookEntriesById.get(entryId);
+              const entryLineColor =
+                entry && isCharacterEntry(entry)
+                  ? markerTrackColor
+                  : otherMarkerTrackColor;
               return (
                 <div
                   key={`line-${entryId}`}
                   data-sourcebook-line={entryId}
-                  className={`absolute w-px ${lineClass}`}
-                  style={{ left: centerX, top: 0, bottom: 0 }}
+                  className="absolute w-px -translate-x-1/2"
+                  style={{
+                    left: centerX,
+                    top: 0,
+                    bottom: 0,
+                    backgroundColor: entryLineColor,
+                  }}
                 />
               );
             })}
+          </div>
+        </div>
+
+        <div className="pointer-events-none absolute inset-0 z-20">
+          <div
+            className="relative h-full"
+            style={{
+              width: lanePlaneWidth > 0 ? `${lanePlaneWidth}px` : '100%',
+              height: lanePlaneHeight > 0 ? `${lanePlaneHeight}px` : '100%',
+              transform: `translateX(${-laneScrollLeft}px)`,
+            }}
+          >
             {items.map((item: NarrativeItem) => {
               if (item.kind !== 'scene') return null;
               const laneMarkers = markerStyleBySceneId.get(item.scene.id);
@@ -676,17 +712,30 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
                 if (!markerStyle || laneCenterX === undefined) {
                   return null;
                 }
+                const entry = sourcebookEntriesById.get(entryId);
+                const entryIsCharacter = entry && isCharacterEntry(entry);
+                const markerColor = entryIsCharacter
+                  ? markerTrackColor
+                  : otherMarkerTrackColor;
+                const markerFill =
+                  markerStyle === 'solid'
+                    ? entryIsCharacter
+                      ? markerTrackColor
+                      : otherMarkerSolidFill
+                    : markerHollowFill;
 
                 return (
                   <span
                     key={`marker-${item.scene.id}-${entryId}`}
                     data-scene-link-marker={`${item.scene.id}:${entryId}`}
                     data-link-style={markerStyle}
-                    className={[
-                      'absolute z-20 h-3 w-3 -translate-x-1/2 rounded-full border-2',
-                      markerStyle === 'solid' ? markerSolidClass : markerHollowClass,
-                    ].join(' ')}
-                    style={{ left: laneCenterX, top: Math.max(cardLayout.y - 6, 0) }}
+                    className="absolute h-3 w-3 -translate-x-1/2 rounded-full border-2"
+                    style={{
+                      left: laneCenterX,
+                      top: Math.max(cardLayout.y - 6, 0),
+                      backgroundColor: markerFill,
+                      borderColor: markerColor,
+                    }}
                   />
                 );
               });

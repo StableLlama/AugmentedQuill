@@ -957,6 +957,67 @@ describe('NarrativeView sourcebook lanes', () => {
     expect(container.querySelector('[data-sourcebook-line="alice"]')).not.toBeNull();
   });
 
+  it('extends sourcebook lines to full scroll height', async () => {
+    const scrollHeightSpy = vi
+      .spyOn(HTMLElement.prototype, 'scrollHeight', 'get')
+      .mockReturnValue(1200);
+
+    const sourcebookEntries: SourcebookEntry[] = [
+      {
+        id: 'alice',
+        name: 'Alice',
+        synonyms: [],
+        category: 'Character',
+        description: '',
+        images: [],
+      },
+    ];
+
+    const scenes: Scene[] = [
+      makeScene({
+        id: 'scene-a',
+        summary: 'Alice Active',
+        active_characters: ['Alice'],
+      }),
+    ];
+
+    const { container } = render(
+      <I18nextProvider i18n={i18n}>
+        <NarrativeView
+          scenes={scenes}
+          sourcebookEntries={sourcebookEntries}
+          projectType="novel"
+          chapters={[]}
+          books={[]}
+          primarySelectedSceneId={null}
+          onSelectScene={vi.fn()}
+          onSelectionChange={vi.fn()}
+          onEditScene={vi.fn()}
+        />
+      </I18nextProvider>
+    );
+
+    const overlay = container.querySelector(
+      '.pointer-events-none.absolute.inset-0.z-0'
+    );
+    const markerOverlay = container.querySelector(
+      '.pointer-events-none.absolute.inset-0.z-20'
+    );
+    const lineElement = container.querySelector('[data-sourcebook-line="alice"]');
+    const linePlane = lineElement?.parentElement;
+
+    await waitFor(() => {
+      expect(overlay).not.toBeNull();
+      expect(markerOverlay).not.toBeNull();
+      expect(overlay?.className).not.toContain('overflow-hidden');
+      expect(markerOverlay?.className).not.toContain('overflow-hidden');
+      expect(linePlane).not.toBeNull();
+      expect(linePlane?.style.height).toBe('1200px');
+    });
+
+    scrollHeightSpy.mockRestore();
+  });
+
   it('allows removing and adding sourcebook lanes', () => {
     const sourcebookEntries: SourcebookEntry[] = [
       {

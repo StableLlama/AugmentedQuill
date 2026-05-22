@@ -249,6 +249,7 @@ export const AppMainLayout: React.FC<AppMainLayoutProps> = React.memo(
                 <ScenesPanelContainer
                   editorRef={editorRef}
                   currentChapter={currentChapter}
+                  editorSettings={editorSettings}
                   recordHistoryEntry={recordHistoryEntry}
                 />
               </div>
@@ -319,7 +320,12 @@ export const AppMainLayout: React.FC<AppMainLayoutProps> = React.memo(
             </>
           ) : workspaceMode === 'scenes' ? (
             <div className="flex-1 h-full overflow-hidden">
-              <ScenesPanelContainer />
+              <ScenesPanelContainer
+                editorRef={editorRef}
+                currentChapter={currentChapter}
+                editorSettings={editorSettings}
+                recordHistoryEntry={recordHistoryEntry}
+              />
             </div>
           ) : (
             <div className="flex-1 flex flex-col min-w-0 h-full relative">

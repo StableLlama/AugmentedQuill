@@ -149,6 +149,10 @@ interface SceneEditorDialogProps {
 }
 
 const normalizeToken = (value: string): string => value.trim().toLowerCase();
+const normalizeCategory = (value: string | null | undefined): string =>
+  normalizeToken(value ?? '');
+const isCharacterEntry = (entry?: SourcebookEntry): boolean =>
+  Boolean(entry && normalizeCategory(entry.category) === 'character');
 
 const mapCategoryLabel = (category: string | undefined): string => {
   if (!category) return 'OTHER';
@@ -235,12 +239,17 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
   const [sourcebookTags, setSourcebookTags] = useState<
     Array<{ id: string; personal_age: string | null }>
   >(
-    (scene.sourcebook_entry_ids ?? []).map((id: string) => {
-      const dt = scene.tag_personal_datetimes?.find(
-        (t: SceneTagPersonalDatetime) => t.role === 'sourcebook' && t.ref === id
-      );
-      return { id, personal_age: dt?.personal_age ?? null };
-    })
+    (scene.sourcebook_entry_ids ?? [])
+      .filter((id: string) => {
+        const entry = entryById.get(id);
+        return !isCharacterEntry(entry);
+      })
+      .map((id: string) => {
+        const dt = scene.tag_personal_datetimes?.find(
+          (t: SceneTagPersonalDatetime) => t.role === 'sourcebook' && t.ref === id
+        );
+        return { id, personal_age: dt?.personal_age ?? null };
+      })
   );
   const [sourcebookInput, setSourcebookInput] = useState('');
   const [sceneTimeValue, setSceneTimeValue] = useState<string | null>(
@@ -491,12 +500,17 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
     );
     setPassiveInput('');
     setSourcebookTags(
-      (scene.sourcebook_entry_ids ?? []).map((id: string) => {
-        const dt = scene.tag_personal_datetimes?.find(
-          (t: SceneTagPersonalDatetime) => t.role === 'sourcebook' && t.ref === id
-        );
-        return { id, personal_age: dt?.personal_age ?? null };
-      })
+      (scene.sourcebook_entry_ids ?? [])
+        .filter((id: string) => {
+          const entry = entryById.get(id);
+          return !isCharacterEntry(entry);
+        })
+        .map((id: string) => {
+          const dt = scene.tag_personal_datetimes?.find(
+            (t: SceneTagPersonalDatetime) => t.role === 'sourcebook' && t.ref === id
+          );
+          return { id, personal_age: dt?.personal_age ?? null };
+        })
     );
     setSourcebookInput('');
     setSceneTimeValue(scene.scene_time?.temporal_zoned_datetime ?? null);
@@ -523,7 +537,10 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
       beats: JSON.stringify(scene.beats),
       activeTokens: JSON.stringify(scene.active_characters),
       passiveTokens: JSON.stringify(scene.passive_characters),
-      sourcebookIds: scene.sourcebook_entry_ids ?? [],
+      sourcebookIds: (scene.sourcebook_entry_ids ?? []).filter((id: string) => {
+        const entry = entryById.get(id);
+        return !isCharacterEntry(entry);
+      }),
       colorTag: scene.color_tag ?? null,
       status: scene.status,
       sceneTimeValue: scene.scene_time?.temporal_zoned_datetime ?? null,
@@ -665,6 +682,8 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
 
   type SourcebookTag = { id: string; personal_age: string | null };
   const addSourcebookTag = (id: string): void => {
+    const entry = entryById.get(id);
+    if (isCharacterEntry(entry)) return;
     setSourcebookTags((prev: SourcebookTag[]) =>
       prev.some((t: SourcebookTag) => t.id === id)
         ? prev
@@ -701,6 +720,7 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
   const sourcebookSuggestions = sourcebookEntries.filter(
     (entry: SourcebookEntry): boolean => {
       if (!sourcebookInput.trim()) return false;
+      if (isCharacterEntry(entry)) return false;
       const query = normalizeToken(sourcebookInput);
       const inName = normalizeToken(entry.name).includes(query);
       const inSyn = (entry.synonyms ?? []).some((synonym: string): boolean =>

@@ -26,13 +26,28 @@
 import React from 'react';
 import { render, fireEvent, cleanup, act } from '@testing-library/react';
 import { I18nextProvider } from 'react-i18next';
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import i18n from '../app/i18n';
 import { ScenesPanelContainer } from './ScenesPanelContainer';
+import { resetUIStore, useUIStore } from '../../stores/uiStore';
 import type { Scene, SceneProseLink, SceneId } from '../../types';
 import type { WritingUnit } from '../../types/domain';
 import type { EditorHandle } from '../editor/Editor';
 import type { ProseBoundaryCallback } from '../editor/CodeMirrorEditor';
+
+type SceneLaneCaptureProps = {
+  initialVisibleLaneEntryIds: string[];
+  onVisibleLaneEntryIdsChange?: (ids: string[]) => void;
+};
+
+beforeEach(() => {
+  vi.stubGlobal('localStorage', {
+    getItem: vi.fn(() => null),
+    setItem: vi.fn(),
+    removeItem: vi.fn(),
+    clear: vi.fn(),
+  });
+});
 
 // ---------------------------------------------------------------------------
 // Hoisted mocks
@@ -63,10 +78,16 @@ const {
     },
   };
   // Mutable holder — spy stubs close over this object; tests read from it.
-  const captured: { pinboard: unknown; dialog: unknown; narrative: unknown } = {
+  const captured: {
+    pinboard: unknown;
+    dialog: unknown;
+    narrative: SceneLaneCaptureProps | null;
+    convergence: SceneLaneCaptureProps | null;
+  } = {
     pinboard: null,
     dialog: null,
     narrative: null,
+    convergence: null,
   };
 
   const proseSyncState = {
@@ -115,9 +136,15 @@ vi.mock('./PinboardView', () => ({
 }));
 
 vi.mock('./NarrativeView', () => ({
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  NarrativeView: (props: any) => {
-    captured.narrative = props;
+  NarrativeView: (props: Record<string, unknown>) => {
+    captured.narrative = props as SceneLaneCaptureProps;
+    return null;
+  },
+}));
+
+vi.mock('./ConvergenceMapView', () => ({
+  ConvergenceMapView: (props: Record<string, unknown>) => {
+    captured.convergence = props as SceneLaneCaptureProps;
     return null;
   },
 }));
@@ -324,10 +351,12 @@ afterEach(() => {
   captured.pinboard = null;
   captured.dialog = null;
   captured.narrative = null;
+  captured.convergence = null;
   proseSyncState.selectedSceneId = null;
   vi.clearAllMocks();
   useScenesMock.mockReturnValue([]);
   recordHistoryEntryMock.mockReset();
+  resetUIStore();
 });
 
 // ---------------------------------------------------------------------------
@@ -1222,6 +1251,38 @@ describe('scene view mode wiring', () => {
 
     expect(nv().sortMode).toBe('chronological');
     expect(nv().onReorderScene).toBeUndefined();
+  });
+});
+
+describe('scene lane persistence', () => {
+  it('keeps lane order across Narrative and Convergence Map views', async () => {
+    useScenesMock.mockReturnValue([makeScene({ id: 'scene-a' })]);
+    useUIStore.setState({
+      sceneLaneState: {
+        visibleLaneEntryIds: ['Alice', 'Aether'],
+        removedReferencedLaneIds: [],
+      },
+    });
+
+    const utils = wrap(<ScenesPanelContainer />);
+
+    await act(async () => {
+      fireEvent.click(utils.getByRole('button', { name: 'Narrative' }));
+    });
+
+    expect(captured.narrative?.initialVisibleLaneEntryIds).toEqual(['Alice', 'Aether']);
+
+    captured.narrative?.onVisibleLaneEntryIdsChange?.(['Alice', 'Aether', 'Bob']);
+
+    await act(async () => {
+      fireEvent.click(utils.getByRole('button', { name: 'Convergence Map' }));
+    });
+
+    expect(captured.convergence?.initialVisibleLaneEntryIds).toEqual([
+      'Alice',
+      'Aether',
+      'Bob',
+    ]);
   });
 });
 

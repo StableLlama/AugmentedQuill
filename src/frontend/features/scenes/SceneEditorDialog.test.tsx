@@ -615,6 +615,86 @@ describe('SceneEditorDialog sourcebook navigation safety', () => {
   });
 });
 
+describe('SceneEditorDialog sourcebook validation', () => {
+  it('filters character entries out of sourcebook tags and save payloads', async () => {
+    sourcebookEntriesState.push(
+      {
+        id: 'Bob',
+        name: 'Bob',
+        category: 'Character',
+        aliases: [],
+        synonyms: [],
+        description: '',
+        tags: [],
+        relations: [],
+        image_ids: [],
+        image_notes: {},
+        color_tag: null,
+        role_in_story: null,
+        statuses: [],
+        chapters_featured: [],
+        appears_in_locations: [],
+        timeline_hint: null,
+        first_appearance: null,
+        visibility_scope: 'project',
+        links: [],
+        metadata: {},
+        keywords: [],
+        notes: [],
+        events: [],
+        project_language: 'en',
+      } as unknown as SourcebookEntry,
+      {
+        id: 'sb-1',
+        name: 'Aether',
+        category: 'world',
+        aliases: [],
+        synonyms: [],
+        description: '',
+        tags: [],
+        relations: [],
+        image_ids: [],
+        image_notes: {},
+        color_tag: null,
+        role_in_story: null,
+        statuses: [],
+        chapters_featured: [],
+        appears_in_locations: [],
+        timeline_hint: null,
+        first_appearance: null,
+        visibility_scope: 'project',
+        links: [],
+        metadata: {},
+        keywords: [],
+        notes: [],
+        events: [],
+        project_language: 'en',
+      } as unknown as SourcebookEntry
+    );
+
+    const onSave = vi.fn<SceneSaveHandler>(
+      async (_updates: Partial<Omit<Scene, 'id'>>) => undefined
+    );
+
+    wrap(
+      <SceneEditorDialog
+        scene={makeScene({ sourcebook_entry_ids: ['Bob', 'sb-1'] })}
+        isOpen
+        onClose={NOOP_CLOSE}
+        onSave={onSave}
+        onDelete={NOOP_DELETE}
+      />
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Save/i }));
+    });
+
+    const arg = onSave.mock.calls[0][0] as Partial<Scene>;
+    expect(arg.sourcebook_entry_ids).toEqual(['sb-1']);
+  });
+});
+
 describe('SceneEditorDialog Temporal time payload', () => {
   it('displays scene_time when stored as a loose ISO date value', () => {
     wrap(

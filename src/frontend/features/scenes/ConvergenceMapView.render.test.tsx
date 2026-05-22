@@ -122,6 +122,8 @@ vi.mock('../layout/ThemeContext', () => ({
 
 vi.mock('./useSceneLanes', () => ({
   useSceneLanes: vi.fn(() => mockLanes),
+  isCharacterEntry: (entry: SourcebookEntry | undefined): boolean =>
+    Boolean(entry && entry.category?.toLowerCase() === 'character'),
 }));
 
 vi.mock('./useSceneSelection', () => ({
@@ -302,6 +304,15 @@ describe('ConvergenceMapView render ordering', () => {
         books={books}
         primarySelectedSceneId={null}
         onSelectScene={(): void => undefined}
+        editorSettings={{
+          fontSize: 18,
+          maxWidth: 60,
+          brightness: 0.95,
+          contrast: 0.9,
+          theme: 'mixed',
+          sidebarWidth: 320,
+          showDiff: true,
+        }}
       />
     );
 
@@ -334,6 +345,15 @@ describe('ConvergenceMapView render ordering', () => {
         primarySelectedSceneId={null}
         onSelectScene={(): void => undefined}
         onAssignSceneTimeline={onAssignSceneTimeline}
+        editorSettings={{
+          fontSize: 18,
+          maxWidth: 60,
+          brightness: 0.95,
+          contrast: 0.9,
+          theme: 'mixed',
+          sidebarWidth: 320,
+          showDiff: true,
+        }}
       />
     );
 
