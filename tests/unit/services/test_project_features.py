@@ -270,6 +270,35 @@ class ProjectFeaturesTest(TestCase):
         self.assertEqual(overview["chapters"][0]["notes"], "Novel chapter note")
         self.assertNotIn("conflicts", overview["chapters"][0])
 
+    def test_project_overview_reports_scene_count(self):
+        create_project("test_scene_count", project_type="novel")
+        select_project("test_scene_count")
+        active = get_active_project_dir()
+
+        story = load_story_config(active / "story.json")
+        story["scenes"] = {
+            "scene_1": {"title": "Scene One"},
+            "scene_2": {"title": "Scene Two"},
+        }
+        (active / "story.json").write_text(json.dumps(story), encoding="utf-8")
+
+        overview = _project_overview()
+        self.assertEqual(overview["scene_count"], 2)
+
+    def test_project_overview_includes_story_summary_and_notes(self):
+        create_project("test_story_meta", project_type="novel")
+        select_project("test_story_meta")
+        active = get_active_project_dir()
+
+        story = load_story_config(active / "story.json")
+        story["story_summary"] = "A mystery unfolds"
+        story["notes"] = "Focus on character arc."
+        (active / "story.json").write_text(json.dumps(story), encoding="utf-8")
+
+        overview = _project_overview()
+        self.assertEqual(overview["story_summary"], "A mystery unfolds")
+        self.assertEqual(overview["notes"], "Focus on character arc.")
+
     def test_project_overview_include_notes_for_series(self):
         create_project("test_series_notes", project_type="series")
         select_project("test_series_notes")

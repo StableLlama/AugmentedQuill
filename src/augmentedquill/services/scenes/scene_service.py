@@ -531,7 +531,12 @@ def list_scenes(project_dir: Path) -> list[dict[str, Any]]:
     ]
     _attach_prose_positions(scenes, project_dir)
     return sorted(
-        scenes, key=lambda s: (s.get("pinboard_y", 0), s.get("pinboard_x", 0))
+        scenes,
+        key=lambda s: (
+            s.get("order_index") if s.get("order_index") is not None else float("inf"),
+            s.get("pinboard_y", 0),
+            s.get("pinboard_x", 0),
+        ),
     )
 
 

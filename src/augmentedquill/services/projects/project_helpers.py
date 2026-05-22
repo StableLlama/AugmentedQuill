@@ -126,6 +126,9 @@ def _project_overview(include_notes: bool = False) -> dict:
         "project_title": story.get("project_title") or (active.name if active else ""),
         "project_type": p_type,
         "sourcebook_entry_count": len(story.get("sourcebook", {})),
+        "scene_count": len(story.get("scenes", [])),
+        "story_summary": story.get("story_summary") or "",
+        "notes": story.get("notes") or "",
     }
 
     if p_type == "short-story":

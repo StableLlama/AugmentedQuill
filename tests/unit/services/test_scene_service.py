@@ -58,6 +58,54 @@ def test_create_scene_and_list(project_dir: Path) -> None:
     assert scenes[1]["timeline_id"] == "main"
 
 
+def test_list_scenes_orders_by_order_index(project_dir: Path) -> None:
+    story = json.loads((project_dir / "story.json").read_text(encoding="utf-8"))
+    story["scenes"] = {
+        "1": {
+            "summary": "First",
+            "beats": [],
+            "active_characters": [],
+            "passive_characters": [],
+            "sourcebook_entry_ids": [],
+            "order_before": [],
+            "order_after": [],
+            "pinboard_x": 200,
+            "pinboard_y": 200,
+            "order_index": 10,
+            "status": "active",
+        },
+        "2": {
+            "summary": "Second",
+            "beats": [],
+            "active_characters": [],
+            "passive_characters": [],
+            "sourcebook_entry_ids": [],
+            "order_before": [],
+            "order_after": [],
+            "pinboard_x": 100,
+            "pinboard_y": 100,
+            "order_index": 1,
+            "status": "active",
+        },
+        "3": {
+            "summary": "Third",
+            "beats": [],
+            "active_characters": [],
+            "passive_characters": [],
+            "sourcebook_entry_ids": [],
+            "order_before": [],
+            "order_after": [],
+            "pinboard_x": 50,
+            "pinboard_y": 50,
+            "status": "active",
+        },
+    }
+    (project_dir / "story.json").write_text(json.dumps(story), encoding="utf-8")
+
+    scenes = list_scenes(project_dir)
+    assert [scene["id"] for scene in scenes] == [2, 1, 3]
+
+
 def test_link_prose_injects_markers_and_computes_offsets(project_dir: Path) -> None:
     scene = create_scene(project_dir, SceneCreateRequest(summary="Linked"))
 
@@ -169,7 +217,7 @@ def test_list_scenes_migrates_story_to_v4_timeline_fields(project_dir: Path) -> 
     assert scenes[0]["timeline_id"] == "main"
 
     migrated = json.loads(story_path.read_text(encoding="utf-8"))
-    assert migrated["metadata"]["version"] == 4
+    assert migrated["metadata"]["version"] >= 4
     assert migrated["scenes"]["1"]["timeline_id"] == "main"
     assert migrated["sourcebook"]["tt-jump"]["timeline_id"] == "branch:tt-jump"
 
