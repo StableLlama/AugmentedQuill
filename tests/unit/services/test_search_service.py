@@ -311,6 +311,80 @@ class TestRunSearch(TestCase):
             )
         )
 
+    def test_metadata_scope_finds_scene_summary(self):
+        active = self._make_and_select_project()
+        story_path = active / "story.json"
+        story = json.loads(story_path.read_text(encoding="utf-8"))
+        story["scenes"] = {
+            "1": {
+                "id": 1,
+                "summary": "Elena confronts the stranger.",
+                "beats": [],
+                "active_characters": ["Elena"],
+                "passive_characters": [],
+                "sourcebook_entry_ids": [],
+                "order_before": [],
+                "order_after": [],
+                "pinboard_x": 100,
+                "pinboard_y": 100,
+                "status": "active",
+            }
+        }
+        story_path.write_text(json.dumps(story, indent=2), encoding="utf-8")
+
+        opts = SearchOptions(
+            query="Elena",
+            scope=SearchScope.metadata,
+            case_sensitive=False,
+            is_regex=False,
+            is_phonetic=False,
+            active_chapter_id=None,
+        )
+        result = run_search(opts, active)
+        self.assertTrue(
+            any(
+                s.section_type == "scene_metadata" and s.field == "summary"
+                for s in result.results
+            )
+        )
+
+    def test_metadata_scope_finds_scene_beat_text(self):
+        active = self._make_and_select_project()
+        story_path = active / "story.json"
+        story = json.loads(story_path.read_text(encoding="utf-8"))
+        story["scenes"] = {
+            "1": {
+                "id": 1,
+                "summary": "A short scene.",
+                "beats": [{"id": "beat-1", "text": "Elena speaks with the stranger."}],
+                "active_characters": [],
+                "passive_characters": [],
+                "sourcebook_entry_ids": [],
+                "order_before": [],
+                "order_after": [],
+                "pinboard_x": 100,
+                "pinboard_y": 100,
+                "status": "active",
+            }
+        }
+        story_path.write_text(json.dumps(story, indent=2), encoding="utf-8")
+
+        opts = SearchOptions(
+            query="speaks",
+            scope=SearchScope.metadata,
+            case_sensitive=False,
+            is_regex=False,
+            is_phonetic=False,
+            active_chapter_id=None,
+        )
+        result = run_search(opts, active)
+        self.assertTrue(
+            any(
+                s.section_type == "scene_metadata" and s.field == "beats[0].text"
+                for s in result.results
+            )
+        )
+
     def test_sourcebook_relation_search_uses_readable_label(self):
         active = self._make_and_select_project()
         story_path = active / "story.json"

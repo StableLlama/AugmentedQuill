@@ -450,6 +450,175 @@ def _replace_in_story_metadata(
     return total, changed, change_locations
 
 
+def _replace_in_scene_metadata(
+    active: Path,
+    query: str,
+    replacement: str,
+    case_sensitive: bool,
+    is_regex: bool,
+    is_phonetic: bool,
+    target_section_id: str | None = None,
+    target_field: str | None = None,
+    match_index: int | None = None,
+) -> tuple[int, list[str], list[ReplaceChangeLocation]]:
+    """Replace text in scene metadata fields stored inside story.json."""
+    from augmentedquill.core.config import load_story_config, save_story_config
+
+    story_path = active / "story.json"
+    try:
+        story = load_story_config(story_path) or {}
+    except Exception:
+        return 0, [], []
+
+    scenes = story.get("scenes") or {}
+    if not isinstance(scenes, (dict, list)):
+        return 0, [], []
+
+    total = 0
+    changed: list[str] = []
+    change_locations: list[ReplaceChangeLocation] = []
+
+    iterable = scenes.items() if isinstance(scenes, dict) else enumerate(scenes)
+    for raw_key, scene in iterable:
+        if not isinstance(scene, dict):
+            continue
+        scene_id = scene.get("id") or raw_key
+        scene_id_str = str(scene_id)
+        if target_section_id is not None and target_section_id != scene_id_str:
+            continue
+        scene_label = scene.get("summary") or f"Scene {scene_id_str}"
+
+        field_labels = [
+            ("summary", "Summary"),
+            ("location", "Location"),
+            ("time", "Time"),
+            ("timeline_id", "Timeline ID"),
+        ]
+        for field_key, field_label in field_labels:
+            if target_field is not None and field_key != target_field:
+                continue
+            value = scene.get(field_key) or ""
+            if not isinstance(value, str) or not value:
+                continue
+            if match_index is not None:
+                new_val, count = _apply_replace_nth(
+                    value,
+                    query,
+                    replacement,
+                    case_sensitive,
+                    is_regex,
+                    is_phonetic,
+                    match_index,
+                )
+            else:
+                new_val, count = _apply_replace(
+                    value,
+                    query,
+                    replacement,
+                    case_sensitive,
+                    is_regex,
+                    is_phonetic,
+                )
+            if count > 0:
+                scene[field_key] = new_val
+                total += count
+                label = f"{scene_label} {field_label}"
+                changed.append(label)
+                change_locations.append(
+                    _make_change_location("scene", scene_id_str, field_key, label)
+                )
+
+        list_fields = [
+            ("active_characters", "Active Characters"),
+            ("passive_characters", "Passive Characters"),
+            ("sourcebook_entry_ids", "Sourcebook Entries"),
+        ]
+        for field_key, field_label in list_fields:
+            if target_field is not None and field_key != target_field:
+                continue
+            values = scene.get(field_key) or []
+            if not isinstance(values, list) or not values:
+                continue
+            new_values: list[str] = []
+            count_field = 0
+            for item in values:
+                if not isinstance(item, str):
+                    new_values.append(item)
+                    continue
+                if match_index is not None:
+                    new_item, c = _apply_replace_nth(
+                        item,
+                        query,
+                        replacement,
+                        case_sensitive,
+                        is_regex,
+                        is_phonetic,
+                        match_index,
+                    )
+                else:
+                    new_item, c = _apply_replace(
+                        item,
+                        query,
+                        replacement,
+                        case_sensitive,
+                        is_regex,
+                        is_phonetic,
+                    )
+                new_values.append(new_item)
+                count_field += c
+            if count_field > 0:
+                scene[field_key] = new_values
+                total += count_field
+                label = f"{scene_label} {field_label}"
+                changed.append(label)
+                change_locations.append(
+                    _make_change_location("scene", scene_id_str, field_key, label)
+                )
+
+        for beat_idx, beat in enumerate(scene.get("beats") or []):
+            if not isinstance(beat, dict):
+                continue
+            field_path = f"beats[{beat_idx}].text"
+            if target_field is not None and target_field != field_path:
+                continue
+            value = beat.get("text") or ""
+            if not isinstance(value, str) or not value:
+                continue
+            if match_index is not None:
+                new_val, count = _apply_replace_nth(
+                    value,
+                    query,
+                    replacement,
+                    case_sensitive,
+                    is_regex,
+                    is_phonetic,
+                    match_index,
+                )
+            else:
+                new_val, count = _apply_replace(
+                    value,
+                    query,
+                    replacement,
+                    case_sensitive,
+                    is_regex,
+                    is_phonetic,
+                )
+            if count > 0:
+                beat["text"] = new_val
+                total += count
+                label = f"{scene_label} Beat {beat_idx + 1}"
+                changed.append(label)
+                change_locations.append(
+                    _make_change_location("scene", scene_id_str, field_path, label)
+                )
+
+    if total > 0:
+        story["scenes"] = scenes
+        save_story_config(story_path, story)
+
+    return total, changed, change_locations
+
+
 # ─── Sourcebook ──────────────────────────────────────────────────────────────
 
 
@@ -723,6 +892,10 @@ def replace_all(req: ReplaceAllRequest, active: Path) -> ReplaceResponse:
         total += n
         changed.extend(labels)
         changed_locations.extend(locations)
+        n, labels, locations = _replace_in_scene_metadata(active, q, r, cs, rx, ph)
+        total += n
+        changed.extend(labels)
+        changed_locations.extend(locations)
 
     if scope in (SearchScope.sourcebook, SearchScope.all):
         n, labels, locations = _replace_in_sourcebook(active, q, r, cs, rx, ph)
@@ -786,6 +959,24 @@ def replace_single(req: ReplaceSingleRequest, active: Path) -> ReplaceResponse:
 
     if sec_type == "story_metadata":
         n, labels, locations = _replace_in_story_metadata(
+            active,
+            q,
+            r,
+            cs,
+            rx,
+            ph,
+            target_section_id=sec_id,
+            target_field=field,
+            match_index=idx,
+        )
+        return ReplaceResponse(
+            replacements_made=n,
+            changed_sections=labels,
+            changed_sections_meta=locations,
+        )
+
+    if sec_type == "scene_metadata":
+        n, labels, locations = _replace_in_scene_metadata(
             active,
             q,
             r,

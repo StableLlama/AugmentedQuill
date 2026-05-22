@@ -349,6 +349,101 @@ def _search_story_metadata(
     return sections
 
 
+def _search_scene_metadata(
+    active: Path,
+    query: str,
+    case_sensitive: bool,
+    is_regex: bool,
+    is_phonetic: bool,
+) -> list[SearchResultSection]:
+    """Search scene fields for the query and return matching sections."""
+    sections: list[SearchResultSection] = []
+    try:
+        from augmentedquill.core.config import load_story_config
+        from augmentedquill.services.story.story_generation_common import (
+            _iter_story_scenes,
+        )
+
+        story = load_story_config(active / "story.json") or {}
+        scenes = _iter_story_scenes(story)
+    except Exception:
+        return []
+
+    for scene in scenes:
+        scene_id = str(scene.get("id") or "")
+        scene_title = scene.get("summary") or f"Scene {scene_id}"
+        if not scene_id:
+            continue
+
+        field_labels = [
+            ("summary", "Summary"),
+            ("location", "Location"),
+            ("time", "Time"),
+            ("timeline_id", "Timeline ID"),
+        ]
+        for field_key, field_display in field_labels:
+            value = scene.get(field_key) or ""
+            if not isinstance(value, str) or not value:
+                continue
+            matches = _search_text(value, query, case_sensitive, is_regex, is_phonetic)
+            if matches:
+                sections.append(
+                    SearchResultSection(
+                        section_type="scene_metadata",
+                        section_id=scene_id,
+                        section_title=scene_title,
+                        field=field_key,
+                        field_display=field_display,
+                        matches=matches,
+                    )
+                )
+
+        list_fields = [
+            ("active_characters", "Active Characters"),
+            ("passive_characters", "Passive Characters"),
+            ("sourcebook_entry_ids", "Sourcebook Entries"),
+        ]
+        for field_key, field_display in list_fields:
+            values = scene.get(field_key) or []
+            if not isinstance(values, list) or not values:
+                continue
+            joined = ", ".join(str(item) for item in values if isinstance(item, str))
+            if not joined:
+                continue
+            matches = _search_text(joined, query, case_sensitive, is_regex, is_phonetic)
+            if matches:
+                sections.append(
+                    SearchResultSection(
+                        section_type="scene_metadata",
+                        section_id=scene_id,
+                        section_title=scene_title,
+                        field=field_key,
+                        field_display=field_display,
+                        matches=matches,
+                    )
+                )
+
+        for beat_idx, beat in enumerate(scene.get("beats") or []):
+            if not isinstance(beat, dict):
+                continue
+            value = beat.get("text") or ""
+            if not isinstance(value, str) or not value:
+                continue
+            matches = _search_text(value, query, case_sensitive, is_regex, is_phonetic)
+            if matches:
+                sections.append(
+                    SearchResultSection(
+                        section_type="scene_metadata",
+                        section_id=scene_id,
+                        section_title=scene_title,
+                        field=f"beats[{beat_idx}].text",
+                        field_display=f"Beat {beat_idx + 1}",
+                        matches=matches,
+                    )
+                )
+    return sections
+
+
 def _search_sourcebook(
     active: Path,
     query: str,
@@ -521,6 +616,7 @@ def run_search(opts: SearchOptions, active: Path) -> SearchResponse:
         all_ids = _get_all_chapter_ids()
         sections.extend(_search_chapter_metadata(active, all_ids, q, cs, rx, ph))
         sections.extend(_search_story_metadata(active, q, cs, rx, ph))
+        sections.extend(_search_scene_metadata(active, q, cs, rx, ph))
 
     if include_sourcebook:
         sections.extend(_search_sourcebook(active, q, cs, rx, ph))

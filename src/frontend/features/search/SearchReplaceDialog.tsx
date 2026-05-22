@@ -437,7 +437,9 @@ const SearchDialogContent: React.FC<SearchDialogContentProps> = ({
                   ? t('Chapter {{title}}', { title: section.section_title })
                   : section.section_type === 'sourcebook'
                     ? `${t('Sourcebook')}: ${section.section_title}`
-                    : t('Story Metadata');
+                    : section.section_type === 'scene_metadata'
+                      ? `${t('Scene')}: ${section.section_title}`
+                      : t('Story Metadata');
               let firstFlatIdx = 0;
               for (let i = 0; i < si; i++) {
                 firstFlatIdx += (results[i].matches ?? []).length;
@@ -481,9 +483,11 @@ const SearchDialogContent: React.FC<SearchDialogContentProps> = ({
                                 ? t('Navigate to chapter')
                                 : section.section_type === 'story_metadata'
                                   ? t('Open story metadata')
-                                  : section.section_type === 'sourcebook'
-                                    ? t('Open sourcebook entry')
-                                    : undefined;
+                                  : section.section_type === 'scene_metadata'
+                                    ? t('Open scene')
+                                    : section.section_type === 'sourcebook'
+                                      ? t('Open sourcebook entry')
+                                      : undefined;
                           return (
                             <li
                               key={mi}
