@@ -134,7 +134,7 @@ async def unlink_scene_prose(
 ) -> List[Scene]:
     """Remove the prose link from a scene, preserving its narrative position.
 
-    Returns all scenes whose order_index was updated during normalization.
+    Returns all scenes affected in the same prose scope.
     """
     scene = get_scene(project_dir, scene_id)
     if scene is None:

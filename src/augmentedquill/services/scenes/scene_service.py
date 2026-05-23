@@ -44,12 +44,45 @@ from augmentedquill.services.scenes.scene_markers import (
 )
 from augmentedquill.updates.migrate_story_v3 import migrate_project_v3
 from augmentedquill.updates.migrate_story_v4 import migrate_project_v4
+from augmentedquill.updates.migrate_story_v5 import migrate_project_v5
+from augmentedquill.updates.migrate_story_v6 import migrate_project_v6
+from augmentedquill.updates.migrate_story_v7 import migrate_project_v7
+
+UNLINKED_SCOPE_TYPE = "unlinked"
+UNLINKED_CONTENT_FILENAME = "unlinked.txt"
+
+_MARKER_LOCATIONS_CACHE: dict[
+    Path, tuple[tuple[tuple[str, int, int], ...], dict[SceneId, dict[str, Any]]]
+] = {}
 
 
 def _migrate_project_latest(project_dir: Path) -> None:
     """Apply all chainable story migrations required by the scene service."""
     migrate_project_v3(project_dir)
     migrate_project_v4(project_dir)
+    migrate_project_v5(project_dir)
+    migrate_project_v6(project_dir)
+    migrate_project_v7(project_dir)
+
+
+def _scope_signature(project_dir: Path) -> tuple[tuple[str, int, int], ...]:
+    """Build a strict cache key for all marker-relevant files in a project."""
+    story_path = project_dir / "story.json"
+    signature: list[tuple[str, int, int]] = []
+
+    if story_path.exists():
+        stat = story_path.stat()
+        signature.append((str(story_path), stat.st_mtime_ns, stat.st_size))
+
+    for _, path in _scope_candidates(project_dir):
+        if not path.exists():
+            signature.append((str(path), -1, -1))
+            continue
+        stat = path.stat()
+        signature.append((str(path), stat.st_mtime_ns, stat.st_size))
+
+    signature.sort(key=lambda item: item[0])
+    return tuple(signature)
 
 
 def _scope_candidates(project_dir: Path) -> list[tuple[dict[str, Any], Path]]:
@@ -66,6 +99,7 @@ def _scope_candidates(project_dir: Path) -> list[tuple[dict[str, Any], Path]]:
         candidates.append((link, path))
 
     _add({"scope_type": "story", "chapter_id": None, "book_id": None})
+    _add({"scope_type": UNLINKED_SCOPE_TYPE, "chapter_id": None, "book_id": None})
 
     chapters = story.get("chapters")
     if isinstance(chapters, list):
@@ -149,6 +183,11 @@ def _scope_candidates(project_dir: Path) -> list[tuple[dict[str, Any], Path]]:
 
 def _marker_locations_by_scene(project_dir: Path) -> dict[SceneId, dict[str, Any]]:
     """Return runtime prose-link payloads computed from file markers."""
+    signature = _scope_signature(project_dir)
+    cached = _MARKER_LOCATIONS_CACHE.get(project_dir)
+    if cached is not None and cached[0] == signature:
+        return {scene_id: link.copy() for scene_id, link in cached[1].items()}
+
     locations: dict[SceneId, dict[str, Any]] = {}
     for link, path in _scope_candidates(project_dir):
         if not path.exists():
@@ -169,6 +208,11 @@ def _marker_locations_by_scene(project_dir: Path) -> dict[SceneId, dict[str, Any
                 "start_offset": span.start,
                 "end_offset": span.end,
             }
+
+    _MARKER_LOCATIONS_CACHE[project_dir] = (
+        signature,
+        {scene_id: link.copy() for scene_id, link in locations.items()},
+    )
     return locations
 
 
@@ -230,7 +274,11 @@ def _drop_prose_links_for_persistence(
     """Return a copy of scenes_dict with scene/beat prose_link removed."""
     cleaned: dict[SceneId, Any] = {}
     for scene_id, scene_data in scenes_dict.items():
-        payload = {k: v for k, v in scene_data.items() if k != "prose_link"}
+        payload = {
+            k: v
+            for k, v in scene_data.items()
+            if k not in ("prose_link", "order_index")
+        }
         beats = payload.get("beats")
         if isinstance(beats, list):
             clean_beats: list[Any] = []
@@ -255,6 +303,9 @@ def _scene_content_path(project_dir: Path, link: dict[str, Any]) -> Path | None:
             if candidate.exists():
                 return candidate
         return project_dir / "content.md"
+
+    if scope == UNLINKED_SCOPE_TYPE:
+        return project_dir / UNLINKED_CONTENT_FILENAME
 
     if scope == "chapter":
         chapter_id = str(link.get("chapter_id") or "").strip()
@@ -447,18 +498,6 @@ def _next_scene_id(scenes_dict: dict[SceneId, Any]) -> SceneId:
     return max(scenes_dict.keys(), default=0) + 1
 
 
-def _next_scene_order_index(scenes_dict: dict[SceneId, Any]) -> int:
-    current = [
-        value.get("order_index")
-        for value in scenes_dict.values()
-        if isinstance(value, dict)
-    ]
-    numeric = [
-        idx for idx in current if isinstance(idx, (int, float)) and idx is not None
-    ]
-    return int(max(numeric, default=0)) + 1
-
-
 def _validate_scene_ordering_constraints(
     scene_id: SceneId,
     causes: object,
@@ -487,12 +526,6 @@ def _normalise_scene(raw: dict[str, Any]) -> dict[str, Any]:
             raw[key] = []
 
     raw["causes"] = _coerce_scene_id_list(raw.get("causes"))
-
-    order_index = raw.get("order_index")
-    if isinstance(order_index, (int, float)) and order_index is not None:
-        raw["order_index"] = float(order_index)
-    else:
-        raw["order_index"] = None
 
     raw.setdefault("scene_time", None)
     timeline_id = raw.get("timeline_id")
@@ -565,25 +598,75 @@ def _normalize_scope_order_indices(
     chapter_id: str | None,
     book_id: str | None,
 ) -> None:
-    linked: list[tuple[SceneId, int]] = []
-    for scene_id in scenes_dict.keys():
-        link = links_by_scene.get(scene_id)
-        if not isinstance(link, dict):
-            continue
-        if link.get("scope_type") != scope_type:
-            continue
-        if (link.get("chapter_id") or None) != (chapter_id or None):
-            continue
-        if (link.get("book_id") or None) != (book_id or None):
-            continue
-        span = spans_by_scene.get(scene_id)
-        if span is None:
-            continue
-        linked.append((scene_id, span.start))
+    # Narrative order is marker-derived from prose file spans.
+    # This hook remains for backward-compatible call sites.
+    _ = scenes_dict, spans_by_scene, links_by_scene, scope_type, chapter_id, book_id
 
-    linked.sort(key=lambda item: item[1])
-    for position, (scene_id, _) in enumerate(linked):
-        scenes_dict[scene_id]["order_index"] = float(position * 2 + 1)
+
+def _chapter_order_map(story: dict[str, Any]) -> dict[tuple[str | None, str], int]:
+    order: dict[tuple[str | None, str], int] = {}
+    idx = 0
+
+    chapters = story.get("chapters")
+    if isinstance(chapters, list):
+        for local_index, chapter in enumerate(chapters, start=1):
+            chapter_id = str(local_index)
+            if isinstance(chapter, dict) and chapter.get("id"):
+                chapter_id = str(chapter.get("id")).strip()
+            if chapter_id and (None, chapter_id) not in order:
+                order[(None, chapter_id)] = idx
+                idx += 1
+
+    books = story.get("books")
+    if isinstance(books, list):
+        for book in books:
+            if not isinstance(book, dict):
+                continue
+            book_id = str(book.get("id") or book.get("folder") or "").strip() or None
+            bchapters = book.get("chapters")
+            if not isinstance(bchapters, list):
+                continue
+            for local_index, chapter in enumerate(bchapters, start=1):
+                chapter_id = str(local_index)
+                if isinstance(chapter, dict) and chapter.get("id"):
+                    chapter_id = str(chapter.get("id")).strip()
+                key = (book_id, chapter_id)
+                if chapter_id and key not in order:
+                    order[key] = idx
+                    idx += 1
+
+    return order
+
+
+def _scene_narrative_sort_key(
+    scene: dict[str, Any],
+    chapter_order: dict[tuple[str | None, str], int],
+) -> tuple[int, int, int, int, int]:
+    link = scene.get("prose_link")
+    scene_id = int(scene.get("id") or 0)
+    if not isinstance(link, dict):
+        return (3, 10**9, 10**12, 10**12, scene_id)
+
+    scope_type = str(link.get("scope_type") or "")
+    start_offset = link.get("start_offset")
+    end_offset = link.get("end_offset")
+    start = int(start_offset) if isinstance(start_offset, int) else 10**12
+    end = int(end_offset) if isinstance(end_offset, int) else 10**12
+
+    if scope_type == "story":
+        return (0, 0, start, end, scene_id)
+
+    if scope_type == "chapter":
+        chapter_id = str(link.get("chapter_id") or "").strip()
+        book_id_raw = str(link.get("book_id") or "").strip()
+        book_id = book_id_raw or None
+        chapter_rank = chapter_order.get((book_id, chapter_id), 10**9)
+        return (1, chapter_rank, start, end, scene_id)
+
+    if scope_type == UNLINKED_SCOPE_TYPE:
+        return (2, 0, start, end, scene_id)
+
+    return (3, 10**9, start, end, scene_id)
 
 
 def list_scenes(project_dir: Path) -> list[dict[str, Any]]:
@@ -595,13 +678,10 @@ def list_scenes(project_dir: Path) -> list[dict[str, Any]]:
         for scene_id, data in scenes_dict.items()
     ]
     _attach_prose_positions(scenes, project_dir)
+    chapter_order = _chapter_order_map(story)
     return sorted(
         scenes,
-        key=lambda s: (
-            s.get("order_index") if s.get("order_index") is not None else float("inf"),
-            s.get("pinboard_y", 0),
-            s.get("pinboard_x", 0),
-        ),
+        key=lambda s: _scene_narrative_sort_key(s, chapter_order),
     )
 
 
@@ -622,14 +702,32 @@ def create_scene(project_dir: Path, payload: SceneCreateRequest) -> dict[str, An
     story_path = project_dir / "story.json"
     story = load_story_config(story_path) or {}
     scenes_dict = _load_scenes_dict(story)
+    scenes_dict = _inject_runtime_links_into_scenes_dict(scenes_dict, project_dir)
     scene_id = _next_scene_id(scenes_dict)
     data = payload.model_dump(exclude_none=False)
     data.pop("id", None)
-    if not isinstance(data.get("order_index"), int) or data.get("order_index") == 0:
-        data["order_index"] = _next_scene_order_index(scenes_dict)
+    data.pop("order_index", None)
+    data["prose_link"] = {
+        "scope_type": UNLINKED_SCOPE_TYPE,
+        "chapter_id": None,
+        "book_id": None,
+    }
     _validate_scene_ordering_constraints(scene_id, data.get("causes"))
-    data.pop("prose_link", None)
     scenes_dict[scene_id] = data
+
+    unlinked_path = _scene_content_path(project_dir, data["prose_link"])
+    if unlinked_path is None:
+        raise ValueError("Cannot resolve internal unlinked prose scope")
+    if not unlinked_path.exists():
+        unlinked_path.parent.mkdir(parents=True, exist_ok=True)
+        _write_text_atomic(unlinked_path, "")
+
+    unlinked_content = _read_validated_marker_content(unlinked_path)
+    if unlinked_content and not unlinked_content.endswith("\n"):
+        unlinked_content += "\n"
+    unlinked_content += f"<!--scene:{scene_id}:start--><!--scene:{scene_id}:end-->\n"
+    _write_text_atomic(unlinked_path, unlinked_content)
+
     story["scenes"] = _drop_prose_links_for_persistence(scenes_dict)
     save_story_config(story_path, story)
     scene = _normalise_scene({"id": scene_id, **data})
@@ -1015,6 +1113,9 @@ def reorder_scene_prose(
     src_id = request.source_scene_id
     tgt_id = request.target_scene_id
 
+    if src_id == tgt_id:
+        raise ValueError("source_scene_id and target_scene_id must be different")
+
     src_data = scenes_dict.get(src_id)
     tgt_data = scenes_dict.get(tgt_id)
     if src_data is None:
@@ -1054,46 +1155,27 @@ def reorder_scene_prose(
         tgt_block_end = tgt_span.end + len(tgt_marker_end)
 
         src_block = content[src_block_start:src_block_end]
-        tgt_block = content[tgt_block_start:tgt_block_end]
 
-        if src_block_start < tgt_block_start:
-            first_start = src_block_start
-            first_end = src_block_end
-            first_block = src_block
-            second_start = tgt_block_start
-            second_end = tgt_block_end
-            second_block = tgt_block
-            source_is_first = True
-        else:
-            first_start = tgt_block_start
-            first_end = tgt_block_end
-            first_block = tgt_block
-            second_start = src_block_start
-            second_end = src_block_end
-            second_block = src_block
-            source_is_first = False
+        # Remove source block first, then insert at target boundary in the
+        # source-free content. This ensures true placement semantics (adjacent
+        # before/after target) even when source and target have blocks between.
+        without_src = content[:src_block_start] + content[src_block_end:]
+        spans_without_src = {s.scene_id: s for s in parse_scene_spans(without_src)}
+        tgt_span_after = spans_without_src.get(tgt_id)
+        if tgt_span_after is None:
+            raise ValueError("Target markers not found after removing source block")
 
-        middle_text = content[first_end:second_start]
-        unchanged_middle = first_block + middle_text + second_block
+        tgt_block_start_after = tgt_span_after.start - len(tgt_marker_start)
+        tgt_block_end_after = tgt_span_after.end + len(tgt_marker_end)
+        insert_pos = (
+            tgt_block_start_after if request.place_before else tgt_block_end_after
+        )
 
-        if request.place_before:
-            if source_is_first:
-                rebuilt_text = unchanged_middle
-                new_middle = unchanged_middle
-            else:
-                new_middle = src_block + middle_text + tgt_block
-                rebuilt_text = new_middle
-        else:
-            if not source_is_first:
-                rebuilt_text = unchanged_middle
-                new_middle = unchanged_middle
-            else:
-                new_middle = tgt_block + middle_text + src_block
-                rebuilt_text = new_middle
+        new_content = without_src[:insert_pos] + src_block + without_src[insert_pos:]
 
-        scope_start = first_start
-        scope_end = second_end
-        new_content = content[:scope_start] + new_middle + content[scope_end:]
+        scope_start = min(src_block_start, tgt_block_start)
+        scope_end = max(src_block_end, tgt_block_end)
+        rebuilt_text = new_content[scope_start:scope_end]
         if new_content != content:
             _write_text_atomic(src_path, new_content)
 
@@ -1141,12 +1223,16 @@ def reorder_scene_prose(
 
     src_start_marker = f"<!--scene:{src_id}:start-->"
     src_end_marker = f"<!--scene:{src_id}:end-->"
+    tgt_start_marker = f"<!--scene:{tgt_id}:start-->"
+    tgt_end_marker = f"<!--scene:{tgt_id}:end-->"
     src_block_start = src_span.start - len(src_start_marker)
     src_block_end = src_span.end + len(src_end_marker)
+    tgt_block_start = tgt_span.start - len(tgt_start_marker)
+    tgt_block_end = tgt_span.end + len(tgt_end_marker)
     new_src_content = src_content[:src_block_start] + src_content[src_block_end:]
     _write_text_atomic(src_path, new_src_content)
 
-    insert_pos = tgt_span.start if request.place_before else tgt_span.end
+    insert_pos = tgt_block_start if request.place_before else tgt_block_end
     new_tgt_content = (
         tgt_content[:insert_pos]
         + f"<!--scene:{src_id}:start-->"
@@ -1198,3 +1284,108 @@ def reorder_scene_prose(
         scope_end=len(new_tgt_content),
         rebuilt_text=new_tgt_content,
     )
+
+
+def reorder_scope_scenes(
+    project_dir: Path,
+    *,
+    scope_type: str,
+    chapter_id: str | None,
+    book_id: str | None,
+    ordered_scene_ids: list[SceneId],
+) -> list[dict[str, Any]]:
+    """Reorder all scene marker blocks in one prose scope and return positions.
+
+    ``ordered_scene_ids`` must be a complete permutation of the currently linked
+    scene IDs in the target scope. This avoids ambiguity when multiple scene
+    moves are requested in one operation.
+    """
+    _migrate_project_latest(project_dir)
+    _assert_scope_marker_tokens_valid(project_dir)
+
+    if scope_type not in {"story", "chapter", UNLINKED_SCOPE_TYPE}:
+        raise ValueError("scope_type must be one of 'story', 'chapter', or 'unlinked'")
+    if scope_type == "chapter" and not (chapter_id or "").strip():
+        raise ValueError("chapter_id is required when scope_type='chapter'")
+    if scope_type != "chapter" and chapter_id not in (None, ""):
+        raise ValueError("chapter_id must be omitted unless scope_type='chapter'")
+    if scope_type != "chapter" and book_id not in (None, ""):
+        raise ValueError("book_id must be omitted unless scope_type='chapter'")
+
+    scope_link = {
+        "scope_type": scope_type,
+        "chapter_id": chapter_id or None,
+        "book_id": book_id or None,
+    }
+    content_path = _scene_content_path(project_dir, scope_link)
+    if content_path is None:
+        raise ValueError(f"Cannot resolve content path for scope {scope_type}")
+    if not content_path.exists():
+        content_path.parent.mkdir(parents=True, exist_ok=True)
+        _write_text_atomic(content_path, "")
+
+    content = _read_validated_marker_content(content_path)
+    spans = parse_scene_spans(content)
+
+    linked_in_scope = [span.scene_id for span in spans]
+    if not linked_in_scope:
+        return []
+
+    current_set = set(linked_in_scope)
+    requested_set = set(int(scene_id) for scene_id in ordered_scene_ids)
+    if len(ordered_scene_ids) != len(requested_set):
+        raise ValueError("ordered_scene_ids must not contain duplicates")
+    if current_set != requested_set:
+        raise ValueError(
+            "ordered_scene_ids must contain exactly the current scope scene IDs"
+        )
+
+    block_start_by_id: dict[SceneId, int] = {}
+    block_end_by_id: dict[SceneId, int] = {}
+
+    for span in spans:
+        start_marker = f"<!--scene:{span.scene_id}:start-->"
+        end_marker = f"<!--scene:{span.scene_id}:end-->"
+        block_start_by_id[span.scene_id] = span.start - len(start_marker)
+        block_end_by_id[span.scene_id] = span.end + len(end_marker)
+
+    first_scene_id = linked_in_scope[0]
+    last_scene_id = linked_in_scope[-1]
+    region_start = block_start_by_id[first_scene_id]
+    region_end = block_end_by_id[last_scene_id]
+
+    # Keep each block together with its following interstitial text, then
+    # reorder chunks atomically. This preserves all prose bytes.
+    chunk_by_scene_id: dict[SceneId, str] = {}
+    for index, scene_id in enumerate(linked_in_scope):
+        chunk_start = block_start_by_id[scene_id]
+        if index + 1 < len(linked_in_scope):
+            next_scene_id = linked_in_scope[index + 1]
+            chunk_end = block_start_by_id[next_scene_id]
+        else:
+            chunk_end = block_end_by_id[scene_id]
+        chunk_by_scene_id[scene_id] = content[chunk_start:chunk_end]
+
+    new_region = "".join(
+        chunk_by_scene_id[int(scene_id)] for scene_id in ordered_scene_ids
+    )
+    new_content = content[:region_start] + new_region + content[region_end:]
+    if new_content != content:
+        _write_text_atomic(content_path, new_content)
+
+    final_spans = parse_scene_spans(new_content)
+    positions: list[dict[str, Any]] = []
+    for position, span in enumerate(final_spans):
+        positions.append(
+            {
+                "scene_id": span.scene_id,
+                "scope_type": scope_type,
+                "chapter_id": chapter_id or None,
+                "book_id": book_id or None,
+                "position": position,
+                "start_offset": span.start,
+                "end_offset": span.end,
+            }
+        )
+
+    return positions

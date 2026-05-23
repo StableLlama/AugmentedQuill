@@ -108,7 +108,7 @@ export interface StoryState extends Story {
 
 export type SceneId = number;
 export type SceneStatus = 'active' | 'inactive' | 'draft';
-export type SceneScopeType = 'story' | 'chapter';
+export type SceneScopeType = 'story' | 'chapter' | 'unlinked';
 
 /** A link between a scene/beat and a prose scope file.
 

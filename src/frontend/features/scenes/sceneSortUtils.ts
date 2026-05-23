@@ -113,15 +113,19 @@ export function normalizeChapterId(chapterId: unknown): string {
   return '';
 }
 
-/** Returns an order_index for sorting all scenes in narrative order.
- *  Unlinked scenes use their fractional order_index (or Infinity if None);
- *  linked scenes use their assigned odd-integer order_index (1.0, 3.0, 5.0...).
- *  Chapter boundaries are handled separately via buildChapterOrderMap. */
+function scopeSortBucket(link: Scene['prose_link']): number {
+  if (!link) return 3;
+  if (link.scope_type === 'story') return 0;
+  if (link.scope_type === 'chapter') return 1;
+  if (link.scope_type === 'unlinked') return 2;
+  return 3;
+}
+
 function getProseLinkChapterIndex(
   link: Scene['prose_link'],
   chapterOrderMap: Map<string, number>
 ): number | null {
-  if (!link || link.scope_type === 'story') return null;
+  if (!link || link.scope_type !== 'chapter') return null;
   return chapterOrderMap.get(normalizeChapterId(link.chapter_id)) ?? Infinity;
 }
 
@@ -151,8 +155,8 @@ export function sceneSortKey(
   scene: Scene,
   _chapterOrderMap: Map<string, number>
 ): number {
-  // Sort by order_index; None (freshly created) sorts to end.
-  return Number.isFinite(scene.order_index) ? (scene.order_index as number) : Infinity;
+  const start = scene.prose_link?.start_offset;
+  return Number.isFinite(start) ? Number(start) : Infinity;
 }
 
 export function proseSort(
@@ -160,9 +164,11 @@ export function proseSort(
   sceneB: Scene,
   chapterOrderMap: Map<string, number>
 ): number {
+  const scopeBucketA = scopeSortBucket(sceneA.prose_link);
+  const scopeBucketB = scopeSortBucket(sceneB.prose_link);
+  if (scopeBucketA !== scopeBucketB) return scopeBucketA - scopeBucketB;
+
   // Linked chapter scenes are grouped by chapter display order first.
-  // Inside a chapter (and for all other combinations), sort by order_index so
-  // unlinked scenes can naturally interleave between linked scenes.
   const chIdxA = getProseLinkChapterIndex(sceneA.prose_link, chapterOrderMap);
   const chIdxB = getProseLinkChapterIndex(sceneB.prose_link, chapterOrderMap);
 
@@ -175,7 +181,7 @@ export function proseSort(
     return startOffsetComparison;
   }
 
-  // Same chapter/scope: sort by order_index
+  // Same scope: sort by stable marker-derived key.
   const aKey = sceneSortKey(sceneA, chapterOrderMap);
   const bKey = sceneSortKey(sceneB, chapterOrderMap);
   if (aKey !== bKey) return aKey - bKey;

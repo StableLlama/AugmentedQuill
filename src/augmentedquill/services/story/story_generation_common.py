@@ -179,16 +179,15 @@ def _scene_matches_scope(
 
 
 def _scene_sort_key(scene: dict[str, Any]) -> tuple[int, int, int, int]:
-    """Sort linked scenes by prose position, then by persisted narrative order."""
+    """Sort scoped scenes by prose position, then deterministically by ID."""
     link = scene.get("prose_link") if isinstance(scene.get("prose_link"), dict) else {}
     start_offset = link.get("start_offset")
     has_start = isinstance(start_offset, int)
-    order_index = scene.get("order_index")
     scene_id = int(scene.get("id") or 0)
     return (
         0 if has_start else 1,
         int(start_offset) if has_start else 10**12,
-        int(order_index) if isinstance(order_index, int) else scene_id,
+        scene_id,
         scene_id,
     )
 

@@ -3887,7 +3887,7 @@
       "post": {
         "tags": ["Scenes"],
         "summary": "Unlink Scene Prose",
-        "description": "Remove the prose link from a scene, preserving its narrative position.\n\nReturns all scenes whose order_index was updated during normalization.",
+        "description": "Remove the prose link from a scene, preserving its narrative position.\n\nReturns all scenes affected in the same prose scope.",
         "operationId": "unlink_scene_prose_api_v1_projects__project_name__scenes__scene_id__unlink_prose_post",
         "parameters": [
           {
@@ -4262,7 +4262,7 @@
         "properties": {
           "scope_type": {
             "type": "string",
-            "enum": ["story", "chapter"],
+            "enum": ["story", "chapter", "unlinked"],
             "title": "Scope Type",
             "default": "chapter"
           },
@@ -6822,17 +6822,6 @@
             "title": "Causes",
             "default": []
           },
-          "order_index": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Order Index"
-          },
           "pinboard_x": {
             "type": "number",
             "title": "Pinboard X",
@@ -7050,18 +7039,6 @@
             "description": "IDs of scenes that this scene causally precedes. Use this to record cause/effect relationships without changing narrative order directly.",
             "examples": [[1, 2]]
           },
-          "order_index": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Order Index",
-            "description": "Optional explicit narrative sort key. Leave empty unless the scene must be placed precisely in sequence. Use order_index when adjusting narrative order, not for causal dependency constraints."
-          },
           "pinboard_x": {
             "type": "number",
             "title": "Pinboard X",
@@ -7098,7 +7075,7 @@
         "properties": {
           "scope_type": {
             "type": "string",
-            "enum": ["story", "chapter"],
+            "enum": ["story", "chapter", "unlinked"],
             "title": "Scope Type",
             "default": "chapter"
           },
@@ -7231,9 +7208,9 @@
         "properties": {
           "scope_type": {
             "type": "string",
-            "enum": ["story", "chapter"],
+            "enum": ["story", "chapter", "unlinked"],
             "title": "Scope Type",
-            "description": "Which content scope the scene is linked to: 'story' or 'chapter'."
+            "description": "Which content scope the scene is linked to: 'story', 'chapter', or internal 'unlinked'."
           },
           "chapter_id": {
             "anyOf": [
@@ -7245,7 +7222,7 @@
               }
             ],
             "title": "Chapter Id",
-            "description": "Chapter ID when scope_type='chapter'. Leave empty for story scope."
+            "description": "Chapter ID when scope_type='chapter'. Leave empty for story or unlinked scope."
           },
           "book_id": {
             "anyOf": [
@@ -7257,7 +7234,7 @@
               }
             ],
             "title": "Book Id",
-            "description": "Book ID when the linked prose belongs to a book chapter."
+            "description": "Book ID when the linked prose belongs to a book chapter. Leave empty for story or unlinked scope."
           },
           "start_offset": {
             "anyOf": [
@@ -7288,7 +7265,7 @@
         "type": "object",
         "required": ["scope_type"],
         "title": "SceneProseLink",
-        "description": "A link between a scene (or beat) and a specific content file.\n\n``scope_type`` distinguishes between:\n- ``'story'`` \u2013 the main story content file (short-story projects)\n- ``'chapter'`` \u2013 a specific chapter file (novel / series projects)\n\nOnly the file identity is persisted.  ``start_offset`` and ``end_offset``\nare character positions derived at read time by parsing the inline HTML\ncomment markers embedded in the content file (see ``scene_markers.py``).\nThey are populated by the service layer before returning scenes to the API\nand are excluded from disk storage."
+        "description": "A link between a scene (or beat) and a specific content file.\n\n    ``scope_type`` distinguishes between:\n- ``'story'`` \u2013 the main story content file (short-story projects)\n- ``'chapter'`` \u2013 a specific chapter file (novel / series projects)\n    - ``'unlinked'`` \u2013 internal planning prose for scenes not attached to\n        story/chapter content\n\nOnly the file identity is persisted.  ``start_offset`` and ``end_offset``\nare character positions derived at read time by parsing the inline HTML\ncomment markers embedded in the content file (see ``scene_markers.py``).\nThey are populated by the service layer before returning scenes to the API\nand are excluded from disk storage."
       },
       "SceneReorderProseRequest": {
         "properties": {
@@ -7573,18 +7550,6 @@
             "description": "Replacement list of scene IDs that this scene causally precedes.",
             "examples": [[1, 2]]
           },
-          "order_index": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Order Index",
-            "description": "Replacement narrative sort key."
-          },
           "pinboard_x": {
             "anyOf": [
               {
@@ -7648,7 +7613,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": ["story", "chapter"]
+                "enum": ["story", "chapter", "unlinked"]
               },
               {
                 "type": "null"

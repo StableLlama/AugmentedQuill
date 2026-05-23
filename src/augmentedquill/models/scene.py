@@ -84,9 +84,11 @@ class SceneTagPersonalDatetime(BaseModel):
 class SceneProseLink(BaseModel):
     """A link between a scene (or beat) and a specific content file.
 
-    ``scope_type`` distinguishes between:
+        ``scope_type`` distinguishes between:
     - ``'story'`` – the main story content file (short-story projects)
     - ``'chapter'`` – a specific chapter file (novel / series projects)
+        - ``'unlinked'`` – internal planning prose for scenes not attached to
+            story/chapter content
 
     Only the file identity is persisted.  ``start_offset`` and ``end_offset``
     are character positions derived at read time by parsing the inline HTML
@@ -97,17 +99,26 @@ class SceneProseLink(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    scope_type: Literal["story", "chapter"] = Field(
+    scope_type: Literal["story", "chapter", "unlinked"] = Field(
         ...,
-        description="Which content scope the scene is linked to: 'story' or 'chapter'.",
+        description=(
+            "Which content scope the scene is linked to: 'story', 'chapter', "
+            "or internal 'unlinked'."
+        ),
     )
     chapter_id: Optional[str] = Field(
         None,
-        description="Chapter ID when scope_type='chapter'. Leave empty for story scope.",
+        description=(
+            "Chapter ID when scope_type='chapter'. Leave empty for story or "
+            "unlinked scope."
+        ),
     )
     book_id: Optional[str] = Field(
         None,
-        description="Book ID when the linked prose belongs to a book chapter.",
+        description=(
+            "Book ID when the linked prose belongs to a book chapter. Leave "
+            "empty for story or unlinked scope."
+        ),
     )
 
     @model_validator(mode="after")
@@ -127,11 +138,18 @@ class SceneProseLink(BaseModel):
                 raise ValueError(
                     "book_id must only contain letters, digits, '-', '_', or '.'."
                 )
-        else:
+        elif self.scope_type == "story":
             if self.chapter_id not in (None, ""):
                 raise ValueError("chapter_id must be omitted when scope_type='story'")
             if self.book_id not in (None, ""):
                 raise ValueError("book_id must be omitted when scope_type='story'")
+        else:
+            if self.chapter_id not in (None, ""):
+                raise ValueError(
+                    "chapter_id must be omitted when scope_type='unlinked'"
+                )
+            if self.book_id not in (None, ""):
+                raise ValueError("book_id must be omitted when scope_type='unlinked'")
         return self
 
     # Computed at read time from file markers; never written to story.json.
@@ -228,9 +246,6 @@ class Scene(BaseModel):
     color_tag: Optional[str] = None  # hex color, e.g. "#a855f7"
     prose_link: Optional[SceneProseLink] = None  # used when beats is empty
     causes: list[SceneId] = []  # scene IDs this scene causally precedes
-    order_index: Optional[float] = (
-        None  # narrative order; None = freshly created, sorts to end
-    )
     pinboard_x: float = 100.0
     pinboard_y: float = 100.0
     status: str = "active"  # 'active' | 'inactive' | 'draft'
@@ -325,14 +340,6 @@ class SceneCreateRequest(BaseModel):
         ),
         json_schema_extra={"examples": [[1, 2]]},
     )
-    order_index: Optional[float] = Field(
-        None,
-        description=(
-            "Optional explicit narrative sort key. Leave empty unless the scene "
-            "must be placed precisely in sequence. Use order_index when adjusting "
-            "narrative order, not for causal dependency constraints."
-        ),
-    )
     pinboard_x: float = Field(
         default=100.0,
         description="Pinboard X position in logical canvas units.",
@@ -410,10 +417,6 @@ class SceneUpdateRequest(BaseModel):
         ),
         json_schema_extra={"examples": [[1, 2]]},
     )
-    order_index: Optional[float] = Field(
-        None,
-        description="Replacement narrative sort key.",
-    )
     pinboard_x: Optional[float] = Field(
         None,
         description="Replacement pinboard X position.",
@@ -442,7 +445,7 @@ class SceneLinkProseRequest(BaseModel):
     file.  Validation against existing scene links happens in the service.
     """
 
-    scope_type: str = "story"  # 'story' | 'chapter'
+    scope_type: str = "story"  # 'story' | 'chapter' | 'unlinked'
     chapter_id: Optional[str] = None
     book_id: Optional[str] = None
     start_offset: int
@@ -486,7 +489,7 @@ class SceneBoundaryAssignment(BaseModel):
 class SceneDetectBoundariesRequest(BaseModel):
     """Payload for boundary detection + optional automatic scene relinking."""
 
-    scope_type: Literal["story", "chapter"] = "chapter"
+    scope_type: Literal["story", "chapter", "unlinked"] = "chapter"
     chapter_id: Optional[str] = None
     book_id: Optional[str] = None
     scene_ids: list[SceneId] = Field(default_factory=list)
@@ -515,7 +518,7 @@ class SceneDetectBoundariesResponse(BaseModel):
 class SceneWriteRequest(BaseModel):
     """Payload for generating prose for one scene and linking the result."""
 
-    scope_type: Optional[Literal["story", "chapter"]] = None
+    scope_type: Optional[Literal["story", "chapter", "unlinked"]] = None
     chapter_id: Optional[str] = None
     book_id: Optional[str] = None
     include_following_scenes: int = 1

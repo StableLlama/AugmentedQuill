@@ -75,7 +75,7 @@ export interface SceneBoundaryAssignment {
 }
 
 export interface DetectBoundariesPayload {
-  scope_type: 'story' | 'chapter';
+  scope_type: 'story' | 'chapter' | 'unlinked';
   chapter_id?: string | null;
   book_id?: string | null;
   scene_ids: SceneId[];
@@ -90,7 +90,7 @@ export interface DetectBoundariesResponse {
 }
 
 export interface AutoLinkScopePayload {
-  scope_type: 'story' | 'chapter';
+  scope_type: 'story' | 'chapter' | 'unlinked';
   chapter_id?: string | null;
   book_id?: string | null;
   current_text: string;
@@ -102,7 +102,7 @@ export interface AutoLinkScopeResponse {
 }
 
 export interface SceneWritePayload {
-  scope_type?: 'story' | 'chapter';
+  scope_type?: 'story' | 'chapter' | 'unlinked';
   chapter_id?: string | null;
   book_id?: string | null;
   include_following_scenes?: number;

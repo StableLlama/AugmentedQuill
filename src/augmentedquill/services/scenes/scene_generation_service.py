@@ -60,7 +60,7 @@ def _resolve_scope(
     chapter_id = request.chapter_id or link.get("chapter_id")
     book_id = request.book_id or link.get("book_id")
 
-    if scope_type not in {"story", "chapter"}:
+    if scope_type not in {"story", "chapter", "unlinked"}:
         project_type = str(story.get("project_type") or "").strip().lower()
         scope_type = "story" if project_type == "short-story" else "chapter"
 

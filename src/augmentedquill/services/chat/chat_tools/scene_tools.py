@@ -8,9 +8,11 @@
 """Defines the scene tools unit so this responsibility stays isolated, testable, and easy to evolve."""
 
 from typing import Any, Literal
+from pathlib import Path
 
 from pydantic import ConfigDict, Field
 from augmentedquill.services.chat.chat_tool_decorator import ToolModel
+from augmentedquill.core.config import load_story_config
 
 from augmentedquill.models.scene import (
     SceneBeat,
@@ -18,6 +20,7 @@ from augmentedquill.models.scene import (
     SceneCreateRequest,
     SceneId,
     SceneProseLink,
+    SceneReorderProseRequest,
     SceneTagPersonalDatetime,
     SceneUpdateRequest,
 )
@@ -40,8 +43,174 @@ from augmentedquill.services.scenes.scene_service import (
     delete_scene,
     get_scene,
     list_scenes,
+    reorder_scene_prose,
     update_scene,
 )
+
+
+def _resolve_project_type(project_dir: Path) -> str:
+    """Return the active project type or a safe default."""
+    story = load_story_config(project_dir / "story.json") or {}
+    project_type = story.get("project_type")
+    if isinstance(project_type, str) and project_type.strip():
+        return project_type.strip().lower()
+    return "short-story"
+
+
+def _sanitize_prose_link_for_llm(
+    prose_link: dict[str, Any] | None,
+    project_type: str,
+) -> dict[str, Any] | None:
+    """Hide internal prose-link details not intended for LLM-facing tools."""
+    if not isinstance(prose_link, dict):
+        return None
+
+    scope_type = str(prose_link.get("scope_type") or "").strip().lower()
+    if scope_type not in {"story", "chapter", "unlinked"}:
+        return None
+
+    result: dict[str, Any] = {"scope_type": scope_type}
+
+    if scope_type == "chapter":
+        chapter_id = prose_link.get("chapter_id")
+        if chapter_id not in (None, ""):
+            result["chapter_id"] = chapter_id
+        if project_type == "series":
+            book_id = prose_link.get("book_id")
+            if book_id not in (None, ""):
+                result["book_id"] = book_id
+
+    return result
+
+
+def _sanitize_scene_for_llm(scene: dict[str, Any], project_type: str) -> dict[str, Any]:
+    """Return a scene payload safe for LLM tool consumption."""
+    sanitized = dict(scene)
+    sanitized["prose_link"] = _sanitize_prose_link_for_llm(
+        scene.get("prose_link") if isinstance(scene, dict) else None,
+        project_type,
+    )
+
+    beats = sanitized.get("beats")
+    if isinstance(beats, list):
+        cleaned_beats: list[Any] = []
+        for beat in beats:
+            if isinstance(beat, dict):
+                beat_copy = dict(beat)
+                beat_copy.pop("prose_link", None)
+                cleaned_beats.append(beat_copy)
+            else:
+                cleaned_beats.append(beat)
+        sanitized["beats"] = cleaned_beats
+
+    return sanitized
+
+
+def _chapter_number_maps_for_llm(story: dict[str, Any]) -> tuple[
+    dict[str, int],
+    dict[str, int],
+    dict[tuple[str, str], int],
+]:
+    """Build chapter/book index maps used in compact ordering snapshots."""
+    novel_chapter_numbers: dict[str, int] = {}
+    series_book_numbers: dict[str, int] = {}
+    series_chapter_numbers: dict[tuple[str, str], int] = {}
+
+    chapters = story.get("chapters")
+    if isinstance(chapters, list):
+        for chapter_number, chapter in enumerate(chapters, start=1):
+            chapter_id = str(chapter_number)
+            if isinstance(chapter, dict) and chapter.get("id") not in (None, ""):
+                chapter_id = str(chapter.get("id")).strip()
+            if chapter_id:
+                novel_chapter_numbers[chapter_id] = chapter_number
+
+    books = story.get("books")
+    if isinstance(books, list):
+        for book_number, book in enumerate(books, start=1):
+            if not isinstance(book, dict):
+                continue
+            book_id = str(book.get("id") or book.get("folder") or "").strip()
+            if book_id:
+                series_book_numbers[book_id] = book_number
+
+            chapters_in_book = book.get("chapters")
+            if not isinstance(chapters_in_book, list):
+                continue
+            for chapter_number, chapter in enumerate(chapters_in_book, start=1):
+                chapter_id = str(chapter_number)
+                if isinstance(chapter, dict) and chapter.get("id") not in (None, ""):
+                    chapter_id = str(chapter.get("id")).strip()
+                if book_id and chapter_id:
+                    series_chapter_numbers[(book_id, chapter_id)] = chapter_number
+
+    return novel_chapter_numbers, series_book_numbers, series_chapter_numbers
+
+
+def _coerce_positive_int(value: Any) -> int | None:
+    """Best-effort conversion for numeric chapter/book IDs."""
+    if isinstance(value, int) and value > 0:
+        return value
+    if isinstance(value, str) and value.isdigit():
+        parsed = int(value)
+        if parsed > 0:
+            return parsed
+    return None
+
+
+def _scene_ordering_snapshot_for_llm(
+    project_dir: Path, project_type: str
+) -> list[dict[str, Any]]:
+    """Return compact narration-order snapshot for LLM resynchronization."""
+    story = load_story_config(project_dir / "story.json") or {}
+    scenes = list_scenes(project_dir)
+    novel_chapter_numbers, series_book_numbers, series_chapter_numbers = (
+        _chapter_number_maps_for_llm(story)
+    )
+
+    snapshot: list[dict[str, Any]] = []
+    for scene in scenes:
+        entry: dict[str, Any] = {
+            "scene_id": int(scene.get("id") or 0),
+            "summary": str(scene.get("summary") or ""),
+        }
+        prose_link = scene.get("prose_link")
+
+        if project_type == "novel":
+            chapter_number: int | None = None
+            if (
+                isinstance(prose_link, dict)
+                and prose_link.get("scope_type") == "chapter"
+            ):
+                chapter_id = str(prose_link.get("chapter_id") or "").strip()
+                chapter_number = novel_chapter_numbers.get(chapter_id)
+                if chapter_number is None:
+                    chapter_number = _coerce_positive_int(chapter_id)
+            entry["chapter_number"] = chapter_number
+
+        if project_type == "series":
+            book_number: int | None = None
+            chapter_number: int | None = None
+            if (
+                isinstance(prose_link, dict)
+                and prose_link.get("scope_type") == "chapter"
+            ):
+                book_id = str(prose_link.get("book_id") or "").strip()
+                chapter_id = str(prose_link.get("chapter_id") or "").strip()
+                if book_id:
+                    book_number = series_book_numbers.get(book_id)
+                    if book_number is None:
+                        book_number = _coerce_positive_int(book_id)
+                if book_id and chapter_id:
+                    chapter_number = series_chapter_numbers.get((book_id, chapter_id))
+                if chapter_number is None:
+                    chapter_number = _coerce_positive_int(chapter_id)
+            entry["book_number"] = book_number
+            entry["chapter_number"] = chapter_number
+
+        snapshot.append(entry)
+
+    return snapshot
 
 
 class ManageScenesUpdateData(ToolModel):
@@ -145,9 +314,11 @@ class ManageScenesUpdateData(ToolModel):
 class ManageScenesParams(ToolModel):
     """Action router parameters for manage_scenes."""
 
-    action: Literal["list", "get", "create", "update", "delete"] = Field(
+    action: Literal["list", "get", "create", "update", "delete", "move"] = Field(
         ...,
-        description="Scene action: 'list', 'get', 'create', 'update', or 'delete'.",
+        description=(
+            "Scene action: 'list', 'get', 'create', 'update', 'delete', or " "'move'."
+        ),
     )
     scene_id: SceneId | None = Field(
         None,
@@ -164,6 +335,28 @@ class ManageScenesParams(ToolModel):
             "and list fields while preserving untouched data."
         ),
     )
+    target_scene_id: SceneId | None = Field(
+        None,
+        description="Required when action='move'. Anchor scene used for placement.",
+    )
+    place_before: bool = Field(
+        True,
+        description="When action='move': true inserts before target_scene_id, false after.",
+    )
+    scope_type: str | None = Field(
+        None,
+        description=(
+            "Deprecated list filter hint. Ignored for action='list'. Kept for "
+            "backward compatibility with legacy model calls."
+        ),
+    )
+    scope: str | None = Field(
+        None,
+        description=(
+            "Deprecated alias for scope_type. Ignored for action='list'. Kept for "
+            "backward compatibility with legacy model calls."
+        ),
+    )
 
 
 @chat_tool(
@@ -172,11 +365,12 @@ class ManageScenesParams(ToolModel):
         "a separate title field; use create_data.summary as the scene label. Use "
         "action='list' to list scenes, action='get' with scene_id to retrieve one "
         "scene, action='create' with create_data to create a scene, action='update' "
-        "with scene_id and update_data to modify a scene, and action='delete' with "
-        "scene_id to remove a scene. When creating scenes, include relevant "
+        "with scene_id and update_data to modify a scene, action='move' with "
+        "scene_id + target_scene_id to place a scene before/after another scene "
+        "(works within the same chapter/scope and across scopes), and "
+        "action='delete' with scene_id to remove a scene. When creating scenes, include relevant "
         "sourcebook_entry_ids and a formal scene_time whenever the chronology can "
         "be inferred; otherwise express causal dependency with causes. "
-        "For narrative ordering changes, use order_index rather than cause links. "
         "causes and causes_patch use integer scene IDs. "
         "Pass raw integer arrays, e.g. {add:[1,2]} or {remove:[3]}. "
         "For update_data.scene_time, you can pass a Temporal object, {'value': ...}, "
@@ -193,9 +387,13 @@ async def manage_scenes(
     active = get_active_project_dir()
     if active is None:
         return {"error": "No active project"}
+    project_type = _resolve_project_type(active)
 
     if params.action == "list":
-        return list_scenes(active)
+        return [
+            _sanitize_scene_for_llm(scene, project_type)
+            for scene in list_scenes(active)
+        ]
 
     if params.action == "get":
         if params.scene_id is None:
@@ -203,7 +401,7 @@ async def manage_scenes(
         scene = get_scene(active, params.scene_id)
         if scene is None:
             return {"error": f"Scene '{params.scene_id}' not found"}
-        return scene
+        return _sanitize_scene_for_llm(scene, project_type)
 
     if params.action == "create":
         if params.create_data is None:
@@ -226,7 +424,7 @@ async def manage_scenes(
                 "message": message,
             }
         mutations["story_changed"] = True
-        return created
+        return _sanitize_scene_for_llm(created, project_type)
 
     if params.action == "update":
         if params.scene_id is None:
@@ -352,7 +550,7 @@ async def manage_scenes(
         if updated is None:
             return {"error": f"Scene '{params.scene_id}' not found"}
         mutations["story_changed"] = True
-        return updated
+        return _sanitize_scene_for_llm(updated, project_type)
 
     if params.action == "delete":
         if params.scene_id is None:
@@ -362,5 +560,40 @@ async def manage_scenes(
             return {"error": f"Scene '{params.scene_id}' not found"}
         mutations["story_changed"] = True
         return {"ok": True}
+
+    if params.action == "move":
+        if params.scene_id is None:
+            return {"error": "scene_id is required when action='move'."}
+        if params.target_scene_id is None:
+            return {"error": "target_scene_id is required when action='move'."}
+        if params.scene_id == params.target_scene_id:
+            return {
+                "error": "Invalid scene move",
+                "message": "scene_id and target_scene_id must be different.",
+            }
+
+        try:
+            response = reorder_scene_prose(
+                active,
+                SceneReorderProseRequest(
+                    source_scene_id=params.scene_id,
+                    target_scene_id=params.target_scene_id,
+                    place_before=params.place_before,
+                ),
+            )
+        except (ValueError, KeyError) as exc:
+            return {
+                "error": "Invalid scene move",
+                "message": str(exc),
+            }
+
+        mutations["story_changed"] = True
+        _ = response
+        return {
+            "ok": True,
+            "current_scene_order": _scene_ordering_snapshot_for_llm(
+                active, project_type
+            ),
+        }
 
     return {"error": f"Unsupported action: {params.action}"}

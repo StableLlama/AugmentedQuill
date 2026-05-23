@@ -17,7 +17,7 @@ import type { EditorView } from '@codemirror/view';
 import type { EditorHandle } from '../editor/Editor';
 import type { Scene, SceneProseLink, StoryState, SceneId } from '../../types';
 import type { EditorSettings } from '../../types/ui';
-import type { WritingUnit } from '../../types/domain';
+import type { WritingUnit, Chapter, Book } from '../../types/domain';
 import { useScenes } from '../../stores/storyStore';
 import { useStoryStore } from '../../stores/storyStore';
 import type { StoryStoreState } from '../../stores/storyStore';
@@ -63,11 +63,6 @@ type BoundaryAdjustment = {
   link: SceneProseLink;
   newStart: number;
   newEnd: number;
-};
-
-type NarrativeOrderUpdate = {
-  id: SceneId;
-  order_index: number;
 };
 
 function collectBoundaryAdjustments(
@@ -129,24 +124,6 @@ function applyScenePatches(prevScenes: Scene[], updates: Scene[]): Scene[] {
       applyScenePatch(nextScenes, nextScene),
     prevScenes
   );
-}
-
-function _getNarrativeOrderIndex(scene: Scene): number {
-  return Number.isFinite(scene.order_index) ? (scene.order_index as number) : scene.id;
-}
-
-function reorderByPlacement<T>(
-  items: T[],
-  sourceIndex: number,
-  targetIndex: number,
-  placeBefore: boolean
-): T[] {
-  const next = [...items];
-  const [moved] = next.splice(sourceIndex, 1);
-  let insertIndex = targetIndex + (placeBefore ? 0 : 1);
-  if (sourceIndex < insertIndex) insertIndex -= 1;
-  next.splice(insertIndex, 0, moved);
-  return next;
 }
 
 // eslint-disable-next-line max-lines-per-function
@@ -431,100 +408,6 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
   );
 
   // ---- Narrative reorder (drag in list + move linked prose text) ----
-  const handleUnlinkedNarrativeReorder = useCallback(
-    async (
-      sourceSceneId: SceneId,
-      targetSceneId: SceneId,
-      placeBefore: boolean
-    ): Promise<void> => {
-      const chapterOrderMap = buildChapterOrderMap(projectType, chapters, books ?? []);
-      const sortedScenes = [...scenes].sort((a: Scene, b: Scene) =>
-        proseSort(a, b, chapterOrderMap)
-      );
-
-      const sourceScene = scenes.find((s: Scene) => s.id === sourceSceneId);
-      const targetScene = scenes.find((s: Scene) => s.id === targetSceneId);
-      if (!sourceScene || !targetScene) return;
-
-      // Find positions in the globally sorted list (both linked and unlinked).
-      const sourcePos = sortedScenes.findIndex((s: Scene) => s.id === sourceSceneId);
-      const targetPos = sortedScenes.findIndex((s: Scene) => s.id === targetSceneId);
-      if (sourcePos < 0 || targetPos < 0) return;
-
-      // Reorder in the global sorted list
-      const reordered = reorderByPlacement(
-        sortedScenes,
-        sourcePos,
-        targetPos,
-        placeBefore
-      );
-
-      // Compute new order_index for the moved scene, preserving interleaving between linked scenes.
-      const newPos = reordered.findIndex((s: Scene) => s.id === sourceSceneId);
-      if (newPos < 0) return;
-
-      let newOrderIndex: number | null = null;
-
-      if (newPos === 0) {
-        // Moved to start – place before the first scene's order_index (or at 0.0 if it's also unlinked).
-        const firstScene = reordered[0];
-        if (firstScene.prose_link) {
-          newOrderIndex = (firstScene.order_index ?? Infinity) - 1.0;
-        } else {
-          newOrderIndex = 0.0;
-        }
-      } else if (newPos === reordered.length - 1) {
-        // Moved to end – place after the last scene's order_index (or Infinity if no linked scenes).
-        const lastScene = reordered[reordered.length - 1];
-        newOrderIndex = (lastScene.order_index ?? Infinity) + 1.0;
-      } else {
-        // Between two scenes – use midpoint of their order_indices.
-        const prevScene = reordered[newPos - 1];
-        const nextScene = reordered[newPos + 1];
-        const prevOrder = prevScene.order_index ?? Infinity;
-        const nextOrder = nextScene.order_index ?? Infinity;
-        newOrderIndex = (prevOrder + nextOrder) / 2.0;
-      }
-
-      if (newOrderIndex === null) return;
-
-      const updates = [{ id: sourceSceneId, order_index: newOrderIndex }];
-
-      const previousById = new Map<SceneId, Scene>(
-        scenes.map((scene: Scene): [SceneId, Scene] => [scene.id, scene])
-      );
-      updates.forEach((update: NarrativeOrderUpdate): void => {
-        const prev = previousById.get(update.id);
-        if (!prev) return;
-        patchScene({ ...prev, order_index: update.order_index });
-      });
-
-      try {
-        const persisted = await Promise.all(
-          updates.map((update: NarrativeOrderUpdate) =>
-            api.scenes.update(update.id, {
-              order_index: update.order_index,
-            } as SceneUpdatePayload)
-          )
-        );
-        persisted.forEach((scene: Scene): void => {
-          patchScene(scene);
-        });
-        recordSceneHistory(
-          'Reorder scene narrative',
-          applyScenePatches(scenes, persisted)
-        );
-      } catch (err) {
-        updates.forEach((update: NarrativeOrderUpdate): void => {
-          const prev = previousById.get(update.id);
-          if (prev) patchScene(prev);
-        });
-        notifyError(t('Save'), err);
-      }
-    },
-    [books, chapters, patchScene, projectType, recordSceneHistory, scenes, t]
-  );
-
   const handleLinkedProseNarrativeReorder = useCallback(
     async (
       sourceSceneId: SceneId,
@@ -582,19 +465,14 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
       const targetScene = scenes.find((s: Scene) => s.id === targetSceneId);
       if (!sourceScene || !targetScene) return;
 
-      if (!sourceScene.prose_link) {
-        await handleUnlinkedNarrativeReorder(sourceSceneId, targetSceneId, placeBefore);
-        return;
-      }
-
-      if (!targetScene.prose_link) return;
+      if (!sourceScene.prose_link || !targetScene.prose_link) return;
       await handleLinkedProseNarrativeReorder(
         sourceSceneId,
         targetSceneId,
         placeBefore
       );
     },
-    [handleLinkedProseNarrativeReorder, handleUnlinkedNarrativeReorder, scenes]
+    [handleLinkedProseNarrativeReorder, scenes]
   );
 
   /* eslint-disable complexity */
@@ -636,7 +514,7 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
 
       const unlinkedSourceIds = orderedSourceIds.filter((id: SceneId): boolean => {
         const source = scenes.find((scene: Scene): boolean => scene.id === id);
-        return !source?.prose_link;
+        return !source?.prose_link || source.prose_link.scope_type === 'unlinked';
       });
 
       const linkUnlinkedScenesToTargetChapter = async (): Promise<boolean> => {

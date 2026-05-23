@@ -1654,7 +1654,7 @@ export interface paths {
      * Unlink Scene Prose
      * @description Remove the prose link from a scene, preserving its narrative position.
      *
-     *     Returns all scenes whose order_index was updated during normalization.
+     *     Returns all scenes affected in the same prose scope.
      */
     post: operations['unlink_scene_prose_api_v1_projects__project_name__scenes__scene_id__unlink_prose_post'];
     delete?: never;
@@ -1814,7 +1814,7 @@ export interface components {
        * @default chapter
        * @enum {string}
        */
-      scope_type: 'story' | 'chapter';
+      scope_type: 'story' | 'chapter' | 'unlinked';
       /** Chapter Id */
       chapter_id?: string | null;
       /** Book Id */
@@ -2838,8 +2838,6 @@ export interface components {
        * @default []
        */
       causes: number[];
-      /** Order Index */
-      order_index?: number | null;
       /**
        * Pinboard X
        * @default 100
@@ -2970,11 +2968,6 @@ export interface components {
        */
       causes?: number[];
       /**
-       * Order Index
-       * @description Optional explicit narrative sort key. Leave empty unless the scene must be placed precisely in sequence. Use order_index when adjusting narrative order, not for causal dependency constraints.
-       */
-      order_index?: number | null;
-      /**
        * Pinboard X
        * @description Pinboard X position in logical canvas units.
        * @default 100
@@ -3008,7 +3001,7 @@ export interface components {
        * @default chapter
        * @enum {string}
        */
-      scope_type: 'story' | 'chapter';
+      scope_type: 'story' | 'chapter' | 'unlinked';
       /** Chapter Id */
       chapter_id?: string | null;
       /** Book Id */
@@ -3061,9 +3054,11 @@ export interface components {
      * SceneProseLink
      * @description A link between a scene (or beat) and a specific content file.
      *
-     *     ``scope_type`` distinguishes between:
+     *         ``scope_type`` distinguishes between:
      *     - ``'story'`` – the main story content file (short-story projects)
      *     - ``'chapter'`` – a specific chapter file (novel / series projects)
+     *         - ``'unlinked'`` – internal planning prose for scenes not attached to
+     *             story/chapter content
      *
      *     Only the file identity is persisted.  ``start_offset`` and ``end_offset``
      *     are character positions derived at read time by parsing the inline HTML
@@ -3074,18 +3069,18 @@ export interface components {
     SceneProseLink: {
       /**
        * Scope Type
-       * @description Which content scope the scene is linked to: 'story' or 'chapter'.
+       * @description Which content scope the scene is linked to: 'story', 'chapter', or internal 'unlinked'.
        * @enum {string}
        */
-      scope_type: 'story' | 'chapter';
+      scope_type: 'story' | 'chapter' | 'unlinked';
       /**
        * Chapter Id
-       * @description Chapter ID when scope_type='chapter'. Leave empty for story scope.
+       * @description Chapter ID when scope_type='chapter'. Leave empty for story or unlinked scope.
        */
       chapter_id?: string | null;
       /**
        * Book Id
-       * @description Book ID when the linked prose belongs to a book chapter.
+       * @description Book ID when the linked prose belongs to a book chapter. Leave empty for story or unlinked scope.
        */
       book_id?: string | null;
       /**
@@ -3243,11 +3238,6 @@ export interface components {
        */
       causes?: number[] | null;
       /**
-       * Order Index
-       * @description Replacement narrative sort key.
-       */
-      order_index?: number | null;
-      /**
        * Pinboard X
        * @description Replacement pinboard X position.
        */
@@ -3276,7 +3266,7 @@ export interface components {
      */
     SceneWriteRequest: {
       /** Scope Type */
-      scope_type?: ('story' | 'chapter') | null;
+      scope_type?: ('story' | 'chapter' | 'unlinked') | null;
       /** Chapter Id */
       chapter_id?: string | null;
       /** Book Id */

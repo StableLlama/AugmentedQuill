@@ -450,6 +450,36 @@ def get_tool_schemas(
                 properties.pop("start_book", None)
                 properties.pop("end_book", None)
 
+        if func_name == "manage_scenes" and properties is not None:
+            create_data = properties.get("create_data")
+            if isinstance(create_data, dict):
+                create_props = create_data.get("properties")
+                if isinstance(create_props, dict):
+                    create_props.pop("prose_link", None)
+                create_required = create_data.get("required")
+                if isinstance(create_required, list):
+                    create_data["required"] = [
+                        item for item in create_required if item != "prose_link"
+                    ]
+
+            update_data = properties.get("update_data")
+            if isinstance(update_data, dict):
+                update_props = update_data.get("properties")
+                if isinstance(update_props, dict):
+                    update_props.pop("prose_link", None)
+                update_required = update_data.get("required")
+                if isinstance(update_required, list):
+                    update_data["required"] = [
+                        item for item in update_required if item != "prose_link"
+                    ]
+
+        if func_name == "reorder_scenes" and properties is not None:
+            if project_type == "short-story":
+                properties.pop("chapter_id", None)
+                properties.pop("book_id", None)
+            elif project_type == "novel":
+                properties.pop("book_id", None)
+
         # Manager tools can expose role-scoped subsets of actions while remaining
         # a single canonical function at runtime.
         if normalized_role == EDITING_ROLE and properties is not None:

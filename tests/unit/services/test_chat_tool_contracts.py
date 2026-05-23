@@ -317,6 +317,7 @@ class ChatToolContractsTest(TestCase):
         )
         create_props = create_schema.get("properties", {})
         self.assertNotIn("title", create_props)
+
         summary_schema = create_props.get("summary", {})
         summary_description = summary_schema.get("description", "")
         self.assertIn("separate title field", summary_description)
@@ -348,11 +349,153 @@ class ChatToolContractsTest(TestCase):
         )
         self.assertIn("Formal timeline position", scene_time_description)
         self.assertIn("relative chronology", scene_time_description)
+        self.assertNotIn("prose_link", create_props)
 
-        prose_link_description = create_props.get("prose_link", {}).get(
-            "description", ""
+    def test_manage_scenes_schema_exposes_move_fields(self):
+        tools = get_registered_tool_schemas(model_type="CHAT", project_type="series")
+        tool = next(
+            (t for t in tools if t["function"]["name"] == "manage_scenes"),
+            None,
         )
-        self.assertIn("linked to prose", prose_link_description)
+        self.assertIsNotNone(tool, "manage_scenes schema should exist")
+
+        props = tool.get("function", {}).get("parameters", {}).get("properties", {})
+        self.assertIn("target_scene_id", props)
+        self.assertIn("place_before", props)
+        self.assertIn("scope_type", props)
+        self.assertIn("scope", props)
+
+        target_schema = props.get("target_scene_id", {})
+        self.assertEqual(target_schema.get("type"), "integer")
+
+        place_before_schema = props.get("place_before", {})
+        self.assertEqual(place_before_schema.get("type"), "boolean")
+
+    def test_manage_scenes_list_hides_internal_prose_link_offsets(self):
+        created = self._call_tool(
+            "manage_scenes",
+            {
+                "action": "create",
+                "create_data": {
+                    "summary": "Offset hidden",
+                },
+            },
+            model_type="CHAT",
+        )
+        self.assertTrue(created.get("id"))
+
+        scenes = self._call_tool(
+            "manage_scenes",
+            {
+                "action": "list",
+            },
+            model_type="CHAT",
+        )
+        self.assertIsInstance(scenes, list)
+
+        match = next(
+            (scene for scene in scenes if scene.get("id") == created.get("id")), None
+        )
+        self.assertIsNotNone(match)
+        prose_link = match.get("prose_link")
+        self.assertIsInstance(prose_link, dict)
+        self.assertIn("scope_type", prose_link)
+        self.assertNotIn("start_offset", prose_link)
+        self.assertNotIn("end_offset", prose_link)
+
+    def test_manage_scenes_list_accepts_legacy_scope_arguments(self):
+        created = self._call_tool(
+            "manage_scenes",
+            {
+                "action": "create",
+                "create_data": {
+                    "summary": "Unlinked only",
+                },
+            },
+            model_type="CHAT",
+        )
+        self.assertTrue(created.get("id"))
+
+        result_with_scope_type = self._call_tool(
+            "manage_scenes",
+            {
+                "action": "list",
+                "scope_type": "story",
+            },
+            model_type="CHAT",
+        )
+        self.assertIsInstance(result_with_scope_type, list)
+
+        result_with_scope = self._call_tool(
+            "manage_scenes",
+            {
+                "action": "list",
+                "scope": "story",
+            },
+            model_type="CHAT",
+        )
+        self.assertIsInstance(result_with_scope, list)
+
+    def test_manage_scenes_move_returns_compact_ordering_snapshot(self):
+        first = self._call_tool(
+            "manage_scenes",
+            {
+                "action": "create",
+                "create_data": {
+                    "summary": "First",
+                },
+            },
+            model_type="CHAT",
+        )
+        second = self._call_tool(
+            "manage_scenes",
+            {
+                "action": "create",
+                "create_data": {
+                    "summary": "Second",
+                },
+            },
+            model_type="CHAT",
+        )
+        third = self._call_tool(
+            "manage_scenes",
+            {
+                "action": "create",
+                "create_data": {
+                    "summary": "Third",
+                },
+            },
+            model_type="CHAT",
+        )
+
+        result = self._call_tool(
+            "manage_scenes",
+            {
+                "action": "move",
+                "scene_id": third.get("id"),
+                "target_scene_id": first.get("id"),
+                "place_before": True,
+            },
+            model_type="CHAT",
+        )
+
+        self.assertIsInstance(result, dict)
+        self.assertTrue(result.get("ok"))
+
+        current_scene_order = result.get("current_scene_order")
+        self.assertIsInstance(current_scene_order, list)
+        self.assertGreaterEqual(len(current_scene_order), 3)
+        for entry in current_scene_order:
+            self.assertEqual(
+                set(entry.keys()),
+                {"scene_id", "book_number", "chapter_number", "summary"},
+            )
+
+        ids = [entry.get("scene_id") for entry in current_scene_order]
+        self.assertIn(first.get("id"), ids)
+        self.assertIn(second.get("id"), ids)
+        self.assertIn(third.get("id"), ids)
+        self.assertLess(ids.index(third.get("id")), ids.index(first.get("id")))
 
     def test_registered_tool_schemas_inline_refs_and_omit_defs(self):
         tools = get_registered_tool_schemas(model_type="CHAT", project_type="series")
@@ -890,6 +1033,8 @@ class ChatToolContractsTest(TestCase):
             "book_id": self.book_id,
             "chapter_ids": [1],
             "book_ids": [self.book_id],
+            "scope_type": "story",
+            "ordered_scene_ids": [],
             "filename": "sample.png",
             "name_or_id": "Hero Entry",
             "name": "tmp_project_for_delete",
