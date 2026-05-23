@@ -63,7 +63,11 @@ afterEach(() => {
   selectionState.activeSceneId = null;
 });
 
-function makeScene(overrides: Partial<Scene>): Scene {
+function makeScene(overrides: Record<string, unknown>): Scene {
+  const legacy = overrides as {
+    causes?: SceneId[];
+    [key: string]: unknown;
+  };
   return {
     id: 'scene-1',
     summary: 'Scene',
@@ -85,10 +89,9 @@ function makeScene(overrides: Partial<Scene>): Scene {
     status: 'active',
     pinboard_x: 0,
     pinboard_y: 0,
-    order_before: [],
-    order_after: [],
-    ...overrides,
-  };
+    causes: [...(legacy.causes ?? [])],
+    ...rest,
+  } as Scene;
 }
 
 function makeDataTransfer(): DataTransfer {
@@ -696,6 +699,7 @@ describe('NarrativeView series sorting and grouping', () => {
   });
 });
 
+// eslint-disable-next-line max-lines-per-function
 describe('NarrativeView chronological sorting', () => {
   it('does not render chapter or book separators in chronological mode', () => {
     const chapters: Chapter[] = [

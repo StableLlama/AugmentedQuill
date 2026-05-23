@@ -19,7 +19,10 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from augmentedquill.core.config import load_story_config, save_story_config
+from augmentedquill.core.config import (
+    load_story_config,
+    save_story_config,
+)
 from augmentedquill.models.scene import (
     SceneCreateRequest,
     SceneId,
@@ -458,15 +461,11 @@ def _next_scene_order_index(scenes_dict: dict[SceneId, Any]) -> int:
 
 def _validate_scene_ordering_constraints(
     scene_id: SceneId,
-    order_before: object,
-    order_after: object,
+    causes: object,
 ) -> None:
-    before_ids = _coerce_scene_id_list(order_before)
-    after_ids = _coerce_scene_id_list(order_after)
-    if scene_id in before_ids or scene_id in after_ids:
-        raise ValueError(
-            f"Scene {scene_id} cannot reference itself in order_before/order_after"
-        )
+    cause_ids = _coerce_scene_id_list(causes)
+    if scene_id in cause_ids:
+        raise ValueError(f"Scene {scene_id} cannot reference itself in causes")
 
 
 def _normalise_scene(raw: dict[str, Any]) -> dict[str, Any]:
@@ -487,8 +486,7 @@ def _normalise_scene(raw: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(raw.get(key), list):
             raw[key] = []
 
-    raw["order_before"] = _coerce_scene_id_list(raw.get("order_before"))
-    raw["order_after"] = _coerce_scene_id_list(raw.get("order_after"))
+    raw["causes"] = _coerce_scene_id_list(raw.get("causes"))
 
     order_index = raw.get("order_index")
     if isinstance(order_index, (int, float)) and order_index is not None:
@@ -629,11 +627,7 @@ def create_scene(project_dir: Path, payload: SceneCreateRequest) -> dict[str, An
     data.pop("id", None)
     if not isinstance(data.get("order_index"), int) or data.get("order_index") == 0:
         data["order_index"] = _next_scene_order_index(scenes_dict)
-    _validate_scene_ordering_constraints(
-        scene_id,
-        data.get("order_before"),
-        data.get("order_after"),
-    )
+    _validate_scene_ordering_constraints(scene_id, data.get("causes"))
     data.pop("prose_link", None)
     scenes_dict[scene_id] = data
     story["scenes"] = _drop_prose_links_for_persistence(scenes_dict)
@@ -658,11 +652,7 @@ def update_scene(
     updates = payload.model_dump(exclude_unset=True)
     updates.pop("prose_link", None)
     existing.update(updates)
-    _validate_scene_ordering_constraints(
-        scene_id,
-        existing.get("order_before"),
-        existing.get("order_after"),
-    )
+    _validate_scene_ordering_constraints(scene_id, existing.get("causes"))
     scenes_dict[scene_id] = existing
     story["scenes"] = _drop_prose_links_for_persistence(scenes_dict)
     save_story_config(story_path, story)
@@ -697,11 +687,8 @@ def delete_scene(project_dir: Path, scene_id: SceneId) -> bool:
 
     del scenes_dict[scene_id]
     for data in scenes_dict.values():
-        data["order_before"] = [
-            s for s in _coerce_scene_id_list(data.get("order_before")) if s != scene_id
-        ]
-        data["order_after"] = [
-            s for s in _coerce_scene_id_list(data.get("order_after")) if s != scene_id
+        data["causes"] = [
+            s for s in _coerce_scene_id_list(data.get("causes")) if s != scene_id
         ]
 
     story["scenes"] = _drop_prose_links_for_persistence(scenes_dict)

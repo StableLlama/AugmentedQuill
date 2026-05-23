@@ -252,7 +252,7 @@ class SourcebookValidationTest(TestCase):
             "The Boarding School",
         )
 
-    def test_load_story_config_migrates_tuple_style_relations_to_v5(self):
+    def test_load_story_config_migrates_tuple_style_relations_to_current_version(self):
         story_path = self.pdir / "story.json"
         story_data = {
             "metadata": {"version": 4},
@@ -274,7 +274,9 @@ class SourcebookValidationTest(TestCase):
         story_path.write_text(json.dumps(story_data), encoding="utf-8")
 
         loaded = load_story_config(story_path)
-        self.assertEqual(loaded.get("metadata", {}).get("version"), 5)
+        self.assertEqual(
+            loaded.get("metadata", {}).get("version"), CURRENT_SCHEMA_VERSION
+        )
         self.assertEqual(
             loaded["sourcebook_relations"][0]["relation"],
             "is a senior student at",
@@ -285,7 +287,9 @@ class SourcebookValidationTest(TestCase):
         )
 
         persisted = json.loads(story_path.read_text(encoding="utf-8"))
-        self.assertEqual(persisted.get("metadata", {}).get("version"), 5)
+        self.assertEqual(
+            persisted.get("metadata", {}).get("version"), CURRENT_SCHEMA_VERSION
+        )
         self.assertEqual(
             persisted["sourcebook_relations"][0]["relation"],
             "is a senior student at",

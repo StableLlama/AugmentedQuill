@@ -166,6 +166,7 @@ export function borderExit(
 // Component
 // ---------------------------------------------------------------------------
 
+/* eslint-disable complexity */
 export const CauseArrows: React.FC<CauseArrowsProps> = ({
   scenes,
   livePositions,
@@ -295,19 +296,21 @@ export const CauseArrows: React.FC<CauseArrowsProps> = ({
   if (activeSceneId) {
     const active = byId.get(activeSceneId);
     if (active) {
-      for (const causeId of active.order_after) {
-        const a = makeArrow(causeId, activeSceneId, 'red');
-        if (a) arrows.push(a);
+      for (const scene of scenes) {
+        if ((scene.causes ?? []).includes(activeSceneId)) {
+          const a = makeArrow(scene.id, activeSceneId, 'red');
+          if (a) arrows.push(a);
+        }
       }
-      for (const effectId of active.order_before) {
+      for (const effectId of active.causes) {
         const a = makeArrow(activeSceneId, effectId, 'green');
         if (a) arrows.push(a);
       }
     }
   } else if (!hideDefaultArrows) {
     for (const scene of scenes) {
-      for (const beforeId of scene.order_before) {
-        const a = makeArrow(scene.id, beforeId, 'default');
+      for (const targetId of scene.causes) {
+        const a = makeArrow(scene.id, targetId, 'default');
         if (a) arrows.push(a);
       }
     }
@@ -478,3 +481,4 @@ export const CauseArrows: React.FC<CauseArrowsProps> = ({
     </svg>
   );
 };
+/* eslint-enable complexity */

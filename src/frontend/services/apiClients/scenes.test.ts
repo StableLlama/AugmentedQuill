@@ -41,8 +41,7 @@ const stubScene = (): {
   passive_characters: never[];
   pinboard_x: number;
   pinboard_y: number;
-  order_before: never[];
-  order_after: never[];
+  causes: never[];
 } => ({
   id: 1,
   summary: 'A scene',
@@ -52,8 +51,7 @@ const stubScene = (): {
   passive_characters: [],
   pinboard_x: 0,
   pinboard_y: 0,
-  order_before: [],
-  order_after: [],
+  causes: [],
 });
 
 describe('createScenesApi basic CRUD', () => {

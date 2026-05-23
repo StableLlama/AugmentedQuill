@@ -117,6 +117,36 @@ export function normalizeChapterId(chapterId: unknown): string {
  *  Unlinked scenes use their fractional order_index (or Infinity if None);
  *  linked scenes use their assigned odd-integer order_index (1.0, 3.0, 5.0...).
  *  Chapter boundaries are handled separately via buildChapterOrderMap. */
+function getProseLinkChapterIndex(
+  link: Scene['prose_link'],
+  chapterOrderMap: Map<string, number>
+): number | null {
+  if (!link || link.scope_type === 'story') return null;
+  return chapterOrderMap.get(normalizeChapterId(link.chapter_id)) ?? Infinity;
+}
+
+function areProseLinksInSameScope(
+  linkA: Scene['prose_link'],
+  linkB: Scene['prose_link']
+): boolean {
+  if (!linkA || !linkB || linkA.scope_type !== linkB.scope_type) return false;
+  return (
+    linkA.scope_type === 'story' ||
+    normalizeChapterId(linkA.chapter_id) === normalizeChapterId(linkB.chapter_id)
+  );
+}
+
+function compareProseLinkStartOffsets(sceneA: Scene, sceneB: Scene): number | null {
+  if (!areProseLinksInSameScope(sceneA.prose_link, sceneB.prose_link)) return null;
+
+  const startA = sceneA.prose_link?.start_offset;
+  const startB = sceneB.prose_link?.start_offset;
+  if (!Number.isFinite(startA) || !Number.isFinite(startB) || startA === startB) {
+    return null;
+  }
+  return Number(startA) - Number(startB);
+}
+
 export function sceneSortKey(
   scene: Scene,
   _chapterOrderMap: Map<string, number>
@@ -133,40 +163,16 @@ export function proseSort(
   // Linked chapter scenes are grouped by chapter display order first.
   // Inside a chapter (and for all other combinations), sort by order_index so
   // unlinked scenes can naturally interleave between linked scenes.
-  const linkA = sceneA.prose_link;
-  const linkB = sceneB.prose_link;
-
-  let chIdxA: number | null = null;
-  let chIdxB: number | null = null;
-
-  if (linkA && linkA.scope_type !== 'story') {
-    chIdxA = chapterOrderMap.get(normalizeChapterId(linkA.chapter_id)) ?? Infinity;
-  }
-  if (linkB && linkB.scope_type !== 'story') {
-    chIdxB = chapterOrderMap.get(normalizeChapterId(linkB.chapter_id)) ?? Infinity;
-  }
+  const chIdxA = getProseLinkChapterIndex(sceneA.prose_link, chapterOrderMap);
+  const chIdxB = getProseLinkChapterIndex(sceneB.prose_link, chapterOrderMap);
 
   if (chIdxA !== null && chIdxB !== null && chIdxA !== chIdxB) {
     return chIdxA < chIdxB ? -1 : 1;
   }
 
-  const startA = sceneA.prose_link?.start_offset;
-  const startB = sceneB.prose_link?.start_offset;
-
-  const sameScope =
-    linkA &&
-    linkB &&
-    linkA.scope_type === linkB.scope_type &&
-    (linkA.scope_type === 'story' ||
-      normalizeChapterId(linkA.chapter_id) === normalizeChapterId(linkB.chapter_id));
-
-  if (
-    sameScope &&
-    Number.isFinite(startA) &&
-    Number.isFinite(startB) &&
-    startA !== startB
-  ) {
-    return Number(startA) - Number(startB);
+  const startOffsetComparison = compareProseLinkStartOffsets(sceneA, sceneB);
+  if (startOffsetComparison !== null) {
+    return startOffsetComparison;
   }
 
   // Same chapter/scope: sort by order_index

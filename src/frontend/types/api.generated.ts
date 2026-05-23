@@ -2785,9 +2785,9 @@ export interface components {
      *     Active characters, passive characters, location, and time are stored as
      *     sourcebook entry IDs so the frontend can look them up by reference.
      *
-     *     ``order_before`` / ``order_after`` store IDs of other scenes that must
-     *     chronologically precede or follow this one respectively – these form the
-     *     temporal constraint graph rendered on the pinboard.
+     *     ``causes`` stores IDs of other scenes that this scene causally precedes.
+     *     These are not narrative order indexes; they are dependency constraints that
+     *     allow the pinboard to highlight cause/effect relationships.
      *
      *     ``pinboard_x`` / ``pinboard_y`` store the card's free-form position on the
      *     pinboard canvas, in logical (unscaled) units.
@@ -2834,15 +2834,10 @@ export interface components {
       color_tag?: string | null;
       prose_link?: components['schemas']['SceneProseLink'] | null;
       /**
-       * Order Before
+       * Causes
        * @default []
        */
-      order_before: number[];
-      /**
-       * Order After
-       * @default []
-       */
-      order_after: number[];
+      causes: number[];
       /** Order Index */
       order_index?: number | null;
       /**
@@ -2950,7 +2945,7 @@ export interface components {
        * @description Human-readable scene time string when a formal chronology is not needed.
        */
       time?: string | null;
-      /** @description Formal timeline position for the scene. Always set this when the scene can be placed on the story timeline; if an exact timestamp is not known, use order_before/order_after to capture relative chronology. Accepts ISO-like timestamps and normalizes them. */
+      /** @description Formal timeline position for the scene. Always set this when the scene can be placed on the story timeline; if an exact timestamp is not known, use causes to capture relative chronology. Accepts ISO-like timestamps and normalizes them. */
       scene_time?: components['schemas']['SceneChronologyTime'] | null;
       /**
        * Timeline Id
@@ -2966,18 +2961,17 @@ export interface components {
       /** @description Optional prose link showing which content file the scene is linked to prose. Use this when the scene is already anchored to prose. */
       prose_link?: components['schemas']['SceneProseLink'] | null;
       /**
-       * Order Before
-       * @description IDs of scenes that should come before this one in narrative order.
+       * Causes
+       * @description IDs of scenes that this scene causally precedes. Use this to record cause/effect relationships without changing narrative order directly.
+       * @example [
+       *       1,
+       *       2
+       *     ]
        */
-      order_before?: number[];
-      /**
-       * Order After
-       * @description IDs of scenes that should come after this one in narrative order.
-       */
-      order_after?: number[];
+      causes?: number[];
       /**
        * Order Index
-       * @description Optional explicit narrative sort key. Leave empty unless the scene must be placed precisely in sequence.
+       * @description Optional explicit narrative sort key. Leave empty unless the scene must be placed precisely in sequence. Use order_index when adjusting narrative order, not for causal dependency constraints.
        */
       order_index?: number | null;
       /**
@@ -3240,15 +3234,14 @@ export interface components {
       /** @description Replacement prose link for the scene. */
       prose_link?: components['schemas']['SceneProseLink'] | null;
       /**
-       * Order Before
-       * @description Replacement list of scene IDs that should come before this scene.
+       * Causes
+       * @description Replacement list of scene IDs that this scene causally precedes.
+       * @example [
+       *       1,
+       *       2
+       *     ]
        */
-      order_before?: number[] | null;
-      /**
-       * Order After
-       * @description Replacement list of scene IDs that should come after this scene.
-       */
-      order_after?: number[] | null;
+      causes?: number[] | null;
       /**
        * Order Index
        * @description Replacement narrative sort key.

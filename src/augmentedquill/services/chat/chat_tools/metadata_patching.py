@@ -102,6 +102,39 @@ class StringListPatch(ToolModel):
     )
 
 
+class IntListPatch(ToolModel):
+    """Patch operation for integer list fields (scene IDs, chapter IDs)."""
+
+    set: list[int] | None = Field(
+        None,
+        description=(
+            "Optional full replacement integer list before add/remove operations. "
+            "Example: [1, 2, 3]."
+        ),
+        json_schema_extra={"examples": [[1, 2, 3]]},
+    )
+    add: list[int] | None = Field(
+        None,
+        description=(
+            "Integer scene IDs to add while preserving untouched existing values. "
+            "Example: [1, 2, 3]."
+        ),
+        json_schema_extra={"examples": [[1, 2, 3]]},
+    )
+    remove: list[int] | None = Field(
+        None,
+        description=(
+            "Integer scene IDs to remove from the current list. " "Example: [1, 2]."
+        ),
+        json_schema_extra={"examples": [[1, 2]]},
+    )
+    clear: bool = Field(False, description="Clear the existing list before add/set.")
+    unique: bool = Field(
+        True,
+        description="If true, deduplicate while preserving first-seen order.",
+    )
+
+
 class ConflictPatchOperation(ToolModel):
     """One atomic conflict-list change."""
 
@@ -242,6 +275,36 @@ def apply_string_list_patch(current: list[str], patch: StringListPatch) -> list[
     if patch.unique:
         deduped: list[str] = []
         seen: set[str] = set()
+        for item in result:
+            if item in seen:
+                continue
+            seen.add(item)
+            deduped.append(item)
+        result = deduped
+
+    return result
+
+
+def apply_int_list_patch(current: list[int], patch: IntListPatch) -> list[int]:
+    """Apply integer list patch while preserving existing items by default."""
+    result: list[int]
+    if patch.set is not None:
+        result = list(patch.set)
+    elif patch.clear:
+        result = []
+    else:
+        result = list(current or [])
+
+    if patch.add:
+        result.extend(patch.add)
+
+    if patch.remove:
+        remove_set = set(patch.remove)
+        result = [item for item in result if item not in remove_set]
+
+    if patch.unique:
+        deduped: list[int] = []
+        seen: set[int] = set()
         for item in result:
             if item in seen:
                 continue

@@ -114,7 +114,7 @@ export function handleSessionMutationClick(
     if (mutation.targetId) {
       const sceneId = Number(mutation.targetId);
       if (Number.isInteger(sceneId)) {
-        openSceneEditorDialog(sceneId, true);
+        openSceneEditorDialog(sceneId);
       }
     }
   } else if (mutation.type === 'story') {

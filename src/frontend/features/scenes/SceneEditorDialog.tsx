@@ -145,7 +145,7 @@ interface SceneEditorDialogProps {
   onClose: () => void;
   onSave: (updates: Partial<Omit<Scene, 'id'>>) => Promise<void>;
   onDelete: () => Promise<void>;
-  /** Removes the causal link between fromId and toId (updates both sides). */
+  /** Removes the causal link from fromId to toId. */
   onDeleteCause?: (fromId: SceneId, toId: SceneId) => Promise<void>;
   /** Returns the current prose text for a given link, or null if unavailable. */
   getLinkedProseText?: (link: SceneProseLink) => string | null;
@@ -668,9 +668,11 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
 
   const otherScenes = allScenes.filter((s: Scene) => s.id !== scene.id);
   const previousSceneTimeValue = (() => {
-    for (const candidateId of scene.order_after) {
-      const linked = allScenes.find((s: Scene): boolean => s.id === candidateId);
-      if (linked?.scene_time?.temporal_zoned_datetime) {
+    for (const linked of allScenes) {
+      if (
+        (linked.causes ?? []).includes(scene.id) &&
+        linked.scene_time?.temporal_zoned_datetime
+      ) {
         return linked.scene_time.temporal_zoned_datetime;
       }
     }
@@ -1731,17 +1733,49 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
             )}
           </div>
 
-          {(scene.order_before.length > 0 ||
-            scene.order_after.length > 0 ||
+          {((scene.causes?.length ?? 0) > 0 ||
+            otherScenes.some((other: Scene) =>
+              (other.causes ?? []).includes(scene.id)
+            ) ||
             otherScenes.length > 0) && (
             <div className={sectionCls}>
               <label className={labelCls}>{t('Causes')}</label>
-              {scene.order_before.length > 0 && (
+              {otherScenes.some((other: Scene) =>
+                (other.causes ?? []).includes(scene.id)
+              ) && (
                 <div className="space-y-1">
-                  <p className={`text-xs font-medium ${tc.muted}`}>
-                    {t('Must come before')}:
-                  </p>
-                  {scene.order_before.map((id: SceneId) => {
+                  <p className={`text-xs font-medium ${tc.muted}`}>{t('Caused by')}:</p>
+                  {otherScenes
+                    .filter((other: Scene) => (other.causes ?? []).includes(scene.id))
+                    .map((other: Scene) => {
+                      const name = other.summary || String(other.id);
+                      return (
+                        <div key={other.id} className="flex items-center gap-1 group">
+                          <span
+                            className={`flex-1 text-xs ${tc.text} truncate`}
+                            title={name}
+                          >
+                            {name}
+                          </span>
+                          <button
+                            type="button"
+                            aria-label={t('Delete cause')}
+                            onClick={(): void =>
+                              void onDeleteCause?.(other.id, scene.id)
+                            }
+                            className={`p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-100 dark:hover:bg-red-900/40 ${tc.muted} hover:text-red-600 dark:hover:text-red-400 transition-opacity`}
+                          >
+                            🗑
+                          </button>
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
+              {(scene.causes?.length ?? 0) > 0 && (
+                <div className="space-y-1">
+                  <p className={`text-xs font-medium ${tc.muted}`}>{t('Causes')}:</p>
+                  {scene.causes.map((id: SceneId) => {
                     const name =
                       allScenes.find((s: Scene) => s.id === id)?.summary || String(id);
                     return (
@@ -1756,35 +1790,6 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
                           type="button"
                           aria-label={t('Delete cause')}
                           onClick={(): void => void onDeleteCause?.(scene.id, id)}
-                          className={`p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-100 dark:hover:bg-red-900/40 ${tc.muted} hover:text-red-600 dark:hover:text-red-400 transition-opacity`}
-                        >
-                          🗑
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-              {scene.order_after.length > 0 && (
-                <div className="space-y-1">
-                  <p className={`text-xs font-medium ${tc.muted}`}>
-                    {t('Must come after')}:
-                  </p>
-                  {scene.order_after.map((id: SceneId) => {
-                    const name =
-                      allScenes.find((s: Scene) => s.id === id)?.summary || String(id);
-                    return (
-                      <div key={id} className="flex items-center gap-1 group">
-                        <span
-                          className={`flex-1 text-xs ${tc.text} truncate`}
-                          title={name}
-                        >
-                          {name}
-                        </span>
-                        <button
-                          type="button"
-                          aria-label={t('Delete cause')}
-                          onClick={(): void => void onDeleteCause?.(id, scene.id)}
                           className={`p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-100 dark:hover:bg-red-900/40 ${tc.muted} hover:text-red-600 dark:hover:text-red-400 transition-opacity`}
                         >
                           🗑

@@ -355,31 +355,25 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
   const handleDeleteCause = useCallback(
     async (fromId: SceneId, toId: SceneId): Promise<void> => {
       const fromScene = scenes.find((s: Scene) => s.id === fromId);
-      const toScene = scenes.find((s: Scene) => s.id === toId);
-      if (!fromScene || !toScene) return;
+      if (!fromScene) return;
 
-      const newBefore = fromScene.order_before.filter((id: SceneId) => id !== toId);
-      const newAfter = toScene.order_after.filter((id: SceneId) => id !== fromId);
+      const newCauses = (fromScene.causes ?? []).filter((id: SceneId) => id !== toId);
 
       // Optimistic update
-      patchScene({ ...fromScene, order_before: newBefore });
-      patchScene({ ...toScene, order_after: newAfter });
+      patchScene({ ...fromScene, causes: newCauses });
 
       try {
-        const [updatedFrom, updatedTo] = await Promise.all([
-          api.scenes.update(fromId, { order_before: newBefore } as SceneUpdatePayload),
-          api.scenes.update(toId, { order_after: newAfter } as SceneUpdatePayload),
-        ]);
+        const updatedFrom = await api.scenes.update(fromId, {
+          causes: newCauses,
+        } as SceneUpdatePayload);
         patchScene(updatedFrom as Scene);
-        patchScene(updatedTo as Scene);
         recordSceneHistory(
           'Remove scene dependency',
-          applyScenePatches(scenes, [updatedFrom as Scene, updatedTo as Scene])
+          applyScenePatch(scenes, updatedFrom as Scene)
         );
       } catch (err) {
         // Revert
         patchScene(fromScene);
-        patchScene(toScene);
         notifyError(t('Save'), err);
       }
     },
@@ -390,32 +384,26 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
   const handleCreateCause = useCallback(
     async (fromId: SceneId, toId: SceneId): Promise<void> => {
       const fromScene = scenes.find((s: Scene) => s.id === fromId);
-      const toScene = scenes.find((s: Scene) => s.id === toId);
-      if (!fromScene || !toScene) return;
-      if (fromScene.order_before.includes(toId)) return; // already set
+      if (!fromScene) return;
+      if ((fromScene.causes ?? []).includes(toId)) return; // already set
 
-      const newBefore = [...fromScene.order_before, toId];
-      const newAfter = [...toScene.order_after, fromId];
+      const newCauses = [...(fromScene.causes ?? []), toId];
 
       // Optimistic update
-      patchScene({ ...fromScene, order_before: newBefore });
-      patchScene({ ...toScene, order_after: newAfter });
+      patchScene({ ...fromScene, causes: newCauses });
 
       try {
-        const [updatedFrom, updatedTo] = await Promise.all([
-          api.scenes.update(fromId, { order_before: newBefore } as SceneUpdatePayload),
-          api.scenes.update(toId, { order_after: newAfter } as SceneUpdatePayload),
-        ]);
+        const updatedFrom = await api.scenes.update(fromId, {
+          causes: newCauses,
+        } as SceneUpdatePayload);
         patchScene(updatedFrom as Scene);
-        patchScene(updatedTo as Scene);
         recordSceneHistory(
           'Add scene dependency',
-          applyScenePatches(scenes, [updatedFrom as Scene, updatedTo as Scene])
+          applyScenePatch(scenes, updatedFrom as Scene)
         );
       } catch (err) {
         // Revert
         patchScene(fromScene);
-        patchScene(toScene);
         notifyError(t('Save'), err);
       }
     },
@@ -609,6 +597,7 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
     [handleLinkedProseNarrativeReorder, handleUnlinkedNarrativeReorder, scenes]
   );
 
+  /* eslint-disable complexity */
   const handleDropScenesOnChapter = useCallback(
     async (sourceSceneIds: SceneId[], chapterId: string): Promise<void> => {
       const targetChapterId = normalizeChapterId(chapterId);
@@ -850,6 +839,7 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
       t,
     ]
   );
+  /* eslint-enable complexity */
 
   useEffect((): (() => void) => {
     const handleExternalChapterDrop = (event: Event): void => {

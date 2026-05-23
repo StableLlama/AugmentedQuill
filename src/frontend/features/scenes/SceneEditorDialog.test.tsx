@@ -88,7 +88,11 @@ vi.mock('../layout/ThemeContext', () => ({
 const wrap = (ui: React.ReactElement): ReturnType<typeof render> =>
   render(<I18nextProvider i18n={i18n}>{ui}</I18nextProvider>);
 
-function makeScene(overrides: Partial<Scene> = {}): Scene {
+function makeScene(overrides: Record<string, unknown> = {}): Scene {
+  const legacy = overrides as {
+    causes?: SceneId[];
+    [key: string]: unknown;
+  };
   return {
     id: 'scene-1',
     summary: 'Test scene',
@@ -104,10 +108,9 @@ function makeScene(overrides: Partial<Scene> = {}): Scene {
     status: 'active',
     pinboard_x: 0,
     pinboard_y: 0,
-    order_before: [],
-    order_after: [],
-    ...overrides,
-  };
+    causes: [...(legacy.causes ?? [])],
+    ...rest,
+  } as Scene;
 }
 
 type SceneSaveHandler = (updates: Partial<Omit<Scene, 'id'>>) => Promise<void>;
@@ -995,19 +998,14 @@ describe('SceneEditorDialog beat management', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Delete cause (order_before / order_after)
+// Delete cause (causes / causes)
 // ---------------------------------------------------------------------------
 
 describe('SceneEditorDialog delete cause', () => {
   const mockedUseScenes = vi.mocked(useScenes);
 
-  const sceneA = makeScene({ id: 'a', summary: 'Scene A' });
-  const sceneB = makeScene({
-    id: 'b',
-    summary: 'Scene B',
-    order_before: ['c'], // "must come before c"
-    order_after: ['a'], // "must come after a"
-  });
+  const sceneA = makeScene({ id: 'a', summary: 'Scene A', causes: ['b'] });
+  const sceneB = makeScene({ id: 'b', summary: 'Scene B', causes: ['c'] });
   const sceneC = makeScene({ id: 'c', summary: 'Scene C' });
 
   beforeEach(() => {
@@ -1033,42 +1031,42 @@ describe('SceneEditorDialog delete cause', () => {
   it('renders delete buttons for each cause relationship', () => {
     renderB();
     const deleteButtons = screen.getAllByRole('button', { name: /Delete cause/i });
-    // One for order_before ('c') and one for order_after ('a')
+    // One for causes ('c') and one for causes ('a')
     expect(deleteButtons.length).toBe(2);
   });
 
-  it('calls onDeleteCause(sceneId, targetId) when deleting an order_before entry', async () => {
+  it('calls onDeleteCause(causeId, sceneId) when deleting a predecessor entry', async () => {
     const onDeleteCause = vi.fn(async () => undefined);
     renderB(onDeleteCause);
 
-    // "Must come before" section lists 'c' → delete button calls onDeleteCause(b.id, c.id)
+    // "Caused by" section lists 'a' → delete button calls onDeleteCause(a.id, b.id)
     const [firstDeleteBtn] = screen.getAllByRole('button', { name: /Delete cause/i });
     await act(async () => {
       fireEvent.click(firstDeleteBtn);
     });
 
     expect(onDeleteCause).toHaveBeenCalledOnce();
-    expect(onDeleteCause).toHaveBeenCalledWith('b', 'c');
+    expect(onDeleteCause).toHaveBeenCalledWith('a', 'b');
   });
 
-  it('calls onDeleteCause(causeId, sceneId) when deleting an order_after entry', async () => {
+  it('calls onDeleteCause(sceneId, targetId) when deleting a cause entry', async () => {
     const onDeleteCause = vi.fn(async () => undefined);
     renderB(onDeleteCause);
 
-    // "Must come after" section lists 'a' → delete button calls onDeleteCause(a.id, b.id)
+    // "Causes" section lists 'c' → delete button calls onDeleteCause(b.id, c.id)
     const deleteButtons = screen.getAllByRole('button', { name: /Delete cause/i });
     await act(async () => {
-      fireEvent.click(deleteButtons[1]); // second entry = order_after
+      fireEvent.click(deleteButtons[1]);
     });
 
     expect(onDeleteCause).toHaveBeenCalledOnce();
-    expect(onDeleteCause).toHaveBeenCalledWith('a', 'b');
+    expect(onDeleteCause).toHaveBeenCalledWith('b', 'c');
   });
 
   it('does not render the Causes section when scene has no cause relationships', () => {
     wrap(
       <SceneEditorDialog
-        scene={makeScene({ id: 'x', order_before: [], order_after: [] })}
+        scene={makeScene({ id: 'x', causes: [] })}
         isOpen
         onClose={NOOP_CLOSE}
         onSave={NOOP_SAVE}
@@ -1081,18 +1079,17 @@ describe('SceneEditorDialog delete cause', () => {
 
   it('shows scene summary as display name in the cause list', () => {
     renderB();
-    // 'Scene C' is the summary of sceneC which is listed in order_before
+    // 'Scene C' is the summary of sceneC which is listed in causes
     expect(screen.getByText('Scene C')).toBeTruthy();
-    // 'Scene A' is listed in order_after
+    // 'Scene A' is listed in causes
     expect(screen.getByText('Scene A')).toBeTruthy();
   });
 
   it('falls back to the id when the scene is not found in the store', () => {
     mockedUseScenes.mockReturnValue([]); // no scenes in store
     renderB();
-    // Without store data, fallback is the raw id
+    // Without store data, fallback is the raw id for the referenced cause
     expect(screen.getByText('c')).toBeTruthy();
-    expect(screen.getByText('a')).toBeTruthy();
   });
 
   it('handles onDeleteCause rejection gracefully (no unhandled rejection)', async () => {

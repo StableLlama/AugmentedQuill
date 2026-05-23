@@ -53,7 +53,7 @@ PROJECTS_ROOT = DATA_DIR / "projects"
 LOGS_DIR = DATA_DIR / "logs"
 STATIC_DIR = BASE_DIR / "static"
 
-CURRENT_SCHEMA_VERSION = 5
+CURRENT_SCHEMA_VERSION = 6
 USER_CONFIG_DIR = DATA_DIR / "config"
 DEFAULT_MACHINE_CONFIG_PATH = (
     Path(os.getenv("AUGQ_MACHINE_CONFIG_PATH"))
@@ -248,8 +248,10 @@ def load_story_config(
     if Path(path).exists():
         try:
             from augmentedquill.updates.migrate_story_v5 import migrate_project_v5
+            from augmentedquill.updates.migrate_story_v6 import migrate_project_v6
 
             migrate_project_v5(Path(path).parent)
+            migrate_project_v6(Path(path).parent)
             json_config = load_json_file(path)
             json_config = _interpolate_env(json_config)
         except Exception:

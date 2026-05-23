@@ -274,8 +274,27 @@ class ChatToolContractsTest(TestCase):
         self.assertIn("active_characters_patch", update_props)
         self.assertIn("passive_characters_patch", update_props)
         self.assertIn("sourcebook_entry_ids_patch", update_props)
-        self.assertIn("order_before_patch", update_props)
-        self.assertIn("order_after_patch", update_props)
+        self.assertIn("causes_patch", update_props)
+
+        causes_schema = update_props.get("causes", {})
+        self.assertEqual(causes_schema.get("type"), "array")
+        self.assertEqual(causes_schema.get("items", {}).get("type"), "integer")
+
+        causes_patch_schema = update_props.get("causes_patch", {})
+        self.assertEqual(
+            causes_patch_schema.get("properties", {})
+            .get("add", {})
+            .get("items", {})
+            .get("type"),
+            "integer",
+        )
+        self.assertEqual(
+            causes_patch_schema.get("properties", {})
+            .get("remove", {})
+            .get("items", {})
+            .get("type"),
+            "integer",
+        )
 
         scene_time_schema = update_props.get("scene_time", {})
         scene_time_description = scene_time_schema.get("description", "")
@@ -392,8 +411,7 @@ class ChatToolContractsTest(TestCase):
                     "active_characters": ["hero"],
                     "passive_characters": ["guide"],
                     "sourcebook_entry_ids": ["Hero Entry"],
-                    "order_before": [101],
-                    "order_after": [202],
+                    "causes": [202],
                     "status": "active",
                 },
             },
@@ -412,8 +430,7 @@ class ChatToolContractsTest(TestCase):
                     "active_characters": None,
                     "passive_characters": None,
                     "sourcebook_entry_ids": None,
-                    "order_before": None,
-                    "order_after": None,
+                    "causes": None,
                     "status": None,
                 },
             },
@@ -424,8 +441,8 @@ class ChatToolContractsTest(TestCase):
         self.assertEqual(updated.get("active_characters"), [])
         self.assertEqual(updated.get("passive_characters"), [])
         self.assertEqual(updated.get("sourcebook_entry_ids"), [])
-        self.assertEqual(updated.get("order_before"), [])
-        self.assertEqual(updated.get("order_after"), [])
+        self.assertEqual(updated.get("causes"), [])
+        self.assertEqual(updated.get("causes"), [])
         self.assertEqual(updated.get("status"), "active")
 
         listed = self._call_tool(
@@ -434,6 +451,84 @@ class ChatToolContractsTest(TestCase):
             model_type="CHAT",
         )
         self.assertTrue(any(scene.get("id") == scene_id for scene in listed))
+
+    def test_manage_scenes_update_causes_replaces_list(self):
+        scene_a = self._call_tool(
+            "manage_scenes",
+            {
+                "action": "create",
+                "create_data": {"summary": "Scene A"},
+            },
+            model_type="CHAT",
+        )
+        scene_b = self._call_tool(
+            "manage_scenes",
+            {
+                "action": "create",
+                "create_data": {"summary": "Scene B"},
+            },
+            model_type="CHAT",
+        )
+        self.assertTrue(scene_a.get("id"))
+        self.assertTrue(scene_b.get("id"))
+
+        updated = self._call_tool(
+            "manage_scenes",
+            {
+                "action": "update",
+                "scene_id": scene_a.get("id"),
+                "update_data": {"causes": [scene_b.get("id")]},
+            },
+            model_type="CHAT",
+        )
+
+        self.assertEqual(updated.get("causes"), [scene_b.get("id")])
+
+        retrieved = self._call_tool(
+            "manage_scenes",
+            {"action": "get", "scene_id": scene_a.get("id")},
+            model_type="CHAT",
+        )
+        self.assertEqual(retrieved.get("causes"), [scene_b.get("id")])
+
+    def test_manage_scenes_update_causes_patch_adds_scene_id(self):
+        scene_a = self._call_tool(
+            "manage_scenes",
+            {
+                "action": "create",
+                "create_data": {"summary": "Scene A"},
+            },
+            model_type="CHAT",
+        )
+        scene_b = self._call_tool(
+            "manage_scenes",
+            {
+                "action": "create",
+                "create_data": {"summary": "Scene B"},
+            },
+            model_type="CHAT",
+        )
+        self.assertTrue(scene_a.get("id"))
+        self.assertTrue(scene_b.get("id"))
+
+        updated = self._call_tool(
+            "manage_scenes",
+            {
+                "action": "update",
+                "scene_id": scene_a.get("id"),
+                "update_data": {"causes_patch": {"add": [scene_b.get("id")]}},
+            },
+            model_type="CHAT",
+        )
+
+        self.assertEqual(updated.get("causes"), [scene_b.get("id")])
+
+        retrieved = self._call_tool(
+            "manage_scenes",
+            {"action": "get", "scene_id": scene_a.get("id")},
+            model_type="CHAT",
+        )
+        self.assertEqual(retrieved.get("causes"), [scene_b.get("id")])
 
     def test_manage_scenes_update_rejects_unknown_update_fields(self):
         created = self._call_tool(
@@ -577,7 +672,7 @@ class ChatToolContractsTest(TestCase):
                 "action": "create",
                 "create_data": {
                     "summary": "Self-ref",
-                    "order_before": [1],
+                    "causes": [1],
                 },
             },
             model_type="CHAT",
@@ -604,7 +699,7 @@ class ChatToolContractsTest(TestCase):
                 "action": "update",
                 "scene_id": scene_id,
                 "update_data": {
-                    "order_after": [scene_id],
+                    "causes": [scene_id],
                 },
             },
             model_type="CHAT",
@@ -1486,8 +1581,7 @@ class ChatToolContractsTest(TestCase):
                         "scene_time": None,
                         "color_tag": None,
                         "prose_link": None,
-                        "order_before": [],
-                        "order_after": [],
+                        "causes": [],
                         "pinboard_x": 100.0,
                         "pinboard_y": 100.0,
                         "status": "active",

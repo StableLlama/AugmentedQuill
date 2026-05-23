@@ -207,9 +207,9 @@ class Scene(BaseModel):
     Active characters, passive characters, location, and time are stored as
     sourcebook entry IDs so the frontend can look them up by reference.
 
-    ``order_before`` / ``order_after`` store IDs of other scenes that must
-    chronologically precede or follow this one respectively – these form the
-    temporal constraint graph rendered on the pinboard.
+    ``causes`` stores IDs of other scenes that this scene causally precedes.
+    These are not narrative order indexes; they are dependency constraints that
+    allow the pinboard to highlight cause/effect relationships.
 
     ``pinboard_x`` / ``pinboard_y`` store the card's free-form position on the
     pinboard canvas, in logical (unscaled) units.
@@ -227,8 +227,7 @@ class Scene(BaseModel):
     timeline_id: str = "main"
     color_tag: Optional[str] = None  # hex color, e.g. "#a855f7"
     prose_link: Optional[SceneProseLink] = None  # used when beats is empty
-    order_before: list[SceneId] = []  # scene IDs this scene must precede
-    order_after: list[SceneId] = []  # scene IDs this scene must follow
+    causes: list[SceneId] = []  # scene IDs this scene causally precedes
     order_index: Optional[float] = (
         None  # narrative order; None = freshly created, sorts to end
     )
@@ -297,7 +296,7 @@ class SceneCreateRequest(BaseModel):
     scene_time: Optional[SceneChronologyTime] = Field(
         None,
         description=(
-            "Formal timeline position for the scene. Always set this when the scene can be placed on the story timeline; if an exact timestamp is not known, use order_before/order_after to capture relative chronology. Accepts ISO-like timestamps and normalizes them."
+            "Formal timeline position for the scene. Always set this when the scene can be placed on the story timeline; if an exact timestamp is not known, use causes to capture relative chronology. Accepts ISO-like timestamps and normalizes them."
         ),
     )
     timeline_id: str = Field(
@@ -318,23 +317,20 @@ class SceneCreateRequest(BaseModel):
             "prose. Use this when the scene is already anchored to prose."
         ),
     )
-    order_before: list[SceneId] = Field(
+    causes: list[SceneId] = Field(
         default_factory=list,
         description=(
-            "IDs of scenes that should come before this one in narrative order."
+            "IDs of scenes that this scene causally precedes. Use this to "
+            "record cause/effect relationships without changing narrative order directly."
         ),
-    )
-    order_after: list[SceneId] = Field(
-        default_factory=list,
-        description=(
-            "IDs of scenes that should come after this one in narrative order."
-        ),
+        json_schema_extra={"examples": [[1, 2]]},
     )
     order_index: Optional[float] = Field(
         None,
         description=(
             "Optional explicit narrative sort key. Leave empty unless the scene "
-            "must be placed precisely in sequence."
+            "must be placed precisely in sequence. Use order_index when adjusting "
+            "narrative order, not for causal dependency constraints."
         ),
     )
     pinboard_x: float = Field(
@@ -407,13 +403,12 @@ class SceneUpdateRequest(BaseModel):
         None,
         description="Replacement prose link for the scene.",
     )
-    order_before: Optional[list[SceneId]] = Field(
+    causes: Optional[list[SceneId]] = Field(
         None,
-        description="Replacement list of scene IDs that should come before this scene.",
-    )
-    order_after: Optional[list[SceneId]] = Field(
-        None,
-        description="Replacement list of scene IDs that should come after this scene.",
+        description=(
+            "Replacement list of scene IDs that this scene causally precedes."
+        ),
+        json_schema_extra={"examples": [[1, 2]]},
     )
     order_index: Optional[float] = Field(
         None,

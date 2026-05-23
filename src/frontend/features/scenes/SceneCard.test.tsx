@@ -64,7 +64,11 @@ function triggerResize(): void {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeScene(overrides: Partial<Scene> = {}): Scene {
+function makeScene(overrides: Record<string, unknown> = {}): Scene {
+  const legacy = overrides as {
+    causes?: SceneId[];
+    [key: string]: unknown;
+  };
   return {
     id: 'sc1',
     title: 'Test Scene',
@@ -83,10 +87,9 @@ function makeScene(overrides: Partial<Scene> = {}): Scene {
     time: null,
     color_tag: null,
     status: 'active',
-    order_before: [],
-    order_after: [],
-    ...overrides,
-  };
+    causes: [...(legacy.causes ?? [])],
+    ...rest,
+  } as Scene;
 }
 
 const NOOP = vi.fn();

@@ -6814,20 +6814,12 @@
               }
             ]
           },
-          "order_before": {
+          "causes": {
             "items": {
               "type": "integer"
             },
             "type": "array",
-            "title": "Order Before",
-            "default": []
-          },
-          "order_after": {
-            "items": {
-              "type": "integer"
-            },
-            "type": "array",
-            "title": "Order After",
+            "title": "Causes",
             "default": []
           },
           "order_index": {
@@ -6867,7 +6859,7 @@
         "type": "object",
         "required": ["id"],
         "title": "Scene",
-        "description": "A narrative scene used for structural story planning.\n\nActive characters, passive characters, location, and time are stored as\nsourcebook entry IDs so the frontend can look them up by reference.\n\n``order_before`` / ``order_after`` store IDs of other scenes that must\nchronologically precede or follow this one respectively \u2013 these form the\ntemporal constraint graph rendered on the pinboard.\n\n``pinboard_x`` / ``pinboard_y`` store the card's free-form position on the\npinboard canvas, in logical (unscaled) units."
+        "description": "A narrative scene used for structural story planning.\n\nActive characters, passive characters, location, and time are stored as\nsourcebook entry IDs so the frontend can look them up by reference.\n\n``causes`` stores IDs of other scenes that this scene causally precedes.\nThese are not narrative order indexes; they are dependency constraints that\nallow the pinboard to highlight cause/effect relationships.\n\n``pinboard_x`` / ``pinboard_y`` store the card's free-form position on the\npinboard canvas, in logical (unscaled) units."
       },
       "SceneBeat": {
         "properties": {
@@ -7018,7 +7010,7 @@
                 "type": "null"
               }
             ],
-            "description": "Formal timeline position for the scene. Always set this when the scene can be placed on the story timeline; if an exact timestamp is not known, use order_before/order_after to capture relative chronology. Accepts ISO-like timestamps and normalizes them."
+            "description": "Formal timeline position for the scene. Always set this when the scene can be placed on the story timeline; if an exact timestamp is not known, use causes to capture relative chronology. Accepts ISO-like timestamps and normalizes them."
           },
           "timeline_id": {
             "type": "string",
@@ -7049,21 +7041,14 @@
             ],
             "description": "Optional prose link showing which content file the scene is linked to prose. Use this when the scene is already anchored to prose."
           },
-          "order_before": {
+          "causes": {
             "items": {
               "type": "integer"
             },
             "type": "array",
-            "title": "Order Before",
-            "description": "IDs of scenes that should come before this one in narrative order."
-          },
-          "order_after": {
-            "items": {
-              "type": "integer"
-            },
-            "type": "array",
-            "title": "Order After",
-            "description": "IDs of scenes that should come after this one in narrative order."
+            "title": "Causes",
+            "description": "IDs of scenes that this scene causally precedes. Use this to record cause/effect relationships without changing narrative order directly.",
+            "examples": [[1, 2]]
           },
           "order_index": {
             "anyOf": [
@@ -7075,7 +7060,7 @@
               }
             ],
             "title": "Order Index",
-            "description": "Optional explicit narrative sort key. Leave empty unless the scene must be placed precisely in sequence."
+            "description": "Optional explicit narrative sort key. Leave empty unless the scene must be placed precisely in sequence. Use order_index when adjusting narrative order, not for causal dependency constraints."
           },
           "pinboard_x": {
             "type": "number",
@@ -7572,7 +7557,7 @@
             ],
             "description": "Replacement prose link for the scene."
           },
-          "order_before": {
+          "causes": {
             "anyOf": [
               {
                 "items": {
@@ -7584,23 +7569,9 @@
                 "type": "null"
               }
             ],
-            "title": "Order Before",
-            "description": "Replacement list of scene IDs that should come before this scene."
-          },
-          "order_after": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "integer"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Order After",
-            "description": "Replacement list of scene IDs that should come after this scene."
+            "title": "Causes",
+            "description": "Replacement list of scene IDs that this scene causally precedes.",
+            "examples": [[1, 2]]
           },
           "order_index": {
             "anyOf": [

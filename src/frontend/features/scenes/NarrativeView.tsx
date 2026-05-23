@@ -36,7 +36,7 @@ import { SceneCard } from './SceneCard';
 import { CauseArrows } from './ConstraintArrows';
 import type { CardLayoutMap, CardLayout } from './ConstraintArrows';
 import { useSceneSelection } from './useSceneSelection';
-import { useThemeClasses, useTheme } from '../layout/ThemeContext';
+import { useTheme } from '../layout/ThemeContext';
 import { useSceneLanes, isCharacterEntry } from './useSceneLanes';
 import { LaneHeader } from './LaneHeader';
 import {
@@ -376,13 +376,18 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
   });
 
   // Active scene relationship sets (for cause/effect glow on cards).
-  // order_after = scenes this scene must come AFTER (predecessors = causes → red)
-  // order_before = scenes this scene must come BEFORE (successors = effects → green)
+  // causes = scenes this scene causally precedes.
   const activeScene = activeSceneId
     ? (scenes.find((s: Scene) => s.id === activeSceneId) ?? null)
     : null;
-  const causeIds = new Set<SceneId>(activeScene?.order_after ?? []);
-  const effectIds = new Set<SceneId>(activeScene?.order_before ?? []);
+  const causeIds = useMemo(() => {
+    if (!activeSceneId) return new Set<SceneId>();
+    const predecessors = scenes
+      .filter((s: Scene) => (s.causes ?? []).includes(activeSceneId))
+      .map((s: Scene) => s.id);
+    return new Set<SceneId>(predecessors);
+  }, [activeSceneId, scenes]);
+  const effectIds = new Set<SceneId>(activeScene?.causes ?? []);
 
   // Build the ordered list of items (dividers + scenes) to render.
   const items = useMemo(
@@ -460,10 +465,12 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
 
     const active = scenes.find((s: Scene) => s.id === activeSceneId);
     if (!active) return keys;
-    for (const causeId of active.order_after) {
-      keys.push(`${causeId}->${activeSceneId}`);
+    for (const scene of scenes) {
+      if ((scene.causes ?? []).includes(activeSceneId)) {
+        keys.push(`${scene.id}->${activeSceneId}`);
+      }
     }
-    for (const effectId of active.order_before) {
+    for (const effectId of active.causes) {
       keys.push(`${activeSceneId}->${effectId}`);
     }
     return keys;
@@ -937,6 +944,7 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
             }
             if (item.kind === 'chapter-break') {
               return (
+                // eslint-disable-next-line jsx-a11y/no-static-element-interactions
                 <div
                   key={`chapter-${item.chapterId}-${renderIdx}`}
                   onDragOver={(e: React.DragEvent<HTMLDivElement>): void =>

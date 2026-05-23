@@ -406,8 +406,12 @@ export const PinboardView: React.FC<PinboardViewProps> = ({
   const activeScene = activeSceneId
     ? (scenes.find((s: Scene) => s.id === activeSceneId) ?? null)
     : null;
-  const causeIds = new Set<SceneId>(activeScene?.order_after ?? []);
-  const effectIds = new Set<SceneId>(activeScene?.order_before ?? []);
+  const causeIds = new Set<SceneId>(
+    scenes
+      .filter((s: Scene) => (s.causes ?? []).includes(activeSceneId ?? -1))
+      .map((s: Scene) => s.id)
+  );
+  const effectIds = new Set<SceneId>(activeScene?.causes ?? []);
 
   return (
     <div

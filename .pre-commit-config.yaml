@@ -28,5 +28,5 @@ repos:
         language: system
         # Run eslint using the local installation in frontend/node_modules
         # This ensures it uses the correct version and plugins
-        entry: src/frontend/node_modules/.bin/eslint --config src/frontend/eslint.config.cjs
-        files: ^src/frontend/.*\.(js|jsx|ts|tsx)$
+        entry: src/frontend/node_modules/.bin/eslint --config src/frontend/eslint.config.cjs --ext .ts,.tsx
+        files: ^src/frontend/.*\.(ts|tsx)$

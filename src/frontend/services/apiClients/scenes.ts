@@ -35,8 +35,7 @@ export interface SceneCreatePayload {
   timeline_id?: string;
   color_tag?: string | null;
   prose_link?: SceneProseLink | null;
-  order_before?: SceneId[];
-  order_after?: SceneId[];
+  causes?: SceneId[];
   order_index?: number;
   pinboard_x?: number;
   pinboard_y?: number;

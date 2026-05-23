@@ -42,8 +42,12 @@ function makeScene(
   id: string,
   x: number,
   y: number,
-  overrides: Partial<Scene> = {}
+  overrides: Record<string, unknown> = {}
 ): Scene {
+  const legacy = overrides as {
+    causes?: SceneId[];
+    [key: string]: unknown;
+  };
   return {
     id,
     title: id,
@@ -62,10 +66,9 @@ function makeScene(
     time: null,
     color_tag: null,
     status: 'active',
-    order_before: [],
-    order_after: [],
-    ...overrides,
-  };
+    causes: [...(legacy.causes ?? [])],
+    ...rest,
+  } as Scene;
 }
 
 function emptyHeights(): Map<string, number> {
@@ -243,9 +246,9 @@ describe('CauseArrows — renders nothing when no arrows needed', () => {
 
 describe('CauseArrows — active scene arrows', () => {
   it('renders an SVG when active scene has a cause', () => {
-    // s1 must come before s2 (s2.order_after = [s1], s1.order_before = [s2])
-    const s1 = makeScene('s1', 0, 0, { order_before: ['s2'] });
-    const s2 = makeScene('s2', 300, 0, { order_after: ['s1'] });
+    // s1 must come before s2 (s2.causes = [s1], s1.causes = [s2])
+    const s1 = makeScene('s1', 0, 0, { causes: ['s2'] });
+    const s2 = makeScene('s2', 300, 0, { causes: ['s1'] });
     const { container } = render(
       <CauseArrows
         scenes={[s1, s2]}
@@ -258,8 +261,8 @@ describe('CauseArrows — active scene arrows', () => {
   });
 
   it('renders a red path for a cause arrow (cause → active)', () => {
-    const s1 = makeScene('s1', 0, 0, { order_before: ['s2'] });
-    const s2 = makeScene('s2', 300, 0, { order_after: ['s1'] });
+    const s1 = makeScene('s1', 0, 0, { causes: ['s2'] });
+    const s2 = makeScene('s2', 300, 0, { causes: ['s1'] });
     const { container } = render(
       <CauseArrows
         scenes={[s1, s2]}
@@ -273,8 +276,8 @@ describe('CauseArrows — active scene arrows', () => {
   });
 
   it('renders a green path for an effect arrow (active → effect)', () => {
-    const s1 = makeScene('s1', 0, 0, { order_before: ['s2'] });
-    const s2 = makeScene('s2', 300, 0, { order_after: ['s1'] });
+    const s1 = makeScene('s1', 0, 0, { causes: ['s2'] });
+    const s2 = makeScene('s2', 300, 0, { causes: ['s1'] });
     const { container } = render(
       <CauseArrows
         scenes={[s1, s2]}
@@ -288,9 +291,9 @@ describe('CauseArrows — active scene arrows', () => {
   });
 
   it('renders both cause and effect arrows when active scene has both', () => {
-    const s1 = makeScene('s1', 0, 0, { order_before: ['s2'] });
-    const s2 = makeScene('s2', 300, 0, { order_after: ['s1'], order_before: ['s3'] });
-    const s3 = makeScene('s3', 600, 0, { order_after: ['s2'] });
+    const s1 = makeScene('s1', 0, 0, { causes: ['s2'] });
+    const s2 = makeScene('s2', 300, 0, { causes: ['s1'], causes: ['s3'] });
+    const s3 = makeScene('s3', 600, 0, { causes: ['s2'] });
     const { container } = render(
       <CauseArrows
         scenes={[s1, s2, s3]}
@@ -308,7 +311,7 @@ describe('CauseArrows — active scene arrows', () => {
   });
 
   it('skips arrows for cause ids not present in the scenes array (invalid ref)', () => {
-    const s1 = makeScene('s1', 0, 0, { order_after: ['nonexistent'] });
+    const s1 = makeScene('s1', 0, 0, { causes: ['nonexistent'] });
     const { container } = render(
       <CauseArrows
         scenes={[s1]}
@@ -323,8 +326,8 @@ describe('CauseArrows — active scene arrows', () => {
 });
 
 describe('CauseArrows — no active scene (default arrows)', () => {
-  it('renders an SVG for default arrows when order_before is set', () => {
-    const s1 = makeScene('s1', 0, 0, { order_before: ['s2'] });
+  it('renders an SVG for default arrows when causes is set', () => {
+    const s1 = makeScene('s1', 0, 0, { causes: ['s2'] });
     const s2 = makeScene('s2', 300, 0);
     const { container } = render(
       <CauseArrows
@@ -337,8 +340,8 @@ describe('CauseArrows — no active scene (default arrows)', () => {
     expect(container.querySelector('svg')).toBeTruthy();
   });
 
-  it('skips arrows whose target is not in scenes (invalid order_before id)', () => {
-    const s1 = makeScene('s1', 0, 0, { order_before: ['missing'] });
+  it('skips arrows whose target is not in scenes (invalid causes id)', () => {
+    const s1 = makeScene('s1', 0, 0, { causes: ['missing'] });
     const { container } = render(
       <CauseArrows
         scenes={[s1]}
@@ -353,7 +356,7 @@ describe('CauseArrows — no active scene (default arrows)', () => {
 
 describe('CauseArrows — live positions override', () => {
   it('uses livePositions when available instead of stored position', () => {
-    const s1 = makeScene('s1', 0, 0, { order_before: ['s2'] });
+    const s1 = makeScene('s1', 0, 0, { causes: ['s2'] });
     const s2 = makeScene('s2', 0, 0); // same position as s1 — no arrow without live
     const livePositions: ScenePositions = new Map([
       ['s2', { x: 400, y: 0 }], // move s2 away
@@ -372,7 +375,7 @@ describe('CauseArrows — live positions override', () => {
 
 describe('CauseArrows — cardHeights prop', () => {
   it('uses measured height for border intersection (path d attribute reflects height)', () => {
-    const s1 = makeScene('s1', 0, 0, { order_before: ['s2'] });
+    const s1 = makeScene('s1', 0, 0, { causes: ['s2'] });
     const s2 = makeScene('s2', 400, 200);
 
     const shortHeights = new Map([
@@ -409,7 +412,7 @@ describe('CauseArrows — cardHeights prop', () => {
   });
 
   it('falls back to DEFAULT_CARD_HEIGHT when id not in cardHeights', () => {
-    const s1 = makeScene('s1', 0, 0, { order_before: ['s2'] });
+    const s1 = makeScene('s1', 0, 0, { causes: ['s2'] });
     const s2 = makeScene('s2', 400, 0);
     // No heights provided — should not throw
     const { container } = render(
@@ -497,7 +500,7 @@ describe('CauseArrows — ghost arrow', () => {
 
 describe('CauseArrows — SVG marker attributes', () => {
   it('uses markerUnits=userSpaceOnUse so arrowhead size is stroke-width independent', () => {
-    const s1 = makeScene('s1', 0, 0, { order_before: ['s2'] });
+    const s1 = makeScene('s1', 0, 0, { causes: ['s2'] });
     const s2 = makeScene('s2', 400, 0);
     const { container } = render(
       <CauseArrows
@@ -512,7 +515,7 @@ describe('CauseArrows — SVG marker attributes', () => {
   });
 
   it('has refX equal to markerWidth so tip aligns with path endpoint', () => {
-    const s1 = makeScene('s1', 0, 0, { order_before: ['s2'] });
+    const s1 = makeScene('s1', 0, 0, { causes: ['s2'] });
     const s2 = makeScene('s2', 400, 0);
     const { container } = render(
       <CauseArrows
@@ -532,7 +535,7 @@ describe('CauseArrows — SVG marker attributes', () => {
 describe('CauseArrows — path endpoints at card borders', () => {
   it('path M (start) x-coordinate equals card right-edge when source is left of target', () => {
     // s1 at (0,0), target at (400,0) → s1 exits right edge at x=192
-    const s1 = makeScene('s1', 0, 0, { order_before: ['s2'] });
+    const s1 = makeScene('s1', 0, 0, { causes: ['s2'] });
     const s2 = makeScene('s2', 400, 0);
     const cardH = 80;
     const heights = new Map([
@@ -559,7 +562,7 @@ describe('CauseArrows — path endpoints at card borders', () => {
 
   it('path endpoint (x2) equals left edge of target card when target is to the right', () => {
     // s1 exits right edge → enters s2 left edge at x=400
-    const s1 = makeScene('s1', 0, 0, { order_before: ['s2'] });
+    const s1 = makeScene('s1', 0, 0, { causes: ['s2'] });
     const s2 = makeScene('s2', 400, 0);
     const cardH = 80;
     const heights = new Map([

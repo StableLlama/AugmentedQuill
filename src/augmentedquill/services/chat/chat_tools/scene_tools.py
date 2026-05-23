@@ -27,8 +27,10 @@ from augmentedquill.services.chat.chat_tool_decorator import (
     chat_tool,
 )
 from augmentedquill.services.chat.chat_tools.metadata_patching import (
+    IntListPatch,
     StringListPatch,
     TextPatch,
+    apply_int_list_patch,
     apply_string_list_patch,
     apply_text_patch,
 )
@@ -107,21 +109,21 @@ class ManageScenesUpdateData(ToolModel):
         None,
         description="Optional full replacement scene prose link.",
     )
-    order_before: list[SceneId | str] | None = Field(
+    causes: list[SceneId] | None = Field(
         None,
-        description="Optional full replacement order_before list.",
+        description=(
+            "Optional full replacement causes list of integer scene IDs. "
+            "Example: [1, 2, 3]."
+        ),
+        json_schema_extra={"examples": [[1, 2, 3]]},
     )
-    order_before_patch: StringListPatch | None = Field(
+    causes_patch: IntListPatch | None = Field(
         None,
-        description="Optional patch operation for order_before IDs.",
-    )
-    order_after: list[SceneId | str] | None = Field(
-        None,
-        description="Optional full replacement order_after list.",
-    )
-    order_after_patch: StringListPatch | None = Field(
-        None,
-        description="Optional patch operation for order_after IDs.",
+        description=(
+            "Optional patch operation for causes scene IDs. "
+            "Example: {add:[1,2]}, {remove:[3]}, or {set:[1,2,3]}."
+        ),
+        json_schema_extra={"examples": [{"add": [1, 2]}]},
     )
     pinboard_x: float | None = Field(None, description="Optional pinboard x position.")
     pinboard_y: float | None = Field(None, description="Optional pinboard y position.")
@@ -173,7 +175,10 @@ class ManageScenesParams(ToolModel):
         "with scene_id and update_data to modify a scene, and action='delete' with "
         "scene_id to remove a scene. When creating scenes, include relevant "
         "sourcebook_entry_ids and a formal scene_time whenever the chronology can "
-        "be inferred; otherwise express relative ordering with order_before/order_after. "
+        "be inferred; otherwise express causal dependency with causes. "
+        "For narrative ordering changes, use order_index rather than cause links. "
+        "causes and causes_patch use integer scene IDs. "
+        "Pass raw integer arrays, e.g. {add:[1,2]} or {remove:[3]}. "
         "For update_data.scene_time, you can pass a Temporal object, {'value': ...}, "
         "or a plain ISO-like string such as '1985-11-05', '1985-11-05T20:00', or "
         "'1985-11-05T20:00:00Z'."
@@ -207,12 +212,12 @@ async def manage_scenes(
             created = create_scene(active, params.create_data)
         except ValueError as exc:
             message = str(exc)
-            if "cannot reference itself in order_before/order_after" in message:
+            if "cannot reference itself in causes" in message:
                 return {
                     "error": "Invalid scene ordering",
                     "message": (
-                        "A scene cannot reference itself in order_before/order_after. "
-                        "Remove that ID from ordering lists and reference only other existing scenes."
+                        "A scene cannot reference itself in causes. "
+                        "Remove that ID from scene causes and reference only other existing scenes."
                     ),
                     "details": {"reason": message},
                 }
@@ -291,35 +296,17 @@ async def manage_scenes(
         ):
             update_kwargs["sourcebook_entry_ids"] = sourcebook_entry_ids_value or []
 
-        order_before_value = params.update_data.order_before
-        if params.update_data.order_before_patch is not None:
-            current_order_before = current.get("order_before")
-            if not isinstance(current_order_before, list):
-                current_order_before = []
-            order_before_value = apply_string_list_patch(
-                [str(scene_id) for scene_id in current_order_before],
-                params.update_data.order_before_patch,
+        causes_value = params.update_data.causes
+        if params.update_data.causes_patch is not None:
+            current_causes = current.get("causes")
+            if not isinstance(current_causes, list):
+                current_causes = []
+            causes_value = apply_int_list_patch(
+                [int(scene_id) for scene_id in current_causes],
+                params.update_data.causes_patch,
             )
-        if (
-            params.update_data.order_before_patch is not None
-            or "order_before" in fields_set
-        ):
-            update_kwargs["order_before"] = order_before_value or []
-
-        order_after_value = params.update_data.order_after
-        if params.update_data.order_after_patch is not None:
-            current_order_after = current.get("order_after")
-            if not isinstance(current_order_after, list):
-                current_order_after = []
-            order_after_value = apply_string_list_patch(
-                [str(scene_id) for scene_id in current_order_after],
-                params.update_data.order_after_patch,
-            )
-        if (
-            params.update_data.order_after_patch is not None
-            or "order_after" in fields_set
-        ):
-            update_kwargs["order_after"] = order_after_value or []
+        if params.update_data.causes_patch is not None or "causes" in fields_set:
+            update_kwargs["causes"] = causes_value or []
 
         for field_name in (
             "beats",
@@ -349,11 +336,11 @@ async def manage_scenes(
             updated = update_scene(active, params.scene_id, update_payload)
         except ValueError as exc:
             message = str(exc)
-            if "cannot reference itself in order_before/order_after" in message:
+            if "cannot reference itself in causes" in message:
                 return {
                     "error": "Invalid scene ordering",
                     "message": (
-                        "A scene cannot reference itself in order_before/order_after. "
+                        "A scene cannot reference itself in causes. "
                         "Use IDs of other scenes only."
                     ),
                     "details": {"scene_id": params.scene_id, "reason": message},

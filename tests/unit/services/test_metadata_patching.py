@@ -13,9 +13,11 @@ from pydantic import ValidationError
 
 from augmentedquill.services.chat.chat_tools.metadata_patching import (
     ConflictListPatch,
+    IntListPatch,
     StringListPatch,
     TextPatch,
     apply_conflict_list_patch,
+    apply_int_list_patch,
     apply_string_list_patch,
     apply_text_patch,
 )
@@ -55,6 +57,14 @@ class MetadataPatchingTest(TestCase):
     def test_string_list_patch_clear_and_set(self):
         patch = StringListPatch(clear=True, set=["x", "y"])
         self.assertEqual(apply_string_list_patch(["a"], patch), ["x", "y"])
+
+    def test_int_list_patch_add_remove(self):
+        patch = IntListPatch(add=[3, 4], remove=[2])
+        self.assertEqual(apply_int_list_patch([1, 2], patch), [1, 3, 4])
+
+    def test_int_list_patch_clear_and_set(self):
+        patch = IntListPatch(clear=True, set=[5, 6])
+        self.assertEqual(apply_int_list_patch([1, 2], patch), [5, 6])
 
     def test_conflict_patch_add_update_remove(self):
         patch = ConflictListPatch(

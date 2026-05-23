@@ -245,7 +245,12 @@ function nv(): NarrativeHandlers {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeScene(overrides: Partial<Scene> = {}): Scene {
+function makeScene(overrides: Record<string, unknown> = {}): Scene {
+  const legacy = overrides as {
+    causes?: SceneId[];
+    [key: string]: unknown;
+  };
+  const { causes: _causes, ...rest } = legacy;
   return {
     id: 'scene-1',
     summary: 'Test scene',
@@ -259,10 +264,9 @@ function makeScene(overrides: Partial<Scene> = {}): Scene {
     status: 'active',
     pinboard_x: 0,
     pinboard_y: 0,
-    order_before: [],
-    order_after: [],
-    ...overrides,
-  };
+    causes: [...(legacy.causes ?? [])],
+    ...rest,
+  } as Scene;
 }
 
 function makeProseLink(overrides: Partial<SceneProseLink> = {}): SceneProseLink {
@@ -519,15 +523,12 @@ describe('handleDeleteScene', () => {
 // ---------------------------------------------------------------------------
 
 describe('handleCreateConstraint', () => {
-  it('patches both scenes optimistically and then with API responses', async () => {
-    const a = makeScene({ id: 'a', order_before: [], order_after: [] });
-    const b = makeScene({ id: 'b', order_before: [], order_after: [] });
-    const updatedA = makeScene({ id: 'a', order_before: ['b'] });
-    const updatedB = makeScene({ id: 'b', order_after: ['a'] });
+  it('patches the scene optimistically and then with the API response', async () => {
+    const a = makeScene({ id: 'a', causes: [] });
+    const b = makeScene({ id: 'b', causes: [] });
+    const updatedA = makeScene({ id: 'a', causes: ['b'] });
     useScenesMock.mockReturnValue([a, b]);
-    apiMock.scenes.update
-      .mockResolvedValueOnce(updatedA)
-      .mockResolvedValueOnce(updatedB);
+    apiMock.scenes.update.mockResolvedValueOnce(updatedA);
 
     wrap(<ScenesPanelContainer />);
 
@@ -535,14 +536,13 @@ describe('handleCreateConstraint', () => {
       await pb().onCreateCause('a', 'b');
     });
 
-    expect(apiMock.scenes.update).toHaveBeenCalledTimes(2);
+    expect(apiMock.scenes.update).toHaveBeenCalledTimes(1);
     expect(patchSceneMock).toHaveBeenCalledWith(updatedA);
-    expect(patchSceneMock).toHaveBeenCalledWith(updatedB);
   });
 
   it('skips the API call when the constraint already exists', async () => {
-    const a = makeScene({ id: 'a', order_before: ['b'], order_after: [] });
-    const b = makeScene({ id: 'b', order_before: [], order_after: [] });
+    const a = makeScene({ id: 'a', causes: ['b'] });
+    const b = makeScene({ id: 'b', causes: [] });
     useScenesMock.mockReturnValue([a, b]);
 
     wrap(<ScenesPanelContainer />);
@@ -555,8 +555,8 @@ describe('handleCreateConstraint', () => {
   });
 
   it('reverts both scenes on API failure', async () => {
-    const a = makeScene({ id: 'a', order_before: [], order_after: [] });
-    const b = makeScene({ id: 'b', order_before: [], order_after: [] });
+    const a = makeScene({ id: 'a', causes: [] });
+    const b = makeScene({ id: 'b', causes: [] });
     useScenesMock.mockReturnValue([a, b]);
     apiMock.scenes.update.mockRejectedValueOnce(new Error('fail'));
 
@@ -567,9 +567,8 @@ describe('handleCreateConstraint', () => {
     });
 
     const calls = patchSceneMock.mock.calls as Array<[Scene]>;
-    const lastTwo = calls.slice(-2).map((c: [Scene]) => c[0]);
-    expect(lastTwo).toContainEqual(a);
-    expect(lastTwo).toContainEqual(b);
+    const lastCall = calls.slice(-1)[0][0];
+    expect(lastCall).toEqual(a);
   });
 });
 
@@ -1310,6 +1309,7 @@ describe('scene lane persistence', () => {
   });
 });
 
+// eslint-disable-next-line max-lines-per-function
 describe('handleNarrativeReorder (drag-reorder user interaction)', () => {
   async function renderNarrative(
     scenes: Scene[],
@@ -2495,10 +2495,10 @@ describe('scene mutations record history entries', () => {
   });
 
   it('records history for dependency and prose-link mutations', async () => {
-    const sceneA = makeScene({ id: 'a', order_before: [], order_after: [] });
-    const sceneB = makeScene({ id: 'b', order_before: [], order_after: [] });
-    const withConstraintA = makeScene({ id: 'a', order_before: ['b'] });
-    const withConstraintB = makeScene({ id: 'b', order_after: ['a'] });
+    const sceneA = makeScene({ id: 'a', causes: [] });
+    const sceneB = makeScene({ id: 'b', causes: [] });
+    const withConstraintA = makeScene({ id: 'a', causes: ['b'] });
+    const withConstraintB = makeScene({ id: 'b', causes: ['a'] });
     const proseLinkedA = makeScene({
       id: 'a',
       prose_link: makeProseLink({ start_offset: 0, end_offset: 15 }),
@@ -2533,10 +2533,10 @@ describe('scene mutations record history entries', () => {
   });
 
   it('records history for removing a dependency', async () => {
-    const sceneA = makeScene({ id: 'a', order_before: ['b'], order_after: [] });
-    const sceneB = makeScene({ id: 'b', order_before: [], order_after: ['a'] });
-    const withoutConstraintA = makeScene({ id: 'a', order_before: [] });
-    const withoutConstraintB = makeScene({ id: 'b', order_after: [] });
+    const sceneA = makeScene({ id: 'a', causes: ['b'] });
+    const sceneB = makeScene({ id: 'b', causes: [], causes: ['a'] });
+    const withoutConstraintA = makeScene({ id: 'a', causes: [] });
+    const withoutConstraintB = makeScene({ id: 'b', causes: [] });
 
     apiMock.scenes.update
       .mockResolvedValueOnce(withoutConstraintA)

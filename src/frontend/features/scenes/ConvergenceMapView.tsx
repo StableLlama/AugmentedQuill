@@ -529,8 +529,12 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
   const activeScene = activeSceneId
     ? (scenes.find((s: Scene) => s.id === activeSceneId) ?? null)
     : null;
-  const causeIds = new Set<SceneId>(activeScene?.order_after ?? []);
-  const effectIds = new Set<SceneId>(activeScene?.order_before ?? []);
+  const causeIds = new Set<SceneId>(
+    scenes
+      .filter((s: Scene) => (s.causes ?? []).includes(activeSceneId ?? -1))
+      .map((s: Scene) => s.id)
+  );
+  const effectIds = new Set<SceneId>(activeScene?.causes ?? []);
 
   // Display index for each scene card (sequential position in sorted list).
   const sceneIndexMap = useMemo(() => {

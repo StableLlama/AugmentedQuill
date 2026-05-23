@@ -265,6 +265,7 @@ it('clears chat session mutation tags when undo is used', async () => {
   expect(useChatStore.getState().sessionMutations).toEqual([]);
 });
 
+// eslint-disable-next-line max-lines-per-function
 describe('buildInitialStoryState', () => {
   it('hydrates story-level notes fields from selected project payload', () => {
     const state = buildInitialStoryState(
@@ -777,8 +778,8 @@ describe('buildInitialStoryState', () => {
       active_characters: [],
       passive_characters: [],
       sourcebook_entry_ids: [],
-      order_before: [],
-      order_after: [],
+      causes: [],
+      causes: [],
       scene_time: null,
       timeline_id: 'main',
       tag_personal_datetimes: [],
@@ -859,8 +860,8 @@ describe('buildInitialStoryState', () => {
       active_characters: [],
       passive_characters: [],
       sourcebook_entry_ids: [],
-      order_before: [],
-      order_after: [],
+      causes: [],
+      causes: [],
       scene_time: null,
       timeline_id: 'main',
       tag_personal_datetimes: [],
@@ -1291,6 +1292,7 @@ describe('advanceBaselineToCurrentStory', () => {
 // ---------------------------------------------------------------------------
 
 describe('fetchStory: scene loading on project open', () => {
+  // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
   const buildSelectResponse = () => ({
     ok: true,
     story: {
@@ -1318,8 +1320,8 @@ describe('fetchStory: scene loading on project open', () => {
       passive_characters: [],
       pinboard_x: 0,
       pinboard_y: 0,
-      order_before: [],
-      order_after: [],
+      causes: [],
+      causes: [],
     },
     {
       id: 'scene-2',
@@ -1336,11 +1338,12 @@ describe('fetchStory: scene loading on project open', () => {
       passive_characters: [],
       pinboard_x: 100,
       pinboard_y: 100,
-      order_before: [],
-      order_after: [],
+      causes: [],
+      causes: [],
     },
   ];
 
+  // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
   const setupForFetch = (scenes: Scene[]) => {
     vi.mocked(api.projects.list).mockResolvedValue({
       available: ['my-project'],
