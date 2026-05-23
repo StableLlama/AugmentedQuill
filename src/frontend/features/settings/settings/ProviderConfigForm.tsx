@@ -1222,10 +1222,10 @@ export const ProviderConfigForm: React.FC<ProviderConfigFormProps> = ({
             <div className="space-y-1">
               <label className="text-xs font-medium text-brand-gray-500 uppercase">
                 <span
-                  title="Maximum time in milliseconds to wait for a response from the model API before timing out."
+                  title="Maximum time in seconds to wait for a response from the model API before timing out."
                   className="cursor-help underline decoration-dotted underline-offset-2"
                 >
-                  Timeout (ms)
+                  Timeout (s)
                 </span>
               </label>
               <input

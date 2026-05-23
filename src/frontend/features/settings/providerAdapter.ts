@@ -76,7 +76,7 @@ export const machineModelToProvider = (
     name,
     baseUrl: String(model.base_url || '').trim(),
     apiKey: String(model.api_key || ''),
-    timeout: Math.max(1, timeoutS) * 1000,
+    timeout: Math.max(1, timeoutS),
     modelId: String(model.model || '').trim(),
     contextWindowTokens: toNumberOrUndefined(model.context_window_tokens),
     temperature: toNumberWithOptionalDefault(
@@ -131,7 +131,7 @@ export const providerToMachineModel = (provider: LLMConfig): MachineModelConfig 
   name: (provider.name || '').trim(),
   base_url: (provider.baseUrl || '').trim(),
   api_key: provider.apiKeyEnabled ? provider.apiKey || undefined : undefined,
-  timeout_s: Math.max(1, Math.round((provider.timeout || 10000) / 1000)),
+  timeout_s: Math.max(1, Math.round(provider.timeout || 10)),
   model: (provider.modelId || '').trim(),
   context_window_tokens: provider.contextWindowTokens,
   temperature: provider.temperature,
