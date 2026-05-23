@@ -767,6 +767,8 @@ def _replace_in_sourcebook(
                     ("relation", "Relation"),
                     ("source_id", "Source ID"),
                     ("target_id", "Target ID"),
+                    ("start_scene", "Start Scene"),
+                    ("end_scene", "End Scene"),
                     ("start_chapter", "Start Chapter"),
                     ("end_chapter", "End Chapter"),
                     ("start_book", "Start Book"),

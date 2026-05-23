@@ -42,10 +42,19 @@ class SourcebookRelation(BaseModel):
     target_id: str
     relation: str
     direction: Optional[str] = "forward"
-    start_chapter: Optional[str] = None
+    start_scene: Optional[int] = None
     start_book: Optional[str] = None
-    end_chapter: Optional[str] = None
+    end_scene: Optional[int] = None
     end_book: Optional[str] = None
+
+    @field_validator("start_scene", "end_scene", mode="before")
+    @classmethod
+    def _validate_scene_id(cls, value: object) -> int | None:
+        if value is None:
+            return None
+        if type(value) is int:
+            return value
+        raise ValueError("Scene IDs must be integers.")
 
 
 class SourcebookEntry(BaseModel):

@@ -255,6 +255,23 @@ class ChatToolContractsTest(TestCase):
                     "relations", properties.get("update_data", {}).get("properties", {})
                 )
 
+    def test_manage_sourcebook_relation_fields_are_integer_type(self):
+        tools = get_registered_tool_schemas(model_type="CHAT", project_type="series")
+        tool = next(
+            (t for t in tools if t["function"]["name"] == "manage_sourcebook"),
+            None,
+        )
+        self.assertIsNotNone(tool, "manage_sourcebook schema should exist")
+        relation_schema = (
+            tool.get("function", {})
+            .get("parameters", {})
+            .get("properties", {})
+            .get("relation_data", {})
+            .get("properties", {})
+        )
+        self.assertEqual(relation_schema.get("start_scene", {}).get("type"), "integer")
+        self.assertEqual(relation_schema.get("end_scene", {}).get("type"), "integer")
+
     def test_manage_scenes_update_schema_exposes_patch_fields(self):
         tools = get_registered_tool_schemas(model_type="CHAT", project_type="series")
         tool = next(

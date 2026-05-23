@@ -627,18 +627,18 @@ export const SourcebookEntryRelationsSection: React.FC<RelationsSectionProps> = 
                     )}
                   </span>
                 </div>
-                {(rel.start_chapter ||
-                  rel.end_chapter ||
+                {(rel.start_scene ||
+                  rel.end_scene ||
                   rel.start_book ||
                   rel.end_book) && (
                   <div className="text-xs opacity-60 mt-1 truncate">
-                    {rel.start_chapter ? `${t('Start')}: ${rel.start_chapter}` : ''}
+                    {rel.start_scene ? `${t('Start')}: ${rel.start_scene}` : ''}
                     {rel.start_book ? ` (${rel.start_book})` : ''}
-                    {(rel.start_chapter || rel.start_book) &&
-                    (rel.end_chapter || rel.end_book)
+                    {(rel.start_scene || rel.start_book) &&
+                    (rel.end_scene || rel.end_book)
                       ? ' | '
                       : ''}
-                    {rel.end_chapter ? `${t('End')}: ${rel.end_chapter}` : ''}
+                    {rel.end_scene ? `${t('End')}: ${rel.end_scene}` : ''}
                     {rel.end_book ? ` (${rel.end_book})` : ''}
                   </div>
                 )}

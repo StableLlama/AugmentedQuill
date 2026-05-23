@@ -55,12 +55,20 @@ def _get_entry_relations(entry_id: str, story: dict) -> list[dict]:
             rel["target_id"] = rel.pop("target_id", "")
             rel.pop("source_id", None)
             rel["direction"] = "forward"
+            if rel.get("start_scene") is not None:
+                rel["start_scene"] = rel.get("start_scene")
+            if rel.get("end_scene") is not None:
+                rel["end_scene"] = rel.get("end_scene")
             out.append(rel)
         elif r.get("target_id") == entry_id:
             rel = dict(r)
             rel["target_id"] = rel.pop("source_id", "")
             rel.pop("source_id", None)
             rel["direction"] = "reverse"
+            if rel.get("start_scene") is not None:
+                rel["start_scene"] = rel.get("start_scene")
+            if rel.get("end_scene") is not None:
+                rel["end_scene"] = rel.get("end_scene")
             out.append(rel)
     return out
 
@@ -70,7 +78,7 @@ def _normalize_relation_input(entry_id: str, relation: dict) -> dict:
     if not isinstance(relation, dict):
         raise ValueError("Invalid relation: relation must be an object.")
 
-    normalized: dict[str, str | None] = {}
+    normalized: dict[str, str | int | None] = {}
     raw_relation = relation.get("relation")
 
     if isinstance(raw_relation, list):
@@ -115,9 +123,12 @@ def _normalize_relation_input(entry_id: str, relation: dict) -> dict:
             normalized["source_id"] = entry_id
             normalized["target_id"] = relation.get("target_id")
 
-    for key in ("start_chapter", "end_chapter", "start_book", "end_book"):
+    for key in ("start_scene", "end_scene", "start_book", "end_book"):
         if key in relation and relation.get(key) is not None:
-            normalized[key] = relation.get(key)
+            value = relation.get(key)
+            if key in ("start_scene", "end_scene") and not isinstance(value, int):
+                raise ValueError("Invalid relation: scene IDs must be integers.")
+            normalized[key] = value
 
     return normalized
 
@@ -143,8 +154,8 @@ def _update_global_relations(
         d = normalized.get("direction", "forward")
         new_r = {
             "relation": normalized.get("relation", ""),
-            "start_chapter": normalized.get("start_chapter"),
-            "end_chapter": normalized.get("end_chapter"),
+            "start_scene": normalized.get("start_scene"),
+            "end_scene": normalized.get("end_scene"),
             "start_book": normalized.get("start_book"),
             "end_book": normalized.get("end_book"),
         }
@@ -164,8 +175,8 @@ def sourcebook_add_relation(
     source_id: str,
     relation_type: str,
     target_id: str,
-    start_chapter: str | None = None,
-    end_chapter: str | None = None,
+    start_scene: int | None = None,
+    end_scene: int | None = None,
     start_book: str | None = None,
     end_book: str | None = None,
 ) -> dict:
@@ -195,10 +206,14 @@ def sourcebook_add_relation(
         "relation": relation_type,
         "target_id": target_id,
     }
-    if start_chapter:
-        new_rel["start_chapter"] = start_chapter
-    if end_chapter:
-        new_rel["end_chapter"] = end_chapter
+    if start_scene is not None:
+        if type(start_scene) is not int:
+            return {"error": "Invalid start_scene: scene IDs must be integers."}
+        new_rel["start_scene"] = start_scene
+    if end_scene is not None:
+        if type(end_scene) is not int:
+            return {"error": "Invalid end_scene: scene IDs must be integers."}
+        new_rel["end_scene"] = end_scene
     if start_book:
         new_rel["start_book"] = start_book
     if end_book:

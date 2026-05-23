@@ -53,8 +53,10 @@ export interface SourcebookRelation {
   target_id: string;
   direction?: 'forward' | 'reverse';
   relation: string;
+  start_scene?: number;
   start_chapter?: string;
   start_book?: string;
+  end_scene?: number;
   end_chapter?: string;
   end_book?: string;
 }

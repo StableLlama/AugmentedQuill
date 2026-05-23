@@ -8270,16 +8270,16 @@
             "title": "Direction",
             "default": "forward"
           },
-          "start_chapter": {
+          "start_scene": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "integer"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Start Chapter"
+            "title": "Start Scene"
           },
           "start_book": {
             "anyOf": [
@@ -8292,16 +8292,16 @@
             ],
             "title": "Start Book"
           },
-          "end_chapter": {
+          "end_scene": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "integer"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "End Chapter"
+            "title": "End Scene"
           },
           "end_book": {
             "anyOf": [

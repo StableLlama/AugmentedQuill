@@ -9,7 +9,7 @@
 
 from typing import Any, List, Literal, Union
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from augmentedquill.services.chat.chat_tool_decorator import ToolModel
 
 from augmentedquill.services.chat.chat_tool_decorator import (
@@ -72,10 +72,10 @@ def _strip_internal_sourcebook_fields(entry: dict | None) -> dict | None:
             f_rel = {"relation": rel_tuple}
 
             if project_type in ("novel", "series"):
-                if r.get("start_chapter"):
-                    f_rel["start_chapter"] = r.get("start_chapter")
-                if r.get("end_chapter"):
-                    f_rel["end_chapter"] = r.get("end_chapter")
+                if r.get("start_scene") is not None:
+                    f_rel["start_scene"] = r.get("start_scene")
+                if r.get("end_scene") is not None:
+                    f_rel["end_scene"] = r.get("end_scene")
 
             if project_type == "series":
                 if r.get("start_book"):
@@ -195,11 +195,11 @@ class ManageSourcebookRelationData(ToolModel):
         description="Relation descriptor used to connect source and target entries.",
     )
     target_id: str = Field(..., description="The name/ID of the target entry.")
-    start_chapter: str | None = Field(
-        None, description="Optional chapter where the relation begins."
+    start_scene: int | None = Field(
+        None, description="Optional scene where the relation begins."
     )
-    end_chapter: str | None = Field(
-        None, description="Optional chapter where the relation ends."
+    end_scene: int | None = Field(
+        None, description="Optional scene where the relation ends."
     )
     start_book: str | None = Field(
         None, description="Optional book where the relation begins."
@@ -207,6 +207,15 @@ class ManageSourcebookRelationData(ToolModel):
     end_book: str | None = Field(
         None, description="Optional book where the relation ends."
     )
+
+    @field_validator("start_scene", "end_scene", mode="before")
+    @classmethod
+    def _validate_scene_id(cls, value: object) -> int | None:
+        if value is None:
+            return None
+        if type(value) is int:
+            return value
+        raise ValueError("Scene IDs must be integers.")
 
 
 class ManageSourcebookParams(ToolModel):
@@ -418,8 +427,8 @@ async def manage_sourcebook(
             source_id=params.relation_data.source_id,
             relation_type=params.relation_data.relation_type,
             target_id=params.relation_data.target_id,
-            start_chapter=params.relation_data.start_chapter,
-            end_chapter=params.relation_data.end_chapter,
+            start_scene=params.relation_data.start_scene,
+            end_scene=params.relation_data.end_scene,
             start_book=params.relation_data.start_book,
             end_book=params.relation_data.end_book,
         )

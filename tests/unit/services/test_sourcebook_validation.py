@@ -299,6 +299,98 @@ class SourcebookValidationTest(TestCase):
             "The Boarding School",
         )
 
+    def test_load_story_config_migrates_legacy_relation_bounds_to_scene_fields(self):
+        story_path = self.pdir / "story.json"
+        story_data = {
+            "metadata": {"version": 7},
+            "project_title": "Test Project",
+            "format": "markdown",
+            "sourcebook": {},
+            "sourcebook_relations": [
+                {
+                    "source_id": "Dimitri (The Senior)",
+                    "target_id": "The Boarding School",
+                    "relation": "is a senior student at",
+                    "start_chapter": "1",
+                    "end_chapter": "2",
+                    "start_book": "book-1",
+                    "end_book": "book-2",
+                }
+            ],
+        }
+        story_path.write_text(json.dumps(story_data), encoding="utf-8")
+
+        loaded = load_story_config(story_path)
+        self.assertEqual(
+            loaded.get("metadata", {}).get("version"), CURRENT_SCHEMA_VERSION
+        )
+        self.assertEqual(
+            loaded["sourcebook_relations"][0]["start_scene"],
+            1,
+        )
+        self.assertEqual(
+            loaded["sourcebook_relations"][0]["end_scene"],
+            2,
+        )
+        self.assertNotIn("start_chapter", loaded["sourcebook_relations"][0])
+        self.assertNotIn("end_chapter", loaded["sourcebook_relations"][0])
+        self.assertNotIn("start_book", loaded["sourcebook_relations"][0])
+        self.assertNotIn("end_book", loaded["sourcebook_relations"][0])
+
+        persisted = json.loads(story_path.read_text(encoding="utf-8"))
+        self.assertEqual(
+            persisted.get("metadata", {}).get("version"), CURRENT_SCHEMA_VERSION
+        )
+        self.assertEqual(
+            persisted["sourcebook_relations"][0]["start_scene"],
+            1,
+        )
+        self.assertEqual(
+            persisted["sourcebook_relations"][0]["end_scene"],
+            2,
+        )
+        self.assertNotIn("start_chapter", persisted["sourcebook_relations"][0])
+        self.assertNotIn("end_chapter", persisted["sourcebook_relations"][0])
+        self.assertNotIn("start_book", persisted["sourcebook_relations"][0])
+        self.assertNotIn("end_book", persisted["sourcebook_relations"][0])
+
+    def test_load_story_config_rejects_string_scene_ids(self):
+        story_path = self.pdir / "story.json"
+        story_data = {
+            "metadata": {"version": 8},
+            "project_title": "Test Project",
+            "format": "markdown",
+            "sourcebook": {},
+            "sourcebook_relations": [
+                {
+                    "source_id": "Dimitri (The Senior)",
+                    "target_id": "The Boarding School",
+                    "relation": "is a senior student at",
+                    "start_scene": "1",
+                    "end_scene": "2",
+                }
+            ],
+        }
+        story_path.write_text(json.dumps(story_data), encoding="utf-8")
+
+        with self.assertRaises(ValueError):
+            load_story_config(story_path)
+
+    def test_manage_sourcebook_relation_data_rejects_string_scene_ids(self):
+        from pydantic import ValidationError
+        from augmentedquill.services.chat.chat_tools.sourcebook_tools import (
+            ManageSourcebookRelationData,
+        )
+
+        with self.assertRaises(ValidationError):
+            ManageSourcebookRelationData(
+                source_id="A",
+                relation_type="knows",
+                target_id="B",
+                start_scene="1",
+                end_scene="2",
+            )
+
     def test_update_with_invalid_fields_returns_error(self):
         # Create valid entry
         entry = sourcebook_create_entry("UpdateTarget2", "Desc", "Character")

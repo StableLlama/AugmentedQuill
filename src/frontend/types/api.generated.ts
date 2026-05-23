@@ -3567,12 +3567,12 @@ export interface components {
        * @default forward
        */
       direction: string | null;
-      /** Start Chapter */
-      start_chapter?: string | null;
+      /** Start Scene */
+      start_scene?: number | null;
       /** Start Book */
       start_book?: string | null;
-      /** End Chapter */
-      end_chapter?: string | null;
+      /** End Scene */
+      end_scene?: number | null;
       /** End Book */
       end_book?: string | null;
     };
