@@ -14,6 +14,7 @@ import { useTranslation } from 'react-i18next';
 import { ChatAttachment } from '../../types';
 import { useThemeClasses } from '../layout/ThemeContext';
 import { useChatContext } from './ChatContext';
+import { ChatStoreState, useChatStore } from '../../stores/chatStore';
 import { Loader2, Bot, RefreshCw, X, Paperclip } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { MutationTags } from './components/MutationTags';
@@ -105,6 +106,9 @@ function ChatComponent(): React.JSX.Element {
 
   const themeClasses = useThemeClasses();
   const { isLight } = themeClasses;
+  const latestServerUsage = useChatStore(
+    (state: ChatStoreState) => state.latestServerUsage
+  );
   const { t } = useTranslation();
   const chatDisabledReason = t(
     'Chat is unavailable because no working CHAT model is configured.'
@@ -138,6 +142,21 @@ function ChatComponent(): React.JSX.Element {
     (msg: import('../../types').ChatMessage): boolean => msg.role === 'user'
   );
   const canRegenerate = !isLoading && isModelAvailable && hasUserMessage;
+  const serverUsagePercent = useMemo((): number | null => {
+    const promptTokens = latestServerUsage
+      ? (latestServerUsage['prompt_tokens'] as number | undefined)
+      : undefined;
+    const contextWindow = activeChatConfig.contextWindowTokens;
+    if (
+      typeof promptTokens === 'number' &&
+      contextWindow !== undefined &&
+      contextWindow > 0
+    ) {
+      return Math.round(Math.min(promptTokens / contextWindow, 1) * 100);
+    }
+    return null;
+  }, [activeChatConfig.contextWindowTokens, latestServerUsage]);
+
   const contextUsage = useMemo(
     () =>
       estimateChatContextUsage({
@@ -160,6 +179,7 @@ function ChatComponent(): React.JSX.Element {
         currentSessionId={currentSessionId}
         isIncognito={isIncognito}
         contextUsage={contextUsage}
+        serverUsagePercent={serverUsagePercent}
         isDisabled={!isModelAvailable}
         disabledReason={chatDisabledReason}
         showHistory={showHistory}

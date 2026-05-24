@@ -10,7 +10,11 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { generateContinuations, parseToolArguments } from './openaiService';
+import {
+  createChatSession,
+  generateContinuations,
+  parseToolArguments,
+} from './openaiService';
 import type { LLMConfig } from '../types';
 
 describe('openaiService', () => {
@@ -131,5 +135,50 @@ describe('openaiService', () => {
     const result = await svc.streamAiAction('chapter', 'rewrite', '1', 'draft');
 
     expect(result).toBe('\n\nVisible prose. Continued.');
+  });
+
+  it('captures server-provided usage and exposes it on the chat result', async () => {
+    const events = [
+      { content: 'Hello' },
+      { usage: { prompt_tokens: 42, completion_tokens: 8, total_tokens: 50 } },
+    ]
+      .map((evt: Record<string, unknown>) => `data: ${JSON.stringify(evt)}\n\n`)
+      .join('')
+      .concat('data: [DONE]\n\n');
+
+    const encoder = new TextEncoder();
+    const fakeReader = {
+      read: vi
+        .fn()
+        .mockResolvedValueOnce({ done: false, value: encoder.encode(events) })
+        .mockResolvedValueOnce({ done: true, value: new Uint8Array() }),
+    };
+    const fakeBody = {
+      getReader: () => fakeReader,
+    };
+
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, body: fakeBody });
+
+    const cfg: LLMConfig = {
+      id: 'x',
+      name: 'x',
+      baseUrl: '',
+      apiKey: '',
+      timeout: 5,
+      modelId: 'gpt-4o',
+      contextWindowTokens: 4096,
+      maxTokens: 1024,
+      prompts: { system: '', continuation: '', summary: '' },
+    };
+
+    const session = createChatSession('system', [], cfg);
+    const result = await session.sendMessage('Hi');
+
+    expect(result.text).toBe('Hello');
+    expect(result.serverUsage).toEqual({
+      prompt_tokens: 42,
+      completion_tokens: 8,
+      total_tokens: 50,
+    });
   });
 });

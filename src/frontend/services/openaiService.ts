@@ -20,6 +20,8 @@ type ErrorData = string | Record<string, unknown> | unknown[];
 
 type UserMessageInput = string | { message: string; attachments?: ChatAttachment[] };
 
+type ServerUsage = Record<string, unknown>;
+
 type ToolCallChunk = {
   index?: number;
   id?: string;
@@ -95,6 +97,7 @@ export interface UnifiedChat {
     text: string;
     thinking?: string;
     functionCalls?: ParsedFunctionCall[];
+    serverUsage?: ServerUsage;
     traceback?: string;
   }>;
 }
@@ -111,6 +114,7 @@ async function readSSEStream(
   onToolCalls?: (toolCalls: ToolCallChunk[]) => void,
   onThinking?: (thinking: string) => void,
   onContent?: (content: string) => void,
+  onUsage?: (usage: ServerUsage) => void,
   cancelSignal?: CancelSignal,
   isStopped?: () => boolean
 ): Promise<string> {
@@ -166,6 +170,7 @@ async function readSSEStream(
             content?: string;
             thinking?: string;
             tool_calls?: ToolCallChunk[];
+            usage?: unknown;
           };
           if (data.error) {
             const msg = data.message || data.error;
@@ -184,6 +189,9 @@ async function readSSEStream(
           }
           if (data.tool_calls && onToolCalls) {
             onToolCalls(data.tool_calls);
+          }
+          if ('usage' in data && data.usage && onUsage) {
+            onUsage(data.usage as ServerUsage);
           }
         } catch (e) {
           if (e instanceof Error) {
@@ -215,6 +223,7 @@ export const createChatSession = (
     allowWebSearch?: boolean;
     currentChapter?: { id: string; title: string } | null;
     onContextUsage?: (usage: ChatContextUsage) => void;
+    onServerUsage?: (usage: ServerUsage) => void;
     isStopped?: () => boolean;
   }
 ): UnifiedChat => {
@@ -263,6 +272,7 @@ export const createChatSession = (
           [];
         let thinking = '';
         let fullText = '';
+        let serverUsage: ServerUsage | undefined;
         const cancelSignal: CancelSignal = { cancelled: false };
         const text = await readSSEStream(
           reader,
@@ -294,6 +304,10 @@ export const createChatSession = (
             fullText += chunk;
             if (onUpdate) onUpdate({ text: applySmartQuotes(fullText) });
           },
+          (usage: ServerUsage): void => {
+            serverUsage = usage;
+            if (options?.onServerUsage) options.onServerUsage(usage);
+          },
           cancelSignal,
           options?.isStopped
         );
@@ -313,6 +327,7 @@ export const createChatSession = (
           text: applySmartQuotes(text),
           thinking: thinking ? applySmartQuotes(thinking) : undefined,
           functionCalls: functionCalls.length > 0 ? functionCalls : undefined,
+          serverUsage,
           traceback: undefined, // Or capture if needed
         };
       } catch (e: unknown) {
@@ -425,6 +440,7 @@ export const streamAiAction = async (
       accumulated += delta;
       onUpdate?.(applySmartQuotes(accumulated));
     },
+    undefined,
     cancelSignal
   );
 

@@ -71,6 +71,11 @@ export const fr = {
     'System Instruction': 'Instruction système',
     "Define the AI's persona and rules...":
       "Définir la persona et les règles de l'IA...",
+    'Confirm project creation': 'Confirmer la création du projet',
+    'The AI wants to create a new project named "{{name}}" of type "{{type}}". Allow this action?':
+      'L’IA souhaite créer un nouveau projet nommé « {{name}} » de type « {{type}} ». Autoriser cette action ?',
+    'The AI wants to create a new project of type "{{type}}". Allow this action?':
+      'L’IA souhaite créer un nouveau projet de type « {{type}} ». Autoriser cette action ?',
     Cancel: 'Annuler',
     Save: 'Enregistrer',
     'Save Scratchpad': 'Enregistrer le bloc-notes',
@@ -98,6 +103,8 @@ export const fr = {
     'Attach files': 'Joindre des fichiers',
     // ChatHeader
     'Context usage: {{percent}}%': 'Utilisation du contexte : {{percent}} %',
+    compacted: 'compacté',
+    'server reported': 'signalé par le serveur',
     ctx: 'ctx',
     'New Chat': 'Nouveau chat',
     'No active chat to delete': 'Aucun chat actif à supprimer',

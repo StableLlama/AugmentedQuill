@@ -69,6 +69,11 @@ export const de = {
     'Delete scratchpad content': 'Entwurfsnotizen löschen',
     'System Instruction': 'Systemanweisung',
     "Define the AI's persona and rules...": 'KI-Persona und Regeln definieren...',
+    'Confirm project creation': 'Projekt erstellen bestätigen',
+    'The AI wants to create a new project named "{{name}}" of type "{{type}}". Allow this action?':
+      'Die KI möchte ein neues Projekt mit dem Namen „{{name}}" vom Typ „{{type}}“ erstellen. Aktion zulassen?',
+    'The AI wants to create a new project of type "{{type}}". Allow this action?':
+      'Die KI möchte ein neues Projekt vom Typ „{{type}}“ erstellen. Aktion zulassen?',
     Cancel: 'Abbrechen',
     Save: 'Speichern',
     'Save Scratchpad': 'Entwurfsnotizen speichern',

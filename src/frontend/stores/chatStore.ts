@@ -40,6 +40,7 @@ export interface ChatStoreState {
   chatMessages: ChatMessage[];
   isChatLoading: boolean;
   sessionMutations: SessionMutation[];
+  latestServerUsage: Record<string, unknown> | null;
 
   // ── Prose streaming flag (only flips at turn start/end) ──────────────────
   /** True only while chat is actively writing prose into the editor. */
@@ -76,6 +77,7 @@ export interface ChatStoreState {
   setSessionMutations: (
     v: SessionMutation[] | ((prev: SessionMutation[]) => SessionMutation[])
   ) => void;
+  setLatestServerUsage: (v: Record<string, unknown> | null) => void;
   setChatHistoryList: (
     v: ChatSession[] | ((prev: ChatSession[]) => ChatSession[])
   ) => void;
@@ -101,6 +103,7 @@ export const useChatStore = create<ChatStoreState>()(
     isProseStreamingFromChat: false,
     isProseStreamingFrozen: false,
     sessionMutations: [],
+    latestServerUsage: null,
     chatHistoryList: [],
     currentChatId: null,
     incognitoSessions: [],
@@ -139,6 +142,10 @@ export const useChatStore = create<ChatStoreState>()(
     ) =>
       set((s: ChatStoreState): { sessionMutations: SessionMutation[] } => ({
         sessionMutations: resolve(v, s.sessionMutations),
+      })),
+    setLatestServerUsage: (v: Record<string, unknown> | null) =>
+      set((): { latestServerUsage: Record<string, unknown> | null } => ({
+        latestServerUsage: v,
       })),
     setChatHistoryList: (v: ChatSession[] | ((prev: ChatSession[]) => ChatSession[])) =>
       set((s: ChatStoreState): { chatHistoryList: ChatSession[] } => ({

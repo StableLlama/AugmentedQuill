@@ -286,6 +286,14 @@ async def unified_chat_stream(
                         response_data = await resp.json()
                         if request_log_entry:
                             request_log_entry["response"]["body"] = response_data
+                            if response_data.get("usage") is not None:
+                                request_log_entry["response"]["usage"] = response_data[
+                                    "usage"
+                                ]
+
+                        usage = response_data.get("usage")
+                        if usage is not None:
+                            yield {"usage": usage}
 
                         choices = response_data.get("choices", [])
                         if choices:
@@ -390,7 +398,11 @@ async def unified_chat_stream(
                             chunk = _json.loads(data_str)
                             if request_log_entry:
                                 request_log_entry["response"]["chunks"].append(chunk)
-
+                            usage = chunk.get("usage")
+                            if usage is not None:
+                                if request_log_entry:
+                                    request_log_entry["response"]["usage"] = usage
+                                yield {"usage": usage}
                             choices = chunk.get("choices", [])
                             if not choices:
                                 continue

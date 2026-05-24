@@ -332,7 +332,9 @@ export type ExecuteChatRequestContext = {
   requestToolCallLoopAccess: (
     count: number
   ) => Promise<'stop' | 'continue' | 'unlimited'>;
+  confirmDangerousToolCalls: (toolCalls: ChatToolCall[]) => Promise<boolean>;
   onMutations?: (mutations: ChatToolMutationPayload) => void;
+  setLatestServerUsage?: (usage: Record<string, unknown> | null) => void;
   pushExternalHistoryEntry?: (params: {
     label: string;
     onUndo?: () => Promise<void>;
@@ -510,6 +512,12 @@ const normalizeFunctionCalls = (
       args: typeof call.args === 'string' ? { raw: call.args } : call.args,
     })
   );
+
+export const isManageProjectCreateToolCall = (toolCall: ChatToolCall): boolean =>
+  toolCall.name === 'manage_project' &&
+  typeof toolCall.args === 'object' &&
+  toolCall.args !== null &&
+  (toolCall.args as Record<string, unknown>).action === 'create';
 
 export const buildToolPayload = (
   currentHistory: ChatMessage[],
@@ -724,15 +732,18 @@ const handleToolResponse = async (
     {
       allowWebSearch: context.getAllowWebSearch(),
       currentChapter: context.currentChapter,
+      onServerUsage: context.setLatestServerUsage,
       isStopped: (): boolean => context.stopSignalRef.current,
     }
   );
 
   const nextMsgId = uuidv4();
+  context.setLatestServerUsage?.(null);
   const nextResult = await nextSession.sendMessage(
     { message: '' },
     makeMessageUpdater(context.setChatMessages)(nextMsgId)
   );
+  context.setLatestServerUsage?.(nextResult.serverUsage ?? null);
 
   return {
     currentHistory,
@@ -749,6 +760,7 @@ type UnifiedChatResult = {
     name: string;
     args: Record<string, unknown> | string;
   }>;
+  serverUsage?: Record<string, unknown>;
   traceback?: string;
 };
 
@@ -802,11 +814,29 @@ const runToolCallLoop = async (
     const currentChatId = context.getCurrentChatId();
     let toolResponse: ChatToolExecutionResponse;
     try {
-      toolResponse = await api.chat.executeTools(
-        buildToolPayload(currentHistory, context.currentChapterId, currentChatId),
-        context.onProseChunk,
-        (): boolean => context.stopSignalRef.current
-      );
+      const toolCalls = assistantMessage.tool_calls ?? [];
+      const shouldExecute = await context.confirmDangerousToolCalls(toolCalls);
+      if (!shouldExecute) {
+        toolResponse = {
+          ok: true,
+          appended_messages: [
+            {
+              role: 'tool',
+              tool_call_id: toolCalls[0]?.id ?? '',
+              name: toolCalls[0]?.name ?? 'manage_project',
+              content: JSON.stringify({
+                error: 'Forbidden to create a new project',
+              }),
+            },
+          ],
+        };
+      } else {
+        toolResponse = await api.chat.executeTools(
+          buildToolPayload(currentHistory, context.currentChapterId, currentChatId),
+          context.onProseChunk,
+          (): boolean => context.stopSignalRef.current
+        );
+      }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Tool execution failed';
       toolResponse = {
@@ -895,15 +925,18 @@ const executeChatRequestImpl = async (
       {
         allowWebSearch: context.getAllowWebSearch(),
         currentChapter: context.currentChapter,
+        onServerUsage: context.setLatestServerUsage,
         isStopped: (): boolean => context.stopSignalRef.current,
       }
     );
 
+    context.setLatestServerUsage?.(null);
     let currentMsgId = uuidv4();
     let result = await session.sendMessage(
       { message: userText, attachments },
       updateMessage(currentMsgId)
     );
+    context.setLatestServerUsage?.(result.serverUsage ?? null);
 
     const effectiveUserMsgId = userMsgId || uuidv4();
     if (

@@ -14,6 +14,7 @@ import { describe, it, expect } from 'vitest';
 import {
   applyScratchpadToolResult,
   buildToolPayload,
+  isManageProjectCreateToolCall,
   makeMessageUpdater,
   refreshStaleProjectContextHistory,
 } from './chatExecutionHelpers';
@@ -130,6 +131,36 @@ describe('build tool payload', () => {
     expect(payload.messages[0]?.name).toBe('manage_scenes');
     expect(payload.messages[0]?.tool_call_id).toBe('call-123');
     expect(payload.messages[0]?.content).toBe('{"status":"ok"}');
+  });
+});
+
+describe('project creation tool detection', () => {
+  it('detects manage_project create tool calls', () => {
+    const toolCall = {
+      id: 't1',
+      name: 'manage_project',
+      args: {
+        action: 'create',
+        create_data: {
+          name: 'The Gilded Cage - Reorganized',
+          project_type: 'novel',
+        },
+      },
+    } as const;
+
+    expect(isManageProjectCreateToolCall(toolCall)).toBe(true);
+  });
+
+  it('rejects manage_project actions that are not create', () => {
+    const toolCall = {
+      id: 't2',
+      name: 'manage_project',
+      args: {
+        action: 'list',
+      },
+    } as const;
+
+    expect(isManageProjectCreateToolCall(toolCall)).toBe(false);
   });
 });
 

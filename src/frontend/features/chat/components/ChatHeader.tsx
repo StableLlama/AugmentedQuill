@@ -47,6 +47,7 @@ const renderContextUsagePill = ({
   contextTrackClasses,
   usageTone,
   compactionApplied,
+  serverUsagePercent,
   t,
 }: {
   enabled: boolean;
@@ -55,6 +56,7 @@ const renderContextUsagePill = ({
   contextTrackClasses: string;
   usageTone: string;
   compactionApplied: boolean;
+  serverUsagePercent?: number | null;
   t: TranslationFunction;
 }): React.ReactElement | null => {
   if (!enabled) {
@@ -65,8 +67,8 @@ const renderContextUsagePill = ({
     <div
       className={`ml-1 inline-flex shrink-0 items-center gap-2 rounded-full border px-2 py-0.5 text-[11px] ${contextPillClasses}`}
       title={`${t('Context usage: {{percent}}%', { percent: usagePercent })}${
-        compactionApplied ? ' (compacted)' : ''
-      }`}
+        compactionApplied ? ` (${t('compacted')})` : ''
+      }${serverUsagePercent != null ? ` (${t('server reported')})` : ''}`}
     >
       <span className="uppercase tracking-[0.14em] text-[10px] opacity-80">
         {t('ctx')}
@@ -89,6 +91,7 @@ type ChatHeaderProps = {
   currentSessionId: string | null;
   isIncognito: boolean;
   contextUsage: ChatContextUsage;
+  serverUsagePercent?: number | null;
   isDisabled?: boolean;
   disabledReason?: string;
   showHistory: boolean;
@@ -109,6 +112,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   currentSessionId,
   isIncognito,
   contextUsage,
+  serverUsagePercent,
   isDisabled = false,
   disabledReason,
   showHistory,
@@ -125,7 +129,8 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
     disabledReason ||
     'Chat is unavailable because no working CHAT model is configured.';
   const { t } = useTranslation();
-  const usagePercent = Math.round(Math.min(contextUsage.usageRatio, 1) * 100);
+  const usagePercent =
+    serverUsagePercent ?? Math.round(Math.min(contextUsage.usageRatio, 1) * 100);
   const usageTone = getUsageTone(usagePercent);
   const contextPillClasses = getContextPillClasses(isLightTheme);
   const contextTrackClasses = getContextTrackClasses(isLightTheme);
@@ -136,6 +141,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
     contextTrackClasses,
     usageTone,
     compactionApplied: contextUsage.compactionApplied,
+    serverUsagePercent,
     t,
   });
 

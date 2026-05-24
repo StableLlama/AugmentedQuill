@@ -10,6 +10,7 @@
  */
 
 import React, { useCallback, useRef, useEffect, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useStory } from './features/story/useStory';
 import { useChapterSuggestions } from './features/chapters/useChapterSuggestions';
 import { EditorHandle } from './features/editor/Editor';
@@ -24,6 +25,7 @@ import { useProviderHealth } from './features/settings/useProviderHealth';
 import { usePrompts } from './features/settings/usePrompts';
 import { DEFAULT_APP_SETTINGS } from './features/app/appDefaults';
 import { useAppChatRuntime } from './features/app/useAppChatRuntime';
+import { isManageProjectCreateToolCall } from './features/chat/chatExecutionHelpers';
 import {
   useAppHeaderProps,
   useAppMainLayoutProps,
@@ -47,9 +49,10 @@ import { setErrorDispatcher } from './services/errorNotifier';
 import { useChatStore, ChatStoreState } from './stores/chatStore';
 import { uiStoreActions, useUIStore, UIStoreState } from './stores/uiStore';
 import type { SessionMutation } from './features/chat';
-import type { SceneId } from './types';
+import type { ChatToolCall, SceneId } from './types';
 
 const App: React.FC = () => {
+  const { t } = useTranslation();
   const { confirm, alert, confirmDialogState, handleConfirm, handleCancel } =
     useConfirmDialog();
 
@@ -239,6 +242,45 @@ const App: React.FC = () => {
     recordHistoryEntry: pushExternalHistoryEntry,
   });
 
+  const confirmDangerousToolCalls = useCallback(
+    async (toolCalls: ChatToolCall[]): Promise<boolean> => {
+      const projectCreateCall = toolCalls.find(isManageProjectCreateToolCall);
+      if (!projectCreateCall) {
+        return true;
+      }
+
+      const args = projectCreateCall.args as Record<string, unknown>;
+      const createData =
+        typeof args.create_data === 'object' && args.create_data !== null
+          ? (args.create_data as Record<string, unknown>)
+          : {};
+      const projectName = String(createData.name ?? '');
+      const projectType = String(createData.project_type ?? createData.type ?? 'novel');
+
+      return confirm({
+        title: t('Confirm project creation'),
+        message: projectName
+          ? t(
+              'The AI wants to create a new project named "{{name}}" of type "{{type}}". Allow this action?',
+              {
+                name: projectName,
+                type: projectType,
+              }
+            )
+          : t(
+              'The AI wants to create a new project of type "{{type}}". Allow this action?',
+              {
+                type: projectType,
+              }
+            ),
+        confirmLabel: t('Allow'),
+        cancelLabel: t('Cancel'),
+        variant: 'danger',
+      });
+    },
+    [confirm, t]
+  );
+
   const {
     onMutationClick,
     handleSendMessageWithReset,
@@ -269,6 +311,7 @@ const App: React.FC = () => {
     updateChapter,
     pushExternalHistoryEntry,
     requestToolCallLoopAccess,
+    confirmDangerousToolCalls,
     handleChapterSelect,
     openAndExpandStory,
     openSceneEditorDialog,

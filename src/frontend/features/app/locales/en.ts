@@ -86,6 +86,11 @@ export const en = {
     'Delete scratchpad content': 'Delete scratchpad content',
     'System Instruction': 'System Instruction',
     "Define the AI's persona and rules...": "Define the AI's persona and rules...",
+    'Confirm project creation': 'Confirm project creation',
+    'The AI wants to create a new project named "{{name}}" of type "{{type}}". Allow this action?':
+      'The AI wants to create a new project named "{{name}}" of type "{{type}}". Allow this action?',
+    'The AI wants to create a new project of type "{{type}}". Allow this action?':
+      'The AI wants to create a new project of type "{{type}}". Allow this action?',
     Cancel: 'Cancel',
     Save: 'Save',
     'Save Scratchpad': 'Save Scratchpad',
@@ -112,6 +117,8 @@ export const en = {
     'Attach files': 'Attach files',
     // ChatHeader
     'Context usage: {{percent}}%': 'Context usage: {{percent}}%',
+    compacted: 'compacted',
+    'server reported': 'server reported',
     ctx: 'ctx',
     'New Chat': 'New Chat',
     'No active chat to delete': 'No active chat to delete',

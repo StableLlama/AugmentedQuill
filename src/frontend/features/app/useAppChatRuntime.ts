@@ -14,6 +14,7 @@ import { useCallback, useEffect, useRef, startTransition } from 'react';
 import { useChatExecution } from '../chat/useChatExecution';
 import { useChatMessageActions } from '../chat/useChatMessageActions';
 import { useChatSessionManagement } from '../chat/useChatSessionManagement';
+import type { ChatToolCall } from '../../types';
 import { MUTATION_TOOL_REGISTRY } from '../chat/mutationToolRegistry';
 import type { SessionMutation } from '../chat';
 import { applySmartQuotes } from '../../utils/textUtils';
@@ -56,6 +57,7 @@ type UseAppChatRuntimeParams = {
   requestToolCallLoopAccess: (
     count: number
   ) => Promise<'stop' | 'continue' | 'unlimited'>;
+  confirmDangerousToolCalls: (toolCalls: ChatToolCall[]) => Promise<boolean>;
   handleChapterSelect: (chapterId: string | null) => void;
   openAndExpandStory: () => void;
   openSceneEditorDialog: (sceneId: SceneId, openedViaTrigger?: boolean) => void;
@@ -152,6 +154,7 @@ export function useAppChatRuntime({
   updateChapter,
   pushExternalHistoryEntry,
   requestToolCallLoopAccess,
+  confirmDangerousToolCalls,
   handleChapterSelect,
   openAndExpandStory,
   openSceneEditorDialog,
@@ -379,6 +382,7 @@ export function useAppChatRuntime({
       params: Parameters<NonNullable<typeof pushExternalHistoryEntry>>[0]
     ): void | undefined => pushExternalHistoryEntry?.(params),
     requestToolCallLoopAccess,
+    confirmDangerousToolCalls,
   });
 
   const handleSendMessageWithReset = useCallback(
