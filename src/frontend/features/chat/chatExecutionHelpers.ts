@@ -40,6 +40,9 @@ export type ChatToolMutationPayload = ChatToolExecutionResponse & {
   }>;
 };
 
+const UNEXPECTED_TOOL_LOOP_STOP_HINT =
+  'Your previous response appears to have stopped unexpectedly with no visible assistant reply. If your plan is not finished, continue from where you left off and proceed with the next required actions. If your plan is finished, provide a concise summary of what you completed.';
+
 const PROJECT_CONTEXT_TOOL_NAMES = new Set<string>([
   'refresh_project_context',
   'get_current_chapter_id',
@@ -597,6 +600,13 @@ export const buildToolPayload = (
   chat_id: currentChatId || undefined,
 });
 
+const hasVisibleAssistantOutput = (result: UnifiedChatResult): boolean =>
+  Boolean(
+    result.text?.trim() ||
+    result.thinking?.trim() ||
+    (result.functionCalls && result.functionCalls.length > 0)
+  );
+
 const extractScratchpadContent = (
   args: Record<string, unknown> | string | undefined,
   result?: Record<string, unknown>
@@ -738,12 +748,35 @@ const handleToolResponse = async (
   );
 
   const nextMsgId = uuidv4();
+  const continuationUpdater = makeMessageUpdater(context.setChatMessages)(nextMsgId);
+
+  const requestContinuation = async (message: string): Promise<UnifiedChatResult> => {
+    const continuation = await nextSession.sendMessage(
+      { message },
+      continuationUpdater
+    );
+    context.setLatestServerUsage?.(continuation.serverUsage ?? null);
+    return continuation;
+  };
+
   context.setLatestServerUsage?.(null);
-  const nextResult = await nextSession.sendMessage(
-    { message: '' },
-    makeMessageUpdater(context.setChatMessages)(nextMsgId)
-  );
-  context.setLatestServerUsage?.(nextResult.serverUsage ?? null);
+  let nextResult = await requestContinuation('');
+
+  // Some models occasionally terminate a post-tool continuation with an empty
+  // assistant turn (finish_reason=stop, no content/tool calls). Give one
+  // extra silent retry first so the model can continue naturally, then only
+  // send an explicit stale-turn hint if still empty.
+  if (
+    !context.stopSignalRef.current &&
+    !hasVisibleAssistantOutput(nextResult) &&
+    toolResponse.appended_messages.length > 0
+  ) {
+    nextResult = await requestContinuation('');
+
+    if (!context.stopSignalRef.current && !hasVisibleAssistantOutput(nextResult)) {
+      nextResult = await requestContinuation(UNEXPECTED_TOOL_LOOP_STOP_HINT);
+    }
+  }
 
   return {
     currentHistory,
@@ -762,6 +795,65 @@ type UnifiedChatResult = {
   }>;
   serverUsage?: Record<string, unknown>;
   traceback?: string;
+};
+
+type ToolBatchSummary = {
+  batch_id: string;
+  label: string;
+  operation_count?: number;
+  changed_chapter_ids?: number[];
+};
+
+export const buildToolLoopCompletionFallback = (
+  result: UnifiedChatResult,
+  accumulatedToolBatches: ToolBatchSummary[]
+): string => {
+  if (hasVisibleAssistantOutput(result)) {
+    return '';
+  }
+  if (accumulatedToolBatches.length === 0) {
+    return '';
+  }
+
+  const totalOperations = accumulatedToolBatches.reduce(
+    (sum: number, batch: ToolBatchSummary): number =>
+      sum + Math.max(1, batch.operation_count ?? 1),
+    0
+  );
+  const operationLabel = totalOperations === 1 ? 'action' : 'actions';
+
+  return `Completed ${totalOperations} tool ${operationLabel}.`;
+};
+
+const executeToolCall = async (
+  assistantMessage: ChatMessage,
+  currentHistory: ChatMessage[],
+  currentChatId: string,
+  context: ExecuteChatRequestContext
+): Promise<ChatToolExecutionResponse> => {
+  const toolCalls = assistantMessage.tool_calls ?? [];
+  const shouldExecute = await context.confirmDangerousToolCalls(toolCalls);
+  if (!shouldExecute) {
+    return {
+      ok: true,
+      appended_messages: [
+        {
+          role: 'tool',
+          tool_call_id: toolCalls[0]?.id ?? '',
+          name: toolCalls[0]?.name ?? 'manage_project',
+          content: JSON.stringify({
+            error: 'Forbidden to create a new project',
+          }),
+        },
+      ],
+    };
+  }
+
+  return api.chat.executeTools(
+    buildToolPayload(currentHistory, context.currentChapterId, currentChatId),
+    context.onProseChunk,
+    (): boolean => context.stopSignalRef.current
+  );
 };
 
 const runToolCallLoop = async (
@@ -814,29 +906,12 @@ const runToolCallLoop = async (
     const currentChatId = context.getCurrentChatId();
     let toolResponse: ChatToolExecutionResponse;
     try {
-      const toolCalls = assistantMessage.tool_calls ?? [];
-      const shouldExecute = await context.confirmDangerousToolCalls(toolCalls);
-      if (!shouldExecute) {
-        toolResponse = {
-          ok: true,
-          appended_messages: [
-            {
-              role: 'tool',
-              tool_call_id: toolCalls[0]?.id ?? '',
-              name: toolCalls[0]?.name ?? 'manage_project',
-              content: JSON.stringify({
-                error: 'Forbidden to create a new project',
-              }),
-            },
-          ],
-        };
-      } else {
-        toolResponse = await api.chat.executeTools(
-          buildToolPayload(currentHistory, context.currentChapterId, currentChatId),
-          context.onProseChunk,
-          (): boolean => context.stopSignalRef.current
-        );
-      }
+      toolResponse = await executeToolCall(
+        assistantMessage,
+        currentHistory,
+        currentChatId,
+        context
+      );
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Tool execution failed';
       toolResponse = {
@@ -950,12 +1025,7 @@ const executeChatRequestImpl = async (
       });
     }
 
-    const accumulatedToolBatches: Array<{
-      batch_id: string;
-      label: string;
-      operation_count?: number;
-      changed_chapter_ids?: number[];
-    }> = [];
+    const accumulatedToolBatches: ToolBatchSummary[] = [];
     const storyChangedState = { value: false };
     const loopResult = await runToolCallLoop(
       context,
@@ -991,8 +1061,11 @@ const executeChatRequestImpl = async (
       });
     }
 
+    const fallbackText = context.stopSignalRef.current
+      ? ''
+      : buildToolLoopCompletionFallback(result, accumulatedToolBatches);
     const botMessage = context.createAssistantMessage(currentMsgId, {
-      text: result.text,
+      text: result.text || fallbackText,
       thinking: result.thinking,
       functionCalls: normalizeFunctionCalls(result.functionCalls),
     });
@@ -1037,13 +1110,6 @@ const executeChatRequestImpl = async (
     context.setIsChatLoading(false);
     context.stopSignalRef.current = false;
   }
-};
-
-type ToolBatchSummary = {
-  batch_id: string;
-  label: string;
-  operation_count?: number;
-  changed_chapter_ids?: number[];
 };
 
 const fetchBaselineChapterOverrides = async (

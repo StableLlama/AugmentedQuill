@@ -13,6 +13,7 @@ import { describe, it, expect } from 'vitest';
 
 import {
   applyScratchpadToolResult,
+  buildToolLoopCompletionFallback,
   buildToolPayload,
   isManageProjectCreateToolCall,
   makeMessageUpdater,
@@ -325,5 +326,37 @@ describe('project context refresh injection', () => {
       )
     ).toBe(false);
     expect(JSON.stringify(refreshPayload)).not.toContain('Very long story content');
+  });
+});
+
+describe('terminal tool loop fallback', () => {
+  it('builds a visible completion note when the final model turn is empty', () => {
+    const text = buildToolLoopCompletionFallback(
+      { text: '', thinking: '', functionCalls: [] },
+      [
+        {
+          batch_id: 'batch-1',
+          label: 'AI tools: manage_project (+2)',
+          operation_count: 3,
+        },
+      ]
+    );
+
+    expect(text).toBe('Completed 3 tool actions.');
+  });
+
+  it('returns empty when the final model turn already has visible output', () => {
+    const text = buildToolLoopCompletionFallback(
+      { text: 'Done. I created the chapters.', functionCalls: [] },
+      [
+        {
+          batch_id: 'batch-1',
+          label: 'AI tools: create_new_chapter (+1)',
+          operation_count: 2,
+        },
+      ]
+    );
+
+    expect(text).toBe('');
   });
 });

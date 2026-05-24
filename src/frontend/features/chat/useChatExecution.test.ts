@@ -45,6 +45,8 @@ describe('useChatExecution', () => {
     vi.clearAllMocks();
   });
 
+  const allowAllToolCalls = vi.fn().mockResolvedValue(true);
+
   it('groups multiple incremental tool_batch calls into a single external history entry with combined undo/redo', async () => {
     const refreshProjects = vi.fn().mockResolvedValue(undefined);
     const refreshStory = vi.fn().mockResolvedValue(undefined);
@@ -111,6 +113,7 @@ describe('useChatExecution', () => {
         refreshStory,
         pushExternalHistoryEntry,
         requestToolCallLoopAccess: vi.fn().mockResolvedValue('unlimited'),
+        confirmDangerousToolCalls: allowAllToolCalls,
       })
     );
 
@@ -185,6 +188,7 @@ describe('useChatExecution', () => {
         refreshStory,
         pushExternalHistoryEntry,
         requestToolCallLoopAccess: vi.fn().mockResolvedValue('unlimited'),
+        confirmDangerousToolCalls: allowAllToolCalls,
       })
     );
 
@@ -220,6 +224,7 @@ describe('useChatExecution', () => {
         refreshProjects,
         refreshStory,
         requestToolCallLoopAccess: vi.fn().mockResolvedValue('unlimited'),
+        confirmDangerousToolCalls: allowAllToolCalls,
       })
     );
 
@@ -243,5 +248,182 @@ describe('useChatExecution', () => {
       message: 'Read this file',
       attachments,
     });
+  });
+
+  it('sends stale-turn hint only after one extra silent empty continuation retry', async () => {
+    const refreshProjects = vi.fn().mockResolvedValue(undefined);
+    const refreshStory = vi.fn().mockResolvedValue(undefined);
+
+    const sendMessageMock = vi.fn();
+    vi.mocked(createChatSession).mockReturnValue({
+      sendMessage: sendMessageMock,
+    } as UnifiedChat);
+
+    sendMessageMock
+      .mockResolvedValueOnce({
+        text: '',
+        functionCalls: [{ id: 'c1', name: 'manage_project', args: {} }],
+      })
+      .mockResolvedValueOnce({ text: '', functionCalls: [] })
+      .mockResolvedValueOnce({ text: '', functionCalls: [] })
+      .mockResolvedValueOnce({
+        text: 'Done. I finished the chapter setup.',
+        functionCalls: [],
+      });
+
+    vi.mocked(api.chat.executeTools).mockResolvedValueOnce({
+      ok: true,
+      appended_messages: [
+        { content: 'ok', name: 'manage_project', tool_call_id: 'c1' },
+      ],
+      mutations: {
+        story_changed: false,
+      },
+    });
+
+    const { result } = renderHook(() =>
+      useChatExecution({
+        getSystemPrompt: () => 'system',
+        activeChatConfig: { model: 'test', temperature: 0.5 },
+        isChatAvailable: true,
+        getAllowWebSearch: () => false,
+        currentChapterId: '1',
+        getCurrentChatId: () => 'chat-1',
+        currentChapter: { id: '1', title: 'Intro' },
+        refreshProjects,
+        refreshStory,
+        requestToolCallLoopAccess: vi.fn().mockResolvedValue('unlimited'),
+        confirmDangerousToolCalls: allowAllToolCalls,
+      })
+    );
+
+    await act(async () => {
+      await result.current.handleSendMessage('Please organize chapters');
+    });
+
+    expect(sendMessageMock).toHaveBeenCalledTimes(4);
+    expect(sendMessageMock.mock.calls[1][0]).toEqual({ message: '' });
+    expect(sendMessageMock.mock.calls[2][0]).toEqual({ message: '' });
+    const recoveryMessage = sendMessageMock.mock.calls[3][0] as { message: string };
+    expect(recoveryMessage.message).toContain('stopped unexpectedly');
+  });
+
+  it('does not send unexpected-stop hint when post-tool continuation already has output', async () => {
+    const refreshProjects = vi.fn().mockResolvedValue(undefined);
+    const refreshStory = vi.fn().mockResolvedValue(undefined);
+
+    const sendMessageMock = vi.fn();
+    vi.mocked(createChatSession).mockReturnValue({
+      sendMessage: sendMessageMock,
+    } as UnifiedChat);
+
+    sendMessageMock
+      .mockResolvedValueOnce({
+        text: '',
+        functionCalls: [{ id: 'c1', name: 'manage_project', args: {} }],
+      })
+      .mockResolvedValueOnce({ text: 'Completed all changes.', functionCalls: [] });
+
+    vi.mocked(api.chat.executeTools).mockResolvedValueOnce({
+      ok: true,
+      appended_messages: [
+        { content: 'ok', name: 'manage_project', tool_call_id: 'c1' },
+      ],
+      mutations: {
+        story_changed: false,
+      },
+    });
+
+    const { result } = renderHook(() =>
+      useChatExecution({
+        getSystemPrompt: () => 'system',
+        activeChatConfig: { model: 'test', temperature: 0.5 },
+        isChatAvailable: true,
+        getAllowWebSearch: () => false,
+        currentChapterId: '1',
+        getCurrentChatId: () => 'chat-1',
+        currentChapter: { id: '1', title: 'Intro' },
+        refreshProjects,
+        refreshStory,
+        requestToolCallLoopAccess: vi.fn().mockResolvedValue('unlimited'),
+        confirmDangerousToolCalls: allowAllToolCalls,
+      })
+    );
+
+    await act(async () => {
+      await result.current.handleSendMessage('Please organize chapters');
+    });
+
+    expect(sendMessageMock).toHaveBeenCalledTimes(2);
+    const messagePayloads = sendMessageMock.mock.calls.map(
+      (call: readonly [unknown]) => call[0] as { message?: string }
+    );
+    expect(
+      messagePayloads.some(
+        (payload: { message?: string }) =>
+          typeof payload.message === 'string' &&
+          payload.message.includes('stopped unexpectedly')
+      )
+    ).toBe(false);
+  });
+
+  it('does not send unexpected-stop hint when silent retry recovers with output', async () => {
+    const refreshProjects = vi.fn().mockResolvedValue(undefined);
+    const refreshStory = vi.fn().mockResolvedValue(undefined);
+
+    const sendMessageMock = vi.fn();
+    vi.mocked(createChatSession).mockReturnValue({
+      sendMessage: sendMessageMock,
+    } as UnifiedChat);
+
+    sendMessageMock
+      .mockResolvedValueOnce({
+        text: '',
+        functionCalls: [{ id: 'c1', name: 'manage_project', args: {} }],
+      })
+      .mockResolvedValueOnce({ text: '', functionCalls: [] })
+      .mockResolvedValueOnce({ text: 'Recovered on silent retry.', functionCalls: [] });
+
+    vi.mocked(api.chat.executeTools).mockResolvedValueOnce({
+      ok: true,
+      appended_messages: [
+        { content: 'ok', name: 'manage_project', tool_call_id: 'c1' },
+      ],
+      mutations: {
+        story_changed: false,
+      },
+    });
+
+    const { result } = renderHook(() =>
+      useChatExecution({
+        getSystemPrompt: () => 'system',
+        activeChatConfig: { model: 'test', temperature: 0.5 },
+        isChatAvailable: true,
+        getAllowWebSearch: () => false,
+        currentChapterId: '1',
+        getCurrentChatId: () => 'chat-1',
+        currentChapter: { id: '1', title: 'Intro' },
+        refreshProjects,
+        refreshStory,
+        requestToolCallLoopAccess: vi.fn().mockResolvedValue('unlimited'),
+        confirmDangerousToolCalls: allowAllToolCalls,
+      })
+    );
+
+    await act(async () => {
+      await result.current.handleSendMessage('Please organize chapters');
+    });
+
+    expect(sendMessageMock).toHaveBeenCalledTimes(3);
+    const messagePayloads = sendMessageMock.mock.calls.map(
+      (call: readonly [unknown]) => call[0] as { message?: string }
+    );
+    expect(
+      messagePayloads.some(
+        (payload: { message?: string }) =>
+          typeof payload.message === 'string' &&
+          payload.message.includes('stopped unexpectedly')
+      )
+    ).toBe(false);
   });
 });
