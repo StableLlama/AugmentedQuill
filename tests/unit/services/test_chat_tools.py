@@ -2867,6 +2867,62 @@ class ChatToolsTest(TestCase):
         # Both batches reversed → back to original.
         self.assertEqual(chapter_file.read_text(encoding="utf-8"), original_content)
 
+    def test_chat_batch_chapter_before_uses_snapshot_mapping(self):
+        self._bootstrap_project()
+        project_dir = self.projects_root / "demo"
+        batch_id = "batch-test-mapping"
+        batch_dir = project_dir / ".aq_history" / "chat_tool_batches" / batch_id
+        batch_dir.mkdir(parents=True, exist_ok=True)
+
+        metadata = {
+            "batch_id": batch_id,
+            "created_at": "2026-01-01T00:00:00Z",
+            "tool_names": ["write_chapter_content"],
+            "changed_chapter_ids": [1],
+            "chapter_id_paths": {"1": "chapters/0001.txt"},
+            "before": {"chapters/0001.txt": "QWxwaGEgY2hhcHRlciBjb250ZW50Lg=="},
+            "after": {"chapters/0001.txt": "QWxwaGEgY2hhcHRlciBjb250ZW50Lg=="},
+        }
+        (batch_dir / "batch.json").write_text(json.dumps(metadata), encoding="utf-8")
+
+        # Restructure the project so current chapter 1 no longer corresponds to the original file path.
+        (project_dir / "chapters" / "0001.txt").rename(
+            project_dir / "chapters" / "0003.txt"
+        )
+        (project_dir / "chapters" / "0001.txt").write_text(
+            "New chapter content.", encoding="utf-8"
+        )
+
+        response = self.client.get(
+            f"/api/v1/projects/demo/chat/tools/batches/{batch_id}/chapter-before/1"
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json(), {"content": "Alpha chapter content."})
+
+    def test_chat_batch_chapter_before_returns_empty_for_new_chapter(self):
+        self._bootstrap_project()
+        project_dir = self.projects_root / "demo"
+        batch_id = "batch-test-new-chapter"
+        batch_dir = project_dir / ".aq_history" / "chat_tool_batches" / batch_id
+        batch_dir.mkdir(parents=True, exist_ok=True)
+
+        metadata = {
+            "batch_id": batch_id,
+            "created_at": "2026-01-01T00:00:00Z",
+            "tool_names": ["create_new_chapter"],
+            "changed_chapter_ids": [2],
+            "chapter_id_paths": {},
+            "before": {},
+            "after": {"chapters/0002.txt": "QmV0YSBjaGFwdGVyIGNvbnRlbnQu"},
+        }
+        (batch_dir / "batch.json").write_text(json.dumps(metadata), encoding="utf-8")
+
+        response = self.client.get(
+            f"/api/v1/projects/demo/chat/tools/batches/{batch_id}/chapter-before/2"
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json(), {"content": ""})
+
     def test_undo_last_tool_changes_no_batches_returns_error(self):
         """undo_last_tool_changes with no existing batches returns a BadRequestError."""
         self._bootstrap_project()

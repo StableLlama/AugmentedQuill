@@ -511,7 +511,7 @@ const normalizeFunctionCalls = (
     })
   );
 
-const buildToolPayload = (
+export const buildToolPayload = (
   currentHistory: ChatMessage[],
   currentChapterId: string | null,
   currentChatId: string | null
@@ -527,37 +527,64 @@ const buildToolPayload = (
         arguments: string;
       };
     }>;
+    name?: string;
+    tool_call_id?: string;
   }>;
   active_chapter_id?: number;
   chat_id?: string;
 } => ({
-  messages: currentHistory.map((message: ChatMessage) => ({
-    role: (message.role === 'model' ? 'assistant' : message.role) as
-      | 'user'
-      | 'assistant'
-      | 'system'
-      | 'tool',
-    content: message.text || null,
-    tool_calls: message.tool_calls?.map(
-      (
-        toolCall: import('../../types').ChatToolCall
-      ): {
+  messages: currentHistory.map((message: ChatMessage) => {
+    const payload: {
+      role: 'user' | 'assistant' | 'system' | 'tool';
+      content: string | null;
+      tool_calls?: Array<{
         id: string;
         type: 'function';
         function: { name: string; arguments: string };
-      } => ({
-        id: toolCall.id,
-        type: 'function' as const,
-        function: {
-          name: toolCall.name,
-          arguments:
-            typeof toolCall.args === 'string'
-              ? toolCall.args
-              : JSON.stringify(toolCall.args),
-        },
-      })
-    ),
-  })),
+      }>;
+      name?: string;
+      tool_call_id?: string;
+    } = {
+      role: (message.role === 'model' ? 'assistant' : message.role) as
+        | 'user'
+        | 'assistant'
+        | 'system'
+        | 'tool',
+      content: message.text || null,
+    };
+
+    if (message.name) {
+      payload.name = message.name;
+    }
+
+    if (message.tool_call_id) {
+      payload.tool_call_id = message.tool_call_id;
+    }
+
+    if (message.tool_calls) {
+      payload.tool_calls = message.tool_calls.map(
+        (
+          toolCall: import('../../types').ChatToolCall
+        ): {
+          id: string;
+          type: 'function';
+          function: { name: string; arguments: string };
+        } => ({
+          id: toolCall.id,
+          type: 'function' as const,
+          function: {
+            name: toolCall.name,
+            arguments:
+              typeof toolCall.args === 'string'
+                ? toolCall.args
+                : JSON.stringify(toolCall.args),
+          },
+        })
+      );
+    }
+
+    return payload;
+  }),
   active_chapter_id: currentChapterId ? Number(currentChapterId) : undefined,
   chat_id: currentChatId || undefined,
 });
@@ -773,14 +800,40 @@ const runToolCallLoop = async (
     currentHistory.push(assistantMessage);
 
     const currentChatId = context.getCurrentChatId();
-    const toolResponse = await api.chat.executeTools(
-      buildToolPayload(currentHistory, context.currentChapterId, currentChatId),
-      context.onProseChunk,
-      (): boolean => context.stopSignalRef.current
-    );
+    let toolResponse: ChatToolExecutionResponse;
+    try {
+      toolResponse = await api.chat.executeTools(
+        buildToolPayload(currentHistory, context.currentChapterId, currentChatId),
+        context.onProseChunk,
+        (): boolean => context.stopSignalRef.current
+      );
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Tool execution failed';
+      toolResponse = {
+        ok: false,
+        appended_messages: [
+          {
+            role: 'tool',
+            tool_call_id: assistantMessage.tool_calls?.[0]?.id ?? '',
+            name: 'tool_error',
+            content: `Tool execution failed: ${message}`,
+          },
+        ],
+      };
+    }
+
+    if (toolResponse.ok === false && toolResponse.appended_messages.length === 0) {
+      toolResponse.appended_messages = [
+        {
+          role: 'tool',
+          tool_call_id: assistantMessage.tool_calls?.[0]?.id ?? '',
+          name: 'tool_error',
+          content: 'A tool failed to execute.',
+        },
+      ];
+    }
 
     if (context.stopSignalRef.current) break;
-    if (!toolResponse.ok) break;
 
     const nextState = await handleToolResponse(
       context,

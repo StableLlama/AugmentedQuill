@@ -13,6 +13,7 @@ import { describe, it, expect } from 'vitest';
 
 import {
   applyScratchpadToolResult,
+  buildToolPayload,
   makeMessageUpdater,
   refreshStaleProjectContextHistory,
 } from './chatExecutionHelpers';
@@ -109,6 +110,26 @@ describe('scratchpad tool results', () => {
     applyScratchpadToolResult(undefined, { content: 'result scratchpad' });
 
     expect(useChatStore.getState().scratchpad).toBe('result scratchpad');
+  });
+});
+
+describe('build tool payload', () => {
+  it('preserves tool result name and tool_call_id for tool messages', () => {
+    const history: ChatMessage[] = [
+      {
+        id: 'tool-result',
+        role: 'tool',
+        text: '{"status":"ok"}',
+        name: 'manage_scenes',
+        tool_call_id: 'call-123',
+      },
+    ];
+
+    const payload = buildToolPayload(history, null, null);
+
+    expect(payload.messages[0]?.name).toBe('manage_scenes');
+    expect(payload.messages[0]?.tool_call_id).toBe('call-123');
+    expect(payload.messages[0]?.content).toBe('{"status":"ok"}');
   });
 });
 

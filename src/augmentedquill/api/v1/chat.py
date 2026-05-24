@@ -192,6 +192,7 @@ def _store_chat_tool_batch_snapshot(
     before_snapshot: Dict[str, str],
     after_snapshot: Dict[str, str],
     tool_names: list[str],
+    before_chapter_id_paths: Dict[str, str],
 ) -> list[int]:
     """Persist before/after snapshots for reversible tool-call batches.
 
@@ -208,6 +209,7 @@ def _store_chat_tool_batch_snapshot(
         "created_at": datetime.datetime.now().isoformat(),
         "tool_names": tool_names,
         "changed_chapter_ids": changed_chapter_ids,
+        "chapter_id_paths": before_chapter_id_paths,
         "before": before_snapshot,
         "after": after_snapshot,
     }
@@ -308,10 +310,17 @@ async def api_chat_tools(
 
     active_project_dir = project_dir
     before_snapshot: Dict[str, str] | None = None
+    before_chapter_id_paths: Dict[str, str] | None = None
     batch_id: str | None = None
 
     if active_project_dir and tool_calls:
         before_snapshot = capture_project_snapshot(active_project_dir)
+        from augmentedquill.services.chapters.chapter_helpers import _scan_chapter_files
+
+        before_chapter_id_paths = {
+            str(vid): str(abs_path.relative_to(active_project_dir))
+            for vid, abs_path in _scan_chapter_files(active_project_dir)
+        }
         batch_id = f"batch-{uuid4().hex}"
 
     async def _gen() -> Any:
@@ -398,6 +407,7 @@ async def api_chat_tools(
             active_project_dir
             and batch_id
             and before_snapshot is not None
+            and before_chapter_id_paths is not None
             and mutations.get("story_changed")
         ):
             after_snapshot = capture_project_snapshot(active_project_dir)
@@ -407,6 +417,7 @@ async def api_chat_tools(
                 before_snapshot,
                 after_snapshot,
                 tool_names,
+                before_chapter_id_paths,
             )
             mutations["tool_batch"] = {
                 "batch_id": batch_id,
@@ -482,19 +493,33 @@ async def api_chat_batch_chapter_before(
 
     batch = _load_chat_tool_batch_snapshot(project_dir, batch_id)
     before_snapshot: Dict[str, str] = batch.get("before") or {}
+    chapter_id_paths = batch.get("chapter_id_paths") or {}
+
+    original_rel_path: str | None = None
+    if isinstance(chapter_id_paths, dict):
+        original_rel_path = chapter_id_paths.get(str(chapter_id))
 
     chapter_files = _scan_chapter_files(project_dir)
-    rel_path: str | None = None
+    current_rel_path: str | None = None
     for vid, abs_path in chapter_files:
         if vid == chapter_id:
-            rel_path = str(abs_path.relative_to(project_dir))
+            current_rel_path = str(abs_path.relative_to(project_dir))
             break
 
-    if rel_path is None:
-        raise HTTPException(status_code=404, detail="Chapter not found in project")
+    candidates = [path for path in (current_rel_path, original_rel_path) if path]
+    rel_path: str | None = None
+    content_b64: str | None = None
+    for candidate in candidates:
+        content_b64 = before_snapshot.get(candidate)
+        if content_b64 is not None:
+            rel_path = candidate
+            break
 
-    content_b64 = before_snapshot.get(rel_path)
-    if content_b64 is None:
+    if rel_path is None or content_b64 is None:
+        # If the chapter exists now but had no prior snapshot entry, it was
+        # likely created during the batch. In that case the baseline is empty.
+        if current_rel_path is not None:
+            return ChapterBeforeContentResponse(content="")
         raise HTTPException(
             status_code=404, detail="Chapter not found in batch before-snapshot"
         )
