@@ -11,7 +11,7 @@
 
 import { describe, expect, it } from 'vitest';
 import type { Scene, SceneId } from '../../types';
-import { compareSnakeSceneOrder } from './ConvergenceMapView';
+import { buildSnakePath, compareSnakeSceneOrder } from './ConvergenceMapView';
 
 const makeScene = (id: SceneId, sceneTime: string, timelineId: string): Scene => ({
   id,
@@ -29,6 +29,31 @@ const makeScene = (id: SceneId, sceneTime: string, timelineId: string): Scene =>
   pinboard_y: 0,
   status: 'active',
   timeline_id: timelineId,
+});
+
+describe('buildSnakePath', () => {
+  it('does not overshoot the next run during an upward transition', () => {
+    const scenes = [
+      makeScene(1, '2026-05-01T00:00:00+00:00[UTC]', 'main'),
+      makeScene(2, '2026-05-02T00:00:00+00:00[UTC]', 'main'),
+      makeScene(3, '2026-05-03T00:00:00+00:00[UTC]', 'main'),
+      makeScene(4, '2026-05-04T00:00:00+00:00[UTC]', 'main'),
+      makeScene(5, '2026-05-05T00:00:00+00:00[UTC]', 'main'),
+    ];
+
+    const cardLayouts = new Map([
+      [1, { x: 0, y: 100, w: 100, h: 20 }],
+      [2, { x: 0, y: 250, w: 100, h: 20 }],
+      [3, { x: 0, y: 180, w: 100, h: 20 }],
+      [4, { x: 0, y: 220, w: 100, h: 20 }],
+      [5, { x: 0, y: 160, w: 100, h: 20 }],
+    ] as const);
+
+    const { pathData } = buildSnakePath(scenes, cardLayouts, 0);
+
+    expect(pathData).toContain('L 16,170');
+    expect(pathData).not.toContain('L 16,110');
+  });
 });
 
 describe('compareSnakeSceneOrder', () => {

@@ -178,7 +178,7 @@ export const compareSnakeSceneOrder = (
  *     so upward travel is visibly centered between neighboring down-lanes
  *   - both the bottom and top turns are rendered as half-circle arcs
  */
-function buildSnakePath(
+export function buildSnakePath(
   proseScenes: Scene[],
   cardLayouts: Map<SceneId, CardLayoutEntry>,
   laneCenterX: number
@@ -245,7 +245,6 @@ function buildSnakePath(
     if (x > maxX) maxX = x;
   };
   const parts: string[] = [];
-  const processedYs: number[] = [];
 
   for (let runIdx = 0; runIdx < numRuns; runIdx++) {
     const laneX = startX + runIdx * TRACK_W;
@@ -265,7 +264,6 @@ function buildSnakePath(
         updateBounds(laneX);
       }
       sceneXById.set(scene.id, laneX);
-      processedYs.push(y);
     }
 
     // Transition connector to the next run: go right one TRACK_W, then up.
@@ -276,13 +274,7 @@ function buildSnakePath(
       const lastY = getLayoutCenterY(cardLayouts.get(lastScene.id)!);
       const firstNextScene = runs[runIdx + 1][0];
       const firstNextY = getLayoutCenterY(cardLayouts.get(firstNextScene.id)!);
-      const priorMarkerAbove = processedYs
-        .filter((y: number) => y < firstNextY)
-        .reduce<number | null>((maxY: number | null, y: number) => {
-          if (maxY === null || y > maxY) return y;
-          return maxY;
-        }, null);
-      const entryY = priorMarkerAbove ?? firstNextY;
+      const entryY = firstNextY;
 
       // Bottom U-turn: half-circle from current down-lane to middle up-lane.
       // Sweep=0 yields the downward bow while reversing direction to upward.
@@ -302,10 +294,6 @@ function buildSnakePath(
 
       updateBounds(transitionX + TRANSITION_DX);
       updateBounds(nextLaneX);
-
-      if (entryY < firstNextY) {
-        parts.push(`L ${nextLaneX},${firstNextY}`);
-      }
     }
   }
 
@@ -1550,8 +1538,8 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
   const trackColor = isLight ? '#6366f1' : '#a5b4fc';
   const solidFill = isLight ? '#6366f1' : '#a5b4fc';
   const hollowFill = isLight ? '#f8fafc' : '#0f172a';
-  const otherTrackColor = isLight ? '#8b1f3d' : '#f5c3d1';
-  const otherSolidFill = isLight ? '#8b1f3d' : '#f5c3d1';
+  const otherTrackColor = isLight ? '#8b1f3d' : '#d7b26f';
+  const otherSolidFill = isLight ? '#8b1f3d' : '#f0d8a3';
   const { proseTrackColor, proseFill, proseIconColor } =
     getPageProseStyle(editorSettings);
   const proseHeaderClasses = isLight
@@ -1640,6 +1628,17 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
               {/* Prose-order snake — rendered first so it sits behind entry snakes */}
               {proseSnakePath && proseSnakePath.pathData && (
                 <g transform={`translate(${cardsLeftPadding},0)`}>
+                  {!isLight && (
+                    <path
+                      d={proseSnakePath.pathData}
+                      fill="none"
+                      stroke="#000"
+                      strokeWidth={8}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      opacity={PROSE_SNAKE_OPACITY}
+                    />
+                  )}
                   <path
                     d={proseSnakePath.pathData}
                     fill="none"
