@@ -17,7 +17,7 @@
 // @vitest-environment jsdom
 
 import React from 'react';
-import { render, cleanup, act } from '@testing-library/react';
+import { render, cleanup, act, fireEvent } from '@testing-library/react';
 import { I18nextProvider } from 'react-i18next';
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import i18n from '../app/i18n';
@@ -183,6 +183,36 @@ function renderPinboard(
 
 // ---------------------------------------------------------------------------
 
+describe('PinboardView — native scroll and zoom', () => {
+  it('uses overflow-auto on the pinboard container', () => {
+    const { container } = renderPinboard();
+    const scrollContainer = container.firstElementChild as HTMLElement | null;
+    expect(scrollContainer).not.toBeNull();
+    expect(scrollContainer?.className).toContain('overflow-auto');
+  });
+
+  it('zooms when wheel is used with ctrl/meta and ignores plain wheel for native scrolling', () => {
+    const { container } = renderPinboard();
+    const scrollContainer = container.firstElementChild as HTMLElement;
+    const canvas = container.querySelector(
+      '[data-testid="pinboard-canvas"]'
+    ) as HTMLElement;
+    expect(canvas).not.toBeNull();
+
+    act(() => {
+      fireEvent.wheel(scrollContainer, { deltaY: -100, ctrlKey: true });
+    });
+    expect(canvas.style.transform).toContain('scale(1.1)');
+
+    act(() => {
+      fireEvent.wheel(scrollContainer, { deltaY: -100 });
+    });
+    expect(canvas.style.transform).toContain('scale(1.1)');
+  });
+});
+
+// ---------------------------------------------------------------------------
+
 describe('PinboardView — multi-select', () => {
   beforeEach(() => {
     // Reset shared spy maps.
@@ -262,8 +292,10 @@ describe('PinboardView — multi-select', () => {
     const { container, onSelectScene } = renderPinboard('s1');
     onSelectScene.mockClear();
 
-    // Fire mousedown on the transformed canvas layer (no card involved)
-    const canvas = container.querySelector<HTMLElement>('[style*="translate"]');
+    // Fire mousedown on the pinboard canvas wrapper (no card involved)
+    const canvas = container.querySelector<HTMLElement>(
+      '[data-testid="pinboard-canvas"]'
+    );
     act(() => {
       if (canvas) {
         canvas.dispatchEvent(
@@ -320,7 +352,9 @@ describe('PinboardView — multi-select', () => {
     const { container, onSelectScene } = renderPinboard();
     onSelectScene.mockClear();
 
-    const canvas = container.querySelector<HTMLElement>('[style*="translate"]');
+    const canvas = container.querySelector<HTMLElement>(
+      '[data-testid="pinboard-canvas"]'
+    );
     if (!canvas) {
       throw new Error('Canvas element not found');
     }
@@ -362,7 +396,9 @@ describe('PinboardView — multi-select', () => {
     const { container, onSelectScene } = renderPinboard('s3');
     onSelectScene.mockClear();
 
-    const canvas = container.querySelector<HTMLElement>('[style*="translate"]');
+    const canvas = container.querySelector<HTMLElement>(
+      '[data-testid="pinboard-canvas"]'
+    );
     if (!canvas) {
       throw new Error('Canvas element not found');
     }

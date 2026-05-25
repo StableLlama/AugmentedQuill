@@ -67,18 +67,20 @@ export const PinboardView: React.FC<PinboardViewProps> = ({
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(1);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [scrollOffset, setScrollOffset] = useState({ x: 0, y: 0 });
 
   // Keep refs in sync so async handlers always have current values.
   const zoomRef = useRef(zoom);
-  const panRef = useRef(pan);
+  const scrollOffsetRef = useRef(scrollOffset);
   const scenesRef = useRef(scenes);
+  const isPanning = useRef(false);
+  const panStart = useRef({ mouseX: 0, mouseY: 0, scrollLeft: 0, scrollTop: 0 });
   useEffect(() => {
     zoomRef.current = zoom;
   }, [zoom]);
   useEffect(() => {
-    panRef.current = pan;
-  }, [pan]);
+    scrollOffsetRef.current = scrollOffset;
+  }, [scrollOffset]);
   useEffect(() => {
     scenesRef.current = scenes;
   }, [scenes]);
@@ -145,11 +147,8 @@ export const PinboardView: React.FC<PinboardViewProps> = ({
   const causeTargetRef = useRef<SceneId | null>(null);
   const [causeTargetDisplay, setCauseTargetDisplay] = useState<SceneId | null>(null);
 
-  // Pan via middle-mouse
-  const isPanning = useRef(false);
-  const panStart = useRef({ mouseX: 0, mouseY: 0, panX: 0, panY: 0 });
-
   const handleWheel = useCallback((e: WheelEvent): void => {
+    if (!(e.ctrlKey || e.metaKey)) return;
     e.preventDefault();
     setZoom((prev: number) => {
       const delta = e.deltaY > 0 ? -0.1 : 0.1;
@@ -157,12 +156,24 @@ export const PinboardView: React.FC<PinboardViewProps> = ({
     });
   }, []);
 
+  const handleScroll = useCallback((): void => {
+    const el = containerRef.current;
+    if (!el) return;
+    const next = { x: el.scrollLeft, y: el.scrollTop };
+    scrollOffsetRef.current = next;
+    setScrollOffset(next);
+  }, []);
+
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     el.addEventListener('wheel', handleWheel, { passive: false });
-    return () => el.removeEventListener('wheel', handleWheel);
-  }, [handleWheel]);
+    el.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      el.removeEventListener('wheel', handleWheel);
+      el.removeEventListener('scroll', handleScroll);
+    };
+  }, [handleWheel, handleScroll]);
 
   // ---- Multi-card move handler ----
   // Called by SceneCard when the user drags a card. The delta is in screen
@@ -255,10 +266,10 @@ export const PinboardView: React.FC<PinboardViewProps> = ({
         const curX = me.clientX - containerRect.left;
         const curY = me.clientY - containerRect.top;
         const currentZoom = zoomRef.current;
-        const currentPan = panRef.current;
+        const currentScroll = scrollOffsetRef.current;
         const toCanvas = (sx: number, sy: number): { cx: number; cy: number } => ({
-          cx: (sx - currentPan.x) / currentZoom,
-          cy: (sy - currentPan.y) / currentZoom,
+          cx: (sx + currentScroll.x) / currentZoom,
+          cy: (sy + currentScroll.y) / currentZoom,
         });
         const tl = toCanvas(Math.min(startX, curX), Math.min(startY, curY));
         const br = toCanvas(Math.max(startX, curX), Math.max(startY, curY));
@@ -280,7 +291,6 @@ export const PinboardView: React.FC<PinboardViewProps> = ({
             inLasso.forEach((id: SceneId) => next.add(id));
             return next;
           });
-          // Do not change active scene in additive mode.
           const primary = inLasso[0] ?? null;
           if (primary) anchorIdRef.current = primary;
           prevPrimaryRef.current = activeSceneIdRef.current;
@@ -313,20 +323,24 @@ export const PinboardView: React.FC<PinboardViewProps> = ({
     if (e.target !== e.currentTarget) return;
 
     if (e.button === 1 || (e.button === 0 && e.altKey)) {
+      const containerEl = containerRef.current;
+      if (!containerEl) return;
       e.preventDefault();
       isPanning.current = true;
       panStart.current = {
         mouseX: e.clientX,
         mouseY: e.clientY,
-        panX: pan.x,
-        panY: pan.y,
+        scrollLeft: containerEl.scrollLeft,
+        scrollTop: containerEl.scrollTop,
       };
       const onMove = (me: MouseEvent): void => {
         if (!isPanning.current) return;
-        setPan({
-          x: panStart.current.panX + (me.clientX - panStart.current.mouseX),
-          y: panStart.current.panY + (me.clientY - panStart.current.mouseY),
-        });
+        const dx = me.clientX - panStart.current.mouseX;
+        const dy = me.clientY - panStart.current.mouseY;
+        if (!containerRef.current) return;
+        containerRef.current.scrollLeft = panStart.current.scrollLeft - dx;
+        containerRef.current.scrollTop = panStart.current.scrollTop - dy;
+        handleScroll();
       };
       const onUp = (): void => {
         isPanning.current = false;
@@ -347,12 +361,15 @@ export const PinboardView: React.FC<PinboardViewProps> = ({
 
       const containerEl = containerRef.current;
       const rect = containerEl?.getBoundingClientRect();
-      const screenX = rect ? startClientX - rect.left : 0;
-      const screenY = rect ? startClientY - rect.top : 0;
+      const screenX = rect
+        ? startClientX - rect.left + (containerEl?.scrollLeft ?? 0)
+        : 0;
+      const screenY = rect
+        ? startClientY - rect.top + (containerEl?.scrollTop ?? 0)
+        : 0;
       const cz = zoomRef.current;
-      const cp = panRef.current;
-      const canvasX = (screenX - cp.x) / cz;
-      const canvasY = (screenY - cp.y) / cz;
+      const canvasX = screenX / cz;
+      const canvasY = screenY / cz;
 
       // Initialise ghost arrow at the pointer location in canvas space.
       setGhostArrow({
@@ -366,12 +383,11 @@ export const PinboardView: React.FC<PinboardViewProps> = ({
         const containerEl = containerRef.current;
         if (!containerEl || !causeDragSourceRef.current) return;
         const rect = containerEl.getBoundingClientRect();
-        const screenX = me.clientX - rect.left;
-        const screenY = me.clientY - rect.top;
+        const screenX = me.clientX - rect.left + containerEl.scrollLeft;
+        const screenY = me.clientY - rect.top + containerEl.scrollTop;
         const cz = zoomRef.current;
-        const cp = panRef.current;
-        const canvasX = (screenX - cp.x) / cz;
-        const canvasY = (screenY - cp.y) / cz;
+        const canvasX = screenX / cz;
+        const canvasY = screenY / cz;
         const connected = causeTargetRef.current !== null;
         setGhostArrow({
           fromId: causeDragSourceRef.current,
@@ -411,6 +427,29 @@ export const PinboardView: React.FC<PinboardViewProps> = ({
     setCauseTargetDisplay(null);
   }, []);
 
+  const contentWidth = Math.max(
+    1,
+    scenes.reduce(
+      (max: number, scene: Scene): number =>
+        Math.max(max, scene.pinboard_x + CARD_WIDTH),
+      0
+    )
+  );
+
+  const contentHeight = Math.max(
+    1,
+    scenes.reduce((max: number, scene: Scene): number => {
+      const sceneHeight = Math.max(
+        CARD_APPROX_HEIGHT,
+        cardHeights.get(scene.id) ?? CARD_APPROX_HEIGHT
+      );
+      return Math.max(max, scene.pinboard_y + sceneHeight);
+    }, 0)
+  );
+
+  const scaledContentWidth = contentWidth * zoom;
+  const scaledContentHeight = contentHeight * zoom;
+
   const bgClass = isLight ? 'bg-brand-gray-50' : 'bg-brand-gray-950';
   const dotColor = isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.06)';
 
@@ -427,11 +466,11 @@ export const PinboardView: React.FC<PinboardViewProps> = ({
   return (
     <div
       ref={containerRef}
-      className={`relative w-full h-full overflow-hidden select-none ${bgClass}`}
+      className={`relative w-full h-full overflow-auto select-none ${bgClass}`}
       style={{
         backgroundImage: `radial-gradient(circle, ${dotColor} 1px, transparent 1px)`,
         backgroundSize: `${24 * zoom}px ${24 * zoom}px`,
-        backgroundPosition: `${pan.x % (24 * zoom)}px ${pan.y % (24 * zoom)}px`,
+        backgroundPosition: `${-scrollOffset.x % (24 * zoom)}px ${-scrollOffset.y % (24 * zoom)}px`,
       }}
       onPointerDown={handleMouseDown}
       aria-label={t('Pinboard')}
@@ -460,7 +499,11 @@ export const PinboardView: React.FC<PinboardViewProps> = ({
           aria-label={t('Reset Zoom')}
           onClick={() => {
             setZoom(1);
-            setPan({ x: 0, y: 0 });
+            if (containerRef.current) {
+              containerRef.current.scrollLeft = 0;
+              containerRef.current.scrollTop = 0;
+              handleScroll();
+            }
           }}
           className="w-7 h-7 rounded-md border border-brand-gray-300 dark:border-brand-gray-700 bg-white dark:bg-brand-gray-800 text-brand-gray-700 dark:text-brand-gray-200 text-xs hover:bg-brand-gray-100 dark:hover:bg-brand-gray-700 flex items-center justify-center shadow-sm"
         >
@@ -471,49 +514,63 @@ export const PinboardView: React.FC<PinboardViewProps> = ({
       {/* Canvas layer */}
       <div
         style={{
-          transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-          transformOrigin: '0 0',
-          position: 'absolute',
-          inset: 0,
+          width: `${scaledContentWidth}px`,
+          height: `${scaledContentHeight}px`,
+          minWidth: '100%',
+          minHeight: '100%',
+          position: 'relative',
         }}
-        onPointerDown={handleCanvasMouseDown}
       >
-        {/* Cause arrows drawn under the cards */}
-        <CauseArrows
-          scenes={scenes}
-          livePositions={livePositions}
-          cardHeights={cardHeights}
-          activeSceneId={activeSceneId}
-          ghostArrow={ghostArrow}
-        />
+        <div
+          data-testid="pinboard-canvas"
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            width: `${contentWidth}px`,
+            height: `${contentHeight}px`,
+            transform: `scale(${zoom})`,
+            transformOrigin: '0 0',
+          }}
+          onPointerDown={handleCanvasMouseDown}
+        >
+          {/* Cause arrows drawn under the cards */}
+          <CauseArrows
+            scenes={scenes}
+            livePositions={livePositions}
+            cardHeights={cardHeights}
+            activeSceneId={activeSceneId}
+            ghostArrow={ghostArrow}
+          />
 
-        {scenes.map((scene: Scene, idx: number) => {
-          const livePos = livePositions.get(scene.id);
-          return (
-            <SceneCard
-              key={scene.id}
-              scene={scene}
-              index={idx}
-              onSelect={handleCardSelect}
-              onEdit={onEditScene}
-              onDragMove={handleCardDragMove}
-              onDragEnd={handleCardDragEnd}
-              onCauseDragStart={handleCauseDragStart}
-              onCauseDrop={handleCauseDrop}
-              onCauseLeave={handleCauseLeave}
-              isCauseTarget={causeTargetDisplay === scene.id}
-              isCauseSource={causeDragSourceRef.current === scene.id}
-              isSelected={selectedSceneIds.has(scene.id)}
-              isActive={activeSceneId === scene.id}
-              isCause={causeIds.has(scene.id)}
-              isEffect={effectIds.has(scene.id)}
-              onDropProse={onDropProse}
-              displayX={livePos?.x}
-              displayY={livePos?.y}
-              onLayout={handleCardLayout}
-            />
-          );
-        })}
+          {scenes.map((scene: Scene, idx: number) => {
+            const livePos = livePositions.get(scene.id);
+            return (
+              <SceneCard
+                key={scene.id}
+                scene={scene}
+                index={idx}
+                onSelect={handleCardSelect}
+                onEdit={onEditScene}
+                onDragMove={handleCardDragMove}
+                onDragEnd={handleCardDragEnd}
+                onCauseDragStart={handleCauseDragStart}
+                onCauseDrop={handleCauseDrop}
+                onCauseLeave={handleCauseLeave}
+                isCauseTarget={causeTargetDisplay === scene.id}
+                isCauseSource={causeDragSourceRef.current === scene.id}
+                isSelected={selectedSceneIds.has(scene.id)}
+                isActive={activeSceneId === scene.id}
+                isCause={causeIds.has(scene.id)}
+                isEffect={effectIds.has(scene.id)}
+                onDropProse={onDropProse}
+                displayX={livePos?.x}
+                displayY={livePos?.y}
+                onLayout={handleCardLayout}
+              />
+            );
+          })}
+        </div>
       </div>
 
       {/* Lasso overlay — screen space */}
