@@ -93,6 +93,7 @@ function makeScene(overrides: Record<string, unknown> = {}): Scene {
     causes?: SceneId[];
     [key: string]: unknown;
   };
+  const { causes = [], ...rest } = legacy;
   return {
     id: 'scene-1',
     summary: 'Test scene',
@@ -108,7 +109,7 @@ function makeScene(overrides: Record<string, unknown> = {}): Scene {
     status: 'active',
     pinboard_x: 0,
     pinboard_y: 0,
-    causes: [...(legacy.causes ?? [])],
+    causes: [...causes],
     ...rest,
   } as Scene;
 }
@@ -853,6 +854,73 @@ describe('SceneEditorDialog sourcebook validation', () => {
 
     const arg = onSave.mock.calls[0][0] as Partial<Scene>;
     expect(arg.sourcebook_entry_ids).toEqual(['sb-1']);
+  });
+
+  it('shows computed age for active character tags when origin date and scene time exist', () => {
+    sourcebookEntriesState.push({
+      id: 'Alice',
+      name: 'Alice',
+      category: 'Character',
+      synonyms: [],
+      description: '',
+      images: [],
+      origin_date: '2020-01-01T00:00:00+00:00[UTC]',
+    });
+
+    wrap(
+      <SceneEditorDialog
+        scene={makeScene({
+          active_characters: ['Alice'],
+          scene_time: { temporal_zoned_datetime: '2040-01-01T00:00:00+00:00[UTC]' },
+        })}
+        isOpen
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+      />
+    );
+
+    expect(screen.getByText('Age 20y')).toBeTruthy();
+  });
+
+  it('shows computed age for sourcebook tags even when timeline differs', () => {
+    sourcebookEntriesState.push(
+      {
+        id: 'sb-main',
+        name: 'Aether',
+        category: 'world',
+        synonyms: [],
+        description: '',
+        images: [],
+        origin_date: '2020-01-01T00:00:00+00:00[UTC]',
+      },
+      {
+        id: 'sb-branch',
+        name: 'Branch Artifact',
+        category: 'artifact',
+        synonyms: [],
+        description: '',
+        images: [],
+        origin_date: '2020-01-01T00:00:00+00:00[UTC]',
+        timeline_id: 'branch:other',
+      }
+    );
+
+    wrap(
+      <SceneEditorDialog
+        scene={makeScene({
+          sourcebook_entry_ids: ['sb-main', 'sb-branch'],
+          timeline_id: 'main',
+          scene_time: { temporal_zoned_datetime: '2025-01-01T00:00:00+00:00[UTC]' },
+        })}
+        isOpen
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+      />
+    );
+
+    expect(screen.queryAllByText(/^Age 5y$/).length).toBe(2);
   });
 });
 

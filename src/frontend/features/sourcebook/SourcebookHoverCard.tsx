@@ -20,6 +20,7 @@ import { ProjectImage } from '../../services/apiTypes';
 interface SourcebookHoverCardProps {
   entry: SourcebookEntry;
   position: { x: number; y: number };
+  topRightMeta?: string | null;
   bgClass: string;
   borderClass: string;
   textClass: string;
@@ -30,6 +31,7 @@ interface SourcebookHoverCardProps {
 export const SourcebookHoverCard: React.FC<SourcebookHoverCardProps> = ({
   entry,
   position,
+  topRightMeta = null,
   bgClass,
   borderClass,
   textClass,
@@ -58,13 +60,18 @@ export const SourcebookHoverCard: React.FC<SourcebookHoverCardProps> = ({
       }}
       className={`fixed z-[100] p-3 rounded-lg shadow-xl border ${borderClass} ${bgClass} animate-in fade-in zoom-in-95 duration-100`}
     >
-      <div className="flex items-center gap-2 mb-2">
-        <h4 className={`font-bold text-sm ${textClass}`}>{entry.name}</h4>
-        <span
-          className={`text-[10px] px-1.5 py-0.5 rounded-full border ${borderClass} ${subTextClass}`}
-        >
-          {entry.category}
-        </span>
+      <div className="flex items-start justify-between gap-2 mb-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <h4 className={`font-bold text-sm truncate ${textClass}`}>{entry.name}</h4>
+          <span
+            className={`text-[10px] px-1.5 py-0.5 rounded-full border ${borderClass} ${subTextClass}`}
+          >
+            {entry.category}
+          </span>
+        </div>
+        {topRightMeta && (
+          <span className={`text-[10px] shrink-0 ${subTextClass}`}>{topRightMeta}</span>
+        )}
       </div>
 
       {img && (

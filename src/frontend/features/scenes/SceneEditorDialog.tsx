@@ -113,6 +113,156 @@ const normalizeTimelineId = (value: string | null | undefined): string => {
 
 const getBranchTimelineId = (entryId: string): string => `branch:${entryId}`;
 
+type AgeInfo = {
+  compact: string;
+  detailed: string;
+};
+
+type AgeParts = {
+  years: number;
+  months: number;
+  days: number;
+  hours: number;
+  minutes: number;
+  seconds: number;
+};
+
+const addUnits = (
+  parts: string[],
+  values: Array<{ value: number; suffix: string }>
+): void => {
+  values.forEach((item: { value: number; suffix: string }): void => {
+    const { value, suffix } = item;
+    if (value > 0) {
+      parts.push(`${value}${suffix}`);
+    }
+  });
+};
+
+const isAgeAtLeastTenDays = (parts: AgeParts): boolean => {
+  return parts.years > 0 || parts.months > 0 || parts.days >= 10;
+};
+
+const isAgeMoreThanTwentyFourHours = (parts: AgeParts): boolean => {
+  if (parts.years > 0 || parts.months > 0) return true;
+  if (parts.days > 1) return true;
+  if (parts.days === 1) {
+    return parts.hours > 0 || parts.minutes > 0 || parts.seconds > 0;
+  }
+  return false;
+};
+
+const formatDetailedAgeLabel = (parts: AgeParts): string => {
+  const values: string[] = [];
+  if (isAgeAtLeastTenDays(parts)) {
+    addUnits(values, [
+      { value: parts.years, suffix: 'y' },
+      { value: parts.months, suffix: 'm' },
+      { value: parts.days, suffix: 'd' },
+    ]);
+    return values.length > 0 ? values.join(' ') : '0d';
+  }
+
+  if (isAgeMoreThanTwentyFourHours(parts)) {
+    addUnits(values, [
+      { value: parts.days, suffix: 'd' },
+      { value: parts.hours, suffix: 'h' },
+    ]);
+    return values.length > 0 ? values.join(' ') : '0h';
+  }
+
+  addUnits(values, [
+    { value: parts.hours, suffix: 'h' },
+    { value: parts.minutes, suffix: 'm' },
+    { value: parts.seconds, suffix: 's' },
+  ]);
+  return values.length > 0 ? values.join(' ') : '0s';
+};
+
+const formatCompactAgeLabel = (parts: AgeParts): string | null => {
+  if (parts.years > 0) return `${parts.years}y`;
+  if (parts.months > 0) return `${parts.months}m`;
+  if (parts.days > 0) return `${parts.days}d`;
+  if (parts.hours > 0) return `${parts.hours}h`;
+  if (parts.minutes > 0) return `${parts.minutes}min`;
+  if (parts.seconds > 0) return `${parts.seconds}s`;
+  return null;
+};
+
+const calculateEntryAgeInfo = (
+  originDate: string | null | undefined,
+  sceneTime: ReturnType<typeof parseZonedDateTime>
+): AgeInfo | null => {
+  const origin = parseZonedDateTime(originDate);
+  if (!origin || !sceneTime) return null;
+
+  let negative = false;
+  let start = origin;
+  let end = sceneTime;
+  if (sceneTime.epochNanoseconds < origin.epochNanoseconds) {
+    negative = true;
+    start = sceneTime;
+    end = origin;
+  }
+
+  try {
+    const startInstant = start.toInstant();
+    const endInstant = end.toInstant();
+
+    const instantDuration = startInstant.until(endInstant, {
+      smallestUnit: 'seconds',
+    });
+
+    // Always compute Y/M/D on an ISO timeline from instants so long spans do not
+    // degrade into raw day counts when original calendar math is incompatible.
+    const isoStart = startInstant.toZonedDateTimeISO('UTC');
+    const isoEnd = endInstant.toZonedDateTimeISO('UTC');
+    const isoDuration = isoStart.until(isoEnd, {
+      largestUnit: 'years',
+      smallestUnit: 'days',
+    });
+
+    const totalSeconds = Math.abs(instantDuration.total({ unit: 'seconds' }));
+    const totalDays = Math.floor(totalSeconds / 86400);
+    const remainderAfterDays = totalSeconds % 86400;
+    const hours = Math.floor(remainderAfterDays / 3600);
+    const remainderAfterHours = remainderAfterDays % 3600;
+    const minutes = Math.floor(remainderAfterHours / 60);
+    const seconds = Math.floor(remainderAfterHours % 60);
+    const years = Math.abs(isoDuration.years);
+    const months = Math.abs(isoDuration.months);
+    const calendarDays = Math.abs(isoDuration.days) + Math.abs(isoDuration.weeks) * 7;
+
+    const compactParts: AgeParts = {
+      years,
+      months,
+      days: totalDays,
+      hours,
+      minutes,
+      seconds,
+    };
+
+    const detailedParts: AgeParts = {
+      years,
+      months,
+      days: calendarDays,
+      hours,
+      minutes,
+      seconds,
+    };
+
+    const compact = formatCompactAgeLabel(compactParts);
+    if (!compact) return null;
+    const detailed = formatDetailedAgeLabel(detailedParts);
+    return {
+      compact: negative ? `-${compact}` : compact,
+      detailed: negative ? `-${detailed}` : detailed,
+    };
+  } catch {
+    return null;
+  }
+};
+
 const parseEpochNanoseconds = (value: string | null | undefined): bigint | null => {
   const parsed = parseZonedDateTime(value);
   return parsed === null ? null : parsed.epochNanoseconds;
@@ -685,6 +835,57 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
     return null;
   })();
   const parsedSceneTime = parseZonedDateTime(sceneTimeValue);
+  const normalizedSceneTimelineId = normalizeTimelineId(timelineId);
+
+  const computeEntryAgeForScene = (
+    entry: SourcebookEntry | undefined
+  ): AgeInfo | null => {
+    if (!entry || !entry.origin_date || !parsedSceneTime) return null;
+    return calculateEntryAgeInfo(entry.origin_date, parsedSceneTime);
+  };
+
+  const activeComputedAgeByIndex = useMemo((): Map<number, string> => {
+    const map = new Map<number, string>();
+    activeTokens.forEach((token: CharToken, index: number): void => {
+      const entry = entryByName.get(normalizeToken(token.name));
+      const ageInfo = computeEntryAgeForScene(entry);
+      if (ageInfo) {
+        map.set(index, ageInfo.compact);
+      }
+    });
+    return map;
+  }, [activeTokens, entryByName, parsedSceneTime, normalizedSceneTimelineId]);
+
+  const passiveComputedAgeByIndex = useMemo((): Map<number, string> => {
+    const map = new Map<number, string>();
+    passiveTokens.forEach((token: CharToken, index: number): void => {
+      const entry = entryByName.get(normalizeToken(token.name));
+      const ageInfo = computeEntryAgeForScene(entry);
+      if (ageInfo) {
+        map.set(index, ageInfo.compact);
+      }
+    });
+    return map;
+  }, [passiveTokens, entryByName, parsedSceneTime, normalizedSceneTimelineId]);
+
+  const sourcebookComputedAgeById = useMemo((): Map<string, string> => {
+    const map = new Map<string, string>();
+    sourcebookTags.forEach((tag: SourcebookTag): void => {
+      const entry = entryById.get(tag.id);
+      const ageInfo = computeEntryAgeForScene(entry);
+      if (ageInfo) {
+        map.set(tag.id, ageInfo.compact);
+      }
+    });
+    return map;
+  }, [sourcebookTags, entryById, parsedSceneTime, normalizedSceneTimelineId]);
+
+  const hoveredEntryAgeDetail = useMemo((): string | null => {
+    if (!hoveredEntry) return null;
+    const ageInfo = computeEntryAgeForScene(hoveredEntry);
+    return ageInfo?.detailed ?? null;
+  }, [hoveredEntry, parsedSceneTime, normalizedSceneTimelineId]);
+
   const displayLocale = storyLanguage || i18n.resolvedLanguage || i18n.language;
   const summaryBaseline = baselineScene?.summary ?? (openedViaTrigger ? '' : undefined);
   const baselineBeats = baselineScene?.beats ?? [];
@@ -1213,6 +1414,10 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
                 <div className="flex flex-wrap gap-2">
                   {activeTokens.map((token: CharToken, idx: number) => {
                     const matched = entryByName.get(normalizeToken(token.name));
+                    const computedAge = activeComputedAgeByIndex.get(idx) ?? null;
+                    const personalAgeDisplay = formatPersonalAgeDisplay(
+                      token.personal_age
+                    );
                     const tokenChanged =
                       showDiff &&
                       (idx >= baselineActiveCharacters.length ||
@@ -1246,9 +1451,14 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
                         }
                       >
                         <span className={tc.text}>{token.name}</span>
-                        {token.personal_age && (
+                        {computedAge && (
                           <span className={`text-[10px] ${tc.muted}`}>
-                            {formatPersonalAgeDisplay(token.personal_age)}
+                            {t('Age {{value}}', { value: computedAge })}
+                          </span>
+                        )}
+                        {personalAgeDisplay && personalAgeDisplay !== computedAge && (
+                          <span className={`text-[10px] ${tc.muted}`}>
+                            {personalAgeDisplay}
                           </span>
                         )}
                         {matched && activeTimelinesAtScene > 1 && (
@@ -1338,6 +1548,10 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
                 <div className="flex flex-wrap gap-2">
                   {passiveTokens.map((token: CharToken, idx: number) => {
                     const matched = entryByName.get(normalizeToken(token.name));
+                    const computedAge = passiveComputedAgeByIndex.get(idx) ?? null;
+                    const personalAgeDisplay = formatPersonalAgeDisplay(
+                      token.personal_age
+                    );
                     const tokenChanged =
                       showDiff &&
                       (idx >= baselinePassiveCharacters.length ||
@@ -1371,9 +1585,14 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
                         }
                       >
                         <span className={tc.text}>{token.name}</span>
-                        {token.personal_age && (
+                        {computedAge && (
                           <span className={`text-[10px] ${tc.muted}`}>
-                            {formatPersonalAgeDisplay(token.personal_age)}
+                            {t('Age {{value}}', { value: computedAge })}
+                          </span>
+                        )}
+                        {personalAgeDisplay && personalAgeDisplay !== computedAge && (
+                          <span className={`text-[10px] ${tc.muted}`}>
+                            {personalAgeDisplay}
                           </span>
                         )}
                         {matched && activeTimelinesAtScene > 1 && (
@@ -1465,6 +1684,8 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
                 {sourcebookTags.map((tag: SourcebookTag, idx: number) => {
                   const entry = entryById.get(tag.id);
                   if (!entry) return null;
+                  const computedAge = sourcebookComputedAgeById.get(entry.id) ?? null;
+                  const personalAgeDisplay = formatPersonalAgeDisplay(tag.personal_age);
                   const tagChanged =
                     showDiff &&
                     (idx >= baselineSourcebookIds.length ||
@@ -1495,9 +1716,14 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
                       >
                         {mapCategoryLabel(entry.category)}
                       </span>
-                      {tag.personal_age && (
+                      {computedAge && (
                         <span className={`text-[10px] ${tc.muted}`}>
-                          {formatPersonalAgeDisplay(tag.personal_age)}
+                          {t('Age {{value}}', { value: computedAge })}
+                        </span>
+                      )}
+                      {personalAgeDisplay && personalAgeDisplay !== computedAge && (
+                        <span className={`text-[10px] ${tc.muted}`}>
+                          {personalAgeDisplay}
                         </span>
                       )}
                       {activeTimelinesAtScene > 1 && (
@@ -1918,6 +2144,11 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
         <SourcebookHoverCard
           entry={hoveredEntry}
           position={hoverPos}
+          topRightMeta={
+            hoveredEntryAgeDetail
+              ? t('Age: {{value}}', { value: hoveredEntryAgeDetail })
+              : null
+          }
           bgClass={tc.bg}
           borderClass={tc.border}
           textClass={tc.text}
