@@ -67,7 +67,7 @@ function makeScene(
     color_tag: null,
     status: 'active',
     causes: [...(legacy.causes ?? [])],
-    ...rest,
+    ...overrides,
   } as Scene;
 }
 
@@ -258,6 +258,20 @@ describe('CauseArrows — active scene arrows', () => {
       />
     );
     expect(container.querySelector('svg')).toBeTruthy();
+  });
+
+  it('renders the overlay SVG with a higher stacking order than scene cards', () => {
+    const s1 = makeScene('s1', 0, 0, { causes: ['s2'] });
+    const s2 = makeScene('s2', 300, 0, { causes: ['s1'] });
+    const { container } = render(
+      <CauseArrows
+        scenes={[s1, s2]}
+        livePositions={new Map()}
+        cardHeights={emptyHeights()}
+        activeSceneId="s2"
+      />
+    );
+    expect(container.querySelector('svg')?.style.zIndex).toBe('20');
   });
 
   it('renders a red path for a cause arrow (cause → active)', () => {

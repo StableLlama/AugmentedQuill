@@ -369,6 +369,7 @@ export const CauseArrows: React.FC<CauseArrowsProps> = ({
         position: 'absolute',
         left: 0,
         top: 0,
+        zIndex: 20,
         pointerEvents: 'none',
         overflow: 'visible',
       }}
