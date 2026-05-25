@@ -27,6 +27,7 @@ import type { Scene, SceneId } from '../../types';
 import type { EditorSettings } from '../../types/ui';
 import type { Chapter, Book, SourcebookEntry } from '../../types/domain';
 import { useTheme } from '../layout/ThemeContext';
+import { CauseArrows, type GhostArrow } from './ConstraintArrows';
 import { useSceneLanes, isCharacterEntry } from './useSceneLanes';
 import { LaneHeader } from './LaneHeader';
 import { SceneCard } from './SceneCard';
@@ -59,6 +60,7 @@ interface ConvergenceMapViewProps {
   onSelectionChange?: (ids: ReadonlySet<SceneId>) => void;
   onEditScene?: (id: SceneId) => void;
   onAssignSceneTimeline?: (sceneId: SceneId, timelineId: string) => Promise<void>;
+  onCreateCause?: (fromId: SceneId, toId: SceneId) => Promise<void>;
   initialVisibleLaneEntryIds?: string[];
   initialRemovedReferencedLaneIds?: string[];
   onVisibleLaneEntryIdsChange?: (ids: string[]) => void;
@@ -464,6 +466,7 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
   onSelectionChange,
   onEditScene,
   onAssignSceneTimeline,
+  onCreateCause,
   initialVisibleLaneEntryIds,
   initialRemovedReferencedLaneIds,
   onVisibleLaneEntryIdsChange,
@@ -518,6 +521,78 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
     onSelectScene,
     onSelectionChange,
   });
+
+  const causeDragSourceRef = useRef<SceneId | null>(null);
+  const causeTargetRef = useRef<SceneId | null>(null);
+
+  const [causeSourceDisplay, setCauseSourceDisplay] = useState<SceneId | null>(null);
+  const [causeTargetDisplay, setCauseTargetDisplay] = useState<SceneId | null>(null);
+  const [ghostArrow, setGhostArrow] = useState<GhostArrow | null>(null);
+
+  const handleCauseDragStart = useCallback(
+    (_sceneId: SceneId, startClientX: number, startClientY: number): void => {
+      if (!onCreateCause) return;
+      causeDragSourceRef.current = _sceneId;
+      causeTargetRef.current = null;
+      setCauseSourceDisplay(_sceneId);
+      setCauseTargetDisplay(null);
+
+      const containerEl = innerContainerRef.current;
+      const rect = containerEl?.getBoundingClientRect();
+      const x = rect ? startClientX - rect.left : 0;
+      const y = rect ? startClientY - rect.top : 0;
+      setGhostArrow({ fromId: _sceneId, toX: x, toY: y, connected: false });
+
+      const onMouseMove = (me: MouseEvent): void => {
+        const containerEl2 = innerContainerRef.current;
+        if (!containerEl2 || !causeDragSourceRef.current) return;
+        const containerRect = containerEl2.getBoundingClientRect();
+        const x2 = me.clientX - containerRect.left;
+        const y2 = me.clientY - containerRect.top;
+        const connected = causeTargetRef.current !== null;
+        setGhostArrow({
+          fromId: causeDragSourceRef.current,
+          toX: x2,
+          toY: y2,
+          connected,
+        });
+      };
+
+      document.addEventListener('mousemove', onMouseMove);
+
+      const onUp = (): void => {
+        if (
+          onCreateCause &&
+          causeDragSourceRef.current &&
+          causeTargetRef.current !== null
+        ) {
+          void onCreateCause(causeDragSourceRef.current, causeTargetRef.current);
+        }
+        causeDragSourceRef.current = null;
+        causeTargetRef.current = null;
+        setCauseSourceDisplay(null);
+        setCauseTargetDisplay(null);
+        setGhostArrow(null);
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onUp);
+      };
+
+      document.addEventListener('mouseup', onUp);
+    },
+    [onCreateCause]
+  );
+
+  const handleCauseDrop = useCallback((targetId: SceneId): void => {
+    if (causeDragSourceRef.current && causeDragSourceRef.current !== targetId) {
+      causeTargetRef.current = targetId;
+      setCauseTargetDisplay(targetId);
+    }
+  }, []);
+
+  const handleCauseLeave = useCallback((): void => {
+    causeTargetRef.current = null;
+    setCauseTargetDisplay(null);
+  }, []);
 
   // Cause/effect glow — same as NarrativeView.
   const activeScene = activeSceneId
@@ -1762,6 +1837,16 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
           </div>
         </div>
 
+        <CauseArrows
+          scenes={scenes}
+          livePositions={new Map()}
+          cardHeights={new Map()}
+          cardLayouts={cardLayouts}
+          activeSceneId={activeSceneId}
+          hideDefaultArrows
+          ghostArrow={ghostArrow}
+        />
+
         {/* Left chronological timeline panel */}
         <div
           className="absolute left-0 top-0 z-20 overflow-hidden"
@@ -2011,6 +2096,11 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
                   variant="narrative"
                   onSelect={handleCardSelect}
                   onEdit={onEditScene ?? (() => {})}
+                  onCauseDragStart={handleCauseDragStart}
+                  onCauseDrop={handleCauseDrop}
+                  onCauseLeave={handleCauseLeave}
+                  isCauseSource={causeSourceDisplay === scene.id}
+                  isCauseTarget={causeTargetDisplay === scene.id}
                   isSelected={selectedSceneIds.has(scene.id)}
                   isActive={activeSceneId === scene.id}
                   isCause={causeIds.has(scene.id)}

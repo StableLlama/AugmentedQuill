@@ -1036,6 +1036,7 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
             onSelectionChange={handleMultipleSelectScenes}
             onEditScene={setEditingSceneId}
             onDropProse={handleDropProse}
+            onCreateCause={handleCreateCause}
             onReorderScene={
               viewMode === 'narrative' ? handleNarrativeReorder : undefined
             }
@@ -1070,6 +1071,7 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
             onSelectionChange={handleMultipleSelectScenes}
             onEditScene={setEditingSceneId}
             onAssignSceneTimeline={handleAssignSceneTimeline}
+            onCreateCause={handleCreateCause}
             editorSettings={editorSettings}
             initialVisibleLaneEntryIds={sceneLaneState.visibleLaneEntryIds}
             initialRemovedReferencedLaneIds={sceneLaneState.removedReferencedLaneIds}

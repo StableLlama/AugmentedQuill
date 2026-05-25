@@ -90,19 +90,14 @@ interface SceneCardProps {
   /** Called on double-click to open the editor. */
   onEdit: (sceneId: SceneId) => void;
   /** Called when Alt+drag starts, providing the source scene id and the
-   *  starting canvas-space coordinates so the ghost arrow can be placed.
-   *  Required in pinboard mode; unused in narrative mode. */
-  onCauseDragStart?: (
-    sceneId: SceneId,
-    startCanvasX: number,
-    startCanvasY: number
-  ) => void;
-  /** Called when Alt+drag enters this card – provides the target scene id.
-   *  Pinboard only. */
+   *  starting pointer coordinates in the current view's coordinate system.
+   *  Required in pinboard mode; used for ghost arrows in non-pinboard views. */
+  onCauseDragStart?: (sceneId: SceneId, startX: number, startY: number) => void;
+  /** Called when Alt+drag enters this card – provides the target scene id. */
   onCauseDrop?: (targetSceneId: SceneId) => void;
-  /** Called when Alt+drag leaves this card without releasing. Pinboard only. */
+  /** Called when Alt+drag leaves this card without releasing. */
   onCauseLeave?: () => void;
-  /** Whether this card is the target of an ongoing cause drag. Pinboard only. */
+  /** Whether this card is the target of an ongoing cause drag. */
   isCauseTarget?: boolean;
   /** Whether this card is currently selected. */
   isSelected: boolean;
@@ -112,6 +107,8 @@ interface SceneCardProps {
   isCause: boolean;
   /** Whether the active scene is a cause of this card (green glow). */
   isEffect: boolean;
+  /** Whether this card is the source of an ongoing Alt+drag cause creation. */
+  isCauseSource?: boolean;
   /** Whether the current displayed order violates a cause relationship. */
   orderViolation?: 'chronological' | 'narrative';
   /** Whether this scene's time is inconsistent with any cause relationship. */
@@ -139,6 +136,7 @@ export const SceneCard: React.FC<SceneCardProps> = ({
   onCauseDrop,
   onCauseLeave,
   isCauseTarget = false,
+  isCauseSource = false,
   isSelected,
   isActive,
   isCause,
@@ -199,12 +197,7 @@ export const SceneCard: React.FC<SceneCardProps> = ({
   };
 
   const startAltCauseDragTracking = (e: React.MouseEvent<HTMLDivElement>): void => {
-    // Alt+mousedown: begin cause drag. Compute canvas-space start position
-    // from the card's stored position (the zoom/pan are accounted for by the
-    // parent when converting mouse coords to canvas coords).
-    const startCanvasX = scene.pinboard_x + 96; // card horizontal centre
-    const startCanvasY = scene.pinboard_y + 45; // card vertical centre (approx for ~90px card)
-    onCauseDragStart?.(scene.id, startCanvasX, startCanvasY);
+    onCauseDragStart?.(scene.id, e.clientX, e.clientY);
 
     const startX = e.clientX;
     const startY = e.clientY;
@@ -270,14 +263,15 @@ export const SceneCard: React.FC<SceneCardProps> = ({
     if (e.button !== 0) return;
     e.stopPropagation();
 
-    if (isNarrative) {
-      // Narrative: click detection only - no drag-to-move, no cause drag.
-      startNarrativeClickTracking(e);
+    if (e.altKey && onCauseDragStart) {
+      e.preventDefault();
+      startAltCauseDragTracking(e);
       return;
     }
 
-    if (e.altKey) {
-      startAltCauseDragTracking(e);
+    if (isNarrative) {
+      // Narrative: click detection only unless Alt+drag cause creation is active.
+      startNarrativeClickTracking(e);
       return;
     }
 
@@ -285,13 +279,13 @@ export const SceneCard: React.FC<SceneCardProps> = ({
   };
 
   const handleMouseEnter = (e: React.MouseEvent): void => {
-    if (!isNarrative && e.buttons === 1 && e.altKey) {
+    if (e.buttons === 1 && e.altKey) {
       onCauseDrop?.(scene.id);
     }
   };
 
   const handleMouseLeave = (e: React.MouseEvent): void => {
-    if (!isNarrative && e.buttons === 1 && e.altKey) {
+    if (e.buttons === 1 && e.altKey) {
       onCauseLeave?.();
     }
   };
@@ -368,26 +362,37 @@ export const SceneCard: React.FC<SceneCardProps> = ({
           : 'absolute w-48 min-h-16 rounded-lg border-2 shadow-md cursor-grab active:cursor-grabbing select-none',
         'transition-shadow hover:shadow-lg',
         colorClasses.bg,
-        isCauseTarget
-          ? 'ring-2 ring-brand-500 shadow-lg'
-          : isActive
+        isCauseSource
+          ? [
+              'cursor-grabbing',
+              'ring-4 ring-blue-400/80',
+              'shadow-[0_0_0_6px_rgba(59,130,246,0.16)]',
+              'bg-blue-50/20 dark:bg-blue-950/10',
+            ].join(' ')
+          : isCauseTarget
             ? [
-                'ring-2 ring-violet-400/80',
-                'shadow-[0_0_0_4px_rgba(139,92,246,0.15),0_8px_32px_rgba(139,92,246,0.35)]',
+                'ring-4 ring-brand-500/90',
+                'shadow-lg',
+                'bg-brand-gray-100/60 dark:bg-brand-gray-900/40',
               ].join(' ')
-            : isCause
+            : isActive
               ? [
-                  'ring-2 ring-red-500/80',
-                  'shadow-[0_0_0_4px_rgba(239,68,68,0.12),0_8px_28px_rgba(239,68,68,0.5)]',
+                  'ring-2 ring-violet-400/80',
+                  'shadow-[0_0_0_4px_rgba(139,92,246,0.15),0_8px_32px_rgba(139,92,246,0.35)]',
                 ].join(' ')
-              : isEffect
+              : isCause
                 ? [
-                    'ring-2 ring-green-500/80',
-                    'shadow-[0_0_0_4px_rgba(34,197,94,0.12),0_8px_28px_rgba(34,197,94,0.5)]',
+                    'ring-2 ring-red-500/80',
+                    'shadow-[0_0_0_4px_rgba(239,68,68,0.12),0_8px_28px_rgba(239,68,68,0.5)]',
                   ].join(' ')
-                : isSelected
-                  ? 'ring-2 ring-brand-400 ' + colorClasses.border
-                  : colorClasses.border,
+                : isEffect
+                  ? [
+                      'ring-2 ring-green-500/80',
+                      'shadow-[0_0_0_4px_rgba(34,197,94,0.12),0_8px_28px_rgba(34,197,94,0.5)]',
+                    ].join(' ')
+                  : isSelected
+                    ? 'ring-2 ring-brand-400 ' + colorClasses.border
+                    : colorClasses.border,
         scene.status === 'inactive' ? 'opacity-60' : '',
       ]
         .filter(Boolean)

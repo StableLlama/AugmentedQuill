@@ -215,6 +215,7 @@ interface DialogHandlers {
 
 interface NarrativeHandlers {
   sortMode?: 'narrative' | 'chronological';
+  onCreateCause?: (fromId: SceneId, toId: SceneId) => Promise<void>;
   onReorderScene?: (
     sourceSceneId: SceneId,
     targetSceneId: SceneId,
@@ -1274,6 +1275,23 @@ describe('scene view mode wiring', () => {
 
     expect(nv().sortMode).toBe('chronological');
     expect(nv().onReorderScene).toBeUndefined();
+  });
+
+  it('passes onCreateCause into Narrative and Convergence Map views', async () => {
+    useScenesMock.mockReturnValue([makeScene({ id: 'scene-a' })]);
+    const utils = wrap(<ScenesPanelContainer />);
+
+    await act(async () => {
+      fireEvent.click(utils.getByRole('button', { name: 'Narrative' }));
+    });
+
+    expect(nv().onCreateCause).toBeInstanceOf(Function);
+
+    await act(async () => {
+      fireEvent.click(utils.getByRole('button', { name: 'Convergence Map' }));
+    });
+
+    expect(captured.convergence?.onCreateCause).toBeInstanceOf(Function);
   });
 });
 

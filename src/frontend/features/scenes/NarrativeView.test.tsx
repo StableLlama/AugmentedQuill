@@ -63,11 +63,12 @@ afterEach(() => {
   selectionState.activeSceneId = null;
 });
 
-function makeScene(overrides: Record<string, unknown>): Scene {
+function makeScene(overrides: Record<string, unknown> = {}): Scene {
   const legacy = overrides as {
     causes?: SceneId[];
     [key: string]: unknown;
   };
+  const { causes: _causes, ...rest } = legacy;
   return {
     id: 'scene-1',
     summary: 'Scene',
@@ -89,7 +90,7 @@ function makeScene(overrides: Record<string, unknown>): Scene {
     status: 'active',
     pinboard_x: 0,
     pinboard_y: 0,
-    causes: [...(legacy.causes ?? [])],
+    causes: [...(_causes ?? [])],
     ...rest,
   } as Scene;
 }

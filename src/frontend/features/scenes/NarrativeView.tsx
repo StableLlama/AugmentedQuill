@@ -34,7 +34,7 @@ import type { Chapter, Book, SourcebookEntry } from '../../types/domain';
 import type { ProseDropData } from './types';
 import { SceneCard } from './SceneCard';
 import { CauseArrows } from './ConstraintArrows';
-import type { CardLayoutMap, CardLayout } from './ConstraintArrows';
+import type { CardLayoutMap, CardLayout, GhostArrow } from './ConstraintArrows';
 import { useSceneSelection } from './useSceneSelection';
 import { useTheme } from '../layout/ThemeContext';
 import { useSceneLanes, isCharacterEntry } from './useSceneLanes';
@@ -74,6 +74,7 @@ interface NarrativeViewProps {
     sourceSceneIds: SceneId[],
     chapterId: string
   ) => Promise<void>;
+  onCreateCause?: (fromId: SceneId, toId: SceneId) => Promise<void>;
   initialVisibleLaneEntryIds?: string[];
   initialRemovedReferencedLaneIds?: string[];
   onVisibleLaneEntryIdsChange?: (ids: string[]) => void;
@@ -284,6 +285,7 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
   onSelectionChange,
   onEditScene,
   onDropProse,
+  onCreateCause,
   onReorderScene,
   onDropScenesOnChapter,
   initialVisibleLaneEntryIds,
@@ -580,6 +582,77 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
     placeBefore: boolean;
   } | null>(null);
   const [chapterDropTargetId, setChapterDropTargetId] = useState<string | null>(null);
+
+  const causeDragSourceRef = useRef<SceneId | null>(null);
+  const causeTargetRef = useRef<SceneId | null>(null);
+  const [causeSourceDisplay, setCauseSourceDisplay] = useState<SceneId | null>(null);
+  const [causeTargetDisplay, setCauseTargetDisplay] = useState<SceneId | null>(null);
+  const [ghostArrow, setGhostArrow] = useState<GhostArrow | null>(null);
+
+  const handleCauseDragStart = useCallback(
+    (_sceneId: SceneId, startClientX: number, startClientY: number): void => {
+      if (!onCreateCause) return;
+      causeDragSourceRef.current = _sceneId;
+      causeTargetRef.current = null;
+      setCauseSourceDisplay(_sceneId);
+      setCauseTargetDisplay(null);
+
+      const containerEl = innerContainerRef.current;
+      const rect = containerEl?.getBoundingClientRect();
+      const x = rect ? startClientX - rect.left : 0;
+      const y = rect ? startClientY - rect.top : 0;
+      setGhostArrow({ fromId: _sceneId, toX: x, toY: y, connected: false });
+
+      const onMouseMove = (me: MouseEvent): void => {
+        const containerEl2 = innerContainerRef.current;
+        if (!containerEl2 || !causeDragSourceRef.current) return;
+        const containerRect = containerEl2.getBoundingClientRect();
+        const x2 = me.clientX - containerRect.left;
+        const y2 = me.clientY - containerRect.top;
+        const connected = causeTargetRef.current !== null;
+        setGhostArrow({
+          fromId: causeDragSourceRef.current,
+          toX: x2,
+          toY: y2,
+          connected,
+        });
+      };
+
+      document.addEventListener('mousemove', onMouseMove);
+
+      const onUp = (): void => {
+        if (
+          onCreateCause &&
+          causeDragSourceRef.current &&
+          causeTargetRef.current !== null
+        ) {
+          void onCreateCause(causeDragSourceRef.current, causeTargetRef.current);
+        }
+        causeDragSourceRef.current = null;
+        causeTargetRef.current = null;
+        setCauseSourceDisplay(null);
+        setCauseTargetDisplay(null);
+        setGhostArrow(null);
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onUp);
+      };
+
+      document.addEventListener('mouseup', onUp);
+    },
+    [onCreateCause]
+  );
+
+  const handleCauseDrop = useCallback((targetId: SceneId): void => {
+    if (causeDragSourceRef.current && causeDragSourceRef.current !== targetId) {
+      causeTargetRef.current = targetId;
+      setCauseTargetDisplay(targetId);
+    }
+  }, []);
+
+  const handleCauseLeave = useCallback((): void => {
+    causeTargetRef.current = null;
+    setCauseTargetDisplay(null);
+  }, []);
 
   const selectedSceneIdsInDisplayOrder = useMemo(
     () =>
@@ -1053,6 +1126,11 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
                   variant="narrative"
                   onSelect={handleCardSelect}
                   onEdit={onEditScene}
+                  onCauseDragStart={handleCauseDragStart}
+                  onCauseDrop={handleCauseDrop}
+                  onCauseLeave={handleCauseLeave}
+                  isCauseSource={causeSourceDisplay === scene.id}
+                  isCauseTarget={causeTargetDisplay === scene.id}
                   isSelected={selectedSceneIds.has(scene.id)}
                   isActive={activeSceneId === scene.id}
                   isCause={causeIds.has(scene.id)}
@@ -1086,6 +1164,7 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
           useVerticalCenterForConnectedOnly
           hideDefaultArrows
           activeSceneId={activeSceneId}
+          ghostArrow={ghostArrow}
         />
       </div>
 

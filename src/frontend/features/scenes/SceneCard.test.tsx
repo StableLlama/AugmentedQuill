@@ -17,7 +17,7 @@
 // @vitest-environment jsdom
 
 import React from 'react';
-import { render, cleanup, act } from '@testing-library/react';
+import { render, cleanup, act, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { I18nextProvider } from 'react-i18next';
 import i18n from '../app/i18n';
@@ -495,5 +495,138 @@ describe('SceneCard — displayX/displayY override', () => {
     const card = container.querySelector<HTMLElement>('[data-scene-card]');
     expect(card?.style.left).toBe('50px');
     expect(card?.style.top).toBe('75px');
+  });
+
+  it('renders a blue highlight when this card is the Alt+drag source', () => {
+    const scene = makeScene({ id: 'source-scene' });
+    const { container } = render(
+      <I18nextProvider i18n={i18n}>
+        <SceneCard
+          scene={scene}
+          index={0}
+          onDragMove={NOOP}
+          onDragEnd={NOOP}
+          onSelect={NOOP}
+          onEdit={NOOP}
+          onCauseDragStart={NOOP}
+          onCauseDrop={NOOP}
+          onCauseLeave={NOOP}
+          isCauseSource={true}
+          isCauseTarget={false}
+          isSelected={false}
+          isActive={false}
+          isCause={false}
+          isEffect={false}
+        />
+      </I18nextProvider>
+    );
+    const card = container.querySelector<HTMLElement>('[data-scene-card]');
+    expect(card?.className).toContain('ring-4');
+    expect(card?.className).toContain('ring-blue-400');
+    expect(card?.className).toContain('cursor-grabbing');
+  });
+
+  it('renders a visible highlight when this card is a valid Alt+drag target', () => {
+    const scene = makeScene({ id: 'target-scene' });
+    const { container } = render(
+      <I18nextProvider i18n={i18n}>
+        <SceneCard
+          scene={scene}
+          index={0}
+          onDragMove={NOOP}
+          onDragEnd={NOOP}
+          onSelect={NOOP}
+          onEdit={NOOP}
+          onCauseDragStart={NOOP}
+          onCauseDrop={NOOP}
+          onCauseLeave={NOOP}
+          isCauseSource={false}
+          isCauseTarget={true}
+          isSelected={false}
+          isActive={false}
+          isCause={false}
+          isEffect={false}
+        />
+      </I18nextProvider>
+    );
+    const card = container.querySelector<HTMLElement>('[data-scene-card]');
+    expect(card?.className).toContain('ring-4');
+    expect(card?.className).toContain('ring-brand-500');
+  });
+});
+
+describe('SceneCard — Alt+drag cause creation', () => {
+  it('starts a cause drag in narrative mode when Alt is held', () => {
+    const onSelect = vi.fn();
+    const onCauseDragStart = vi.fn();
+    const scene = makeScene({ id: 'scene-alt', pinboard_x: 10, pinboard_y: 20 });
+
+    const { container } = render(
+      <I18nextProvider i18n={i18n}>
+        <SceneCard
+          scene={scene}
+          index={0}
+          variant="narrative"
+          onSelect={onSelect}
+          onEdit={NOOP}
+          onCauseDragStart={onCauseDragStart}
+          onCauseDrop={NOOP}
+          onCauseLeave={NOOP}
+          isCauseTarget={false}
+          isSelected={false}
+          isActive={false}
+          isCause={false}
+          isEffect={false}
+        />
+      </I18nextProvider>
+    );
+
+    const card = container.querySelector<HTMLElement>('[data-scene-card]');
+    expect(card).toBeTruthy();
+
+    act(() => {
+      fireEvent.mouseDown(card!, { altKey: true, button: 0, clientX: 10, clientY: 10 });
+      // Simulate a small drag so the alt-click doesn't count as a simple click.
+      document.dispatchEvent(
+        new MouseEvent('mousemove', { bubbles: true, clientX: 20, clientY: 20 })
+      );
+      document.dispatchEvent(
+        new MouseEvent('mouseup', { bubbles: true, clientX: 20, clientY: 20 })
+      );
+    });
+
+    expect(onCauseDragStart).toHaveBeenCalledOnce();
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('notifies target cards on mouse enter during Alt+drag in narrative mode', () => {
+    const onCauseDrop = vi.fn();
+    const scene = makeScene({ id: 'scene-target', pinboard_x: 10, pinboard_y: 20 });
+
+    const { container } = render(
+      <I18nextProvider i18n={i18n}>
+        <SceneCard
+          scene={scene}
+          index={0}
+          variant="narrative"
+          onSelect={NOOP}
+          onEdit={NOOP}
+          onCauseDragStart={NOOP}
+          onCauseDrop={onCauseDrop}
+          onCauseLeave={NOOP}
+          isCauseTarget={false}
+          isSelected={false}
+          isActive={false}
+          isCause={false}
+          isEffect={false}
+        />
+      </I18nextProvider>
+    );
+
+    const card = container.querySelector<HTMLElement>('[data-scene-card]');
+    expect(card).toBeTruthy();
+
+    fireEvent.mouseEnter(card!, { buttons: 1, altKey: true });
+    expect(onCauseDrop).toHaveBeenCalledWith('scene-target');
   });
 });

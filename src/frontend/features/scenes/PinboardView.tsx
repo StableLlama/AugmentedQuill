@@ -310,6 +310,8 @@ export const PinboardView: React.FC<PinboardViewProps> = ({
   };
 
   const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>): void => {
+    if (e.target !== e.currentTarget) return;
+
     if (e.button === 1 || (e.button === 0 && e.altKey)) {
       e.preventDefault();
       isPanning.current = true;
@@ -338,16 +340,25 @@ export const PinboardView: React.FC<PinboardViewProps> = ({
 
   // ---- Cause drag handlers (Alt+drag on a card) ----
   const handleCauseDragStart = useCallback(
-    (sceneId: SceneId, startCanvasX: number, startCanvasY: number): void => {
+    (sceneId: SceneId, startClientX: number, startClientY: number): void => {
       causeDragSourceRef.current = sceneId;
       causeTargetRef.current = null;
       setCauseTargetDisplay(null);
 
-      // Initialise ghost arrow at the start point.
+      const containerEl = containerRef.current;
+      const rect = containerEl?.getBoundingClientRect();
+      const screenX = rect ? startClientX - rect.left : 0;
+      const screenY = rect ? startClientY - rect.top : 0;
+      const cz = zoomRef.current;
+      const cp = panRef.current;
+      const canvasX = (screenX - cp.x) / cz;
+      const canvasY = (screenY - cp.y) / cz;
+
+      // Initialise ghost arrow at the pointer location in canvas space.
       setGhostArrow({
         fromId: sceneId,
-        toX: startCanvasX,
-        toY: startCanvasY,
+        toX: canvasX,
+        toY: canvasY,
         connected: false,
       });
 
@@ -491,6 +502,7 @@ export const PinboardView: React.FC<PinboardViewProps> = ({
               onCauseDrop={handleCauseDrop}
               onCauseLeave={handleCauseLeave}
               isCauseTarget={causeTargetDisplay === scene.id}
+              isCauseSource={causeDragSourceRef.current === scene.id}
               isSelected={selectedSceneIds.has(scene.id)}
               isActive={activeSceneId === scene.id}
               isCause={causeIds.has(scene.id)}
