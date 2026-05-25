@@ -63,6 +63,7 @@ from augmentedquill.services.chat.chat_api_session_ops import (
 import augmentedquill.services.chat.chat_api_proxy_ops as _chat_api_proxy_ops
 import json as _json
 from typing import Any, Dict
+from collections import OrderedDict
 from augmentedquill.models.chat import (
     ChatInitialStateResponse,
     ChatToolBatchMutationResponse,
@@ -84,6 +85,280 @@ httpx = _chat_api_proxy_ops.httpx
 
 _CHAT_TOOL_BATCH_DIR = ".aq_history/chat_tool_batches"
 _BATCH_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,80}$")
+
+_TOOLS_ALWAYS_INCLUDED_FOR_NARROWING = frozenset({"undo_last_tool_changes"})
+
+# High-confidence intent signatures that are safe to narrow.
+_INTENT_TOOL_CLOSURE_RULES: tuple[tuple[re.Pattern[str], frozenset[str]], ...] = (
+    (
+        re.compile(
+            r"\b(scene|scenes)\b.*\b(move|reorder|re-order|before|after|relink|re-link|scope|chapter)\b"
+            r"|\b(move|reorder|re-order|relink|re-link)\b.*\b(scene|scenes)\b",
+            re.IGNORECASE,
+        ),
+        frozenset({"manage_scenes"}),
+    ),
+    (
+        re.compile(r"\b(scene|scenes)\b.*\b(list|show|get|read)\b", re.IGNORECASE),
+        frozenset({"manage_scenes"}),
+    ),
+    (
+        re.compile(
+            r"\b(chapter|chapters)\b.*\b(summary|summaries|metadata|heading|content|write)\b"
+            r"|\b(summary|summaries|metadata|heading|content)\b.*\b(chapter|chapters)\b",
+            re.IGNORECASE,
+        ),
+        frozenset(
+            {
+                "get_chapter_metadata",
+                "update_chapter_metadata",
+                "get_chapter_summaries",
+                "get_chapter_content",
+                "get_current_chapter_id",
+                "write_chapter_summary",
+                "write_chapter_heading",
+                "sync_summary",
+            }
+        ),
+    ),
+    (
+        re.compile(
+            r"\b(sourcebook|character|location|worldbuilding|world-building)\b",
+            re.IGNORECASE,
+        ),
+        frozenset({"manage_sourcebook"}),
+    ),
+    (
+        re.compile(
+            r"\b(image|images|cover|art|illustration|illustrate)\b", re.IGNORECASE
+        ),
+        frozenset({"manage_images"}),
+    ),
+    (
+        re.compile(r"\b(search|replace|find all|regex)\b", re.IGNORECASE),
+        frozenset({"search_and_replace"}),
+    ),
+)
+
+
+def _extract_latest_user_text(messages: list[dict[str, Any]]) -> str:
+    """Extract the latest user textual content for deterministic intent routing."""
+    for msg in reversed(messages):
+        if str(msg.get("role") or "").lower() != "user":
+            continue
+        content = msg.get("content")
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            text_parts: list[str] = []
+            for part in content:
+                if not isinstance(part, dict):
+                    continue
+                if str(part.get("type") or "") == "text":
+                    text_val = part.get("text")
+                    if isinstance(text_val, str):
+                        text_parts.append(text_val)
+            return "\n".join(text_parts)
+    return ""
+
+
+def _extract_recent_user_text(
+    messages: list[dict[str, Any]], max_user_messages: int = 3
+) -> str:
+    """Extract recent user text across turns to preserve follow-up intent context."""
+    if max_user_messages < 1:
+        max_user_messages = 1
+
+    collected: list[str] = []
+    for msg in reversed(messages):
+        if str(msg.get("role") or "").lower() != "user":
+            continue
+        content = msg.get("content")
+        if isinstance(content, str) and content.strip():
+            collected.append(content)
+        elif isinstance(content, list):
+            text_parts: list[str] = []
+            for part in content:
+                if not isinstance(part, dict):
+                    continue
+                if str(part.get("type") or "") == "text":
+                    text_val = part.get("text")
+                    if isinstance(text_val, str) and text_val.strip():
+                        text_parts.append(text_val)
+            if text_parts:
+                collected.append("\n".join(text_parts))
+        if len(collected) >= max_user_messages:
+            break
+
+    return "\n".join(reversed(collected))
+
+
+def _narrow_story_tools_for_messages(
+    story_tools: list[dict[str, Any]] | None,
+    messages: list[dict[str, Any]],
+    tool_choice: Any,
+) -> list[dict[str, Any]] | None:
+    """Narrow tool list for high-confidence intents, else keep full list.
+
+    The selector is deterministic and conservative:
+    - If no confident intent is detected, return full tools.
+    - If narrowing would result in an empty/missing required set, return full tools.
+    - Explicit client tool_choice overrides bypass narrowing.
+    """
+    if not story_tools:
+        return story_tools
+
+    # Respect explicit tool-choice directives from clients.
+    if tool_choice not in (None, "", "auto"):
+        return story_tools
+
+    intent_context_text = _extract_recent_user_text(messages)
+    if not intent_context_text.strip():
+        return story_tools
+
+    required_tool_names: set[str] = set()
+    for pattern, required in _INTENT_TOOL_CLOSURE_RULES:
+        if pattern.search(intent_context_text):
+            required_tool_names.update(required)
+
+    if not required_tool_names:
+        return story_tools
+
+    required_tool_names.update(_TOOLS_ALWAYS_INCLUDED_FOR_NARROWING)
+    available_tool_names = {
+        str((tool.get("function") or {}).get("name") or "") for tool in story_tools
+    }
+
+    # Fallback to full set if mandatory closure tools are not available in this role/project.
+    if not required_tool_names.intersection(available_tool_names):
+        return story_tools
+
+    selected = [
+        tool
+        for tool in story_tools
+        if str((tool.get("function") or {}).get("name") or "") in required_tool_names
+    ]
+    # Safety fallback: never send an empty or effectively empty narrowed set.
+    if not selected:
+        return story_tools
+
+    return selected
+
+
+def _is_manage_scenes_update_batch(
+    tool_calls: list, project_language: str, model_type: str
+) -> bool:
+    """Return true when a tool-call batch is exclusively manage_scenes updates."""
+    if model_type != CHAT_ROLE or len(tool_calls) < 2:
+        return False
+
+    for call in tool_calls:
+        if not isinstance(call, dict):
+            return False
+        func = call.get("function") or {}
+        name = (func.get("name") if isinstance(func, dict) else None) or ""
+        if str(name) != "manage_scenes":
+            return False
+        args_raw = (func.get("arguments") if isinstance(func, dict) else None) or "{}"
+        try:
+            args_obj = (
+                try_parse_json_robust(args_raw, language=project_language)
+                if isinstance(args_raw, str)
+                else (args_raw or {})
+            )
+        except (ValueError, TypeError):
+            return False
+        if not isinstance(args_obj, dict):
+            return False
+        if str(args_obj.get("action") or "").strip().lower() != "update":
+            return False
+    return True
+
+
+def _aggregate_manage_scenes_update_batch_payload(
+    buffered_messages: list[dict],
+) -> tuple[Any | None, bool]:
+    """Aggregate manage_scenes update messages into one payload.
+
+    Returns (payload, ok). When ok is false, caller should fall back to raw messages.
+    """
+    content_scenes_by_id: OrderedDict[int, dict[str, Any]] = OrderedDict()
+    scene_list_by_id: OrderedDict[int, dict[str, Any]] = OrderedDict()
+    saw_content = False
+    saw_placement = False
+
+    for msg in buffered_messages:
+        if not isinstance(msg, dict):
+            return None, False
+        content_raw = msg.get("content")
+        if not isinstance(content_raw, str):
+            return None, False
+        try:
+            payload = _json.loads(content_raw)
+        except (TypeError, ValueError):
+            return None, False
+
+        if isinstance(payload, dict) and payload.get("error"):
+            return None, False
+
+        if isinstance(payload, list):
+            saw_placement = True
+            for entry in payload:
+                if not isinstance(entry, dict):
+                    continue
+                scene_id = int(entry.get("scene_id") or 0)
+                if scene_id <= 0:
+                    continue
+                if scene_id in scene_list_by_id:
+                    del scene_list_by_id[scene_id]
+                scene_list_by_id[scene_id] = entry
+            continue
+
+        if isinstance(payload, dict) and "scene" in payload and "scene_list" in payload:
+            scene_obj = payload.get("scene")
+            scene_list = payload.get("scene_list")
+            if isinstance(scene_obj, dict):
+                scene_id = int(scene_obj.get("id") or 0)
+                if scene_id > 0:
+                    if scene_id in content_scenes_by_id:
+                        del content_scenes_by_id[scene_id]
+                    content_scenes_by_id[scene_id] = scene_obj
+                    saw_content = True
+            if isinstance(scene_list, list):
+                saw_placement = True
+                for entry in scene_list:
+                    if not isinstance(entry, dict):
+                        continue
+                    scene_id = int(entry.get("scene_id") or 0)
+                    if scene_id <= 0:
+                        continue
+                    if scene_id in scene_list_by_id:
+                        del scene_list_by_id[scene_id]
+                    scene_list_by_id[scene_id] = entry
+            continue
+
+        if isinstance(payload, dict) and int(payload.get("id") or 0) > 0:
+            scene_id = int(payload.get("id") or 0)
+            if scene_id in content_scenes_by_id:
+                del content_scenes_by_id[scene_id]
+            content_scenes_by_id[scene_id] = payload
+            saw_content = True
+            continue
+
+        return None, False
+
+    content_scenes = list(content_scenes_by_id.values())
+    scene_list = list(scene_list_by_id.values())
+    if saw_placement and saw_content:
+        return {
+            "scenes": content_scenes,
+            "scene_list": scene_list,
+        }, True
+    if saw_placement:
+        return scene_list, True
+    if saw_content:
+        return content_scenes, True
+    return None, False
 
 
 async def _run_tool_calls(
@@ -109,6 +384,12 @@ async def _run_tool_calls(
         project_language = str(story_cfg.get("language", "en") or "en")
 
     current_active_dir = active_dir
+    aggregate_manage_scenes_updates = _is_manage_scenes_update_batch(
+        tool_calls=tool_calls,
+        project_language=project_language,
+        model_type=model_type,
+    )
+    manage_scenes_update_buffer: list[dict] = []
     for call in tool_calls:
         if not isinstance(call, dict):
             continue
@@ -127,6 +408,7 @@ async def _run_tool_calls(
         if not name or not call_id:
             continue
         tool_names.append(name)
+
         with use_project_context(current_active_dir):
             msg = await execute_registered_tool(
                 name,
@@ -138,13 +420,32 @@ async def _run_tool_calls(
             )
         if isinstance(msg, dict) and "role" not in msg:
             msg = tool_message(name, call_id, msg)
-        appended.append(msg)
+        if aggregate_manage_scenes_updates:
+            manage_scenes_update_buffer.append(msg)
+        else:
+            appended.append(msg)
 
         # Follow project switches initiated by tools (e.g., manage_project/create)
         # so subsequent tool calls in the same batch operate on the new project.
         switched_project_dir = get_active_project_dir()
         if switched_project_dir is not None:
             current_active_dir = switched_project_dir
+
+    if aggregate_manage_scenes_updates:
+        aggregated_payload, ok = _aggregate_manage_scenes_update_batch_payload(
+            manage_scenes_update_buffer
+        )
+        if ok and aggregated_payload is not None and manage_scenes_update_buffer:
+            aggregate_call_id = str(
+                manage_scenes_update_buffer[-1].get("tool_call_id")
+                or manage_scenes_update_buffer[-1].get("id")
+                or "batch_manage_scenes_update"
+            )
+            appended.append(
+                tool_message("manage_scenes", aggregate_call_id, aggregated_payload)
+            )
+        else:
+            appended.extend(manage_scenes_update_buffer)
 
     return appended, mutations, tool_names
 
@@ -708,6 +1009,12 @@ async def api_chat_stream(
         # This prevents some models from hallucinating tool usage even when told not to.
         if tool_choice == "none":
             pass
+        elif model_type == CHAT_ROLE:
+            story_tools = _narrow_story_tools_for_messages(
+                story_tools=story_tools,
+                messages=req_messages,
+                tool_choice=tool_choice,
+            )
     if model_type == WRITING_ROLE:
         story_tools = None
         tool_choice = None

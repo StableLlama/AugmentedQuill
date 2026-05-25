@@ -94,6 +94,12 @@ class ChatToolsTest(TestCase):
             encoding="utf-8",
         )
 
+    def _set_project_type(self, project_type: str):
+        story_path = self.projects_root / "demo" / "story.json"
+        story = json.loads(story_path.read_text(encoding="utf-8"))
+        story["project_type"] = project_type
+        story_path.write_text(json.dumps(story), encoding="utf-8")
+
     def _post_single_tool(self, name: str, arguments: dict | str):
         return self._post_single_tool_for_role("CHAT", name, arguments)
 
@@ -1360,6 +1366,87 @@ class ChatToolsTest(TestCase):
         self.assertEqual(updated_scene.get("summary"), "Scene base one two")
         self.assertTrue((data.get("mutations") or {}).get("story_changed"))
 
+    def test_manage_scenes_update_batch_returns_single_aggregated_response(self):
+        self._bootstrap_project()
+        self._set_project_type("novel")
+
+        first = self._post_single_tool(
+            "manage_scenes",
+            {
+                "action": "create",
+                "create_data": {"summary": "First"},
+            },
+        )
+        second = self._post_single_tool(
+            "manage_scenes",
+            {
+                "action": "create",
+                "create_data": {"summary": "Second"},
+            },
+        )
+        first_id = json.loads((first.get("appended_messages") or [])[0]["content"]).get(
+            "id"
+        )
+        second_id = json.loads(
+            (second.get("appended_messages") or [])[0]["content"]
+        ).get("id")
+
+        data = self._post_tool_calls(
+            [
+                (
+                    "manage_scenes",
+                    {
+                        "action": "update",
+                        "scene_id": first_id,
+                        "update_data": {
+                            "summary": "First updated",
+                        },
+                    },
+                ),
+                (
+                    "manage_scenes",
+                    {
+                        "action": "update",
+                        "scene_id": second_id,
+                        "update_data": {
+                            "chapter_number": 1,
+                            "chapter_position": 0,
+                        },
+                    },
+                ),
+            ]
+        )
+
+        appended = data.get("appended_messages") or []
+        self.assertEqual(len(appended), 1)
+        payload = json.loads(appended[0]["content"])
+        self.assertIsInstance(payload, dict)
+        self.assertIn("scenes", payload)
+        self.assertIn("scene_list", payload)
+
+        scenes = payload.get("scenes") or []
+        scene_list = payload.get("scene_list") or []
+        self.assertIsInstance(scenes, list)
+        self.assertIsInstance(scene_list, list)
+        self.assertGreaterEqual(len(scene_list), 1)
+
+        updated_first = next(
+            (entry for entry in scenes if entry.get("id") == first_id), None
+        )
+        self.assertIsNotNone(updated_first)
+        self.assertEqual((updated_first or {}).get("summary"), "First updated")
+
+        compact_second = next(
+            (entry for entry in scene_list if entry.get("scene_id") == second_id), None
+        )
+        self.assertIsNotNone(compact_second)
+        self.assertEqual(
+            set((compact_second or {}).keys()),
+            {"scene_id", "summary", "chapter_position", "chapter_number"},
+        )
+        self.assertEqual((compact_second or {}).get("chapter_number"), 1)
+        self.assertEqual((compact_second or {}).get("chapter_position"), 0)
+
     def test_append_capable_tools_integration_single_turn_batch(self):
         """Integration: append-capable tool paths all preserve cumulative appends in one turn."""
         self._bootstrap_project()
@@ -1547,6 +1634,514 @@ class ChatToolsTest(TestCase):
         self.assertEqual(len(scene_payload), 1)
         scene_one = json.loads(scene_payload[0]["content"])
         self.assertEqual(scene_one.get("summary"), "Scene base one two")
+
+    def test_manage_scenes_update_with_empty_payload_reports_no_fields(self):
+        self._bootstrap_project()
+        self._post_single_tool(
+            "manage_scenes",
+            {"action": "create", "create_data": {"summary": "Scene A"}},
+        )
+
+        body = {
+            "model_type": "CHAT",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "Please reorder scenes and move scene 1 before scene 2.",
+                },
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_scene_update",
+                            "type": "function",
+                            "function": {
+                                "name": "manage_scenes",
+                                "arguments": json.dumps(
+                                    {
+                                        "action": "update",
+                                        "scene_id": 1,
+                                        "update_data": {},
+                                    }
+                                ),
+                            },
+                        }
+                    ],
+                },
+            ],
+        }
+
+        response = self.client.post("/api/v1/chat/tools", json=body)
+        self.assertEqual(response.status_code, 200, response.text)
+        result = _parse_tool_sse_result(response.text)
+        appended = result.get("appended_messages") or []
+        self.assertEqual(len(appended), 1)
+        payload = json.loads(appended[0]["content"])
+        self.assertEqual(payload.get("error"), "No scene fields to update")
+
+    def test_manage_scenes_update_content_allowed_when_reorder_intent_is_in_recent_turns(
+        self,
+    ):
+        self._bootstrap_project()
+        self._post_single_tool(
+            "manage_scenes",
+            {"action": "create", "create_data": {"summary": "Scene A"}},
+        )
+        self._post_single_tool(
+            "manage_scenes",
+            {"action": "create", "create_data": {"summary": "Scene B"}},
+        )
+        self._post_single_tool(
+            "manage_scenes",
+            {"action": "create", "create_data": {"summary": "Scene C"}},
+        )
+
+        body = {
+            "model_type": "CHAT",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "Please reorder scenes and move scene 1 before scene 2.",
+                },
+                {"role": "assistant", "content": "Understood, I will continue."},
+                {"role": "user", "content": "Please finish the remaining work."},
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_scene_update_recent_intent",
+                            "type": "function",
+                            "function": {
+                                "name": "manage_scenes",
+                                "arguments": json.dumps(
+                                    {
+                                        "action": "update",
+                                        "scene_id": 1,
+                                        "update_data": {
+                                            "causes_patch": {"add": [2, 3]},
+                                            "summary": "Updated summary",
+                                        },
+                                    }
+                                ),
+                            },
+                        }
+                    ],
+                },
+            ],
+        }
+
+        response = self.client.post("/api/v1/chat/tools", json=body)
+        self.assertEqual(response.status_code, 200, response.text)
+        result = _parse_tool_sse_result(response.text)
+        appended = result.get("appended_messages") or []
+        self.assertEqual(len(appended), 1)
+        payload = json.loads(appended[0]["content"])
+        self.assertIsNone(payload.get("error"))
+        self.assertEqual(payload.get("summary"), "Updated summary")
+        self.assertEqual(payload.get("causes"), [2, 3])
+
+    def test_manage_scenes_update_noop_reports_unchanged(self):
+        self._bootstrap_project()
+        self._post_single_tool(
+            "manage_scenes",
+            {"action": "create", "create_data": {"summary": "Scene A"}},
+        )
+
+        result = self._post_single_tool(
+            "manage_scenes",
+            {
+                "action": "update",
+                "scene_id": 1,
+                "update_data": {"summary": "Scene A"},
+            },
+        )
+
+        appended = result.get("appended_messages") or []
+        self.assertEqual(len(appended), 1)
+        payload = json.loads(appended[0]["content"])
+        self.assertTrue(payload.get("ok"))
+        self.assertFalse(payload.get("changed", True))
+        self.assertFalse((result.get("mutations") or {}).get("story_changed", False))
+
+    def test_manage_scenes_update_can_link_unlinked_to_chapter_in_one_call(self):
+        self._bootstrap_project()
+        self._set_project_type("novel")
+        self._post_single_tool(
+            "manage_scenes",
+            {"action": "create", "create_data": {"summary": "Scope move scene"}},
+        )
+
+        update_result = self._post_single_tool(
+            "manage_scenes",
+            {
+                "action": "update",
+                "scene_id": 1,
+                "update_data": {
+                    "chapter_number": 1,
+                },
+            },
+        )
+        appended = update_result.get("appended_messages") or []
+        self.assertEqual(len(appended), 1)
+        payload = json.loads(appended[0]["content"])
+        self.assertIsInstance(payload, list)
+        self.assertGreaterEqual(len(payload), 1)
+        moved_scene = next(
+            (entry for entry in payload if entry.get("scene_id") == 1), None
+        )
+        self.assertIsNotNone(moved_scene)
+        self.assertEqual(
+            set((moved_scene or {}).keys()),
+            {"scene_id", "summary", "chapter_position", "chapter_number"},
+        )
+        self.assertEqual((moved_scene or {}).get("chapter_number"), 1)
+        self.assertEqual((moved_scene or {}).get("chapter_position"), 0)
+        self.assertTrue((update_result.get("mutations") or {}).get("story_changed"))
+
+    def test_manage_scenes_update_with_chapter_number_null_moves_to_unlinked(self):
+        self._bootstrap_project()
+        self._set_project_type("novel")
+        self._post_single_tool(
+            "manage_scenes",
+            {"action": "create", "create_data": {"summary": "Missing target scene"}},
+        )
+        self._post_single_tool(
+            "manage_scenes",
+            {
+                "action": "update",
+                "scene_id": 1,
+                "update_data": {
+                    "chapter_number": 1,
+                },
+            },
+        )
+
+        update_result = self._post_single_tool(
+            "manage_scenes",
+            {
+                "action": "update",
+                "scene_id": 1,
+                "update_data": {
+                    "chapter_number": None,
+                },
+            },
+        )
+        appended = update_result.get("appended_messages") or []
+        self.assertEqual(len(appended), 1)
+        payload = json.loads(appended[0]["content"])
+        self.assertIsInstance(payload, list)
+        moved_scene = next(
+            (entry for entry in payload if entry.get("scene_id") == 1), None
+        )
+        self.assertIsNotNone(moved_scene)
+        self.assertEqual((moved_scene or {}).get("chapter_number"), None)
+
+    def test_manage_scenes_list_includes_chapter_number_per_entry(self):
+        self._bootstrap_project()
+        self._set_project_type("novel")
+        self._post_single_tool(
+            "manage_scenes",
+            {"action": "create", "create_data": {"summary": "Scene in chapter 1"}},
+        )
+        self._post_single_tool(
+            "manage_scenes",
+            {"action": "create", "create_data": {"summary": "Scene in chapter 2"}},
+        )
+
+        self._post_single_tool(
+            "manage_scenes",
+            {
+                "action": "update",
+                "scene_id": 1,
+                "update_data": {"chapter_number": 1},
+            },
+        )
+
+        self._post_single_tool(
+            "manage_scenes",
+            {
+                "action": "update",
+                "scene_id": 2,
+                "update_data": {"chapter_number": 2},
+            },
+        )
+
+        result = self._post_single_tool("manage_scenes", {"action": "list"})
+        appended = result.get("appended_messages") or []
+        self.assertEqual(len(appended), 1)
+        payload = json.loads(appended[0]["content"])
+        self.assertIsInstance(payload, list)
+
+        by_id = {int(item.get("id") or 0): item for item in payload}
+        self.assertEqual(by_id[1].get("chapter_number"), 1)
+        self.assertEqual(by_id[2].get("chapter_number"), 2)
+        self.assertEqual(by_id[1].get("chapter_position"), 0)
+        self.assertEqual(by_id[2].get("chapter_position"), 0)
+
+    def test_manage_scenes_list_includes_book_and_chapter_number_for_series(self):
+        self._bootstrap_project()
+
+        story_path = self.projects_root / "demo" / "story.json"
+        story = json.loads(story_path.read_text(encoding="utf-8"))
+        story["project_type"] = "series"
+        story["books"] = [
+            {
+                "id": "book-1",
+                "folder": "book-1",
+                "title": "Book One",
+                "chapters": [
+                    {"id": "1", "title": "B1-C1"},
+                    {"id": "2", "title": "B1-C2"},
+                ],
+            }
+        ]
+        story_path.write_text(json.dumps(story), encoding="utf-8")
+
+        self._post_single_tool(
+            "manage_scenes",
+            {"action": "create", "create_data": {"summary": "Series scene"}},
+        )
+        self._post_single_tool(
+            "manage_scenes",
+            {
+                "action": "update",
+                "scene_id": 1,
+                "update_data": {
+                    "book_number": 1,
+                    "chapter_number": 2,
+                },
+            },
+        )
+
+        result = self._post_single_tool("manage_scenes", {"action": "list"})
+        appended = result.get("appended_messages") or []
+        self.assertEqual(len(appended), 1)
+        payload = json.loads(appended[0]["content"])
+        self.assertIsInstance(payload, list)
+        self.assertGreaterEqual(len(payload), 1)
+        scene = payload[0]
+        self.assertEqual(scene.get("book_number"), 1)
+        self.assertEqual(scene.get("chapter_number"), 2)
+        self.assertEqual(scene.get("chapter_position"), 0)
+
+    def test_manage_scenes_update_with_position_fields_is_rejected(self):
+        self._bootstrap_project()
+        self._post_single_tool(
+            "manage_scenes",
+            {"action": "create", "create_data": {"summary": "Compat move"}},
+        )
+
+        result = self._post_single_tool(
+            "manage_scenes",
+            {
+                "action": "update",
+                "scene_id": 1,
+                "update_data": {
+                    "move_chapter_id": 1,
+                },
+            },
+        )
+
+        appended = result.get("appended_messages") or []
+        self.assertEqual(len(appended), 1)
+        payload = json.loads(appended[0]["content"])
+        self.assertEqual(payload.get("error"), "Invalid parameters")
+
+    def test_manage_scenes_update_accepts_integer_chapter_number(self):
+        self._bootstrap_project()
+        self._set_project_type("novel")
+        self._post_single_tool(
+            "manage_scenes",
+            {"action": "create", "create_data": {"summary": "Int chapter id move"}},
+        )
+
+        result = self._post_single_tool(
+            "manage_scenes",
+            {
+                "action": "update",
+                "scene_id": 1,
+                "update_data": {
+                    "chapter_number": 1,
+                },
+            },
+        )
+
+        appended = result.get("appended_messages") or []
+        self.assertEqual(len(appended), 1)
+        payload = json.loads(appended[0]["content"])
+        self.assertIsInstance(payload, list)
+        moved_scene = next(
+            (entry for entry in payload if entry.get("scene_id") == 1), None
+        )
+        self.assertIsNotNone(moved_scene)
+        self.assertEqual((moved_scene or {}).get("chapter_number"), 1)
+
+    def test_manage_scenes_update_chapter_position_reorders_within_chapter(self):
+        self._bootstrap_project()
+        self._set_project_type("novel")
+        self._post_single_tool(
+            "manage_scenes",
+            {"action": "create", "create_data": {"summary": "Scene one"}},
+        )
+        self._post_single_tool(
+            "manage_scenes",
+            {"action": "create", "create_data": {"summary": "Scene two"}},
+        )
+        self._post_single_tool(
+            "manage_scenes",
+            {
+                "action": "update",
+                "scene_id": 1,
+                "update_data": {"chapter_number": 1},
+            },
+        )
+        self._post_single_tool(
+            "manage_scenes",
+            {
+                "action": "update",
+                "scene_id": 2,
+                "update_data": {"chapter_number": 1},
+            },
+        )
+
+        result = self._post_single_tool(
+            "manage_scenes",
+            {
+                "action": "update",
+                "scene_id": 2,
+                "update_data": {"chapter_position": 0},
+            },
+        )
+
+        appended = result.get("appended_messages") or []
+        self.assertEqual(len(appended), 1)
+        payload = json.loads(appended[0]["content"])
+        self.assertIsInstance(payload, list)
+        current_scene_order = payload
+        chapter_one_order = [
+            int(entry.get("scene_id") or 0)
+            for entry in current_scene_order
+            if entry.get("chapter_number") == 1
+        ]
+        self.assertEqual(chapter_one_order[:2], [2, 1])
+
+    def test_manage_scenes_update_content_and_placement_returns_scene_and_scoped_list(
+        self,
+    ):
+        self._bootstrap_project()
+        self._set_project_type("novel")
+        self._post_single_tool(
+            "manage_scenes",
+            {"action": "create", "create_data": {"summary": "First"}},
+        )
+        self._post_single_tool(
+            "manage_scenes",
+            {"action": "create", "create_data": {"summary": "Second"}},
+        )
+        self._post_single_tool(
+            "manage_scenes",
+            {
+                "action": "update",
+                "scene_id": 1,
+                "update_data": {"chapter_number": 1},
+            },
+        )
+
+        result = self._post_single_tool(
+            "manage_scenes",
+            {
+                "action": "update",
+                "scene_id": 2,
+                "update_data": {
+                    "chapter_number": 1,
+                    "chapter_position": 0,
+                    "summary": "Second updated",
+                },
+            },
+        )
+
+        appended = result.get("appended_messages") or []
+        self.assertEqual(len(appended), 1)
+        payload = json.loads(appended[0]["content"])
+        self.assertIsInstance(payload, dict)
+        self.assertIn("scene", payload)
+        self.assertIn("scene_list", payload)
+        self.assertEqual((payload.get("scene") or {}).get("summary"), "Second updated")
+        scene_list = payload.get("scene_list") or []
+        self.assertIsInstance(scene_list, list)
+        chapter_one_order = [
+            int(entry.get("scene_id") or 0)
+            for entry in scene_list
+            if entry.get("chapter_number") == 1
+        ]
+        self.assertEqual(chapter_one_order[:2], [2, 1])
+
+    def test_manage_scenes_update_rejects_placement_fields_in_short_story(self):
+        self._bootstrap_project()
+        self._set_project_type("short-story")
+        self._post_single_tool(
+            "manage_scenes",
+            {"action": "create", "create_data": {"summary": "Scene one"}},
+        )
+
+        result = self._post_single_tool(
+            "manage_scenes",
+            {
+                "action": "update",
+                "scene_id": 1,
+                "update_data": {"chapter_number": 1},
+            },
+        )
+
+        appended = result.get("appended_messages") or []
+        self.assertEqual(len(appended), 1)
+        payload = json.loads(appended[0]["content"])
+        self.assertEqual(payload.get("error"), "Invalid scene update")
+        self.assertIn("only supported for novel and series", payload.get("message", ""))
+
+    def test_manage_scenes_update_rejects_chapter_position_in_short_story(self):
+        self._bootstrap_project()
+        self._set_project_type("short-story")
+        self._post_single_tool(
+            "manage_scenes",
+            {"action": "create", "create_data": {"summary": "Scene one"}},
+        )
+
+        result = self._post_single_tool(
+            "manage_scenes",
+            {
+                "action": "update",
+                "scene_id": 1,
+                "update_data": {"chapter_position": 0},
+            },
+        )
+
+        appended = result.get("appended_messages") or []
+        self.assertEqual(len(appended), 1)
+        payload = json.loads(appended[0]["content"])
+        self.assertEqual(payload.get("error"), "Invalid scene update")
+        self.assertIn("only supported for novel and series", payload.get("message", ""))
+
+    def test_manage_scenes_list_omits_chapter_fields_in_short_story(self):
+        self._bootstrap_project()
+        self._set_project_type("short-story")
+        self._post_single_tool(
+            "manage_scenes",
+            {"action": "create", "create_data": {"summary": "Short story scene"}},
+        )
+
+        result = self._post_single_tool("manage_scenes", {"action": "list"})
+        appended = result.get("appended_messages") or []
+        self.assertEqual(len(appended), 1)
+        payload = json.loads(appended[0]["content"])
+        self.assertIsInstance(payload, list)
+        self.assertGreaterEqual(len(payload), 1)
+        scene = payload[0]
+        self.assertNotIn("chapter_number", scene)
+        self.assertNotIn("chapter_position", scene)
+        self.assertNotIn("book_number", scene)
 
     def test_call_writing_llm_append_mode_with_trailing_newline(self):
         """Test append mode consumes trailing newline when continuation is inline."""
@@ -2550,6 +3145,37 @@ class ChatToolsTest(TestCase):
         details = content.get("details", [])
         self.assertTrue(details)
         self.assertTrue(all("input" not in d for d in details if isinstance(d, dict)))
+        self.assertTrue(
+            any(
+                "missing required key(s): value" in str(d.get("msg") or "")
+                for d in details
+                if isinstance(d, dict)
+            )
+        )
+
+    def test_invalid_parameters_replace_text_patch_reports_missing_keys(self):
+        self._bootstrap_project()
+        result = self._post_single_tool(
+            "update_chapter_metadata",
+            {
+                "chap_id": 1,
+                "summary_patch": {
+                    "operation": "replace_text",
+                },
+            },
+        )
+        payload = result.get("appended_messages") or []
+        self.assertEqual(len(payload), 1)
+        content = json.loads(payload[0]["content"])
+        self.assertEqual(content.get("error"), "Invalid parameters")
+        details = content.get("details", [])
+        self.assertTrue(
+            any(
+                "missing required key(s): old_text, new_text" in str(d.get("msg") or "")
+                for d in details
+                if isinstance(d, dict)
+            )
+        )
 
     def test_update_chapter_metadata_conflicts_patch_op_inferred_from_updates(self):
         self._bootstrap_project()

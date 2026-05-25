@@ -10,6 +10,8 @@
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from augmentedquill.services.chat.chat_tool_decorator import get_registered_tool_schemas
+
 from .chat_stream_test_base import ChatStreamTestBase
 
 
@@ -130,6 +132,67 @@ class TestChatStreamRoleAndSanitization(ChatStreamTestBase):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertFalse(captured.get("supports_function_calling"))
         self.assertIsNone(captured.get("tools"))
+
+    def test_chat_stream_narrows_tools_for_scene_reorder_intent(self):
+        captured: dict = {}
+
+        async def fake_stream(**kwargs):
+            captured.update(kwargs)
+            yield {"content": "ok"}
+
+        with patch(
+            "augmentedquill.api.v1.chat.llm.unified_chat_stream",
+            side_effect=fake_stream,
+        ):
+            response = self.client.post(
+                "/api/v1/chat/stream",
+                json={
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": "Please move scene 5 before scene 2 and relink chapter scopes.",
+                        }
+                    ],
+                    "model_type": "CHAT",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        tool_names = {
+            tool["function"]["name"] for tool in (captured.get("tools") or [])
+        }
+        self.assertIn("manage_scenes", tool_names)
+        self.assertIn("undo_last_tool_changes", tool_names)
+        self.assertNotIn("manage_sourcebook", tool_names)
+
+    def test_chat_stream_keeps_full_tools_when_intent_is_ambiguous(self):
+        captured: dict = {}
+
+        async def fake_stream(**kwargs):
+            captured.update(kwargs)
+            yield {"content": "ok"}
+
+        with patch(
+            "augmentedquill.api.v1.chat.llm.unified_chat_stream",
+            side_effect=fake_stream,
+        ):
+            response = self.client.post(
+                "/api/v1/chat/stream",
+                json={
+                    "messages": [{"role": "user", "content": "Hello there"}],
+                    "model_type": "CHAT",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        expected = {
+            tool["function"]["name"]
+            for tool in get_registered_tool_schemas(
+                model_type="CHAT", project_type="novel"
+            )
+        }
+        actual = {tool["function"]["name"] for tool in (captured.get("tools") or [])}
+        self.assertSetEqual(expected, actual)
 
     @patch("augmentedquill.services.llm.llm.httpx.AsyncClient")
     def test_editing_model_tools(self, MockClientClass):

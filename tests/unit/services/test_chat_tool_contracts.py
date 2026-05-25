@@ -368,7 +368,7 @@ class ChatToolContractsTest(TestCase):
         self.assertIn("relative chronology", scene_time_description)
         self.assertNotIn("prose_link", create_props)
 
-    def test_manage_scenes_schema_exposes_move_fields(self):
+    def test_manage_scenes_schema_exposes_update_placement_fields(self):
         tools = get_registered_tool_schemas(model_type="CHAT", project_type="series")
         tool = next(
             (t for t in tools if t["function"]["name"] == "manage_scenes"),
@@ -377,16 +377,18 @@ class ChatToolContractsTest(TestCase):
         self.assertIsNotNone(tool, "manage_scenes schema should exist")
 
         props = tool.get("function", {}).get("parameters", {}).get("properties", {})
-        self.assertIn("target_scene_id", props)
-        self.assertIn("place_before", props)
+        self.assertIn("update_data", props)
         self.assertIn("scope_type", props)
         self.assertIn("scope", props)
 
-        target_schema = props.get("target_scene_id", {})
-        self.assertEqual(target_schema.get("type"), "integer")
+        update_data_schema = props.get("update_data", {})
+        update_data_props = update_data_schema.get("properties", {})
+        self.assertIn("chapter_number", update_data_props)
+        self.assertIn("chapter_position", update_data_props)
+        self.assertIn("book_number", update_data_props)
 
-        place_before_schema = props.get("place_before", {})
-        self.assertEqual(place_before_schema.get("type"), "boolean")
+        action_schema = props.get("action", {})
+        self.assertNotIn("move", action_schema.get("enum") or [])
 
     def test_manage_scenes_list_hides_internal_prose_link_offsets(self):
         created = self._call_tool(
@@ -453,7 +455,7 @@ class ChatToolContractsTest(TestCase):
         )
         self.assertIsInstance(result_with_scope, list)
 
-    def test_manage_scenes_move_returns_compact_ordering_snapshot(self):
+    def test_manage_scenes_update_placement_returns_scoped_scene_list(self):
         first = self._call_tool(
             "manage_scenes",
             {
@@ -485,34 +487,45 @@ class ChatToolContractsTest(TestCase):
             model_type="CHAT",
         )
 
+        for scene_id in (first.get("id"), second.get("id"), third.get("id")):
+            self._call_tool(
+                "manage_scenes",
+                {
+                    "action": "update",
+                    "scene_id": scene_id,
+                    "update_data": {
+                        "chapter_number": 1,
+                    },
+                },
+                model_type="CHAT",
+            )
+
         result = self._call_tool(
             "manage_scenes",
             {
-                "action": "move",
+                "action": "update",
                 "scene_id": third.get("id"),
-                "target_scene_id": first.get("id"),
-                "place_before": True,
+                "update_data": {
+                    "chapter_position": 0,
+                },
             },
             model_type="CHAT",
         )
 
-        self.assertIsInstance(result, dict)
-        self.assertTrue(result.get("ok"))
-
-        current_scene_order = result.get("current_scene_order")
-        self.assertIsInstance(current_scene_order, list)
-        self.assertGreaterEqual(len(current_scene_order), 3)
-        for entry in current_scene_order:
-            self.assertEqual(
-                set(entry.keys()),
-                {"scene_id", "book_number", "chapter_number", "summary"},
-            )
-
-        ids = [entry.get("scene_id") for entry in current_scene_order]
+        self.assertIsInstance(result, list)
+        self.assertGreaterEqual(len(result), 3)
+        ids = [entry.get("scene_id") for entry in result]
         self.assertIn(first.get("id"), ids)
         self.assertIn(second.get("id"), ids)
         self.assertIn(third.get("id"), ids)
         self.assertLess(ids.index(third.get("id")), ids.index(first.get("id")))
+
+        third_payload = next(
+            (entry for entry in result if entry.get("scene_id") == third.get("id")),
+            None,
+        )
+        self.assertIsNotNone(third_payload)
+        self.assertEqual((third_payload or {}).get("chapter_position"), 0)
 
     def test_registered_tool_schemas_inline_refs_and_omit_defs(self):
         tools = get_registered_tool_schemas(model_type="CHAT", project_type="series")

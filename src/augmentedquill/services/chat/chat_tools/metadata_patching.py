@@ -70,12 +70,20 @@ class TextPatch(ToolModel):
         if self.operation in ("replace", "append", "prepend"):
             if self.value is None:
                 raise ValueError(
-                    "value is required for replace/append/prepend operations"
+                    "missing required key(s): value for operation "
+                    f"'{self.operation}'"
                 )
         if self.operation == "replace_text":
-            if self.old_text is None or self.new_text is None:
+            missing_keys: list[str] = []
+            if self.old_text is None:
+                missing_keys.append("old_text")
+            if self.new_text is None:
+                missing_keys.append("new_text")
+            if missing_keys:
                 raise ValueError(
-                    "old_text and new_text are required for replace_text operation"
+                    "missing required key(s): "
+                    + ", ".join(missing_keys)
+                    + " for operation 'replace_text'"
                 )
         return self
 
