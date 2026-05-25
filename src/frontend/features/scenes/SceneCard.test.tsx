@@ -88,7 +88,7 @@ function makeScene(overrides: Record<string, unknown> = {}): Scene {
     color_tag: null,
     status: 'active',
     causes: [...(legacy.causes ?? [])],
-    ...rest,
+    ...overrides,
   } as Scene;
 }
 
@@ -316,6 +316,100 @@ describe('SceneCard — visual state class application', () => {
     );
     const card = container.querySelector('[data-scene-card]');
     expect(card?.className).toContain('ring-brand-500');
+  });
+
+  it('renders a red warning icon for chronological order violations', () => {
+    const scene = makeScene({ id: 'scene-1' });
+    const { container } = render(
+      <I18nextProvider i18n={i18n}>
+        <SceneCard
+          scene={scene}
+          index={0}
+          onDragMove={NOOP}
+          onDragEnd={NOOP}
+          onSelect={NOOP}
+          onEdit={NOOP}
+          onCauseDragStart={NOOP}
+          onCauseDrop={NOOP}
+          onCauseLeave={NOOP}
+          isCauseTarget={false}
+          isSelected={false}
+          isActive={false}
+          isCause={false}
+          isEffect={false}
+          orderViolation="chronological"
+          temporalOrderViolation={false}
+        />
+      </I18nextProvider>
+    );
+    const warningIcon = container.querySelector(
+      '[data-scene-order-violation-indicator]'
+    );
+    expect(warningIcon).toBeTruthy();
+    expect(warningIcon?.className).toContain('text-red-500');
+  });
+
+  it('renders an amber warning icon for narrative order violations', () => {
+    const scene = makeScene({ id: 'scene-2' });
+    const { container } = render(
+      <I18nextProvider i18n={i18n}>
+        <SceneCard
+          scene={scene}
+          index={0}
+          onDragMove={NOOP}
+          onDragEnd={NOOP}
+          onSelect={NOOP}
+          onEdit={NOOP}
+          onCauseDragStart={NOOP}
+          onCauseDrop={NOOP}
+          onCauseLeave={NOOP}
+          isCauseTarget={false}
+          isSelected={false}
+          isActive={false}
+          isCause={false}
+          isEffect={false}
+          orderViolation="narrative"
+          temporalOrderViolation={false}
+        />
+      </I18nextProvider>
+    );
+    const warningIcon = container.querySelector(
+      '[data-scene-order-violation-indicator]'
+    );
+    expect(warningIcon).toBeTruthy();
+    expect(warningIcon?.className).toContain('text-amber-500');
+  });
+
+  it('renders a red scene time icon when temporal order violates a cause', () => {
+    const scene = makeScene({
+      scene_time: {
+        temporal_zoned_datetime: '2024-03-01T12:34:56+00:00[UTC][u-ca=gregory]',
+      },
+    });
+    const { container } = render(
+      <I18nextProvider i18n={i18n}>
+        <SceneCard
+          scene={scene}
+          index={0}
+          onDragMove={NOOP}
+          onDragEnd={NOOP}
+          onSelect={NOOP}
+          onEdit={NOOP}
+          onCauseDragStart={NOOP}
+          onCauseDrop={NOOP}
+          onCauseLeave={NOOP}
+          isCauseTarget={false}
+          isSelected={false}
+          isActive={false}
+          isCause={false}
+          isEffect={false}
+          temporalOrderViolation
+        />
+      </I18nextProvider>
+    );
+    const indicator = container.querySelector('[data-scene-time-indicator]');
+    expect(indicator).toBeTruthy();
+    expect(indicator?.className).toContain('text-red-500');
   });
 });
 

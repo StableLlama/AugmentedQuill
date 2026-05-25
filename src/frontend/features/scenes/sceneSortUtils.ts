@@ -225,3 +225,54 @@ export function chronologicalSort(
   // falling back to prose order so untimed scenes can interleave naturally.
   return proseSort(sceneA, sceneB, chapterOrderMap);
 }
+
+export function computeCauseOrderViolations(scenes: Scene[]): Set<SceneId> {
+  const orderById = new Map<SceneId, number>();
+  scenes.forEach((scene: Scene, index: number) => orderById.set(scene.id, index));
+
+  const violatingSceneIds = new Set<SceneId>();
+
+  for (const scene of scenes) {
+    const sceneIndex = orderById.get(scene.id);
+    if (sceneIndex === undefined) continue;
+
+    for (const effectId of scene.causes ?? []) {
+      const effectIndex = orderById.get(effectId);
+      if (effectIndex === undefined) continue;
+      if (sceneIndex > effectIndex) {
+        violatingSceneIds.add(scene.id);
+        violatingSceneIds.add(effectId);
+      }
+    }
+  }
+
+  return violatingSceneIds;
+}
+
+export function computeTemporalCauseViolations(scenes: Scene[]): Set<SceneId> {
+  const epochById = new Map<SceneId, bigint>();
+  for (const scene of scenes) {
+    const epoch = getSceneEpochNanoseconds(scene);
+    if (epoch !== null) {
+      epochById.set(scene.id, epoch);
+    }
+  }
+
+  const violatingSceneIds = new Set<SceneId>();
+
+  for (const scene of scenes) {
+    const sourceEpoch = epochById.get(scene.id);
+    if (sourceEpoch === undefined) continue;
+
+    for (const effectId of scene.causes ?? []) {
+      const effectEpoch = epochById.get(effectId);
+      if (effectEpoch === undefined) continue;
+      if (sourceEpoch > effectEpoch) {
+        violatingSceneIds.add(scene.id);
+        violatingSceneIds.add(effectId);
+      }
+    }
+  }
+
+  return violatingSceneIds;
+}

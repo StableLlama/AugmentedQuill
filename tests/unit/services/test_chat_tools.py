@@ -1440,12 +1440,68 @@ class ChatToolsTest(TestCase):
             (entry for entry in scene_list if entry.get("scene_id") == second_id), None
         )
         self.assertIsNotNone(compact_second)
-        self.assertEqual(
-            set((compact_second or {}).keys()),
-            {"scene_id", "summary", "chapter_position", "chapter_number"},
+        self.assertTrue(
+            {"scene_id", "summary", "chapter_position", "chapter_number"}.issubset(
+                set((compact_second or {}).keys())
+            )
         )
         self.assertEqual((compact_second or {}).get("chapter_number"), 1)
         self.assertEqual((compact_second or {}).get("chapter_position"), 0)
+
+    def test_manage_scenes_update_scene_list_includes_violation_flags(self):
+        self._bootstrap_project()
+        self._set_project_type("novel")
+
+        self._post_single_tool(
+            "manage_scenes",
+            {
+                "action": "create",
+                "create_data": {
+                    "summary": "Earlier scene",
+                    "scene_time": "2024-01-01T00:00:00Z",
+                },
+            },
+        )
+        self._post_single_tool(
+            "manage_scenes",
+            {
+                "action": "create",
+                "create_data": {
+                    "summary": "Later scene",
+                    "scene_time": "2025-01-01T00:00:00Z",
+                },
+            },
+        )
+
+        update_response = self._post_single_tool(
+            "manage_scenes",
+            {
+                "action": "update",
+                "scene_id": 2,
+                "update_data": {
+                    "chapter_number": 1,
+                    "chapter_position": 0,
+                    "causes_patch": {"add": [1]},
+                },
+            },
+        )
+
+        appended = update_response.get("appended_messages") or []
+        self.assertEqual(len(appended), 1)
+        payload = json.loads(appended[0]["content"])
+        self.assertIn("scene_list", payload)
+        scene_list = payload.get("scene_list") or []
+        self.assertGreaterEqual(len(scene_list), 1)
+
+        compact_scene = next(
+            (entry for entry in scene_list if entry.get("scene_id") == 2),
+            None,
+        )
+        self.assertIsNotNone(compact_scene)
+        self.assertTrue(
+            compact_scene.get("causes_violate_chronological_order"),
+            "Expected update-returned scene_list entries to include chronological violation flags",
+        )
 
     def test_append_capable_tools_integration_single_turn_batch(self):
         """Integration: append-capable tool paths all preserve cumulative appends in one turn."""
@@ -1792,9 +1848,10 @@ class ChatToolsTest(TestCase):
             (entry for entry in payload if entry.get("scene_id") == 1), None
         )
         self.assertIsNotNone(moved_scene)
-        self.assertEqual(
-            set((moved_scene or {}).keys()),
-            {"scene_id", "summary", "chapter_position", "chapter_number"},
+        self.assertTrue(
+            {"scene_id", "summary", "chapter_position", "chapter_number"}.issubset(
+                set((moved_scene or {}).keys())
+            )
         )
         self.assertEqual((moved_scene or {}).get("chapter_number"), 1)
         self.assertEqual((moved_scene or {}).get("chapter_position"), 0)
@@ -1879,6 +1936,116 @@ class ChatToolsTest(TestCase):
         self.assertEqual(by_id[2].get("chapter_number"), 2)
         self.assertEqual(by_id[1].get("chapter_position"), 0)
         self.assertEqual(by_id[2].get("chapter_position"), 0)
+
+    def test_manage_scenes_list_includes_chronological_order_violation_flags(self):
+        self._bootstrap_project()
+        self._post_single_tool(
+            "manage_scenes",
+            {
+                "action": "create",
+                "create_data": {
+                    "summary": "Earlier scene",
+                    "scene_time": "2024-01-01T00:00:00Z",
+                },
+            },
+        )
+        self._post_single_tool(
+            "manage_scenes",
+            {
+                "action": "create",
+                "create_data": {
+                    "summary": "Later scene",
+                    "scene_time": "2025-01-01T00:00:00Z",
+                },
+            },
+        )
+        self._post_single_tool(
+            "manage_scenes",
+            {
+                "action": "update",
+                "scene_id": 2,
+                "update_data": {
+                    "causes_patch": {"add": [1]},
+                },
+            },
+        )
+
+        result = self._post_single_tool("manage_scenes", {"action": "list"})
+        appended = result.get("appended_messages") or []
+        self.assertEqual(len(appended), 1)
+        payload = json.loads(appended[0]["content"])
+        by_id = {int(item.get("id") or 0): item for item in payload}
+        self.assertTrue(by_id[1].get("causes_violate_chronological_order"))
+        self.assertTrue(by_id[2].get("causes_violate_chronological_order"))
+
+    def test_manage_scenes_list_includes_narrative_order_violation_flags(self):
+        self._bootstrap_project()
+        self._post_single_tool(
+            "manage_scenes",
+            {"action": "create", "create_data": {"summary": "First scene"}},
+        )
+        self._post_single_tool(
+            "manage_scenes",
+            {"action": "create", "create_data": {"summary": "Second scene"}},
+        )
+        self._post_single_tool(
+            "manage_scenes",
+            {
+                "action": "update",
+                "scene_id": 2,
+                "update_data": {
+                    "causes_patch": {"add": [1]},
+                },
+            },
+        )
+
+        result = self._post_single_tool("manage_scenes", {"action": "list"})
+        appended = result.get("appended_messages") or []
+        self.assertEqual(len(appended), 1)
+        payload = json.loads(appended[0]["content"])
+        by_id = {int(item.get("id") or 0): item for item in payload}
+        self.assertTrue(by_id[1].get("causes_might_violate_narrative_order"))
+        self.assertTrue(by_id[2].get("causes_might_violate_narrative_order"))
+
+    def test_manage_scenes_get_includes_violation_flags(self):
+        self._bootstrap_project()
+        self._post_single_tool(
+            "manage_scenes",
+            {
+                "action": "create",
+                "create_data": {
+                    "summary": "First scene",
+                    "scene_time": "2024-01-01T00:00:00Z",
+                },
+            },
+        )
+        self._post_single_tool(
+            "manage_scenes",
+            {
+                "action": "create",
+                "create_data": {
+                    "summary": "Second scene",
+                    "scene_time": "2025-01-01T00:00:00Z",
+                },
+            },
+        )
+        self._post_single_tool(
+            "manage_scenes",
+            {
+                "action": "update",
+                "scene_id": 2,
+                "update_data": {
+                    "causes_patch": {"add": [1]},
+                },
+            },
+        )
+        result = self._post_single_tool(
+            "manage_scenes", {"action": "get", "scene_id": 1}
+        )
+        appended = result.get("appended_messages") or []
+        self.assertEqual(len(appended), 1)
+        payload = json.loads(appended[0]["content"])
+        self.assertTrue(payload.get("causes_violate_chronological_order"))
 
     def test_manage_scenes_list_includes_book_and_chapter_number_for_series(self):
         self._bootstrap_project()

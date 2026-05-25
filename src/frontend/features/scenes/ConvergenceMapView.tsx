@@ -31,7 +31,13 @@ import { useSceneLanes, isCharacterEntry } from './useSceneLanes';
 import { LaneHeader } from './LaneHeader';
 import { SceneCard } from './SceneCard';
 import { useSceneSelection } from './useSceneSelection';
-import { buildChapterOrderMap, chronologicalSort, proseSort } from './sceneSortUtils';
+import {
+  buildChapterOrderMap,
+  chronologicalSort,
+  proseSort,
+  computeCauseOrderViolations,
+  computeTemporalCauseViolations,
+} from './sceneSortUtils';
 import type { ProjectType } from './sceneSortUtils';
 import {
   buildTimelinePanelModel,
@@ -542,6 +548,16 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
     sortedScenes.forEach((s: Scene, i: number) => map.set(s.id, i));
     return map;
   }, [sortedScenes]);
+
+  const orderViolationSceneIds = useMemo(
+    () => computeCauseOrderViolations(sortedScenes),
+    [sortedScenes]
+  );
+
+  const temporalOrderViolationSceneIds = useMemo(
+    () => computeTemporalCauseViolations(scenes),
+    [scenes]
+  );
 
   // -------------------------------------------------------------------------
   // Refs & measured layout state (same pattern as NarrativeView)
@@ -2000,6 +2016,10 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
                   isActive={activeSceneId === scene.id}
                   isCause={causeIds.has(scene.id)}
                   isEffect={effectIds.has(scene.id)}
+                  orderViolation={
+                    orderViolationSceneIds.has(scene.id) ? 'chronological' : undefined
+                  }
+                  temporalOrderViolation={temporalOrderViolationSceneIds.has(scene.id)}
                 />
               </div>
             );

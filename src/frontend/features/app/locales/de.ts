@@ -595,6 +595,10 @@ export const de = {
     'Not yet linked': 'Noch nicht verknüpft',
     'Scenes not yet linked to prose': 'Szenen noch nicht mit Prosa verknüpft',
     'Scene time set': 'Szenenzeit gesetzt',
+    'Chronological order violates a cause':
+      'Chronologische Reihenfolge verletzt eine Ursache',
+    'Narrative order violates a cause': 'Narrative Reihenfolge verletzt eine Ursache',
+    'Temporal order violates a cause': 'Temporale Reihenfolge verletzt eine Ursache',
     'Story time: {{value}}': 'Szenenzeit: {{value}}',
     'International: {{value}}': 'International: {{value}}',
     'No scenes yet': 'Noch keine Szenen',

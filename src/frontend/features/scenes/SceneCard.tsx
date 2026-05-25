@@ -18,7 +18,7 @@
 
 import React, { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Clock3, FileX } from 'lucide-react';
+import { AlertTriangle, Clock3, FileX } from 'lucide-react';
 import type { Scene, SceneId } from '../../types';
 import type { ProseDropData } from './types';
 import { useTheme } from '../layout/ThemeContext';
@@ -112,6 +112,10 @@ interface SceneCardProps {
   isCause: boolean;
   /** Whether the active scene is a cause of this card (green glow). */
   isEffect: boolean;
+  /** Whether the current displayed order violates a cause relationship. */
+  orderViolation?: 'chronological' | 'narrative';
+  /** Whether this scene's time is inconsistent with any cause relationship. */
+  temporalOrderViolation?: boolean;
   /** Called when prose text is dropped onto this card. */
   onDropProse?: (sceneId: SceneId, data: ProseDropData) => void;
   /** Override display position (canvas px) during live drag. Pinboard only. */
@@ -139,6 +143,8 @@ export const SceneCard: React.FC<SceneCardProps> = ({
   isActive,
   isCause,
   isEffect,
+  orderViolation,
+  temporalOrderViolation,
   onDropProse,
   displayX,
   displayY,
@@ -390,9 +396,17 @@ export const SceneCard: React.FC<SceneCardProps> = ({
       {hasSceneTime && (
         <span
           data-scene-time-indicator="true"
-          className={`absolute top-2 right-2 ${isLight ? 'text-brand-gray-500' : 'text-brand-gray-300'}`}
-          title={sceneTimeTooltip}
-          aria-label={t('Scene time set')}
+          className={`absolute top-2 right-2 ${temporalOrderViolation ? 'text-red-500' : isLight ? 'text-brand-gray-500' : 'text-brand-gray-300'}`}
+          title={
+            temporalOrderViolation
+              ? `${sceneTimeTooltip}\n${t('Temporal order violates a cause')}`
+              : sceneTimeTooltip
+          }
+          aria-label={
+            temporalOrderViolation
+              ? t('Temporal order violates a cause')
+              : t('Scene time set')
+          }
         >
           <Clock3 size={14} aria-hidden="true" />
         </span>
@@ -425,6 +439,26 @@ export const SceneCard: React.FC<SceneCardProps> = ({
             title={t('Scene status: ID {{id}}', { id: scene.id })}
             aria-label={t('Scene status: ID {{id}}', { id: scene.id })}
           />
+          {orderViolation && (
+            <span
+              data-scene-order-violation-indicator="true"
+              className={
+                orderViolation === 'chronological' ? 'text-red-500' : 'text-amber-500'
+              }
+              title={
+                orderViolation === 'chronological'
+                  ? t('Chronological order violates a cause')
+                  : t('Narrative order violates a cause')
+              }
+              aria-label={
+                orderViolation === 'chronological'
+                  ? t('Chronological order violates a cause')
+                  : t('Narrative order violates a cause')
+              }
+            >
+              <AlertTriangle size={14} aria-hidden="true" />
+            </span>
+          )}
         </div>
 
         {/* summary */}

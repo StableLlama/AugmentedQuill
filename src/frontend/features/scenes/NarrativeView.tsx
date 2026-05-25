@@ -44,6 +44,8 @@ import {
   proseSort,
   chronologicalSort,
   normalizeChapterId,
+  computeCauseOrderViolations,
+  computeTemporalCauseViolations,
 } from './sceneSortUtils';
 import type { ProjectType } from './sceneSortUtils';
 
@@ -353,6 +355,16 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
       .filter((scene: Scene | undefined): scene is Scene => scene !== undefined);
     return ordered.length === sortedScenes.length ? ordered : sortedScenes;
   }, [optimisticOrderIds, sortedScenes]);
+
+  const orderViolationSceneIds = useMemo(
+    () => computeCauseOrderViolations(displayScenes),
+    [displayScenes]
+  );
+
+  const temporalOrderViolationSceneIds = useMemo(
+    () => computeTemporalCauseViolations(scenes),
+    [scenes]
+  );
 
   useEffect((): void => {
     if (!optimisticOrderIds) return;
@@ -1045,6 +1057,10 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
                   isActive={activeSceneId === scene.id}
                   isCause={causeIds.has(scene.id)}
                   isEffect={effectIds.has(scene.id)}
+                  orderViolation={
+                    orderViolationSceneIds.has(scene.id) ? sortMode : undefined
+                  }
+                  temporalOrderViolation={temporalOrderViolationSceneIds.has(scene.id)}
                   onDropProse={onDropProse}
                 />
               </div>

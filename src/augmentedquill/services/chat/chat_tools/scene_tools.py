@@ -7,6 +7,8 @@
 
 """Defines the scene tools unit so this responsibility stays isolated, testable, and easy to evolve."""
 
+from datetime import datetime, timezone
+import re
 from typing import Any, Literal
 from pathlib import Path
 
@@ -105,6 +107,200 @@ def _sanitize_scene_for_llm(scene: dict[str, Any], project_type: str) -> dict[st
         sanitized["beats"] = cleaned_beats
 
     return sanitized
+
+
+def _parse_scene_time(scene: dict[str, Any]) -> datetime | None:
+    """Parse normalized scene time values into an aware datetime."""
+    scene_time = scene.get("scene_time")
+    if not isinstance(scene_time, dict):
+        return None
+    raw = scene_time.get("temporal_zoned_datetime")
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+
+    cleaned = re.sub(r"\[[^\]]*\]", "", raw).strip()
+    if not cleaned:
+        return None
+
+    try:
+        parsed = datetime.fromisoformat(cleaned)
+    except ValueError:
+        return None
+
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def _scene_id_key(scene: dict[str, Any]) -> str:
+    return str(scene.get("id") or "")
+
+
+def _scene_scope_bucket(scene: dict[str, Any]) -> int:
+    prose_link = scene.get("prose_link")
+    if not isinstance(prose_link, dict):
+        return 2
+    scope_type = str(prose_link.get("scope_type") or "").strip().lower()
+    if scope_type == "story":
+        return 0
+    if scope_type == "chapter":
+        return 1
+    return 2
+
+
+def _coerce_optional_int(value: Any) -> int | None:
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    return None
+
+
+def _scene_narrative_sort_key(
+    scene: dict[str, Any],
+    project_type: str,
+    novel_chapter_numbers: dict[str, int],
+    series_book_numbers: dict[str, int],
+    series_chapter_numbers: dict[tuple[str, str], int],
+) -> tuple[int, int, int, int, str]:
+    prose_link = scene.get("prose_link")
+    if not isinstance(prose_link, dict):
+        return (2, 0, 0, 2**60, _scene_id_key(scene))
+
+    bucket = _scene_scope_bucket(scene)
+    book_number = 0
+    chapter_number = 0
+    if project_type == "novel" and bucket == 1:
+        chapter_id = str(prose_link.get("chapter_id") or "").strip()
+        if chapter_id:
+            chapter_number = (
+                novel_chapter_numbers.get(chapter_id)
+                or _coerce_optional_int(chapter_id)
+                or 0
+            )
+    elif project_type == "series" and bucket == 1:
+        book_id = str(prose_link.get("book_id") or "").strip()
+        chapter_id = str(prose_link.get("chapter_id") or "").strip()
+        if book_id:
+            book_number = (
+                series_book_numbers.get(book_id) or _coerce_optional_int(book_id) or 0
+            )
+        if book_id and chapter_id:
+            chapter_number = (
+                series_chapter_numbers.get((book_id, chapter_id))
+                or _coerce_optional_int(chapter_id)
+                or 0
+            )
+
+    start_offset = _coerce_optional_int(prose_link.get("start_offset"))
+    if start_offset is None:
+        start_offset = 2**60
+
+    return (bucket, book_number, chapter_number, start_offset, _scene_id_key(scene))
+
+
+def _scene_narrative_order_indices(
+    scenes: list[dict[str, Any]],
+    project_type: str,
+    project_dir: Path,
+) -> dict[str, int]:
+    story = load_story_config(project_dir / "story.json") or {}
+    novel_chapter_numbers, series_book_numbers, series_chapter_numbers = (
+        _chapter_number_maps_for_llm(story)
+    )
+    ordered = sorted(
+        scenes,
+        key=lambda scene: _scene_narrative_sort_key(
+            scene,
+            project_type,
+            novel_chapter_numbers,
+            series_book_numbers,
+            series_chapter_numbers,
+        ),
+    )
+    return {_scene_id_key(scene): idx for idx, scene in enumerate(ordered)}
+
+
+def _scene_temporal_order_violations(scenes: list[dict[str, Any]]) -> set[str]:
+    epochs: dict[str, datetime] = {}
+    for scene in scenes:
+        parsed = _parse_scene_time(scene)
+        if parsed is not None:
+            epochs[_scene_id_key(scene)] = parsed
+
+    violations: set[str] = set()
+    for scene in scenes:
+        scene_id = _scene_id_key(scene)
+        scene_epoch = epochs.get(scene_id)
+        if scene_epoch is None:
+            continue
+        causes = scene.get("causes")
+        if not isinstance(causes, list):
+            continue
+        for cause_id in causes:
+            effect_key = str(cause_id)
+            effect_epoch = epochs.get(effect_key)
+            if effect_epoch is None:
+                continue
+            if scene_epoch > effect_epoch:
+                violations.add(scene_id)
+                violations.add(effect_key)
+    return violations
+
+
+def _scene_narrative_order_violations(
+    scenes: list[dict[str, Any]],
+    project_type: str,
+    project_dir: Path,
+) -> set[str]:
+    indices = _scene_narrative_order_indices(scenes, project_type, project_dir)
+    violations: set[str] = set()
+    for scene in scenes:
+        scene_id = _scene_id_key(scene)
+        scene_index = indices.get(scene_id)
+        if scene_index is None:
+            continue
+        causes = scene.get("causes")
+        if not isinstance(causes, list):
+            continue
+        for cause_id in causes:
+            effect_key = str(cause_id)
+            effect_index = indices.get(effect_key)
+            if effect_index is None:
+                continue
+            if scene_index > effect_index:
+                violations.add(scene_id)
+                violations.add(effect_key)
+    return violations
+
+
+def _annotate_scene_for_llm(
+    scene_payload: dict[str, Any],
+    scene: dict[str, Any],
+    chronological_violations: set[str],
+    narrative_violations: set[str],
+) -> dict[str, Any]:
+    scene_id = _scene_id_key(scene)
+    if scene_id in chronological_violations:
+        scene_payload["causes_violate_chronological_order"] = True
+    if scene_id in narrative_violations:
+        scene_payload["causes_might_violate_narrative_order"] = True
+    return scene_payload
+
+
+def _scene_payload_for_llm(
+    scene: dict[str, Any],
+    project_type: str,
+    chronological_violations: set[str],
+    narrative_violations: set[str],
+) -> dict[str, Any]:
+    payload = _sanitize_scene_for_llm(scene, project_type)
+    return _annotate_scene_for_llm(
+        payload,
+        scene,
+        chronological_violations,
+        narrative_violations,
+    )
 
 
 def _chapter_number_maps_for_llm(story: dict[str, Any]) -> tuple[
@@ -511,6 +707,10 @@ def _list_scenes_for_llm(
 ) -> list[dict[str, Any]]:
     """Return list payload shape for scenes, optionally filtered to specific scopes."""
     scenes = list_scenes(project_dir)
+    chronological_violations = _scene_temporal_order_violations(scenes)
+    narrative_violations = _scene_narrative_order_violations(
+        scenes, project_type, project_dir
+    )
     numbering_by_scene_id: dict[int, dict[str, Any]] = {
         int(entry.get("scene_id") or 0): entry
         for entry in _scene_ordering_snapshot_for_llm(project_dir, project_type)
@@ -523,7 +723,12 @@ def _list_scenes_for_llm(
             and _scene_scope_key(scene, project_type) not in scope_keys
         ):
             continue
-        scene_payload = _sanitize_scene_for_llm(scene, project_type)
+        scene_payload = _scene_payload_for_llm(
+            scene,
+            project_type,
+            chronological_violations,
+            narrative_violations,
+        )
         scene_id = int(scene.get("id") or 0)
         numbering = numbering_by_scene_id.get(scene_id, {})
         if project_type == "novel":
@@ -545,16 +750,27 @@ def _scoped_compact_scene_order_for_llm(
     """Return compact scene ordering entries for affected chapter scopes only."""
     scenes = list_scenes(project_dir)
     allowed_scene_ids = {
-        int(scene.get("id") or 0)
+        str(scene.get("id"))
         for scene in scenes
         if _scene_scope_key(scene, project_type) in scope_keys
+        and scene.get("id") is not None
     }
+    chronological_violations = _scene_temporal_order_violations(scenes)
+    narrative_violations = _scene_narrative_order_violations(
+        scenes, project_type, project_dir
+    )
     compact_order = _scene_ordering_snapshot_for_llm(project_dir, project_type)
-    return [
-        entry
-        for entry in compact_order
-        if int(entry.get("scene_id") or 0) in allowed_scene_ids
-    ]
+    result: list[dict[str, Any]] = []
+    for entry in compact_order:
+        scene_id = str(entry.get("scene_id") or "")
+        if scene_id not in allowed_scene_ids:
+            continue
+        if scene_id in chronological_violations:
+            entry["causes_violate_chronological_order"] = True
+        if scene_id in narrative_violations:
+            entry["causes_might_violate_narrative_order"] = True
+        result.append(entry)
+    return result
 
 
 class ManageScenesUpdateData(ToolModel):
@@ -763,7 +979,17 @@ async def manage_scenes(
         scene = get_scene(active, params.scene_id)
         if scene is None:
             return {"error": f"Scene '{params.scene_id}' not found"}
-        return _sanitize_scene_for_llm(scene, project_type)
+        all_scenes = list_scenes(active)
+        chronological_violations = _scene_temporal_order_violations(all_scenes)
+        narrative_violations = _scene_narrative_order_violations(
+            all_scenes, project_type, active
+        )
+        return _scene_payload_for_llm(
+            scene,
+            project_type,
+            chronological_violations,
+            narrative_violations,
+        )
 
     if params.action == "create":
         if params.create_data is None:
@@ -786,7 +1012,17 @@ async def manage_scenes(
                 "message": message,
             }
         mutations["story_changed"] = True
-        return _sanitize_scene_for_llm(created, project_type)
+        all_scenes = list_scenes(active)
+        chronological_violations = _scene_temporal_order_violations(all_scenes)
+        narrative_violations = _scene_narrative_order_violations(
+            all_scenes, project_type, active
+        )
+        return _scene_payload_for_llm(
+            created,
+            project_type,
+            chronological_violations,
+            narrative_violations,
+        )
 
     if params.action == "update":
         if params.scene_id is None:
@@ -1040,7 +1276,17 @@ async def manage_scenes(
         if updated is None:
             return {"error": f"Scene '{params.scene_id}' not found"}
         mutations["story_changed"] = True
-        updated_scene_payload = _sanitize_scene_for_llm(updated, project_type)
+        all_scenes = list_scenes(active)
+        chronological_violations = _scene_temporal_order_violations(all_scenes)
+        narrative_violations = _scene_narrative_order_violations(
+            all_scenes, project_type, active
+        )
+        updated_scene_payload = _scene_payload_for_llm(
+            updated,
+            project_type,
+            chronological_violations,
+            narrative_violations,
+        )
         if placement_result is None:
             return updated_scene_payload
 
