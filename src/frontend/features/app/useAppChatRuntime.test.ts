@@ -11,7 +11,6 @@
 
 import { describe, expect, it, vi } from 'vitest';
 
-import type { SessionMutation } from '../chat/components/MutationTags';
 import { handleSessionMutationClick } from './useAppChatRuntime';
 
 type CallbackSet = {
@@ -83,7 +82,7 @@ describe('handleSessionMutationClick', () => {
 
     expect(callbacks.openAndExpandStory).toHaveBeenCalledTimes(1);
     expect(callbacks.handleChapterSelect).toHaveBeenCalledWith(null);
-    expect(callbacks.openSceneEditorDialog).toHaveBeenCalledWith(7);
+    expect(callbacks.openSceneEditorDialog).toHaveBeenCalledWith(7, true, null);
     expect(callbacks.openSourcebookEntryDialog).not.toHaveBeenCalled();
     expect(callbacks.openStoryMetadataDialog).not.toHaveBeenCalled();
     expect(callbacks.openChapterMetadataDialog).not.toHaveBeenCalled();

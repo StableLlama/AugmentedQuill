@@ -151,4 +151,23 @@ describe('MutationTags', () => {
 
     expect(screen.getByRole('button', { name: /^Scene$/i })).toBeTruthy();
   });
+
+  it('shows scene ID on hover title for scene mutation tags', () => {
+    const onMutationClick = vi.fn();
+    const mutations: SessionMutation[] = [
+      {
+        id: 'm-scene',
+        type: 'scene',
+        label: 'Scene',
+        targetId: '123',
+      },
+    ];
+
+    renderWithI18n(
+      <MutationTags mutations={mutations} onMutationClick={onMutationClick} />
+    );
+
+    const button = screen.getByRole('button', { name: /^Scene$/i });
+    expect(button.getAttribute('title')).toBe('ID: 123');
+  });
 });

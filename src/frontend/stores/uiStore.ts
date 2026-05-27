@@ -47,6 +47,10 @@ export interface SceneEditorDialogState {
   version: number;
   sceneId: SceneId | null;
   openedViaTrigger: boolean;
+  mutationHint: {
+    changedFields?: string[];
+    previousValues?: Record<string, unknown>;
+  } | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -110,7 +114,14 @@ export interface UIStoreState {
   closeSourcebookDialog: () => void;
   openChapterMetadataDialog: (chapterId: string, initialTab?: MetadataTab) => void;
   closeChapterMetadataDialog: () => void;
-  openSceneEditorDialog: (sceneId: SceneId, openedViaTrigger?: boolean) => void;
+  openSceneEditorDialog: (
+    sceneId: SceneId,
+    openedViaTrigger?: boolean,
+    mutationHint?: {
+      changedFields?: string[];
+      previousValues?: Record<string, unknown>;
+    } | null
+  ) => void;
   closeSceneEditorDialog: () => void;
 
   setWorkspaceMode: (
@@ -170,6 +181,7 @@ export const useUIStore = create<UIStoreState>()(
         version: 0,
         sceneId: null,
         openedViaTrigger: false,
+        mutationHint: null,
       },
 
       // ── Editor UI flags (not persisted) ─────────────────────────────────
@@ -289,13 +301,21 @@ export const useUIStore = create<UIStoreState>()(
           chapterMetadataDialog: { ...s.chapterMetadataDialog, isOpen: false },
         })),
 
-      openSceneEditorDialog: (sceneId: SceneId, openedViaTrigger: boolean = false) =>
+      openSceneEditorDialog: (
+        sceneId: SceneId,
+        openedViaTrigger: boolean = false,
+        mutationHint: {
+          changedFields?: string[];
+          previousValues?: Record<string, unknown>;
+        } | null = null
+      ) =>
         set((s: UIStoreState) => ({
           sceneEditorDialog: {
             isOpen: true,
             version: s.sceneEditorDialog.version + 1,
             sceneId,
             openedViaTrigger,
+            mutationHint,
           },
         })),
 
@@ -306,6 +326,7 @@ export const useUIStore = create<UIStoreState>()(
             isOpen: false,
             sceneId: null,
             openedViaTrigger: false,
+            mutationHint: null,
           },
         })),
 
@@ -465,6 +486,7 @@ export function resetUIStore(): void {
       version: 0,
       sceneId: null,
       openedViaTrigger: false,
+      mutationHint: null,
     },
     viewMode: 'raw' as ViewMode,
     showWhitespace: false,
@@ -494,7 +516,16 @@ export const uiStoreActions = {
   openChapterMetadataDialog: (chapterId: string, initialTab?: MetadataTab) =>
     useUIStore.getState().openChapterMetadataDialog(chapterId, initialTab),
   closeChapterMetadataDialog: () => useUIStore.getState().closeChapterMetadataDialog(),
-  openSceneEditorDialog: (sceneId: SceneId, openedViaTrigger: boolean = false) =>
-    useUIStore.getState().openSceneEditorDialog(sceneId, openedViaTrigger),
+  openSceneEditorDialog: (
+    sceneId: SceneId,
+    openedViaTrigger: boolean = false,
+    mutationHint: {
+      changedFields?: string[];
+      previousValues?: Record<string, unknown>;
+    } | null = null
+  ) =>
+    useUIStore
+      .getState()
+      .openSceneEditorDialog(sceneId, openedViaTrigger, mutationHint),
   closeSceneEditorDialog: () => useUIStore.getState().closeSceneEditorDialog(),
 };

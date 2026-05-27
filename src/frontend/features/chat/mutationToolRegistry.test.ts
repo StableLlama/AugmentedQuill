@@ -39,7 +39,13 @@ describe('mutationToolRegistry', () => {
 
   it('detects manage_scenes mutations for direct args and numeric ids', () => {
     const mutation = MUTATION_TOOL_REGISTRY.manage_scenes({
-      args: { action: 'create', scene_id: 42 },
+      args: {
+        action: 'update',
+        scene_id: 42,
+        update_data: {
+          scene_time: { temporal_zoned_datetime: '2026-06-01T14:00:00Z' },
+        },
+      },
       result: {},
     });
 
@@ -47,6 +53,7 @@ describe('mutationToolRegistry', () => {
       type: 'scene',
       label: 'Scene',
       targetId: '42',
+      sceneChangeHint: { changedFields: ['scene_time'] },
     });
   });
 
@@ -59,6 +66,19 @@ describe('mutationToolRegistry', () => {
     expect(mutation).toBeNull();
   });
 
+  it('does not emit manage_scenes mutation when update reports no effective changes', () => {
+    const mutation = MUTATION_TOOL_REGISTRY.manage_scenes({
+      args: { action: 'update', scene_id: 1 },
+      result: {
+        ok: true,
+        changed: false,
+        message: 'No effective scene content changes',
+      },
+    });
+
+    expect(mutation).toBeNull();
+  });
+
   it('does not emit manage_scenes mutation when raw args are invalid JSON', () => {
     const mutation = MUTATION_TOOL_REGISTRY.manage_scenes({
       args: { raw: '{not-json' },
@@ -66,6 +86,41 @@ describe('mutationToolRegistry', () => {
     });
 
     expect(mutation).toBeNull();
+  });
+
+  it('emits one scene mutation per updated scene in aggregated manage_scenes results', () => {
+    const mutations = MUTATION_TOOL_REGISTRY.manage_scenes({
+      args: { action: 'update' },
+      result: [
+        { scene_id: 7, causes: [8] },
+        { scene_id: 9, causes_patch: { add: [10] } },
+      ],
+    }) as SessionMutation[];
+
+    expect(Array.isArray(mutations)).toBe(true);
+    expect(mutations).toHaveLength(2);
+    expect(mutations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ targetId: '7' }),
+        expect.objectContaining({ targetId: '9' }),
+      ])
+    );
+  });
+
+  it('emits one scene mutation per scene when result contains scene_list array only', () => {
+    const mutations = MUTATION_TOOL_REGISTRY.manage_scenes({
+      args: { action: 'update' },
+      result: [{ scene_id: 5 }, { scene_id: '6' }],
+    }) as SessionMutation[];
+
+    expect(Array.isArray(mutations)).toBe(true);
+    expect(mutations).toHaveLength(2);
+    expect(mutations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ targetId: '5' }),
+        expect.objectContaining({ targetId: '6' }),
+      ])
+    );
   });
 
   it('normalizes raw args for manage_story_core metadata actions', () => {

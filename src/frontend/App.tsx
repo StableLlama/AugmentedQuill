@@ -48,9 +48,11 @@ import { useToast } from './components/ui/Toast';
 import { setErrorDispatcher } from './services/errorNotifier';
 import { useChatStore, ChatStoreState } from './stores/chatStore';
 import { uiStoreActions, useUIStore, UIStoreState } from './stores/uiStore';
+import type { SceneEditorDialogState } from './stores/uiStore';
 import type { SessionMutation } from './features/chat';
 import type { ChatToolCall, SceneId } from './types';
 
+// eslint-disable-next-line max-lines-per-function
 const App: React.FC = () => {
   const { t } = useTranslation();
   const { confirm, alert, confirmDialogState, handleConfirm, handleCancel } =
@@ -190,9 +192,13 @@ const App: React.FC = () => {
   );
 
   const openSceneEditorDialog = useCallback(
-    (sceneId: SceneId): void => {
+    (
+      sceneId: SceneId,
+      openedViaTrigger: boolean = false,
+      mutationHint: SceneEditorDialogState['mutationHint'] = null
+    ): void => {
       setWorkspaceMode('scenes');
-      uiStoreActions.openSceneEditorDialog(sceneId);
+      uiStoreActions.openSceneEditorDialog(sceneId, openedViaTrigger, mutationHint);
     },
     [setWorkspaceMode]
   );

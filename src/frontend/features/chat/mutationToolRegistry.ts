@@ -78,28 +78,112 @@ function buildChapterMutation(
   };
 }
 
+const extractSceneIds = (args: Record<string, unknown>, result: unknown): string[] => {
+  const ids: string[] = [];
+
+  const pushId = (id: unknown): void => {
+    if (typeof id === 'string' && id.trim()) {
+      ids.push(id);
+    } else if (typeof id === 'number' && Number.isFinite(id)) {
+      ids.push(String(id));
+    }
+  };
+
+  const pushFromObject = (entry: unknown): void => {
+    if (!entry || typeof entry !== 'object') return;
+    const record = entry as Record<string, unknown>;
+    pushId(record.scene_id ?? record.id);
+  };
+
+  const pushFromArray = (entries: Array<unknown>): void => {
+    entries.forEach((entry: unknown): void => {
+      if (typeof entry === 'object' && entry !== null) {
+        pushFromObject(entry);
+      }
+    });
+  };
+
+  if (Array.isArray(result)) {
+    pushFromArray(result);
+  } else {
+    const resultRecord =
+      result && typeof result === 'object' ? (result as Record<string, unknown>) : null;
+
+    if (Array.isArray(resultRecord?.scenes)) {
+      pushFromArray(resultRecord.scenes);
+    }
+
+    if (Array.isArray(resultRecord?.scene_list)) {
+      pushFromArray(resultRecord.scene_list);
+    }
+
+    if (resultRecord?.scene && typeof resultRecord.scene === 'object') {
+      pushFromObject(resultRecord.scene);
+    }
+
+    pushId(resultRecord?.scene_id ?? resultRecord?.id);
+  }
+
+  const sceneArg = args.scene_id;
+  if (Array.isArray(sceneArg)) {
+    sceneArg.forEach(pushId);
+  } else {
+    pushId(sceneArg);
+  }
+
+  return [...new Set(ids)];
+};
+
 /** Build scene mutation. */
 function buildSceneMutation(
   args: Record<string, unknown>,
-  result: Record<string, unknown>
-): SessionMutation {
-  const sceneId =
-    result.scene_id ||
-    result.id ||
-    (typeof result.scene === 'object' && result.scene
-      ? (result.scene as Record<string, unknown>).id
-      : undefined) ||
-    args.scene_id;
-  return {
-    id: `scene-${Date.now()}-${Math.random()}`,
-    type: 'scene',
-    label: 'Scene',
-    targetId:
-      typeof sceneId === 'string' || typeof sceneId === 'number'
-        ? String(sceneId)
-        : undefined,
-  };
+  result: Record<string, unknown> | Array<unknown>
+): SessionMutation | SessionMutation[] {
+  const sceneIds = extractSceneIds(args, result);
+  const updateData =
+    typeof args.update_data === 'object' && args.update_data
+      ? (args.update_data as Record<string, unknown>)
+      : null;
+  const changedFields = updateData
+    ? Object.keys(updateData).filter((field: string) => field.trim().length > 0)
+    : [];
+
+  if (sceneIds.length <= 1) {
+    return {
+      id: `scene-${Date.now()}-${Math.random()}`,
+      type: 'scene',
+      label: 'Scene',
+      targetId: sceneIds[0] ?? undefined,
+      sceneChangeHint:
+        changedFields.length > 0 ? { changedFields: [...changedFields] } : undefined,
+    };
+  }
+
+  return sceneIds.map(
+    (sceneId: string): SessionMutation => ({
+      id: `scene-${Date.now()}-${Math.random()}`,
+      type: 'scene',
+      label: 'Scene',
+      targetId: sceneId,
+      sceneChangeHint:
+        changedFields.length > 0 ? { changedFields: [...changedFields] } : undefined,
+    })
+  );
 }
+
+const isNoopSceneMutationResult = (result: unknown): boolean => {
+  if (Array.isArray(result)) {
+    return result.length === 0;
+  }
+  if (!result || typeof result !== 'object') {
+    return false;
+  }
+  const resultObj = result as Record<string, unknown>;
+  if (resultObj.changed === false) {
+    return true;
+  }
+  return typeof resultObj.error === 'string' && resultObj.error.length > 0;
+};
 
 /** Build metadata fields. */
 export function buildMetadataFields(
@@ -235,13 +319,19 @@ export const MUTATION_TOOL_REGISTRY: Record<string, MutFactory> = {
     }
     return null;
   },
-  manage_scenes: ({ args, result }: MutCallResult): SessionMutation | null => {
+  manage_scenes: ({
+    args,
+    result,
+  }: MutCallResult): SessionMutation | SessionMutation[] | null => {
     const normalizedArgs = normalizeToolArgs(args);
     if (
       normalizedArgs.action === 'create' ||
       normalizedArgs.action === 'update' ||
       normalizedArgs.action === 'delete'
     ) {
+      if (isNoopSceneMutationResult(result)) {
+        return null;
+      }
       return buildSceneMutation(normalizedArgs, result);
     }
     return null;

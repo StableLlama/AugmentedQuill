@@ -589,6 +589,10 @@ export const fr = {
     'Alt+drag to create cause': 'Alt+glisser pour créer une cause',
     'Scene {{index}}': 'Scène {{index}}',
     'Scene {{index}} of {{total}}': 'Scène {{index}} sur {{total}}',
+    'Scene ID: {{id}}': 'ID: {{id}}',
+    'AI changed fields: {{fields}}': 'IA a modifié : {{fields}}',
+    'Previous value: {{value}}': 'Avant : {{value}}',
+    'Previous value unavailable': 'Valeur précédente indisponible',
     'Chapter position {{index}} of {{total}}':
       'Position dans le chapitre {{index}} sur {{total}}',
     'Previous scene': 'Scène précédente',

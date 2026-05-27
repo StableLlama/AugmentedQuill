@@ -1010,11 +1010,15 @@ async def api_chat_stream(
         if tool_choice == "none":
             pass
         elif model_type == CHAT_ROLE:
-            story_tools = _narrow_story_tools_for_messages(
-                story_tools=story_tools,
-                messages=req_messages,
-                tool_choice=tool_choice,
-            )
+            # Temporarily disable automatic tool narrowing so the model can
+            # choose from the full available tool set and we can confirm
+            # whether scene cleanup is being blocked by filtering.
+            # story_tools = _narrow_story_tools_for_messages(
+            #     story_tools=story_tools,
+            #     messages=req_messages,
+            #     tool_choice=tool_choice,
+            # )
+            pass
     if model_type == WRITING_ROLE:
         story_tools = None
         tool_choice = None

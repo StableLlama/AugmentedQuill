@@ -856,6 +856,90 @@ const executeToolCall = async (
   );
 };
 
+const resolveToolCallLimit = async (
+  sequentialToolCalls: number,
+  currentLimit: number,
+  requestToolCallLoopAccess: (
+    count: number
+  ) => Promise<'stop' | 'continue' | 'unlimited'>
+): Promise<number | 'stop'> => {
+  if (sequentialToolCalls < currentLimit) {
+    return currentLimit;
+  }
+
+  const choice = await requestToolCallLoopAccess(sequentialToolCalls);
+  if (choice === 'stop') {
+    return 'stop';
+  }
+
+  return choice === 'continue' ? currentLimit + 10 : Infinity;
+};
+
+const buildToolExecutionResponse = async (
+  currentChatId: string | null,
+  assistantMessage: ChatMessage,
+  currentHistory: ChatMessage[],
+  currentMsgId: string,
+  context: ExecuteChatRequestContext
+): Promise<ChatToolExecutionResponse> => {
+  if (!currentChatId) {
+    return {
+      ok: false,
+      appended_messages: [
+        {
+          role: 'tool',
+          tool_call_id: assistantMessage.tool_calls?.[0]?.id ?? '',
+          name: 'tool_error',
+          content: 'Tool execution failed: missing active chat session',
+        },
+      ],
+    };
+  }
+
+  try {
+    return await executeToolCall(
+      assistantMessage,
+      currentHistory,
+      currentChatId,
+      context
+    );
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Tool execution failed';
+    return {
+      ok: false,
+      appended_messages: [
+        {
+          role: 'tool',
+          tool_call_id: assistantMessage.tool_calls?.[0]?.id ?? '',
+          name: 'tool_error',
+          content: `Tool execution failed: ${message}`,
+        },
+      ],
+    };
+  }
+};
+
+const normalizeToolExecutionResponse = (
+  toolResponse: ChatToolExecutionResponse,
+  assistantMessage: ChatMessage
+): ChatToolExecutionResponse => {
+  if (toolResponse.ok === false && toolResponse.appended_messages.length === 0) {
+    return {
+      ...toolResponse,
+      appended_messages: [
+        {
+          role: 'tool',
+          tool_call_id: assistantMessage.tool_calls?.[0]?.id ?? '',
+          name: 'tool_error',
+          content: 'A tool failed to execute.',
+        },
+      ],
+    };
+  }
+
+  return toolResponse;
+};
+
 const runToolCallLoop = async (
   context: ExecuteChatRequestContext,
   currentHistory: ChatMessage[],
@@ -880,16 +964,13 @@ const runToolCallLoop = async (
     if (context.stopSignalRef.current) break;
 
     sequentialToolCalls++;
-    if (sequentialToolCalls >= toolCallLimit) {
-      const choice = await context.requestToolCallLoopAccess(sequentialToolCalls);
-      if (choice === 'stop') break;
-      if (choice === 'continue') {
-        toolCallLimit += 10;
-      } else {
-        toolCallLimit = Infinity;
-      }
-    }
-
+    const updatedLimit = await resolveToolCallLimit(
+      sequentialToolCalls,
+      toolCallLimit,
+      context.requestToolCallLoopAccess
+    );
+    if (updatedLimit === 'stop') break;
+    toolCallLimit = updatedLimit;
     const assistantMessage = context.createAssistantMessage(currentMsgId, {
       text: result.text,
       thinking: result.thinking,
@@ -904,39 +985,14 @@ const runToolCallLoop = async (
     currentHistory.push(assistantMessage);
 
     const currentChatId = context.getCurrentChatId();
-    let toolResponse: ChatToolExecutionResponse;
-    try {
-      toolResponse = await executeToolCall(
-        assistantMessage,
-        currentHistory,
-        currentChatId,
-        context
-      );
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Tool execution failed';
-      toolResponse = {
-        ok: false,
-        appended_messages: [
-          {
-            role: 'tool',
-            tool_call_id: assistantMessage.tool_calls?.[0]?.id ?? '',
-            name: 'tool_error',
-            content: `Tool execution failed: ${message}`,
-          },
-        ],
-      };
-    }
-
-    if (toolResponse.ok === false && toolResponse.appended_messages.length === 0) {
-      toolResponse.appended_messages = [
-        {
-          role: 'tool',
-          tool_call_id: assistantMessage.tool_calls?.[0]?.id ?? '',
-          name: 'tool_error',
-          content: 'A tool failed to execute.',
-        },
-      ];
-    }
+    let toolResponse = await buildToolExecutionResponse(
+      currentChatId,
+      assistantMessage,
+      currentHistory,
+      currentMsgId,
+      context
+    );
+    toolResponse = normalizeToolExecutionResponse(toolResponse, assistantMessage);
 
     if (context.stopSignalRef.current) break;
 

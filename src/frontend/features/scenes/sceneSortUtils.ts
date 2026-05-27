@@ -16,7 +16,7 @@ import { parseZonedDateTime } from '../../utils/temporal';
 
 export type ProjectType = 'short-story' | 'novel' | 'series';
 
-function sceneIdCompare(a: SceneId, b: SceneId): number {
+export function sceneIdCompare(a: SceneId, b: SceneId): number {
   if (typeof a === 'number' && typeof b === 'number') {
     return a - b;
   }

@@ -583,6 +583,10 @@ export const es = {
     'Alt+drag to create cause': 'Alt+arrastrar para crear causa',
     'Scene {{index}}': 'Escena {{index}}',
     'Scene {{index}} of {{total}}': 'Escena {{index}} de {{total}}',
+    'Scene ID: {{id}}': 'ID: {{id}}',
+    'AI changed fields: {{fields}}': 'IA cambió: {{fields}}',
+    'Previous value: {{value}}': 'Antes: {{value}}',
+    'Previous value unavailable': 'Valor anterior no disponible',
     'Chapter position {{index}} of {{total}}':
       'Posicion en el capitulo {{index}} de {{total}}',
     'Previous scene': 'Escena anterior',

@@ -125,6 +125,7 @@ const NOOP_CLOSE = vi.fn();
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.mocked(useScenes).mockReturnValue([] as Scene[]);
   sourcebookEntriesState.splice(0, sourcebookEntriesState.length);
   baselineScenesState.splice(0, baselineScenesState.length);
   chapterState.splice(0, chapterState.length);
@@ -136,6 +137,7 @@ afterEach(() => {
 // Rendering
 // ---------------------------------------------------------------------------
 
+// eslint-disable-next-line max-lines-per-function
 describe('SceneEditorDialog rendering', () => {
   it('does not render when isOpen is false', () => {
     wrap(
@@ -184,6 +186,126 @@ describe('SceneEditorDialog rendering', () => {
     const beatTextarea = screen.getByDisplayValue('New beat');
     const beatRow = beatTextarea.closest('div[data-diff="changed"]');
     expect(beatRow).toBeTruthy();
+  });
+
+  it('highlights removed causes when opened from a scene mutation', () => {
+    baselineScenesState.push(
+      makeScene({ id: 'scene-1', summary: 'Current scene', causes: ['scene-2'] }),
+      makeScene({ id: 'scene-2', summary: 'Linked effect scene' })
+    );
+
+    vi.mocked(useScenes).mockReturnValue([
+      makeScene({ id: 'scene-1', summary: 'Current scene', causes: [] }),
+      makeScene({ id: 'scene-2', summary: 'Linked effect scene' }),
+    ]);
+
+    wrap(
+      <SceneEditorDialog
+        scene={makeScene({ id: 'scene-1', summary: 'Current scene', causes: [] })}
+        isOpen={true}
+        openedViaTrigger={true}
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+      />
+    );
+
+    expect(screen.queryByText('Removed effects')).toBeNull();
+    const removedCause = screen.getByText('Linked effect scene');
+    expect(removedCause.className).toContain('line-through');
+    expect(removedCause.className).toContain('text-red-600');
+  });
+
+  it('highlights added outgoing causes in green', () => {
+    baselineScenesState.push(
+      makeScene({ id: 'scene-1', summary: 'Current scene', causes: [] }),
+      makeScene({ id: 'scene-2', summary: 'Linked effect scene' })
+    );
+
+    vi.mocked(useScenes).mockReturnValue([
+      makeScene({ id: 'scene-1', summary: 'Current scene', causes: ['scene-2'] }),
+      makeScene({ id: 'scene-2', summary: 'Linked effect scene' }),
+    ]);
+
+    wrap(
+      <SceneEditorDialog
+        scene={makeScene({
+          id: 'scene-1',
+          summary: 'Current scene',
+          causes: ['scene-2'],
+        })}
+        isOpen={true}
+        openedViaTrigger={true}
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+      />
+    );
+
+    const addedCause = screen.getByText('Linked effect scene');
+    expect(addedCause.className).toContain('text-green-700');
+  });
+
+  it('shows previous scene time from mutation hint when opened from trigger', () => {
+    const sameScene = makeScene({
+      id: 'scene-time',
+      summary: 'Time scene',
+      scene_time: { temporal_zoned_datetime: '2026-06-01T14:00:00Z' },
+    });
+    baselineScenesState.push(sameScene);
+
+    wrap(
+      <SceneEditorDialog
+        scene={sameScene}
+        isOpen={true}
+        openedViaTrigger={true}
+        sceneChangeHint={{
+          changedFields: ['scene_time'],
+          previousValues: {
+            scene_time: { temporal_zoned_datetime: '2026-06-01T09:00:00Z' },
+          },
+        }}
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+      />
+    );
+
+    expect(screen.getByText(/AI changed:/i)).toBeTruthy();
+    const oldValue = screen.getByTestId('scene-time-diff-old');
+    const newValue = screen.getByTestId('scene-time-diff-new');
+    expect(oldValue.className).toContain('line-through');
+    expect(oldValue.className).toContain('text-red-600');
+    expect(newValue.className).toContain('text-green-700');
+  });
+
+  it('does not show scene time diff rows when previous and current values are equal', () => {
+    const sameScene = makeScene({
+      id: 'scene-time-noop',
+      summary: 'Time scene',
+      scene_time: { temporal_zoned_datetime: '2026-06-01T14:00:00Z' },
+    });
+    baselineScenesState.push(sameScene);
+
+    wrap(
+      <SceneEditorDialog
+        scene={sameScene}
+        isOpen={true}
+        openedViaTrigger={true}
+        sceneChangeHint={{
+          changedFields: ['scene_time'],
+          previousValues: {
+            scene_time: { temporal_zoned_datetime: '2026-06-01T14:00:00Z' },
+          },
+        }}
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+      />
+    );
+
+    expect(screen.queryByTestId('scene-time-diff-old')).toBeNull();
+    expect(screen.queryByTestId('scene-time-diff-new')).toBeNull();
   });
 
   it('keeps diff view disabled on normal open even when a baseline scene exists', () => {
@@ -262,7 +384,15 @@ describe('SceneEditorDialog rendering', () => {
       id: 'scene-target',
       summary: 'Target',
       order_index: 3,
-      prose_link: null,
+      prose_link: {
+        scope_type: 'chapter',
+        chapter_id: 'ch-1',
+        book_id: 'book-1',
+        start_offset: 6,
+        end_offset: 9,
+        content_hash: 'hash',
+        is_stale: false,
+      },
     });
     mockedUseScenes.mockReturnValue([
       makeScene({
@@ -339,6 +469,123 @@ describe('SceneEditorDialog rendering', () => {
       <SceneEditorDialog
         scene={sceneB}
         isOpen
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+        onNavigateScene={onNavigateScene}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Previous scene' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Next scene' }));
+
+    expect(onNavigateScene).toHaveBeenNthCalledWith(1, 'scene-a');
+    expect(onNavigateScene).toHaveBeenNthCalledWith(2, 'scene-c');
+  });
+
+  it('navigates to previous and next scenes in pinboard ID order', () => {
+    const onNavigateScene = vi.fn();
+    const mockedUseScenes = vi.mocked(useScenes);
+
+    const sceneA = makeScene({ id: 'scene-a', summary: 'A' });
+    const sceneB = makeScene({ id: 'scene-b', summary: 'B' });
+    const sceneC = makeScene({ id: 'scene-c', summary: 'C' });
+    mockedUseScenes.mockReturnValue([sceneB, sceneC, sceneA]);
+
+    wrap(
+      <SceneEditorDialog
+        scene={sceneB}
+        isOpen
+        viewMode="pinboard"
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+        onNavigateScene={onNavigateScene}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Previous scene' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Next scene' }));
+
+    expect(onNavigateScene).toHaveBeenNthCalledWith(1, 'scene-a');
+    expect(onNavigateScene).toHaveBeenNthCalledWith(2, 'scene-c');
+  });
+
+  it('navigates to previous and next scenes in numeric scene ID order in pinboard view', () => {
+    const onNavigateScene = vi.fn();
+    const mockedUseScenes = vi.mocked(useScenes);
+
+    const scene1 = makeScene({ id: 1, summary: 'One' });
+    const scene2 = makeScene({ id: 2, summary: 'Two' });
+    const scene10 = makeScene({ id: 10, summary: 'Ten' });
+    mockedUseScenes.mockReturnValue([scene2, scene10, scene1]);
+
+    wrap(
+      <SceneEditorDialog
+        scene={scene2}
+        isOpen
+        viewMode="pinboard"
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+        onNavigateScene={onNavigateScene}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Previous scene' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Next scene' }));
+
+    expect(onNavigateScene).toHaveBeenNthCalledWith(1, 1);
+    expect(onNavigateScene).toHaveBeenNthCalledWith(2, 10);
+  });
+
+  it('navigates to previous and next scenes in chronological order for chronological and convergence-map views', () => {
+    const onNavigateScene = vi.fn();
+    const mockedUseScenes = vi.mocked(useScenes);
+
+    const sceneA = makeScene({
+      id: 'scene-a',
+      summary: 'A',
+      scene_time: { temporal_zoned_datetime: '2023-01-01T00:00:00Z' },
+    });
+    const sceneB = makeScene({
+      id: 'scene-b',
+      summary: 'B',
+      scene_time: { temporal_zoned_datetime: '2024-01-01T00:00:00Z' },
+    });
+    const sceneC = makeScene({
+      id: 'scene-c',
+      summary: 'C',
+      scene_time: { temporal_zoned_datetime: '2025-01-01T00:00:00Z' },
+    });
+    mockedUseScenes.mockReturnValue([sceneB, sceneC, sceneA]);
+
+    wrap(
+      <SceneEditorDialog
+        scene={sceneB}
+        isOpen
+        viewMode="chronological"
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+        onNavigateScene={onNavigateScene}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Previous scene' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Next scene' }));
+
+    expect(onNavigateScene).toHaveBeenNthCalledWith(1, 'scene-a');
+    expect(onNavigateScene).toHaveBeenNthCalledWith(2, 'scene-c');
+
+    cleanup();
+    onNavigateScene.mockReset();
+
+    wrap(
+      <SceneEditorDialog
+        scene={sceneB}
+        isOpen
+        viewMode="convergence-map"
         onClose={NOOP_CLOSE}
         onSave={NOOP_SAVE}
         onDelete={NOOP_DELETE}

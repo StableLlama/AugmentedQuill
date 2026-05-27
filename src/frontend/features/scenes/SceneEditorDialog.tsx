@@ -44,6 +44,8 @@ import {
   getSceneEpochNanoseconds,
   buildChapterOrderMap,
   proseSort,
+  chronologicalSort,
+  sceneIdCompare,
   normalizeChapterId,
 } from './sceneSortUtils';
 import { buildSceneTimelineOptions } from './timelineOptions';
@@ -292,6 +294,10 @@ const parsePersonalStateValue = (
 interface SceneEditorDialogProps {
   scene: Scene;
   isOpen: boolean;
+  sceneChangeHint?: {
+    changedFields?: string[];
+    previousValues?: Record<string, unknown>;
+  } | null;
   onClose: () => void;
   onSave: (updates: Partial<Omit<Scene, 'id'>>) => Promise<void>;
   onDelete: () => Promise<void>;
@@ -310,6 +316,7 @@ interface SceneEditorDialogProps {
   openedViaTrigger?: boolean;
   summaryEditorRef?: React.Ref<EditorView | null>;
   onNavigateScene?: (sceneId: SceneId) => void;
+  viewMode?: 'pinboard' | 'narrative' | 'chronological' | 'convergence-map';
 }
 
 const normalizeToken = (value: string): string => value.trim().toLowerCase();
@@ -327,10 +334,20 @@ const arraysEqual = (a: string[], b: string[]): boolean =>
   a.length === b.length &&
   a.every((value: string, index: number) => value === b[index]);
 
+const idArraysEqualAsSet = (a: SceneId[], b: SceneId[]): boolean => {
+  const normalizedA = [...new Set(a)].sort((x: SceneId, y: SceneId) => x - y);
+  const normalizedB = [...new Set(b)].sort((x: SceneId, y: SceneId) => x - y);
+  return (
+    normalizedA.length === normalizedB.length &&
+    normalizedA.every((value: SceneId, index: number) => value === normalizedB[index])
+  );
+};
+
 /* eslint-disable complexity, max-lines-per-function */
 export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
   scene,
   isOpen,
+  sceneChangeHint = null,
   onClose,
   onSave,
   onDelete,
@@ -343,6 +360,7 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
   openedViaTrigger = false,
   summaryEditorRef,
   onNavigateScene,
+  viewMode = 'narrative',
 }: SceneEditorDialogProps) => {
   const { t, i18n } = useTranslation();
   const tc = useThemeClasses();
@@ -380,6 +398,9 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
     (s: StoryStoreState): Scene | null =>
       s.baselineState.scenes?.find((candidate: Scene) => candidate.id === scene.id) ??
       null
+  );
+  const baselineScenes = useStoryStore(
+    (s: StoryStoreState): Scene[] => s.baselineState.scenes ?? []
   );
   const [summary, setSummary] = useState(scene.summary);
   const [beats, setBeats] = useState<SceneBeat[]>(scene.beats);
@@ -428,6 +449,8 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
     useState<TemporalEditTarget | null>(null);
   const [ageEditTarget, setAgeEditTarget] = useState<AgeEditTarget | null>(null);
   const [ageEditValue, setAgeEditValue] = useState('');
+  const [pendingNavigationSceneId, setPendingNavigationSceneId] =
+    useState<SceneId | null>(null);
 
   /**
    * Time Travel sourcebook entries that create a new timeline AND whose departure
@@ -487,6 +510,22 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
       buildSceneTimelineOptions(scene, sourcebookEntries, sceneEpochNanosecondsById),
     [scene, sourcebookEntries, sceneEpochNanosecondsById]
   );
+
+  const navigationOrderedScenes = useMemo((): Scene[] => {
+    const chapterOrderMap = buildChapterOrderMap(projectType, chapters, books ?? []);
+    const candidateScenes = [...allScenes];
+    if (viewMode === 'pinboard') {
+      return candidateScenes.sort((a: Scene, b: Scene) => sceneIdCompare(a.id, b.id));
+    }
+    if (viewMode === 'chronological' || viewMode === 'convergence-map') {
+      return candidateScenes.sort((a: Scene, b: Scene) =>
+        chronologicalSort(a, b, chapterOrderMap, sceneEpochNanosecondsById)
+      );
+    }
+    return candidateScenes.sort((a: Scene, b: Scene) =>
+      proseSort(a, b, chapterOrderMap)
+    );
+  }, [allScenes, books, chapters, projectType, sceneEpochNanosecondsById, viewMode]);
 
   const narrativeOrderedScenes = useMemo((): Scene[] => {
     const chapterOrderMap = buildChapterOrderMap(projectType, chapters, books ?? []);
@@ -553,11 +592,15 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
   const sceneNarrativeIndex = narrativeOrderedScenes.findIndex(
     (candidate: Scene): boolean => candidate.id === scene.id
   );
+  const sceneNavigationIndex = navigationOrderedScenes.findIndex(
+    (candidate: Scene): boolean => candidate.id === scene.id
+  );
   const previousNarrativeScene =
-    sceneNarrativeIndex > 0 ? narrativeOrderedScenes[sceneNarrativeIndex - 1] : null;
+    sceneNavigationIndex > 0 ? navigationOrderedScenes[sceneNavigationIndex - 1] : null;
   const nextNarrativeScene =
-    sceneNarrativeIndex >= 0 && sceneNarrativeIndex < narrativeOrderedScenes.length - 1
-      ? narrativeOrderedScenes[sceneNarrativeIndex + 1]
+    sceneNavigationIndex >= 0 &&
+    sceneNavigationIndex < navigationOrderedScenes.length - 1
+      ? navigationOrderedScenes[sceneNavigationIndex + 1]
       : null;
 
   const sceneChapterId = inferredChapterBySceneId.get(scene.id) ?? null;
@@ -817,6 +860,15 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
   if (!isOpen) return null;
 
   const otherScenes = allScenes.filter((s: Scene) => s.id !== scene.id);
+  const baselineOtherScenes = baselineScenes.filter(
+    (s: Scene): boolean => s.id !== scene.id
+  );
+  const incomingCauseIds = otherScenes
+    .filter((other: Scene): boolean => (other.causes ?? []).includes(scene.id))
+    .map((other: Scene): SceneId => other.id);
+  const baselineIncomingCauseIds = baselineOtherScenes
+    .filter((other: Scene): boolean => (other.causes ?? []).includes(scene.id))
+    .map((other: Scene): SceneId => other.id);
   const previousSceneTimeValue = (() => {
     for (const linked of allScenes) {
       if (
@@ -899,40 +951,119 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
     : null;
   const baselineColorTag = baselineScene?.color_tag ?? null;
   const baselineStatus = baselineScene?.status;
+  const hintedFields = useMemo(
+    () =>
+      new Set(
+        (sceneChangeHint?.changedFields ?? []).map((field: string) =>
+          field.toLowerCase()
+        )
+      ),
+    [sceneChangeHint]
+  );
+  const hasFieldHint = (...fields: string[]): boolean =>
+    fields.some((field: string): boolean => hintedFields.has(field.toLowerCase()));
+  const summaryChanged =
+    showDiff &&
+    ((baselineScene ? summary !== (baselineScene.summary ?? '') : summary.length > 0) ||
+      hasFieldHint('summary', 'summary_patch'));
+  const baselineProseLink = baselineScene?.prose_link ?? null;
+  const baselineOutgoingCauseIds = baselineScene?.causes ?? [];
 
   const beatsChanged =
     showDiff &&
-    !arraysEqual(
+    (!arraysEqual(
       beats.map((beat: SceneBeat) => beat.text),
       baselineBeats.map((beat: SceneBeat) => beat.text)
-    );
+    ) ||
+      hasFieldHint('beats'));
   const activeCharactersChanged =
     showDiff &&
-    !arraysEqual(
+    (!arraysEqual(
       activeTokens.map((token: CharToken) => token.name),
       baselineActiveCharacters
-    );
+    ) ||
+      hasFieldHint('active_characters'));
   const passiveCharactersChanged =
     showDiff &&
-    !arraysEqual(
+    (!arraysEqual(
       passiveTokens.map((token: CharToken) => token.name),
       baselinePassiveCharacters
-    );
+    ) ||
+      hasFieldHint('passive_characters'));
   const sourcebookChanged =
     showDiff &&
-    !arraysEqual(
+    (!arraysEqual(
       sourcebookTags.map((tag: SourcebookTag) => tag.id),
       baselineSourcebookIds
-    );
-  const sceneTimeChanged = showDiff && sceneTimeValue !== baselineSceneTimeValue;
+    ) ||
+      hasFieldHint('sourcebook_entry_ids'));
+  const sceneTimeChanged =
+    showDiff &&
+    (sceneTimeValue !== baselineSceneTimeValue || hasFieldHint('scene_time'));
   const timelineChanged =
     showDiff &&
-    (baselineTimelineId === null
+    ((baselineTimelineId === null
       ? timelineId !== MAIN_TIMELINE_ID
-      : normalizeTimelineId(timelineId) !== baselineTimelineId);
+      : normalizeTimelineId(timelineId) !== baselineTimelineId) ||
+      hasFieldHint('timeline_id'));
   const colorTagChanged =
-    showDiff && (baselineScene ? colorTag !== baselineColorTag : colorTag !== null);
-  const statusChanged = showDiff && baselineScene ? status !== baselineStatus : false;
+    showDiff &&
+    ((baselineScene ? colorTag !== baselineColorTag : colorTag !== null) ||
+      hasFieldHint('color_tag'));
+  const statusChanged =
+    showDiff &&
+    ((baselineScene ? status !== baselineStatus : false) || hasFieldHint('status'));
+  const linkedProseChanged =
+    showDiff &&
+    (JSON.stringify(proseLink ?? null) !== JSON.stringify(baselineProseLink ?? null) ||
+      hasFieldHint('prose_link'));
+  const causesChanged =
+    showDiff &&
+    (!idArraysEqualAsSet(scene.causes ?? [], baselineOutgoingCauseIds) ||
+      !idArraysEqualAsSet(incomingCauseIds, baselineIncomingCauseIds) ||
+      hasFieldHint('causes', 'causes_patch'));
+  const removedOutgoingCauseIds = showDiff
+    ? baselineOutgoingCauseIds.filter(
+        (id: SceneId): boolean => !(scene.causes ?? []).includes(id)
+      )
+    : [];
+  const hintPreviousSceneTimeValue = (() => {
+    const previous = sceneChangeHint?.previousValues?.scene_time;
+    if (typeof previous === 'string') {
+      return previous;
+    }
+    if (previous && typeof previous === 'object') {
+      const temporal = (previous as { temporal_zoned_datetime?: unknown })
+        .temporal_zoned_datetime;
+      if (typeof temporal === 'string') {
+        return temporal;
+      }
+    }
+    return null;
+  })();
+  const hintPreviousSceneTimeDisplay =
+    hintPreviousSceneTimeValue !== null
+      ? toDisplayString(hintPreviousSceneTimeValue, displayLocale)
+      : null;
+  const baselineSceneTimeDisplay =
+    baselineSceneTimeValue !== null
+      ? toDisplayString(baselineSceneTimeValue, displayLocale)
+      : null;
+  const previousSceneTimeValueForDiff =
+    hintPreviousSceneTimeValue ?? baselineSceneTimeValue;
+  const previousSceneTimeDisplayForDiff =
+    hintPreviousSceneTimeDisplay ?? baselineSceneTimeDisplay;
+  const showSceneTimeInlineDiff =
+    showDiff &&
+    sceneTimeChanged &&
+    sceneTimeValue !== null &&
+    previousSceneTimeValueForDiff !== null &&
+    sceneTimeValue !== previousSceneTimeValueForDiff;
+  const removedIncomingCauseIds = showDiff
+    ? baselineIncomingCauseIds.filter(
+        (id: SceneId): boolean => !incomingCauseIds.includes(id)
+      )
+    : [];
 
   const diffSectionCls = (changed: boolean): string =>
     changed
@@ -941,6 +1072,14 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
   const diffItemCls = (changed: boolean): string =>
     changed
       ? `rounded-md ${tc.isLight ? 'bg-brand-50 p-2' : 'bg-brand-gray-800/60 p-2'}`
+      : '';
+  const diffAddedItemCls = (changed: boolean): string =>
+    changed
+      ? `rounded-md p-2 ring-1 ring-green-500/30 ${tc.isLight ? 'bg-green-50' : 'bg-green-900/20'}`
+      : '';
+  const diffRemovedItemCls = (changed: boolean): string =>
+    changed
+      ? `rounded-md p-2 ring-1 ring-red-500/30 ${tc.isLight ? 'bg-red-50' : 'bg-red-900/20'}`
       : '';
   const diffTagCls = (changed: boolean): string =>
     changed
@@ -1070,6 +1209,15 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
       return;
     }
     setPendingSourcebookEntryId(entryId);
+  };
+
+  const requestNavigateScene = (sceneId: SceneId): void => {
+    if (!onNavigateScene) return;
+    if (!hasUnsavedChanges) {
+      onNavigateScene(sceneId);
+      return;
+    }
+    setPendingNavigationSceneId(sceneId);
   };
 
   const performSave = async (): Promise<void> => {
@@ -1261,8 +1409,8 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
                 aria-label={t('Previous scene')}
                 title={t('Previous scene')}
                 onClick={(): void => {
-                  if (previousNarrativeScene && onNavigateScene) {
-                    onNavigateScene(previousNarrativeScene.id);
+                  if (previousNarrativeScene) {
+                    requestNavigateScene(previousNarrativeScene.id);
                   }
                 }}
                 disabled={!previousNarrativeScene || !onNavigateScene}
@@ -1276,8 +1424,8 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
                 aria-label={t('Next scene')}
                 title={t('Next scene')}
                 onClick={(): void => {
-                  if (nextNarrativeScene && onNavigateScene) {
-                    onNavigateScene(nextNarrativeScene.id);
+                  if (nextNarrativeScene) {
+                    requestNavigateScene(nextNarrativeScene.id);
                   }
                 }}
                 disabled={!nextNarrativeScene || !onNavigateScene}
@@ -1338,11 +1486,18 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
                 })}
               </span>
             )}
+            {openedViaTrigger && (sceneChangeHint?.changedFields?.length ?? 0) > 0 && (
+              <span className={`px-2 py-1 rounded-md border ${tc.border} ${tc.text}`}>
+                {t('AI changed fields: {{fields}}', {
+                  fields: sceneChangeHint?.changedFields?.join(', '),
+                })}
+              </span>
+            )}
           </div>
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
-          <div className={sectionCls}>
+          <div className={`${sectionCls} ${diffSectionCls(summaryChanged)}`}>
             <label className={labelCls}>{t('Scene Summary')}</label>
             <div
               className={`rounded-md border ${tc.border} ${tc.input} overflow-hidden`}
@@ -1848,9 +2003,32 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
               <div
                 className={`rounded-md border ${tc.border} ${tc.input} p-3 space-y-1`}
               >
-                <p className={`text-sm ${tc.text}`}>
-                  {toDisplayString(sceneTimeValue, displayLocale)}
-                </p>
+                {showSceneTimeInlineDiff ? (
+                  <>
+                    {previousSceneTimeDisplayForDiff ? (
+                      <p
+                        data-testid="scene-time-diff-old"
+                        className="text-sm text-red-600 dark:text-red-400 line-through"
+                      >
+                        {previousSceneTimeDisplayForDiff}
+                      </p>
+                    ) : (
+                      <p className={`text-xs ${tc.muted}`}>
+                        {t('Previous value unavailable')}
+                      </p>
+                    )}
+                    <p
+                      data-testid="scene-time-diff-new"
+                      className="text-sm text-green-700 dark:text-green-400 font-medium"
+                    >
+                      {toDisplayString(sceneTimeValue, displayLocale)}
+                    </p>
+                  </>
+                ) : (
+                  <p className={`text-sm ${tc.text}`}>
+                    {toDisplayString(sceneTimeValue, displayLocale)}
+                  </p>
+                )}
                 <p className={`text-xs ${tc.muted}`}>
                   {t('International format: {{value}}', {
                     value:
@@ -1908,7 +2086,7 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
             </select>
           </div>
 
-          <div className={sectionCls}>
+          <div className={`${sectionCls} ${diffSectionCls(linkedProseChanged)}`}>
             <label className={labelCls}>{t('Linked Prose')}</label>
             {onWriteScene && (
               <button
@@ -1960,25 +2138,29 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
           </div>
 
           {((scene.causes?.length ?? 0) > 0 ||
-            otherScenes.some((other: Scene) =>
-              (other.causes ?? []).includes(scene.id)
-            ) ||
+            incomingCauseIds.length > 0 ||
+            removedOutgoingCauseIds.length > 0 ||
+            removedIncomingCauseIds.length > 0 ||
             otherScenes.length > 0) && (
-            <div className={sectionCls}>
+            <div className={`${sectionCls} ${diffSectionCls(causesChanged)}`}>
               <label className={labelCls}>{t('Causes')}</label>
-              {otherScenes.some((other: Scene) =>
-                (other.causes ?? []).includes(scene.id)
-              ) && (
+              {(incomingCauseIds.length > 0 || removedIncomingCauseIds.length > 0) && (
                 <div className="space-y-1">
                   <p className={`text-xs font-medium ${tc.muted}`}>{t('Caused by')}:</p>
                   {otherScenes
                     .filter((other: Scene) => (other.causes ?? []).includes(scene.id))
                     .map((other: Scene) => {
                       const name = other.summary || String(other.id);
+                      const causeAdded =
+                        showDiff && !baselineIncomingCauseIds.includes(other.id);
                       return (
-                        <div key={other.id} className="flex items-center gap-1 group">
+                        <div
+                          key={other.id}
+                          data-diff={causeAdded ? 'changed' : undefined}
+                          className={`flex items-center gap-1 group ${diffAddedItemCls(causeAdded)}`}
+                        >
                           <span
-                            className={`flex-1 text-xs ${tc.text} truncate`}
+                            className={`flex-1 text-xs ${causeAdded ? 'text-green-700 dark:text-green-400' : tc.text} truncate`}
                             title={name}
                           >
                             {name}
@@ -1996,18 +2178,44 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
                         </div>
                       );
                     })}
+                  {removedIncomingCauseIds.map((id: SceneId) => {
+                    const name =
+                      baselineOtherScenes.find((s: Scene) => s.id === id)?.summary ||
+                      String(id);
+                    return (
+                      <div
+                        key={`removed-incoming-${id}`}
+                        data-diff="changed"
+                        className={`flex items-center gap-1 ${diffRemovedItemCls(true)}`}
+                      >
+                        <span
+                          className="flex-1 text-xs text-red-600 dark:text-red-400 line-through truncate"
+                          title={name}
+                        >
+                          {name}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
-              {(scene.causes?.length ?? 0) > 0 && (
+              {((scene.causes?.length ?? 0) > 0 ||
+                removedOutgoingCauseIds.length > 0) && (
                 <div className="space-y-1">
                   <p className={`text-xs font-medium ${tc.muted}`}>{t('Causes')}:</p>
                   {scene.causes.map((id: SceneId) => {
                     const name =
                       allScenes.find((s: Scene) => s.id === id)?.summary || String(id);
+                    const causeAdded =
+                      showDiff && !baselineOutgoingCauseIds.includes(id);
                     return (
-                      <div key={id} className="flex items-center gap-1 group">
+                      <div
+                        key={id}
+                        data-diff={causeAdded ? 'changed' : undefined}
+                        className={`flex items-center gap-1 group ${diffAddedItemCls(causeAdded)}`}
+                      >
                         <span
-                          className={`flex-1 text-xs ${tc.text} truncate`}
+                          className={`flex-1 text-xs ${causeAdded ? 'text-green-700 dark:text-green-400' : tc.text} truncate`}
                           title={name}
                         >
                           {name}
@@ -2020,6 +2228,25 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
                         >
                           🗑
                         </button>
+                      </div>
+                    );
+                  })}
+                  {removedOutgoingCauseIds.map((id: SceneId) => {
+                    const name =
+                      baselineOtherScenes.find((s: Scene) => s.id === id)?.summary ||
+                      String(id);
+                    return (
+                      <div
+                        key={`removed-outgoing-${id}`}
+                        data-diff="changed"
+                        className={`flex items-center gap-1 ${diffRemovedItemCls(true)}`}
+                      >
+                        <span
+                          className="flex-1 text-xs text-red-600 dark:text-red-400 line-through truncate"
+                          title={name}
+                        >
+                          {name}
+                        </span>
                       </div>
                     );
                   })}
@@ -2130,6 +2357,59 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
                     setPendingSourcebookEntryId(null);
                     doOpenSourcebookEntry(entryId);
                     onClose();
+                  }}
+                >
+                  {t('Save')}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {pendingNavigationSceneId && (
+          <div className="absolute inset-0 bg-black/55 flex items-center justify-center p-4 z-10">
+            <div
+              className={`w-full max-w-lg rounded-lg border ${tc.border} ${tc.bg} p-4 space-y-3`}
+            >
+              <h3 className={`text-sm font-semibold ${tc.text}`}>
+                {t('Unsaved changes')}
+              </h3>
+              <p className={`text-sm ${tc.muted}`}>
+                {t(
+                  'You have unsaved scene changes. Save, discard, or cancel before switching scenes.'
+                )}
+              </p>
+              <div className="flex gap-2 justify-end">
+                <button
+                  type="button"
+                  className={`px-3 py-1.5 rounded-md border ${tc.border} ${tc.text} text-sm`}
+                  onClick={(): void => setPendingNavigationSceneId(null)}
+                >
+                  {t('Abort')}
+                </button>
+                <button
+                  type="button"
+                  className={`px-3 py-1.5 rounded-md border ${tc.border} ${tc.text} text-sm`}
+                  onClick={(): void => {
+                    const nextSceneId = pendingNavigationSceneId;
+                    setPendingNavigationSceneId(null);
+                    if (nextSceneId && onNavigateScene) {
+                      onNavigateScene(nextSceneId);
+                    }
+                  }}
+                >
+                  {t('Discard')}
+                </button>
+                <button
+                  type="button"
+                  className="px-3 py-1.5 rounded-md bg-brand-500 text-white text-sm"
+                  onClick={async (): Promise<void> => {
+                    const nextSceneId = pendingNavigationSceneId;
+                    if (!nextSceneId) return;
+                    await performSave();
+                    setPendingNavigationSceneId(null);
+                    if (onNavigateScene) {
+                      onNavigateScene(nextSceneId);
+                    }
                   }}
                 >
                   {t('Save')}

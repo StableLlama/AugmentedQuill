@@ -578,6 +578,10 @@ export const de = {
     'Alt+drag to create cause': 'Alt+Ziehen zum Erstellen einer Ursache',
     'Scene {{index}}': 'Szene {{index}}',
     'Scene {{index}} of {{total}}': 'Szene {{index}} von {{total}}',
+    'Scene ID: {{id}}': 'ID: {{id}}',
+    'AI changed fields: {{fields}}': 'KI hat geändert: {{fields}}',
+    'Previous value: {{value}}': 'Vorher: {{value}}',
+    'Previous value unavailable': 'Vorheriger Wert nicht verfügbar',
     'Chapter position {{index}} of {{total}}':
       'Kapitelposition {{index}} von {{total}}',
     'Previous scene': 'Vorherige Szene',

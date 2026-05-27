@@ -1096,8 +1096,13 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
         <SceneEditorDialog
           scene={editingScene}
           isOpen={true}
+          viewMode={viewMode}
           openedViaTrigger={dialogOpenedViaTrigger}
-          onClose={() => setEditingSceneId(null)}
+          sceneChangeHint={sceneEditorDialog.mutationHint}
+          onClose={() => {
+            setEditingSceneId(null);
+            uiStoreActions.closeSceneEditorDialog();
+          }}
           onNavigateScene={(sceneId: SceneId): void => {
             setEditingSceneId(sceneId);
             handleSelectScene(sceneId);

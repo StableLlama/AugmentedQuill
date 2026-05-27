@@ -26,6 +26,10 @@ export type SessionMutation = {
   label: string;
   targetId?: string; // chapter ID, entry ID, etc.
   subType?: string; // further field detail if applicable (e.g. metadata tab)
+  sceneChangeHint?: {
+    changedFields?: string[];
+    previousValues?: Record<string, unknown>;
+  };
 };
 
 interface MutationTagsProps {
@@ -130,6 +134,11 @@ export const MutationTags: React.FC<MutationTagsProps> = ({
         <button
           type="button"
           key={m.id}
+          title={
+            m.type === 'scene' && m.targetId
+              ? t('Scene ID: {{id}}', { id: m.targetId })
+              : undefined
+          }
           onClick={(event: React.MouseEvent<HTMLButtonElement, MouseEvent>): void => {
             event.preventDefault();
             onMutationClick(m);

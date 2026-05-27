@@ -578,6 +578,10 @@ export const en = {
     'Alt+drag to create cause': 'Alt+drag to create cause',
     'Scene {{index}}': 'Scene {{index}}',
     'Scene {{index}} of {{total}}': 'Scene {{index}} of {{total}}',
+    'Scene ID: {{id}}': 'ID: {{id}}',
+    'AI changed fields: {{fields}}': 'AI changed: {{fields}}',
+    'Previous value: {{value}}': 'Previous: {{value}}',
+    'Previous value unavailable': 'Previous value unavailable',
     'Chapter position {{index}} of {{total}}':
       'Chapter position {{index}} of {{total}}',
     'Previous scene': 'Previous scene',
