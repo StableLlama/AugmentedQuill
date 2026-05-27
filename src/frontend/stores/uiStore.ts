@@ -85,6 +85,8 @@ export interface UIStoreState {
     visibleLaneEntryIds: string[];
     removedReferencedLaneIds: string[];
   };
+  sceneSelectionChapterIds: ReadonlySet<string>;
+  setSceneSelectionChapterIds: (chapterIds: ReadonlySet<string>) => void;
   setSceneLaneState: (
     state:
       | {
@@ -196,6 +198,11 @@ export const useUIStore = create<UIStoreState>()(
         visibleLaneEntryIds: [],
         removedReferencedLaneIds: [],
       },
+      sceneSelectionChapterIds: new Set<string>(),
+      setSceneSelectionChapterIds: (chapterIds: ReadonlySet<string>) =>
+        set((s: UIStoreState): { sceneSelectionChapterIds: ReadonlySet<string> } => ({
+          sceneSelectionChapterIds: chapterIds,
+        })),
 
       // ── Panel actions ────────────────────────────────────────────────────
       setIsChatOpen: (v: boolean | ((prev: boolean) => boolean)) =>

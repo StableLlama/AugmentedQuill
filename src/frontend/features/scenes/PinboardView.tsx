@@ -50,6 +50,7 @@ interface PinboardViewProps {
   onCreateCause: (fromId: SceneId, toId: SceneId) => void;
   onDropProse?: (sceneId: SceneId, data: ProseDropData) => void;
   onSelectionChange?: (ids: ReadonlySet<SceneId>) => void;
+  relatedSceneIds?: ReadonlySet<SceneId>;
 }
 
 export const PinboardView: React.FC<PinboardViewProps> = ({
@@ -61,6 +62,7 @@ export const PinboardView: React.FC<PinboardViewProps> = ({
   onCreateCause,
   onDropProse,
   onSelectionChange,
+  relatedSceneIds,
 }: PinboardViewProps) => {
   const { t } = useTranslation();
   const { isLight } = useTheme();
@@ -563,6 +565,7 @@ export const PinboardView: React.FC<PinboardViewProps> = ({
                 isActive={activeSceneId === scene.id}
                 isCause={causeIds.has(scene.id)}
                 isEffect={effectIds.has(scene.id)}
+                isRelated={relatedSceneIds?.has(scene.id) ?? false}
                 onDropProse={onDropProse}
                 displayX={livePos?.x}
                 displayY={livePos?.y}

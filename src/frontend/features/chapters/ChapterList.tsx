@@ -11,12 +11,16 @@
 
 import React, { useState, useEffect, useMemo, Fragment } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Chapter, Book, AppTheme } from '../../types';
+import { Chapter, Book, AppTheme, Scene } from '../../types';
 import { MetadataParams } from '../story/metadataSync';
 import { useConfirm } from '../layout/ConfirmDialogContext';
 import { useThemeClasses } from '../layout/ThemeContext';
 import { MetadataEditorDialog } from '../story/MetadataEditorDialog';
-import { useChapterMetadataDialog, useUIStore } from '../../stores/uiStore';
+import {
+  useChapterMetadataDialog,
+  useUIStore,
+  type UIStoreState,
+} from '../../stores/uiStore';
 import { useScenes } from '../../stores/storyStore';
 import { api } from '../../services/api';
 import { diff_match_patch } from 'diff-match-patch';
@@ -101,6 +105,9 @@ export const ChapterList: React.FC<ChapterListProps> = React.memo(
     const [newBookTitle, setNewBookTitle] = useState('');
     const [isCreatingBook, setIsCreatingBook] = useState(false);
     const scenes = useScenes();
+    const selectedSceneChapterIds = useUIStore(
+      (s: UIStoreState): ReadonlySet<string> => s.sceneSelectionChapterIds
+    );
     const [sceneDropChapterId, setSceneDropChapterId] = useState<string | null>(null);
 
     // Keep transient drag state local so failed reorder requests do not corrupt source props.
@@ -517,6 +524,17 @@ export const ChapterList: React.FC<ChapterListProps> = React.memo(
     const renderChapter = (chapter: Chapter, index: number): React.JSX.Element => {
       const isDragging =
         draggedItem?.type === 'chapter' && draggedItem.id === chapter.id;
+      const isRelatedToSelectedScenes = selectedSceneChapterIds.has(
+        normalizeChapterId(chapter.id)
+      );
+      const chapterStateClass =
+        currentChapterId === chapter.id
+          ? itemActive
+          : isRelatedToSelectedScenes
+            ? isLight
+              ? 'bg-brand-50 border-transparent hover:bg-brand-100'
+              : 'bg-brand-gray-700/45 border-transparent hover:bg-brand-gray-700'
+            : itemInactive;
 
       const baselineChapter = baselineChapters.find(
         (c: Chapter): boolean => String(c.id) === String(chapter.id)
@@ -564,9 +582,7 @@ export const ChapterList: React.FC<ChapterListProps> = React.memo(
       return (
         <div
           key={chapter.id}
-          className={`group relative p-3 rounded-lg transition-all duration-150 border ${
-            currentChapterId === chapter.id ? itemActive : itemInactive
-          } ${
+          className={`group relative p-3 rounded-lg transition-all duration-150 border ${chapterStateClass} ${
             isDragging
               ? 'opacity-20 grayscale border-dashed border-brand-gray-500/50'
               : 'opacity-100'

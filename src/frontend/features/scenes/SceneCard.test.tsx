@@ -293,6 +293,33 @@ describe('SceneCard — visual state class application', () => {
     expect(card?.className).toContain('ring-green-500');
   });
 
+  it('applies related chapter highlight when isRelated is true and no stronger state is active', () => {
+    const { container } = render(
+      <I18nextProvider i18n={i18n}>
+        <SceneCard
+          scene={makeScene()}
+          index={0}
+          onDragMove={NOOP}
+          onDragEnd={NOOP}
+          onSelect={NOOP}
+          onEdit={NOOP}
+          onCauseDragStart={NOOP}
+          onCauseDrop={NOOP}
+          onCauseLeave={NOOP}
+          isCauseTarget={false}
+          isSelected={false}
+          isActive={false}
+          isCause={false}
+          isEffect={false}
+          isRelated={true}
+        />
+      </I18nextProvider>
+    );
+    const card = container.querySelector('[data-scene-card]');
+    expect(card?.className).toContain('bg-brand-50');
+    expect(card?.className).not.toContain('ring-2');
+  });
+
   it('applies isCauseTarget ring when isCauseTarget is true', () => {
     const { container } = render(
       <I18nextProvider i18n={i18n}>

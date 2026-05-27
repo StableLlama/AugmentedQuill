@@ -107,6 +107,8 @@ interface SceneCardProps {
   isCause: boolean;
   /** Whether the active scene is a cause of this card (green glow). */
   isEffect: boolean;
+  /** Whether this card is related to the currently active chapter selection. */
+  isRelated?: boolean;
   /** Whether this card is the source of an ongoing Alt+drag cause creation. */
   isCauseSource?: boolean;
   /** Whether the current displayed order violates a cause relationship. */
@@ -141,6 +143,7 @@ export const SceneCard: React.FC<SceneCardProps> = ({
   isActive,
   isCause,
   isEffect,
+  isRelated = false,
   orderViolation,
   temporalOrderViolation,
   onDropProse,
@@ -321,6 +324,20 @@ export const SceneCard: React.FC<SceneCardProps> = ({
         ? 'bg-yellow-400'
         : 'bg-brand-gray-400';
 
+  const useRelatedBackground =
+    isRelated &&
+    !isCauseTarget &&
+    !isCauseSource &&
+    !isActive &&
+    !isSelected &&
+    !isCause &&
+    !isEffect;
+  const cardBackgroundClass = useRelatedBackground
+    ? isLight
+      ? 'bg-brand-50'
+      : 'bg-brand-gray-700'
+    : colorClasses.bg;
+
   const sceneTimeRaw = scene.scene_time?.temporal_zoned_datetime;
   const storyTimeDisplay = toDisplayString(sceneTimeRaw, i18n.language);
   const internationalTimeDisplay = toInternationalDisplayString(
@@ -361,7 +378,7 @@ export const SceneCard: React.FC<SceneCardProps> = ({
           ? 'relative w-full min-h-0 rounded-lg border-2 shadow-sm cursor-pointer select-none'
           : 'absolute w-48 min-h-16 rounded-lg border-2 shadow-md cursor-grab active:cursor-grabbing select-none',
         'transition-shadow hover:shadow-lg',
-        colorClasses.bg,
+        cardBackgroundClass,
         isCauseSource
           ? [
               'cursor-grabbing',

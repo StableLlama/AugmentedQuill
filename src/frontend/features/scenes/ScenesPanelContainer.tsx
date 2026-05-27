@@ -148,6 +148,10 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
   const setSceneLaneState = useUIStore(
     (s: UIStoreState): UIStoreState['setSceneLaneState'] => s.setSceneLaneState
   );
+  const setSceneSelectionChapterIds = useUIStore(
+    (s: UIStoreState): UIStoreState['setSceneSelectionChapterIds'] =>
+      s.setSceneSelectionChapterIds
+  );
   const scenes = useScenes();
   const story = useStoryStore((s: StoryStoreState) => s.story);
   const patchScene = useStoryStore((s: StoryStoreState) => s.patchScene);
@@ -186,6 +190,40 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
     ? (scenes.find((s: Scene) => s.id === editingSceneId) ?? null)
     : null;
 
+  const computeSelectedSceneChapterIds = useCallback(
+    (sceneIds: ReadonlySet<SceneId>): ReadonlySet<string> => {
+      const result = new Set<string>();
+      for (const sceneId of sceneIds) {
+        const scene = scenes.find((candidate: Scene) => candidate.id === sceneId);
+        const chapterId = scene?.prose_link?.chapter_id;
+        const normalized = normalizeChapterId(chapterId);
+        if (normalized) {
+          result.add(normalized);
+        }
+      }
+      return result;
+    },
+    [scenes]
+  );
+
+  const handleSceneSelectionChange = useCallback(
+    (ids: ReadonlySet<SceneId>): void => {
+      handleMultipleSelectScenes(ids);
+      setSceneSelectionChapterIds(computeSelectedSceneChapterIds(ids));
+    },
+    [
+      computeSelectedSceneChapterIds,
+      handleMultipleSelectScenes,
+      setSceneSelectionChapterIds,
+    ]
+  );
+
+  useEffect((): (() => void) => {
+    return (): void => {
+      setSceneSelectionChapterIds(new Set<string>());
+    };
+  }, [setSceneSelectionChapterIds]);
+
   useEffect((): void => {
     if (!sceneEditorDialog.isOpen || !sceneEditorDialog.sceneId) {
       return;
@@ -202,6 +240,26 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
     sceneEditorDialog.version,
     handleSelectScene,
   ]);
+
+  const chapterRelatedSceneIds = React.useMemo((): ReadonlySet<SceneId> => {
+    if (currentChapter?.scope !== 'chapter') {
+      return new Set();
+    }
+    const normalizedCurrentChapterId = normalizeChapterId(currentChapter.id);
+    if (!normalizedCurrentChapterId) {
+      return new Set();
+    }
+    return new Set(
+      scenes
+        .filter(
+          (scene: Scene): boolean =>
+            scene.prose_link?.scope_type === 'chapter' &&
+            normalizeChapterId(scene.prose_link.chapter_id) ===
+              normalizedCurrentChapterId
+        )
+        .map((scene: Scene): SceneId => scene.id)
+    );
+  }, [currentChapter, scenes]);
 
   // ---- Create ----
   const handleAddScene = useCallback(async (): Promise<void> => {
@@ -1016,7 +1074,8 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
             scenes={scenes}
             primarySelectedSceneId={selectedSceneId}
             onSelectScene={handleSelectScene}
-            onSelectionChange={handleMultipleSelectScenes}
+            onSelectionChange={handleSceneSelectionChange}
+            relatedSceneIds={chapterRelatedSceneIds}
             onMoveScene={handleMoveScene}
             onEditScene={setEditingSceneId}
             onCreateCause={handleCreateCause}
@@ -1033,7 +1092,8 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
             sortMode={viewMode === 'chronological' ? 'chronological' : 'narrative'}
             primarySelectedSceneId={selectedSceneId}
             onSelectScene={handleSelectScene}
-            onSelectionChange={handleMultipleSelectScenes}
+            onSelectionChange={handleSceneSelectionChange}
+            relatedSceneIds={chapterRelatedSceneIds}
             onEditScene={setEditingSceneId}
             onDropProse={handleDropProse}
             onCreateCause={handleCreateCause}
@@ -1068,7 +1128,8 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
             books={books}
             primarySelectedSceneId={selectedSceneId}
             onSelectScene={handleSelectScene}
-            onSelectionChange={handleMultipleSelectScenes}
+            onSelectionChange={handleSceneSelectionChange}
+            relatedSceneIds={chapterRelatedSceneIds}
             onEditScene={setEditingSceneId}
             onAssignSceneTimeline={handleAssignSceneTimeline}
             onCreateCause={handleCreateCause}

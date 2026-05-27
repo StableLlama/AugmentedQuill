@@ -2523,4 +2523,7 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
     document.body
   );
 };
+
+export default SceneEditorDialog;
+
 /* eslint-enable complexity, max-lines-per-function */

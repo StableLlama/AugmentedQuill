@@ -414,6 +414,26 @@ describe('handleAddScene', () => {
   });
 });
 
+describe('related scene highlighting', () => {
+  it('passes scene ids only for the active chapter into the view', () => {
+    const sceneA = makeScene({
+      id: 'scene-1',
+      prose_link: makeProseLink({ scope_type: 'chapter', chapter_id: 'ch-1' }),
+    });
+    const sceneB = makeScene({
+      id: 'scene-2',
+      prose_link: makeProseLink({ scope_type: 'chapter', chapter_id: 'ch-2' }),
+    });
+    const currentChapter = { id: 'ch-1', scope: 'chapter', title: 'Chapter 1' };
+    useScenesMock.mockReturnValue([sceneA, sceneB]);
+    useUIStore.getState().setSceneSelectionChapterIds(new Set(['ch-2']));
+
+    wrap(<ScenesPanelContainer currentChapter={currentChapter} />);
+
+    expect(captured.pinboard?.relatedSceneIds).toEqual(new Set(['scene-1']));
+  });
+});
+
 // ---------------------------------------------------------------------------
 // handleMoveScene
 // ---------------------------------------------------------------------------

@@ -47,6 +47,16 @@ describe('uiStore', () => {
     resetUIStore();
     expect(useUIStore.getState().isChatOpen).toBe(true);
   });
+
+  it('stores chapter ids for currently selected scenes', async () => {
+    const { useUIStore, resetUIStore } = await import('./uiStore');
+
+    resetUIStore();
+    const chapterIds = new Set(['chapter-1', 'chapter-2']);
+    useUIStore.getState().setSceneSelectionChapterIds(chapterIds);
+
+    expect(useUIStore.getState().sceneSelectionChapterIds).toEqual(chapterIds);
+  });
 });
 
 describe('useChapterSuggestions', () => {

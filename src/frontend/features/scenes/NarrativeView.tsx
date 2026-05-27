@@ -63,6 +63,7 @@ interface NarrativeViewProps {
   primarySelectedSceneId: SceneId | null;
   onSelectScene: (id: SceneId | null) => void;
   onSelectionChange?: (ids: ReadonlySet<SceneId>) => void;
+  relatedSceneIds?: ReadonlySet<SceneId>;
   onEditScene: (sceneId: SceneId) => void;
   onDropProse?: (sceneId: SceneId, data: ProseDropData) => void;
   onReorderScene?: (
@@ -283,6 +284,7 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
   primarySelectedSceneId,
   onSelectScene,
   onSelectionChange,
+  relatedSceneIds,
   onEditScene,
   onDropProse,
   onCreateCause,
@@ -1135,6 +1137,7 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
                   isActive={activeSceneId === scene.id}
                   isCause={causeIds.has(scene.id)}
                   isEffect={effectIds.has(scene.id)}
+                  isRelated={relatedSceneIds?.has(scene.id) ?? false}
                   orderViolation={
                     orderViolationSceneIds.has(scene.id) ? sortMode : undefined
                   }

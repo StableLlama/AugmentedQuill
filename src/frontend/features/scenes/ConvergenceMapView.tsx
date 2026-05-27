@@ -58,6 +58,7 @@ interface ConvergenceMapViewProps {
   primarySelectedSceneId: SceneId | null;
   onSelectScene: (id: SceneId | null) => void;
   onSelectionChange?: (ids: ReadonlySet<SceneId>) => void;
+  relatedSceneIds?: ReadonlySet<SceneId>;
   onEditScene?: (id: SceneId) => void;
   onAssignSceneTimeline?: (sceneId: SceneId, timelineId: string) => Promise<void>;
   onCreateCause?: (fromId: SceneId, toId: SceneId) => Promise<void>;
@@ -464,6 +465,7 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
   primarySelectedSceneId,
   onSelectScene,
   onSelectionChange,
+  relatedSceneIds,
   onEditScene,
   onAssignSceneTimeline,
   onCreateCause,
@@ -2105,6 +2107,7 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
                   isActive={activeSceneId === scene.id}
                   isCause={causeIds.has(scene.id)}
                   isEffect={effectIds.has(scene.id)}
+                  isRelated={relatedSceneIds?.has(scene.id) ?? false}
                   orderViolation={
                     orderViolationSceneIds.has(scene.id) ? 'chronological' : undefined
                   }
