@@ -858,6 +858,7 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
       const sourceId = resolveDraggedSceneId(e.dataTransfer);
       if (!sourceId || sourceId === sceneId) return;
       e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
       const rect = e.currentTarget.getBoundingClientRect();
       const placeBefore = e.clientY < rect.top + rect.height / 2;
       setDropHint((prev: { id: SceneId; placeBefore: boolean } | null) => {
@@ -867,6 +868,26 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
       });
     },
     [resolveDraggedSceneId]
+  );
+
+  const handleSceneDragEnter = useCallback(
+    (e: React.DragEvent<HTMLDivElement>, sceneId: SceneId): void => {
+      handleSceneDragOver(e, sceneId);
+    },
+    [handleSceneDragOver]
+  );
+
+  const handleSceneDragLeave = useCallback(
+    (e: React.DragEvent<HTMLDivElement>, sceneId: SceneId): void => {
+      const relatedTarget = e.relatedTarget;
+      if (relatedTarget instanceof Node && e.currentTarget.contains(relatedTarget)) {
+        return;
+      }
+      setDropHint((current: { id: SceneId; placeBefore: boolean } | null) =>
+        current && current.id === sceneId ? null : current
+      );
+    },
+    []
   );
 
   const handleSceneDrop = useCallback(
@@ -1103,8 +1124,14 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
                   handleSceneDragStart(e, scene.id)
                 }
                 onDragEnd={handleSceneDragEnd}
+                onDragEnter={(e: React.DragEvent<HTMLDivElement>) =>
+                  handleSceneDragEnter(e, scene.id)
+                }
                 onDragOver={(e: React.DragEvent<HTMLDivElement>) =>
                   handleSceneDragOver(e, scene.id)
+                }
+                onDragLeave={(e: React.DragEvent<HTMLDivElement>) =>
+                  handleSceneDragLeave(e, scene.id)
                 }
                 onDrop={(e: React.DragEvent<HTMLDivElement>) =>
                   void handleSceneDrop(e, scene.id)

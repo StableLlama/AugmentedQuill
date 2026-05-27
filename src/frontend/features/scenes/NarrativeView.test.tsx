@@ -194,6 +194,52 @@ describe('NarrativeView drag reorder interactions', () => {
     }
   );
 
+  it('handles dragenter before drop when reorder target is entered', async () => {
+    const onReorderScene = vi.fn(async () => undefined);
+    const sceneA = makeScene({ id: 'a', summary: 'A' });
+    const sceneB = makeScene({ id: 'b', summary: 'B' });
+
+    const { getByText } = render(
+      <I18nextProvider i18n={i18n}>
+        <NarrativeView
+          scenes={[sceneA, sceneB]}
+          projectType="novel"
+          chapters={[]}
+          books={[]}
+          primarySelectedSceneId={null}
+          onSelectScene={vi.fn()}
+          onSelectionChange={vi.fn()}
+          onEditScene={vi.fn()}
+          onReorderScene={onReorderScene}
+        />
+      </I18nextProvider>
+    );
+
+    const sourceWrapper = getByText('A').parentElement as HTMLDivElement;
+    const targetWrapper = getByText('B').parentElement as HTMLDivElement;
+    const transfer = makeDataTransfer();
+
+    vi.spyOn(targetWrapper, 'getBoundingClientRect').mockReturnValue({
+      x: 0,
+      y: 100,
+      width: 200,
+      height: 80,
+      top: 100,
+      left: 0,
+      right: 200,
+      bottom: 180,
+      toJSON: () => ({}),
+    });
+
+    fireEvent.dragStart(sourceWrapper, { dataTransfer: transfer });
+    fireEvent.dragEnter(targetWrapper, { dataTransfer: transfer, clientY: 110 });
+    fireEvent.drop(targetWrapper, { dataTransfer: transfer, clientY: 110 });
+
+    await waitFor(() => {
+      expect(onReorderScene).toHaveBeenCalledWith('a', 'b', expect.any(Boolean));
+    });
+  });
+
   it('does not call onReorderScene when dropped onto the same scene', async () => {
     const onReorderScene = vi.fn(async () => undefined);
     const sceneA = makeScene({ id: 'a', summary: 'A' });
