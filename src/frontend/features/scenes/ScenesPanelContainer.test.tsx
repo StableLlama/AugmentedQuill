@@ -1459,22 +1459,30 @@ describe('handleNarrativeReorder (drag-reorder user interaction)', () => {
       prose_link: makeProseLink({ scope_type: 'chapter', chapter_id: 'ch-1' }),
     });
 
-    apiMock.scenes.linkProse.mockResolvedValueOnce([
-      makeScene({
-        id: 'u',
-        order_index: 2,
-        prose_link: makeProseLink({ scope_type: 'chapter', chapter_id: 'ch-2' }),
-      }),
-    ]);
-    apiMock.scenes.reorderProse.mockResolvedValueOnce({
-      scenes: [linkedSource, targetLinked],
-      scope_type: 'chapter',
-      chapter_id: 'ch-2',
-      book_id: null,
-      scope_start: 0,
-      scope_end: 10,
-      rebuilt_text: 'moved',
-    });
+    apiMock.scenes.linkProse.mockImplementation(
+      async (
+        sourceId: SceneId,
+        payload: {
+          scope_type: string;
+          chapter_id: string | null;
+          book_id?: string | null;
+          start_offset: number;
+          end_offset: number;
+        }
+      ): Promise<Scene[]> => [
+        makeScene({
+          id: sourceId,
+          order_index: sourceId === 'u' ? 2 : 3,
+          prose_link: makeProseLink({
+            scope_type: 'chapter',
+            chapter_id: payload.chapter_id,
+            book_id: payload.book_id ?? null,
+            start_offset: payload.start_offset,
+            end_offset: payload.end_offset,
+          }),
+        }),
+      ]
+    );
 
     await renderNarrative([targetLinked, unlinked, linkedSource]);
 
@@ -1490,18 +1498,24 @@ describe('handleNarrativeReorder (drag-reorder user interaction)', () => {
       await Promise.resolve();
     });
 
-    expect(apiMock.scenes.linkProse).toHaveBeenCalledWith('u', {
-      scope_type: 'chapter',
-      chapter_id: 'ch-2',
-      book_id: null,
-      start_offset: 29,
-      end_offset: 30,
-    });
-    expect(apiMock.scenes.reorderProse).toHaveBeenCalledWith({
-      source_scene_id: 's',
-      target_scene_id: 'a',
-      place_before: true,
-    });
+    expect(apiMock.scenes.linkProse).toHaveBeenCalledTimes(2);
+    expect(apiMock.scenes.linkProse).toHaveBeenCalledWith(
+      'u',
+      expect.objectContaining({
+        scope_type: 'chapter',
+        chapter_id: 'ch-2',
+        book_id: null,
+      })
+    );
+    expect(apiMock.scenes.linkProse).toHaveBeenCalledWith(
+      's',
+      expect.objectContaining({
+        scope_type: 'chapter',
+        chapter_id: 'ch-2',
+        book_id: null,
+      })
+    );
+    expect(apiMock.scenes.reorderProse).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -1738,12 +1752,12 @@ describe('handleNarrativeReorder (drag-reorder user interaction)', () => {
       scope_type: 'chapter',
       chapter_id: 'ch-1',
       book_id: null,
-      start_offset: 29,
-      end_offset: 30,
+      start_offset: 47,
+      end_offset: 48,
     });
   });
 
-  it('[VALID] reorders newly linked scene even when backend link response starts at 0..1', async () => {
+  it('[VALID] keeps chapter drop as link-only even when backend link response starts at 0..1', async () => {
     chaptersMetaMock.mockReturnValue([
       {
         id: 'ch-1',
@@ -1783,22 +1797,6 @@ describe('handleNarrativeReorder (drag-reorder user interaction)', () => {
         }),
       }),
     ]);
-    apiMock.scenes.reorderProse.mockResolvedValueOnce({
-      scenes: [
-        makeScene({
-          id: 'u',
-          order_index: 2,
-          prose_link: makeProseLink({ scope_type: 'chapter', chapter_id: 'ch-3' }),
-        }),
-        chapter3Anchor,
-      ],
-      scope_type: 'chapter',
-      chapter_id: 'ch-3',
-      book_id: null,
-      scope_start: 0,
-      scope_end: 10,
-      rebuilt_text: 'moved',
-    });
 
     await renderNarrative([chapter1Scene, sourceUnlinked, chapter3Anchor]);
 
@@ -1807,11 +1805,7 @@ describe('handleNarrativeReorder (drag-reorder user interaction)', () => {
     });
 
     expect(apiMock.scenes.linkProse).toHaveBeenCalledTimes(1);
-    expect(apiMock.scenes.reorderProse).toHaveBeenCalledWith({
-      source_scene_id: 'u',
-      target_scene_id: 'c3',
-      place_before: false,
-    });
+    expect(apiMock.scenes.reorderProse).not.toHaveBeenCalled();
   });
 
   it('[VALID] uses directly linked chapter scenes as drop anchors', async () => {
@@ -1846,15 +1840,13 @@ describe('handleNarrativeReorder (drag-reorder user interaction)', () => {
       prose_link: makeProseLink({ scope_type: 'chapter', chapter_id: 'ch-2' }),
     });
 
-    apiMock.scenes.reorderProse.mockResolvedValueOnce({
-      scenes: [source, targetLinked],
-      scope_type: 'chapter',
-      chapter_id: 'ch-1',
-      book_id: null,
-      scope_start: 0,
-      scope_end: 10,
-      rebuilt_text: 'moved',
-    });
+    apiMock.scenes.linkProse.mockResolvedValueOnce([
+      makeScene({
+        id: 's',
+        order_index: 3,
+        prose_link: makeProseLink({ scope_type: 'chapter', chapter_id: 'ch-1' }),
+      }),
+    ]);
 
     await renderNarrative([targetLinked, inferredTrailingUnlinked, source]);
 
@@ -1862,11 +1854,14 @@ describe('handleNarrativeReorder (drag-reorder user interaction)', () => {
       await nv().onDropScenesOnChapter?.(['s'], 'ch-1');
     });
 
-    expect(apiMock.scenes.reorderProse).toHaveBeenCalledWith({
-      source_scene_id: 's',
-      target_scene_id: 'a',
-      place_before: false,
+    expect(apiMock.scenes.linkProse).toHaveBeenCalledWith('s', {
+      scope_type: 'chapter',
+      chapter_id: 'ch-1',
+      book_id: null,
+      start_offset: 47,
+      end_offset: 48,
     });
+    expect(apiMock.scenes.reorderProse).not.toHaveBeenCalled();
   });
 
   it('[VALID] links dropped unlinked scenes when the target chapter has no linked scenes', async () => {
@@ -1950,7 +1945,7 @@ describe('handleNarrativeReorder (drag-reorder user interaction)', () => {
     });
   });
 
-  it('[VALID] mixed multi-drop links unlinked scenes and reorders only linked scenes', async () => {
+  it('[VALID] mixed multi-drop moves all dropped scenes via link-only chapter assignment', async () => {
     chaptersMetaMock.mockReturnValue([
       {
         id: 'ch-1',
@@ -1983,22 +1978,30 @@ describe('handleNarrativeReorder (drag-reorder user interaction)', () => {
       prose_link: makeProseLink({ scope_type: 'chapter', chapter_id: 'ch-1' }),
     });
 
-    apiMock.scenes.linkProse.mockResolvedValueOnce([
-      makeScene({
-        id: 'u',
-        order_index: 3,
-        prose_link: makeProseLink({ scope_type: 'chapter', chapter_id: 'ch-2' }),
-      }),
-    ]);
-    apiMock.scenes.reorderProse.mockResolvedValueOnce({
-      scenes: [linkedSource, targetB],
-      scope_type: 'chapter',
-      chapter_id: 'ch-2',
-      book_id: null,
-      scope_start: 0,
-      scope_end: 10,
-      rebuilt_text: 'moved',
-    });
+    apiMock.scenes.linkProse.mockImplementation(
+      async (
+        sourceId: SceneId,
+        payload: {
+          scope_type: string;
+          chapter_id: string | null;
+          book_id?: string | null;
+          start_offset: number;
+          end_offset: number;
+        }
+      ): Promise<Scene[]> => [
+        makeScene({
+          id: sourceId,
+          order_index: sourceId === 'u' ? 3 : 4,
+          prose_link: makeProseLink({
+            scope_type: 'chapter',
+            chapter_id: payload.chapter_id,
+            book_id: payload.book_id ?? null,
+            start_offset: payload.start_offset,
+            end_offset: payload.end_offset,
+          }),
+        }),
+      ]
+    );
 
     await renderNarrative([targetA, targetB, unlinked, linkedSource]);
 
@@ -2006,19 +2009,24 @@ describe('handleNarrativeReorder (drag-reorder user interaction)', () => {
       await nv().onDropScenesOnChapter?.(['u', 's'], 'ch-2');
     });
 
-    expect(apiMock.scenes.linkProse).toHaveBeenCalledWith('u', {
-      scope_type: 'chapter',
-      chapter_id: 'ch-2',
-      book_id: null,
-      start_offset: 29,
-      end_offset: 30,
-    });
-    expect(apiMock.scenes.reorderProse).toHaveBeenCalledTimes(1);
-    expect(apiMock.scenes.reorderProse).toHaveBeenCalledWith({
-      source_scene_id: 's',
-      target_scene_id: 'a',
-      place_before: true,
-    });
+    expect(apiMock.scenes.linkProse).toHaveBeenCalledTimes(2);
+    expect(apiMock.scenes.linkProse).toHaveBeenCalledWith(
+      'u',
+      expect.objectContaining({
+        scope_type: 'chapter',
+        chapter_id: 'ch-2',
+        book_id: null,
+      })
+    );
+    expect(apiMock.scenes.linkProse).toHaveBeenCalledWith(
+      's',
+      expect.objectContaining({
+        scope_type: 'chapter',
+        chapter_id: 'ch-2',
+        book_id: null,
+      })
+    );
+    expect(apiMock.scenes.reorderProse).not.toHaveBeenCalled();
   });
 
   it('[VALID] falls back to chapter detail content length for numeric chapter ids', async () => {
@@ -2090,6 +2098,16 @@ describe('handleNarrativeReorder (drag-reorder user interaction)', () => {
     });
     const unlinked = makeScene({ id: 'u', order_index: 2, prose_link: null });
 
+    apiMock.chapters.get.mockResolvedValueOnce({
+      id: 3,
+      title: 'Chapter 3',
+      filename: '0003.txt',
+      content: '<!--scene:1:start--><!--scene:1:end-->',
+      summary: '',
+      notes: '',
+      private_notes: '',
+      conflicts: [],
+    });
     apiMock.scenes.linkProse.mockResolvedValueOnce([
       makeScene({
         id: 'u',
@@ -2104,13 +2122,223 @@ describe('handleNarrativeReorder (drag-reorder user interaction)', () => {
       await nv().onDropScenesOnChapter?.(['u'], '3');
     });
 
+    expect(apiMock.chapters.get).toHaveBeenCalledWith(3);
     expect(apiMock.scenes.linkProse).toHaveBeenCalledWith('u', {
       scope_type: 'chapter',
       chapter_id: '3',
       book_id: null,
-      start_offset: 59,
-      end_offset: 60,
+      start_offset: 77,
+      end_offset: 78,
     });
+  });
+
+  it('[REGRESSION] chapter drop with marker-only chapter content keeps single-scene link at chapter tail', async () => {
+    chaptersMetaMock.mockReturnValue([
+      {
+        id: '3',
+        title: 'Chapter 3',
+        summary: '',
+        content: '',
+      } as Chapter,
+    ]);
+
+    const targetLinked = makeScene({
+      id: '17',
+      order_index: 1,
+      prose_link: makeProseLink({
+        scope_type: 'chapter',
+        chapter_id: '3',
+        start_offset: 0,
+        end_offset: 0,
+      }),
+    });
+    const unlinked = makeScene({ id: '20', order_index: 2, prose_link: null });
+
+    apiMock.chapters.get.mockResolvedValueOnce({
+      id: 3,
+      title: 'Chapter 3',
+      filename: '0003.txt',
+      content: '<!--scene:17:start--><!--scene:17:end-->',
+      summary: '',
+      notes: '',
+      private_notes: '',
+      conflicts: [],
+    });
+    apiMock.scenes.linkProse.mockResolvedValueOnce([
+      makeScene({
+        id: '20',
+        order_index: 2,
+        prose_link: makeProseLink({
+          scope_type: 'chapter',
+          chapter_id: '3',
+          start_offset: 39,
+          end_offset: 40,
+        }),
+      }),
+    ]);
+
+    await renderNarrative([targetLinked, unlinked]);
+
+    await act(async () => {
+      await nv().onDropScenesOnChapter?.(['20'], '3');
+    });
+
+    expect(apiMock.chapters.get).toHaveBeenCalledWith(3);
+    expect(apiMock.scenes.linkProse).toHaveBeenCalledTimes(1);
+    expect(apiMock.scenes.linkProse).toHaveBeenCalledWith('20', {
+      scope_type: 'chapter',
+      chapter_id: '3',
+      book_id: null,
+      start_offset: 39,
+      end_offset: 40,
+    });
+  });
+
+  it('[REGRESSION] chapter drop with marker-only chapter content computes stable offsets for multiple scenes', async () => {
+    chaptersMetaMock.mockReturnValue([
+      {
+        id: '3',
+        title: 'Chapter 3',
+        summary: '',
+        content: '',
+      } as Chapter,
+    ]);
+
+    const targetLinked = makeScene({
+      id: '17',
+      order_index: 1,
+      prose_link: makeProseLink({
+        scope_type: 'chapter',
+        chapter_id: '3',
+        start_offset: 0,
+        end_offset: 0,
+      }),
+    });
+    const firstUnlinked = makeScene({
+      id: '20',
+      order_index: 2,
+      prose_link: null,
+    });
+    const secondUnlinked = makeScene({
+      id: '21',
+      order_index: 3,
+      prose_link: null,
+    });
+
+    apiMock.chapters.get.mockResolvedValueOnce({
+      id: 3,
+      title: 'Chapter 3',
+      filename: '0003.txt',
+      content: '<!--scene:17:start--><!--scene:17:end-->',
+      summary: '',
+      notes: '',
+      private_notes: '',
+      conflicts: [],
+    });
+    apiMock.scenes.linkProse
+      .mockResolvedValueOnce([
+        makeScene({
+          id: '20',
+          order_index: 2,
+          prose_link: makeProseLink({
+            scope_type: 'chapter',
+            chapter_id: '3',
+            start_offset: 60,
+            end_offset: 60,
+          }),
+        }),
+      ])
+      .mockResolvedValueOnce([
+        makeScene({
+          id: '21',
+          order_index: 3,
+          prose_link: makeProseLink({
+            scope_type: 'chapter',
+            chapter_id: '3',
+            start_offset: 100,
+            end_offset: 100,
+          }),
+        }),
+      ]);
+
+    await renderNarrative([targetLinked, firstUnlinked, secondUnlinked]);
+
+    await act(async () => {
+      await nv().onDropScenesOnChapter?.(['20', '21'], '3');
+    });
+
+    expect(apiMock.chapters.get).toHaveBeenCalledWith(3);
+    expect(apiMock.scenes.linkProse).toHaveBeenCalledTimes(2);
+    expect(apiMock.scenes.linkProse).toHaveBeenNthCalledWith(1, '20', {
+      scope_type: 'chapter',
+      chapter_id: '3',
+      book_id: null,
+      start_offset: 39,
+      end_offset: 40,
+    });
+    expect(apiMock.scenes.linkProse).toHaveBeenNthCalledWith(2, '21', {
+      scope_type: 'chapter',
+      chapter_id: '3',
+      book_id: null,
+      start_offset: 99,
+      end_offset: 100,
+    });
+  });
+
+  it('[REGRESSION] one chapter-drop drag records exactly one history entry', async () => {
+    chaptersMetaMock.mockReturnValue([
+      {
+        id: 'ch-2',
+        title: 'Chapter 2',
+        summary: '',
+        content: 'Target chapter prose.',
+      } as Chapter,
+    ]);
+
+    const sourceA = makeScene({ id: '20', order_index: 2, prose_link: null });
+    const sourceB = makeScene({ id: '21', order_index: 3, prose_link: null });
+
+    apiMock.scenes.linkProse.mockImplementation(
+      async (
+        sourceId: SceneId,
+        payload: {
+          scope_type: string;
+          chapter_id: string | null;
+          book_id?: string | null;
+          start_offset: number;
+          end_offset: number;
+        }
+      ): Promise<Scene[]> => [
+        makeScene({
+          id: sourceId,
+          order_index: sourceId === '20' ? 2 : 3,
+          prose_link: makeProseLink({
+            scope_type: 'chapter',
+            chapter_id: payload.chapter_id,
+            book_id: payload.book_id ?? null,
+            start_offset: payload.start_offset,
+            end_offset: payload.end_offset,
+          }),
+        }),
+      ]
+    );
+
+    await renderNarrative([sourceA, sourceB], {
+      recordHistoryEntry: recordHistoryEntryMock,
+    });
+
+    await act(async () => {
+      await nv().onDropScenesOnChapter?.(['20', '21'], 'ch-2');
+    });
+
+    const labels = recordHistoryEntryMock.mock.calls.map(
+      (call: [{ label: string }]) => call[0].label
+    );
+    expect(
+      labels.filter((label: string): boolean => label === 'Move scene to chapter')
+    ).toHaveLength(1);
+    expect(labels).not.toContain('Reorder scene prose');
+    expect(apiMock.scenes.reorderProse).not.toHaveBeenCalled();
   });
 
   type SourceState = 'unlinked' | 'same' | 'before' | 'behind';
@@ -2385,37 +2613,6 @@ describe('handleNarrativeReorder (drag-reorder user interaction)', () => {
         ]
       );
 
-      apiMock.scenes.reorderProse.mockImplementation(
-        async (request: {
-          source_scene_id: SceneId;
-          target_scene_id: SceneId;
-          place_before: boolean;
-        }) => ({
-          scenes: [
-            makeScene({
-              id: request.source_scene_id,
-              prose_link: makeProseLink({
-                scope_type: 'chapter',
-                chapter_id: projectConfig.targetChapterId,
-              }),
-            }),
-            makeScene({
-              id: request.target_scene_id,
-              prose_link: makeProseLink({
-                scope_type: 'chapter',
-                chapter_id: projectConfig.targetChapterId,
-              }),
-            }),
-          ],
-          scope_type: 'chapter',
-          chapter_id: projectConfig.targetChapterId,
-          book_id: null,
-          scope_start: 0,
-          scope_end: 10,
-          rebuilt_text: 'moved',
-        })
-      );
-
       await renderNarrative(scenes);
 
       await act(async () => {
@@ -2431,10 +2628,10 @@ describe('handleNarrativeReorder (drag-reorder user interaction)', () => {
         return;
       }
 
-      const expectedUnlinkedCount = sourceStates.filter(
-        (state: SourceState): boolean => state === 'unlinked'
+      const expectedMovedCount = sourceStates.filter(
+        (state: SourceState): boolean => state !== 'same'
       ).length;
-      expect(apiMock.scenes.linkProse).toHaveBeenCalledTimes(expectedUnlinkedCount);
+      expect(apiMock.scenes.linkProse).toHaveBeenCalledTimes(expectedMovedCount);
       apiMock.scenes.linkProse.mock.calls.forEach(
         (
           call: [
@@ -2453,27 +2650,7 @@ describe('handleNarrativeReorder (drag-reorder user interaction)', () => {
           expect(payload.chapter_id).toBe(projectConfig.targetChapterId);
         }
       );
-
-      const expectedCrossChapterIds = sourceScenes
-        .filter((scene: Scene): boolean => {
-          const chapterId = normalizeChapterId(scene.prose_link?.chapter_id);
-          return (
-            scene.prose_link !== null && chapterId !== projectConfig.targetChapterId
-          );
-        })
-        .map((scene: Scene): SceneId => scene.id);
-
-      for (const sourceId of expectedCrossChapterIds) {
-        expect(apiMock.scenes.reorderProse.mock.calls).toEqual(
-          expect.arrayContaining([
-            [
-              expect.objectContaining({
-                source_scene_id: sourceId,
-              }),
-            ],
-          ])
-        );
-      }
+      expect(apiMock.scenes.reorderProse).not.toHaveBeenCalled();
     }
   );
 });

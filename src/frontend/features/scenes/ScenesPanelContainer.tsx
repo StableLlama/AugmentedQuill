@@ -98,6 +98,10 @@ function collectBoundaryAdjustments(
   return toAdjust;
 }
 
+function sceneMarkerTokenLength(sceneId: SceneId, edge: 'start' | 'end'): number {
+  return `<!--scene:${String(sceneId)}:${edge}-->`.length;
+}
+
 function applyScenePatch(
   prevScenes: Scene[],
   scene: Scene | null,
@@ -566,39 +570,52 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
       const orderedSourceIds = sortedScenes
         .map((scene: Scene): SceneId => scene.id)
         .filter((id: SceneId): boolean => sourceSceneIds.includes(id));
-      const newlyLinkedSourceIds = new Set<SceneId>();
 
       let workingScenes = scenes;
 
-      const unlinkedSourceIds = orderedSourceIds.filter((id: SceneId): boolean => {
+      const sourceIdsToMove = orderedSourceIds.filter((id: SceneId): boolean => {
         const source = scenes.find((scene: Scene): boolean => scene.id === id);
-        return !source?.prose_link || source.prose_link.scope_type === 'unlinked';
+        const link = source?.prose_link;
+        if (!link || link.scope_type === 'unlinked') return true;
+        if (link.scope_type !== 'chapter') return true;
+        return normalizeChapterId(link.chapter_id) !== targetChapterId;
       });
 
-      const linkUnlinkedScenesToTargetChapter = async (): Promise<boolean> => {
-        if (unlinkedSourceIds.length === 0) return false;
+      const moveSourceScenesToTargetChapter = async (): Promise<boolean> => {
+        if (sourceIdsToMove.length === 0) return false;
 
-        let chapterContentLength = Math.max(0, (targetChapter?.content ?? '').length);
-        if (chapterContentLength === 0) {
-          const numericChapterId = Number(targetChapterId);
-          if (Number.isInteger(numericChapterId)) {
-            try {
-              const chapterDetail = await api.chapters.get(numericChapterId);
-              chapterContentLength = Math.max(
-                chapterContentLength,
-                chapterDetail.content?.length ?? 0
+        let chapterContent = targetChapter?.content ?? '';
+        const targetBookId = targetChapter?.book_id ?? null;
+        const targetSceneIds = new Set(
+          workingScenes
+            .filter((scene: Scene): boolean => {
+              const link = scene.prose_link;
+              return (
+                link?.scope_type === 'chapter' &&
+                normalizeChapterId(link.chapter_id) === targetChapterId
               );
-            } catch {
-              // Fall back to link-derived placement when chapter detail is unavailable.
-            }
+            })
+            .map((scene: Scene): SceneId => scene.id)
+        );
+
+        const numericChapterId = Number(targetChapterId);
+        if (
+          Number.isInteger(numericChapterId) &&
+          (chapterContent.length === 0 || targetSceneIds.size > 0)
+        ) {
+          try {
+            const chapterDetail = await api.chapters.get(numericChapterId);
+            chapterContent = chapterDetail.content ?? chapterContent;
+          } catch {
+            // Fall back to link-derived placement when chapter detail is unavailable.
           }
         }
-        const targetBookId = targetChapter?.book_id ?? null;
+
+        const chapterContentLength = Math.max(0, chapterContent.length);
         const previousScenesById = new Map<SceneId, Scene>();
 
-        let nextScenes = workingScenes;
-        try {
-          const linkedTargetTailOffset = nextScenes
+        const linkedChapterTailOffset = (scopeScenes: Scene[]): number =>
+          scopeScenes
             .filter((scene: Scene): boolean => {
               const link = scene.prose_link;
               return (
@@ -609,21 +626,30 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
             .reduce((maxOffset: number, scene: Scene): number => {
               const link = scene.prose_link;
               if (!link) return maxOffset;
+
               const startOffset = Number(link.start_offset ?? 0);
               const endOffset = Number(
-                link.end_offset ?? (Number.isFinite(startOffset) ? startOffset + 1 : 1)
+                link.end_offset ?? (Number.isFinite(startOffset) ? startOffset : 0)
               );
-              return Math.max(maxOffset, startOffset + 1, endOffset);
-            }, 0);
-          const insertionBaseEnd = Math.max(
-            1,
-            chapterContentLength,
-            linkedTargetTailOffset
-          );
+              const markerBlockEnd = Math.max(
+                endOffset + sceneMarkerTokenLength(scene.id, 'end'),
+                startOffset +
+                  sceneMarkerTokenLength(scene.id, 'start') +
+                  sceneMarkerTokenLength(scene.id, 'end')
+              );
 
-          for (const [index, sourceId] of unlinkedSourceIds.entries()) {
-            const chapterLinkEnd = insertionBaseEnd + index;
-            const chapterLinkStart = chapterLinkEnd - 1;
+              return Math.max(maxOffset, markerBlockEnd);
+            }, 0);
+
+        let nextScenes = workingScenes;
+        try {
+          for (const sourceId of sourceIdsToMove) {
+            const chapterLinkEnd = Math.max(
+              1,
+              chapterContentLength,
+              linkedChapterTailOffset(nextScenes)
+            );
+            const chapterLinkStart = Math.max(0, chapterLinkEnd - 1);
 
             const sourceScene = nextScenes.find(
               (scene: Scene): boolean => scene.id === sourceId
@@ -654,16 +680,6 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
             modified.forEach((scene: Scene): void => {
               patchScene(scene);
             });
-            if (
-              modified.some(
-                (scene: Scene): boolean =>
-                  scene.id === sourceId &&
-                  scene.prose_link?.scope_type === 'chapter' &&
-                  normalizeChapterId(scene.prose_link.chapter_id) === targetChapterId
-              )
-            ) {
-              newlyLinkedSourceIds.add(sourceId);
-            }
             nextScenes = applyScenePatches(nextScenes, modified);
           }
           recordSceneHistory('Move scene to chapter', nextScenes);
@@ -678,102 +694,9 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
         return true;
       };
 
-      await linkUnlinkedScenesToTargetChapter();
-
-      // Refresh scene/link state after any linkProse mutations before reordering.
-      const currentScenes = workingScenes;
-      const currentSortedScenes = [...currentScenes].sort((a: Scene, b: Scene) =>
-        proseSort(a, b, chapterOrderMap)
-      );
-      const currentDirectChapterBySceneId = new Map<SceneId, string | null>();
-      currentSortedScenes.forEach((scene: Scene): void => {
-        const link = scene.prose_link;
-        const directChapterId =
-          link?.scope_type === 'chapter'
-            ? normalizeChapterId(link.chapter_id) || null
-            : null;
-        currentDirectChapterBySceneId.set(scene.id, directChapterId);
-      });
-
-      const currentDirectChapterSceneIds = currentSortedScenes
-        .filter(
-          (scene: Scene): boolean =>
-            currentDirectChapterBySceneId.get(scene.id) === targetChapterId
-        )
-        .map((scene: Scene): SceneId => scene.id);
-      if (currentDirectChapterSceneIds.length === 0) return;
-
-      const firstChapterSceneId = currentDirectChapterSceneIds[0];
-      const lastChapterSceneId =
-        currentDirectChapterSceneIds[currentDirectChapterSceneIds.length - 1];
-      const firstChapterIndex = currentSortedScenes.findIndex(
-        (scene: Scene): boolean => scene.id === firstChapterSceneId
-      );
-      const lastChapterIndex = currentSortedScenes.findIndex(
-        (scene: Scene): boolean => scene.id === lastChapterSceneId
-      );
-      if (firstChapterIndex < 0 || lastChapterIndex < 0) return;
-
-      const candidateIds = orderedSourceIds.filter((id: SceneId): boolean => {
-        if (newlyLinkedSourceIds.has(id)) return true;
-        const source = currentScenes.find((scene: Scene): boolean => scene.id === id);
-        if (!source?.prose_link) return false;
-        return currentDirectChapterBySceneId.get(id) !== targetChapterId;
-      });
-      if (candidateIds.length === 0) return;
-
-      const orderedCandidates = currentSortedScenes
-        .map((scene: Scene): SceneId => scene.id)
-        .filter((id: SceneId): boolean => candidateIds.includes(id));
-
-      const beforeChapterIds = orderedCandidates.filter((id: SceneId): boolean => {
-        const sourceIndex = currentSortedScenes.findIndex(
-          (scene: Scene): boolean => scene.id === id
-        );
-        return sourceIndex >= 0 && sourceIndex < firstChapterIndex;
-      });
-
-      const afterChapterIds = orderedCandidates.filter((id: SceneId): boolean => {
-        const sourceIndex = currentSortedScenes.findIndex(
-          (scene: Scene): boolean => scene.id === id
-        );
-        return sourceIndex >= firstChapterIndex;
-      });
-
-      for (const sourceId of beforeChapterIds) {
-        if (sourceId === firstChapterSceneId) continue;
-        const sourceScene = workingScenes.find(
-          (scene: Scene): boolean => scene.id === sourceId
-        );
-        const targetScene = workingScenes.find(
-          (scene: Scene): boolean => scene.id === firstChapterSceneId
-        );
-        if (!sourceScene?.prose_link || !targetScene?.prose_link) continue;
-        await handleLinkedProseNarrativeReorder(sourceId, firstChapterSceneId, true);
-      }
-
-      for (const sourceId of [...afterChapterIds].reverse()) {
-        if (sourceId === lastChapterSceneId) continue;
-        const sourceScene = workingScenes.find(
-          (scene: Scene): boolean => scene.id === sourceId
-        );
-        const targetScene = workingScenes.find(
-          (scene: Scene): boolean => scene.id === lastChapterSceneId
-        );
-        if (!sourceScene?.prose_link || !targetScene?.prose_link) continue;
-        await handleLinkedProseNarrativeReorder(sourceId, lastChapterSceneId, false);
-      }
+      await moveSourceScenesToTargetChapter();
     },
-    [
-      books,
-      chapters,
-      handleLinkedProseNarrativeReorder,
-      patchScene,
-      projectType,
-      recordSceneHistory,
-      scenes,
-      t,
-    ]
+    [books, chapters, patchScene, projectType, recordSceneHistory, scenes, t]
   );
   /* eslint-enable complexity */
 

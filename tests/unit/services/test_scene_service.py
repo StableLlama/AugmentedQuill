@@ -32,7 +32,10 @@ from augmentedquill.services.scenes.scene_service import (
     update_scene,
     update_prose_content,
 )
-from augmentedquill.services.scenes.scene_markers import parse_scene_spans
+from augmentedquill.services.scenes.scene_markers import (
+    parse_scene_spans,
+    validate_scene_marker_tokens,
+)
 
 
 @pytest.fixture()
@@ -706,6 +709,81 @@ def test_link_prose_chapter_range_does_not_wrap_existing_marker_token_bytes(
     assert "<<!--scene:" not in updated
     spans = parse_scene_spans(updated)
     assert any(span.scene_id == scene["id"] for span in spans)
+
+
+@pytest.mark.parametrize("new_scene_count", [1, 2, 3])
+def test_link_prose_chapter_boundary_insert_never_corrupts_marker_tokens(
+    project_dir: Path,
+    new_scene_count: int,
+) -> None:
+    """Regression: marker-only chapter boundary inserts must never corrupt tokens.
+
+    Reproduces the user-reported corruption pattern where linking a scene into a
+    chapter containing only empty-marker scenes produced malformed tokens like
+    ``<!--scene:N:end--<!--scene:M:start-->``.
+    """
+    story = json.loads((project_dir / "story.json").read_text(encoding="utf-8"))
+    story["chapters"] = [
+        {
+            "id": "3",
+            "filename": "0003.txt",
+            "title": "Chapter 3",
+            "summary": "",
+            "content": "",
+        }
+    ]
+    (project_dir / "story.json").write_text(json.dumps(story), encoding="utf-8")
+
+    chapters_dir = project_dir / "chapters"
+    chapters_dir.mkdir(parents=True, exist_ok=True)
+    chapter3_path = chapters_dir / "0003.txt"
+    chapter3_path.write_text("", encoding="utf-8")
+
+    anchor_scene = create_scene(project_dir, SceneCreateRequest(summary="Anchor"))
+    link_prose(
+        project_dir,
+        anchor_scene["id"],
+        SceneLinkProseRequest(
+            scope_type="chapter",
+            chapter_id="3",
+            start_offset=0,
+            end_offset=1,
+        ),
+    )
+
+    anchor_end_marker = f"<!--scene:{anchor_scene['id']}:end-->"
+    anchor_start_marker = f"<!--scene:{anchor_scene['id']}:start-->"
+
+    for index in range(new_scene_count):
+        scene = create_scene(
+            project_dir,
+            SceneCreateRequest(summary=f"Boundary insert scene {index + 1}"),
+        )
+        current = chapter3_path.read_text(encoding="utf-8")
+        boundary_start = current.index(anchor_end_marker) + index
+
+        link_prose(
+            project_dir,
+            scene["id"],
+            SceneLinkProseRequest(
+                scope_type="chapter",
+                chapter_id="3",
+                start_offset=boundary_start,
+                end_offset=boundary_start + 1,
+            ),
+        )
+
+    updated = chapter3_path.read_text(encoding="utf-8")
+    validate_scene_marker_tokens(updated)
+
+    # Broken tokens always contain '--<!--scene:' (missing '>' from '-->').
+    assert "--<!--scene:" not in updated
+    assert "<!--scene:" in updated
+    assert anchor_start_marker in updated
+    assert anchor_end_marker in updated
+
+    spans = parse_scene_spans(updated)
+    assert len(spans) == 1 + new_scene_count
 
 
 def test_link_prose_relink_to_new_chapter_removes_old_chapter_markers(

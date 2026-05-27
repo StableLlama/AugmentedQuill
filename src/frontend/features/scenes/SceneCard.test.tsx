@@ -320,6 +320,114 @@ describe('SceneCard — visual state class application', () => {
     expect(card?.className).not.toContain('ring-2');
   });
 
+  it('keeps related chapter highlight when scene is also selected', () => {
+    const { container } = render(
+      <I18nextProvider i18n={i18n}>
+        <SceneCard
+          scene={makeScene()}
+          index={0}
+          onDragMove={NOOP}
+          onDragEnd={NOOP}
+          onSelect={NOOP}
+          onEdit={NOOP}
+          onCauseDragStart={NOOP}
+          onCauseDrop={NOOP}
+          onCauseLeave={NOOP}
+          isCauseTarget={false}
+          isSelected={true}
+          isActive={false}
+          isCause={false}
+          isEffect={false}
+          isRelated={true}
+        />
+      </I18nextProvider>
+    );
+    const card = container.querySelector('[data-scene-card]');
+    expect(card?.className).toContain('bg-brand-50');
+    expect(card?.className).toContain('ring-brand-400');
+  });
+
+  it('keeps related chapter highlight when scene is active (purple ring)', () => {
+    const { container } = render(
+      <I18nextProvider i18n={i18n}>
+        <SceneCard
+          scene={makeScene()}
+          index={0}
+          onDragMove={NOOP}
+          onDragEnd={NOOP}
+          onSelect={NOOP}
+          onEdit={NOOP}
+          onCauseDragStart={NOOP}
+          onCauseDrop={NOOP}
+          onCauseLeave={NOOP}
+          isCauseTarget={false}
+          isSelected={false}
+          isActive={true}
+          isCause={false}
+          isEffect={false}
+          isRelated={true}
+        />
+      </I18nextProvider>
+    );
+    const card = container.querySelector('[data-scene-card]');
+    expect(card?.className).toContain('bg-brand-50');
+    expect(card?.className).toContain('ring-violet-400');
+  });
+
+  it('keeps related chapter highlight when scene is a cause (red ring)', () => {
+    const { container } = render(
+      <I18nextProvider i18n={i18n}>
+        <SceneCard
+          scene={makeScene()}
+          index={0}
+          onDragMove={NOOP}
+          onDragEnd={NOOP}
+          onSelect={NOOP}
+          onEdit={NOOP}
+          onCauseDragStart={NOOP}
+          onCauseDrop={NOOP}
+          onCauseLeave={NOOP}
+          isCauseTarget={false}
+          isSelected={false}
+          isActive={false}
+          isCause={true}
+          isEffect={false}
+          isRelated={true}
+        />
+      </I18nextProvider>
+    );
+    const card = container.querySelector('[data-scene-card]');
+    expect(card?.className).toContain('bg-brand-50');
+    expect(card?.className).toContain('ring-red-500');
+  });
+
+  it('keeps related chapter highlight when scene is an effect (green ring)', () => {
+    const { container } = render(
+      <I18nextProvider i18n={i18n}>
+        <SceneCard
+          scene={makeScene()}
+          index={0}
+          onDragMove={NOOP}
+          onDragEnd={NOOP}
+          onSelect={NOOP}
+          onEdit={NOOP}
+          onCauseDragStart={NOOP}
+          onCauseDrop={NOOP}
+          onCauseLeave={NOOP}
+          isCauseTarget={false}
+          isSelected={false}
+          isActive={false}
+          isCause={false}
+          isEffect={true}
+          isRelated={true}
+        />
+      </I18nextProvider>
+    );
+    const card = container.querySelector('[data-scene-card]');
+    expect(card?.className).toContain('bg-brand-50');
+    expect(card?.className).toContain('ring-green-500');
+  });
+
   it('applies isCauseTarget ring when isCauseTarget is true', () => {
     const { container } = render(
       <I18nextProvider i18n={i18n}>

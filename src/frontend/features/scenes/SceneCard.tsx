@@ -324,14 +324,7 @@ export const SceneCard: React.FC<SceneCardProps> = ({
         ? 'bg-yellow-400'
         : 'bg-brand-gray-400';
 
-  const useRelatedBackground =
-    isRelated &&
-    !isCauseTarget &&
-    !isCauseSource &&
-    !isActive &&
-    !isSelected &&
-    !isCause &&
-    !isEffect;
+  const useRelatedBackground = isRelated && !isCauseTarget && !isCauseSource;
   const cardBackgroundClass = useRelatedBackground
     ? isLight
       ? 'bg-brand-50'

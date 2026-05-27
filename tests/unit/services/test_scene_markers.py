@@ -129,3 +129,16 @@ def test_snap_range_outside_markers_moves_marker_overlapping_range() -> None:
     marker_end = text.index("<!--scene:1:start-->") + len("<!--scene:1:start-->")
     assert start >= marker_end
     assert end > start
+
+
+def test_snap_range_outside_markers_in_marker_only_content_returns_empty_boundary() -> (
+    None
+):
+    text = "<!--scene:1:start--><!--scene:1:end-->"
+    marker_end_start = text.index("<!--scene:1:end-->")
+    start, end = snap_range_outside_markers(
+        text,
+        marker_end_start,
+        marker_end_start + 1,
+    )
+    assert (start, end) == (len(text), len(text))

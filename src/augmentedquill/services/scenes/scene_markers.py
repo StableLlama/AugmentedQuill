@@ -189,8 +189,8 @@ def snap_range_outside_markers(
     content_len = len(content)
     safe_start = max(0, min(start, content_len))
     safe_end = max(0, min(end, content_len))
-    if safe_start >= safe_end:
-        safe_end = min(content_len, safe_start + 1)
+    if safe_start > safe_end:
+        safe_end = safe_start
 
     ignored_ids = ignored_scene_ids or set()
     markers = [(match, int(match.group(1))) for match in _MARKER_RE.finditer(content)]
@@ -203,9 +203,6 @@ def snap_range_outside_markers(
             safe_start = match.end()
         if match.start() < safe_end < match.end():
             safe_end = match.end()
-    if safe_start >= safe_end:
-        safe_end = min(content_len, safe_start + 1)
-
     # If the selected range still overlaps token bytes (including boundaries),
     # push it right until it lands in prose text.
     max_iterations = len(markers) + 2
@@ -223,16 +220,22 @@ def snap_range_outside_markers(
         if overlap is None:
             break
         safe_start = overlap.end()
-        safe_end = max(safe_end, safe_start + 1)
+        safe_end = max(safe_end, safe_start)
         safe_start = max(0, min(safe_start, content_len))
         safe_end = max(0, min(safe_end, content_len))
 
-    if safe_start >= safe_end:
-        if safe_start >= content_len:
-            safe_start = max(0, content_len - 1)
-            safe_end = content_len
-        else:
-            safe_end = min(content_len, safe_start + 1)
+    # Prefer a minimal non-empty prose range when possible. For marker-only
+    # scopes this remains zero-width at the safe insertion boundary.
+    if safe_start == safe_end and safe_start < content_len:
+        candidate_end = safe_start + 1
+        overlaps_candidate = any(
+            scene_id not in ignored_ids
+            and safe_start < marker.end()
+            and candidate_end > marker.start()
+            for marker, scene_id in markers
+        )
+        if not overlaps_candidate:
+            safe_end = candidate_end
 
     return safe_start, safe_end
 
