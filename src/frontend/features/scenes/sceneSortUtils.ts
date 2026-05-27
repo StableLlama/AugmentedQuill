@@ -151,6 +151,13 @@ function compareProseLinkStartOffsets(sceneA: Scene, sceneB: Scene): number | nu
   return Number(startA) - Number(startB);
 }
 
+function getNarrativeOrderIndex(scene: Scene): number | null {
+  if (typeof scene.order_index === 'number' && Number.isFinite(scene.order_index)) {
+    return scene.order_index;
+  }
+  return null;
+}
+
 export function sceneSortKey(
   scene: Scene,
   _chapterOrderMap: Map<string, number>
@@ -164,6 +171,21 @@ export function proseSort(
   sceneB: Scene,
   chapterOrderMap: Map<string, number>
 ): number {
+  const orderIndexA = getNarrativeOrderIndex(sceneA);
+  const orderIndexB = getNarrativeOrderIndex(sceneB);
+  if (
+    (sceneA.prose_link?.scope_type === 'unlinked' ||
+      !sceneA.prose_link ||
+      sceneB.prose_link?.scope_type === 'unlinked' ||
+      !sceneB.prose_link) &&
+    orderIndexA !== null &&
+    orderIndexB !== null
+  ) {
+    if (orderIndexA !== orderIndexB) {
+      return orderIndexA - orderIndexB;
+    }
+  }
+
   const scopeBucketA = scopeSortBucket(sceneA.prose_link);
   const scopeBucketB = scopeSortBucket(sceneB.prose_link);
   if (scopeBucketA !== scopeBucketB) return scopeBucketA - scopeBucketB;

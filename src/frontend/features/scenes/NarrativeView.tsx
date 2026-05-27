@@ -300,11 +300,6 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
   const { t } = useTranslation();
   const { isLight } = useTheme();
 
-  const parseSceneId = useCallback((raw: string): SceneId | null => {
-    const parsed = Number(raw);
-    return Number.isInteger(parsed) ? (parsed as SceneId) : null;
-  }, []);
-
   const lanes = useSceneLanes({
     scenes,
     sourcebookEntries,
@@ -348,6 +343,10 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
   );
 
   const [optimisticOrderIds, setOptimisticOrderIds] = useState<SceneId[] | null>(null);
+  const [optimisticChapterBySceneId, setOptimisticChapterBySceneId] = useState<Map<
+    SceneId,
+    string
+  > | null>(null);
 
   const displayScenes = useMemo((): Scene[] => {
     if (!optimisticOrderIds || optimisticOrderIds.length === 0) return sortedScenes;
@@ -359,6 +358,69 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
       .filter((scene: Scene | undefined): scene is Scene => scene !== undefined);
     return ordered.length === sortedScenes.length ? ordered : sortedScenes;
   }, [optimisticOrderIds, sortedScenes]);
+
+  const visualDisplayScenes = useMemo((): Scene[] => {
+    if (!optimisticChapterBySceneId || optimisticChapterBySceneId.size === 0) {
+      return displayScenes;
+    }
+
+    return displayScenes.map((scene: Scene): Scene => {
+      const chapterId = optimisticChapterBySceneId.get(scene.id);
+      if (!chapterId) return scene;
+
+      const link = scene.prose_link;
+      const startOffset = Number(link?.start_offset ?? 0);
+      const endOffset = Number(link?.end_offset ?? startOffset + 1);
+
+      return {
+        ...scene,
+        prose_link: {
+          scope_type: 'chapter',
+          chapter_id: chapterId,
+          book_id: link?.book_id ?? null,
+          start_offset: Math.max(0, startOffset),
+          end_offset: Math.max(startOffset + 1, endOffset),
+        },
+      };
+    });
+  }, [displayScenes, optimisticChapterBySceneId]);
+
+  const sceneIdByToken = useMemo(() => {
+    const byToken = new Map<string, SceneId>();
+    scenes.forEach((scene: Scene): void => {
+      byToken.set(String(scene.id), scene.id);
+    });
+    return byToken;
+  }, [scenes]);
+
+  const coerceSceneId = useCallback(
+    (value: unknown): SceneId | null => {
+      if (typeof value === 'number' && Number.isInteger(value)) {
+        return value as SceneId;
+      }
+      if (typeof value !== 'string') return null;
+      const trimmed = value.trim();
+      if (trimmed.length === 0) return null;
+      const mapped = sceneIdByToken.get(trimmed);
+      if (mapped !== undefined) return mapped;
+      const numeric = Number(trimmed);
+      if (Number.isInteger(numeric)) return numeric as SceneId;
+      return null;
+    },
+    [sceneIdByToken]
+  );
+
+  const dedupeSceneIds = useCallback((ids: SceneId[]): SceneId[] => {
+    const seen = new Set<string>();
+    const deduped: SceneId[] = [];
+    ids.forEach((id: SceneId): void => {
+      const key = String(id);
+      if (seen.has(key)) return;
+      seen.add(key);
+      deduped.push(id);
+    });
+    return deduped;
+  }, []);
 
   const orderViolationSceneIds = useMemo(
     () => computeCauseOrderViolations(displayScenes),
@@ -409,14 +471,21 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
   const items = useMemo(
     () =>
       buildItems(
-        displayScenes,
+        visualDisplayScenes,
         sortMode,
         sceneEpochNanosecondsById,
         projectType,
         chapters,
         books
       ),
-    [displayScenes, sortMode, sceneEpochNanosecondsById, projectType, chapters, books]
+    [
+      visualDisplayScenes,
+      sortMode,
+      sceneEpochNanosecondsById,
+      projectType,
+      chapters,
+      books,
+    ]
   );
 
   // Build a flat index of scene entries so we can pass the correct 'index' to
@@ -689,7 +758,7 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
   const resolveDraggedSceneIds = useCallback(
     (eventData: DataTransfer): SceneId[] => {
       if (dragSceneIdsRef.current.length > 0) {
-        return dragSceneIdsRef.current;
+        return dedupeSceneIds(dragSceneIdsRef.current);
       }
 
       const rawIds = eventData.getData(DRAG_SCENES_MIME);
@@ -697,9 +766,10 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
         try {
           const parsed = JSON.parse(rawIds) as unknown;
           if (Array.isArray(parsed)) {
-            return parsed.filter(
-              (value: unknown): value is SceneId =>
-                typeof value === 'number' && Number.isInteger(value)
+            return dedupeSceneIds(
+              parsed
+                .map((value: unknown): SceneId | null => coerceSceneId(value))
+                .filter((id: SceneId | null): id is SceneId => id !== null)
             );
           }
         } catch {
@@ -709,12 +779,12 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
 
       const single =
         dragSceneIdRef.current ||
-        parseSceneId(eventData.getData(DRAG_SCENE_MIME)) ||
-        parseSceneId(eventData.getData('text/plain')) ||
+        coerceSceneId(eventData.getData(DRAG_SCENE_MIME)) ||
+        coerceSceneId(eventData.getData('text/plain')) ||
         dragSceneId;
       return single ? [single] : [];
     },
-    [DRAG_SCENE_MIME, DRAG_SCENES_MIME, dragSceneId, parseSceneId]
+    [DRAG_SCENE_MIME, DRAG_SCENES_MIME, coerceSceneId, dedupeSceneIds, dragSceneId]
   );
 
   const resolveDraggedSceneId = useCallback(
@@ -817,7 +887,7 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
       const normalizedChapterId = chapterId.trim();
       if (!onDropScenesOnChapter || normalizedChapterId.length === 0) return;
       e.preventDefault();
-      const draggedIds = resolveDraggedSceneIds(e.dataTransfer);
+      const draggedIds = dedupeSceneIds(resolveDraggedSceneIds(e.dataTransfer));
       if (draggedIds.length === 0) return;
 
       const currentIds = displayScenes.map((scene: Scene): SceneId => scene.id);
@@ -843,14 +913,26 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
         }
       }
 
+      setOptimisticChapterBySceneId(() => {
+        const next = new Map<SceneId, string>();
+        draggedIds.forEach((sceneId: SceneId): void => {
+          next.set(sceneId, normalizedChapterId);
+        });
+        return next;
+      });
+
       dragSceneIdRef.current = null;
       dragSceneIdsRef.current = [];
       setDropHint(null);
       setDragSceneId(null);
       setChapterDropTargetId(null);
-      await onDropScenesOnChapter(draggedIds, normalizedChapterId);
+      try {
+        await onDropScenesOnChapter(draggedIds, normalizedChapterId);
+      } finally {
+        setOptimisticChapterBySceneId(null);
+      }
     },
-    [displayScenes, onDropScenesOnChapter, resolveDraggedSceneIds]
+    [dedupeSceneIds, displayScenes, onDropScenesOnChapter, resolveDraggedSceneIds]
   );
 
   const handleSceneDragOver = useCallback(

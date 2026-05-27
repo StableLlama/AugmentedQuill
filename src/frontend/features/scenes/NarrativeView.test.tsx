@@ -395,6 +395,241 @@ describe('NarrativeView drag reorder interactions', () => {
       expect(onDropScenesOnChapter).toHaveBeenCalledWith(['source'], '1');
     });
   });
+
+  it('keeps chapter separators stable during optimistic cross-chapter drops', async () => {
+    let resolveDrop: (() => void) | null = null;
+    const onDropScenesOnChapter = vi.fn(
+      () =>
+        new Promise<void>((resolve: () => void) => {
+          resolveDrop = resolve;
+        })
+    );
+
+    const scenes: Scene[] = [
+      makeScene({
+        id: 1,
+        summary: 'Chapter 1 Scene A',
+        prose_link: {
+          scope_type: 'chapter',
+          chapter_id: '1',
+          book_id: null,
+          start_offset: 0,
+          end_offset: 5,
+          content_hash: 'hash',
+          is_stale: false,
+        },
+      }),
+      makeScene({
+        id: 2,
+        summary: 'Chapter 1 Scene B',
+        prose_link: {
+          scope_type: 'chapter',
+          chapter_id: '1',
+          book_id: null,
+          start_offset: 10,
+          end_offset: 15,
+          content_hash: 'hash',
+          is_stale: false,
+        },
+      }),
+      makeScene({
+        id: 3,
+        summary: 'Chapter 2 Scene',
+        prose_link: {
+          scope_type: 'chapter',
+          chapter_id: '2',
+          book_id: null,
+          start_offset: 0,
+          end_offset: 8,
+          content_hash: 'hash',
+          is_stale: false,
+        },
+      }),
+    ];
+
+    const { getByText, container } = render(
+      <I18nextProvider i18n={i18n}>
+        <NarrativeView
+          scenes={scenes}
+          projectType="novel"
+          chapters={[
+            { id: '1', title: 'Chapter 1', summary: '', content: '' },
+            { id: '2', title: 'Chapter 2', summary: '', content: '' },
+          ]}
+          books={[]}
+          primarySelectedSceneId={null}
+          onSelectScene={vi.fn()}
+          onSelectionChange={vi.fn()}
+          onEditScene={vi.fn()}
+          onReorderScene={vi.fn(async () => undefined)}
+          onDropScenesOnChapter={onDropScenesOnChapter}
+        />
+      </I18nextProvider>
+    );
+
+    const sourceWrapper = getByText('Chapter 1 Scene A')
+      .parentElement as HTMLDivElement;
+    const chapterBreaks = container.querySelectorAll('[data-break-kind="chapter"]');
+    const chapter2DropWrapper = chapterBreaks[1].parentElement as HTMLDivElement;
+    const transfer = makeDataTransfer();
+
+    fireEvent.dragStart(sourceWrapper, { dataTransfer: transfer });
+    fireEvent.drop(chapter2DropWrapper, { dataTransfer: transfer });
+
+    await waitFor(() => {
+      const labels = Array.from(
+        container.querySelectorAll('[data-break-kind="chapter"]')
+      ).map((node: Element) => node.getAttribute('aria-label'));
+      expect(
+        labels.filter((label: string | null) => label === 'Chapter: Chapter 1')
+      ).toHaveLength(1);
+      expect(
+        labels.filter((label: string | null) => label === 'Chapter: Chapter 2')
+      ).toHaveLength(1);
+    });
+
+    resolveDrop?.();
+  });
+
+  it('uses selected scenes in display order for chapter drop drags', async () => {
+    selectionState.selectedSceneIds = new Set<SceneId>([1, 2]);
+    const onDropScenesOnChapter = vi.fn(async () => undefined);
+
+    const scenes: Scene[] = [
+      makeScene({
+        id: 1,
+        summary: 'S1',
+        prose_link: {
+          scope_type: 'chapter',
+          chapter_id: '1',
+          book_id: null,
+          start_offset: 0,
+          end_offset: 5,
+          content_hash: 'hash',
+          is_stale: false,
+        },
+      }),
+      makeScene({
+        id: 2,
+        summary: 'S2',
+        prose_link: {
+          scope_type: 'chapter',
+          chapter_id: '1',
+          book_id: null,
+          start_offset: 10,
+          end_offset: 15,
+          content_hash: 'hash',
+          is_stale: false,
+        },
+      }),
+      makeScene({
+        id: 3,
+        summary: 'S3',
+        prose_link: {
+          scope_type: 'chapter',
+          chapter_id: '2',
+          book_id: null,
+          start_offset: 0,
+          end_offset: 8,
+          content_hash: 'hash',
+          is_stale: false,
+        },
+      }),
+    ];
+
+    const { getByText, container } = render(
+      <I18nextProvider i18n={i18n}>
+        <NarrativeView
+          scenes={scenes}
+          projectType="novel"
+          chapters={[
+            { id: '1', title: 'Chapter 1', summary: '', content: '' },
+            { id: '2', title: 'Chapter 2', summary: '', content: '' },
+          ]}
+          books={[]}
+          primarySelectedSceneId={null}
+          onSelectScene={vi.fn()}
+          onSelectionChange={vi.fn()}
+          onEditScene={vi.fn()}
+          onReorderScene={vi.fn(async () => undefined)}
+          onDropScenesOnChapter={onDropScenesOnChapter}
+        />
+      </I18nextProvider>
+    );
+
+    const sourceWrapper = getByText('S2').parentElement as HTMLDivElement;
+    const chapterBreaks = container.querySelectorAll('[data-break-kind="chapter"]');
+    const chapter2DropWrapper = chapterBreaks[1].parentElement as HTMLDivElement;
+    const transfer = makeDataTransfer();
+
+    fireEvent.dragStart(sourceWrapper, { dataTransfer: transfer });
+    fireEvent.drop(chapter2DropWrapper, { dataTransfer: transfer });
+
+    await waitFor(() => {
+      expect(onDropScenesOnChapter).toHaveBeenCalledWith([1, 2], '2');
+    });
+  });
+
+  it('keeps multi-selection chapter payload after dragend fallback path', async () => {
+    selectionState.selectedSceneIds = new Set<SceneId>([
+      'a' as unknown as SceneId,
+      'b' as unknown as SceneId,
+    ]);
+    const onDropScenesOnChapter = vi.fn(async () => undefined);
+
+    const scenes: Scene[] = [
+      makeScene({ id: 'a', summary: 'A', prose_link: null }),
+      makeScene({ id: 'b', summary: 'B', prose_link: null }),
+      makeScene({
+        id: 'c',
+        summary: 'C',
+        prose_link: {
+          scope_type: 'chapter',
+          chapter_id: '1',
+          book_id: null,
+          start_offset: 0,
+          end_offset: 8,
+          content_hash: 'hash',
+          is_stale: false,
+        },
+      }),
+    ];
+
+    const { getByText, container } = render(
+      <I18nextProvider i18n={i18n}>
+        <NarrativeView
+          scenes={scenes}
+          projectType="novel"
+          chapters={[{ id: '1', title: 'Chapter 1', summary: '', content: '' }]}
+          books={[]}
+          primarySelectedSceneId={null}
+          onSelectScene={vi.fn()}
+          onSelectionChange={vi.fn()}
+          onEditScene={vi.fn()}
+          onReorderScene={vi.fn(async () => undefined)}
+          onDropScenesOnChapter={onDropScenesOnChapter}
+        />
+      </I18nextProvider>
+    );
+
+    const sourceWrapper = getByText('A').parentElement as HTMLDivElement;
+    const chapterBreak = container.querySelector(
+      '[data-break-kind="chapter"]'
+    ) as HTMLDivElement;
+    const chapterDropWrapper = chapterBreak.parentElement as HTMLDivElement;
+    const transfer = makeDataTransfer();
+
+    fireEvent.dragStart(sourceWrapper, { dataTransfer: transfer });
+    fireEvent.dragEnd(sourceWrapper, { dataTransfer: transfer });
+    fireEvent.drop(chapterDropWrapper, { dataTransfer: transfer });
+
+    await waitFor(() => {
+      expect(onDropScenesOnChapter).toHaveBeenCalledWith(
+        ['a', 'b'] as unknown as SceneId[],
+        '1'
+      );
+    });
+  });
 });
 
 describe('NarrativeView series sorting and grouping', () => {
@@ -746,7 +981,6 @@ describe('NarrativeView series sorting and grouping', () => {
   });
 });
 
-// eslint-disable-next-line max-lines-per-function
 describe('NarrativeView chronological sorting', () => {
   it('does not render chapter or book separators in chronological mode', () => {
     const chapters: Chapter[] = [
