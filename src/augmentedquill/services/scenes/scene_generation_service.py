@@ -383,6 +383,7 @@ async def write_scene_and_link(
         model_overrides = resolved_model_overrides
 
     system_msg = get_system_message("story_writer", model_overrides, language=language)
+    existing_tail_text = remove_markers(existing_text)
     user_msg = get_user_prompt(
         "write_scene_prose",
         language=language,
@@ -395,7 +396,7 @@ async def write_scene_and_link(
         current_scene_summary=target_summary,
         next_scene_summary=next_summary,
         scene_guidance=scoped_context.get("scene_block") or "",
-        existing_tail=existing_text[-2000:] if existing_text else "",
+        existing_tail=existing_tail_text[-2000:] if existing_tail_text else "",
     )
 
     response = await llm.unified_chat_complete(

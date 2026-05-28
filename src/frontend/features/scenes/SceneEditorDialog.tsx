@@ -21,6 +21,7 @@ import type {
   SceneTagPersonalDatetime,
   SourcebookEntry,
   SceneId,
+  StoryState,
 } from '../../types';
 import type { Chapter, Book } from '../../types/domain';
 import { useThemeClasses } from '../layout/ThemeContext';
@@ -114,6 +115,25 @@ const normalizeTimelineId = (value: string | null | undefined): string => {
 };
 
 const getBranchTimelineId = (entryId: string): string => `branch:${entryId}`;
+
+function getScopedBaselineContent(
+  baselineState: StoryState,
+  link: SceneProseLink | null | undefined
+): string | null {
+  if (!link) return null;
+  if (link.scope_type === 'story') {
+    return baselineState.draft?.content ?? null;
+  }
+  if (link.scope_type === 'chapter') {
+    const targetId = normalizeChapterId(link.chapter_id);
+    if (!targetId) return null;
+    const chapter = baselineState.chapters.find(
+      (candidate: Chapter): boolean => normalizeChapterId(candidate.id) === targetId
+    );
+    return chapter?.content ?? null;
+  }
+  return null;
+}
 
 type AgeInfo = {
   compact: string;
@@ -308,13 +328,15 @@ interface SceneEditorDialogProps {
   /** Saves new prose content back to the file at the link range. */
   onSaveProseContent?: (text: string) => Promise<void>;
   /** Generates prose for this scene and links the result. */
-  onWriteScene?: () => Promise<void>;
+  onWriteScene?: () => Promise<string | null | void>;
   /** Unlinks the scene from its current prose range. */
   onUnlinkProse?: (sceneId: SceneId) => Promise<void>;
   /** Open sourcebook dialog for an entry id. */
   onOpenSourcebookEntry?: (entryId: string) => void;
   openedViaTrigger?: boolean;
+  defaultShowDiff?: boolean;
   summaryEditorRef?: React.Ref<EditorView | null>;
+  linkedProseEditorRef?: React.Ref<EditorView | null>;
   onNavigateScene?: (sceneId: SceneId) => void;
   viewMode?: 'pinboard' | 'narrative' | 'chronological' | 'convergence-map';
 }
@@ -358,7 +380,9 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
   onUnlinkProse,
   onOpenSourcebookEntry,
   openedViaTrigger = false,
+  defaultShowDiff = false,
   summaryEditorRef,
+  linkedProseEditorRef,
   onNavigateScene,
   viewMode = 'narrative',
 }: SceneEditorDialogProps) => {
@@ -402,9 +426,14 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
   const baselineScenes = useStoryStore(
     (s: StoryStoreState): Scene[] => s.baselineState.scenes ?? []
   );
+  const baselineStoryState = useStoryStore(
+    (s: StoryStoreState): StoryState => s.baselineState
+  );
   const [summary, setSummary] = useState(scene.summary);
   const [beats, setBeats] = useState<SceneBeat[]>(scene.beats);
-  const [showDiff, setShowDiff] = useState(Boolean(openedViaTrigger));
+  const [showDiff, setShowDiff] = useState(
+    Boolean(openedViaTrigger || defaultShowDiff)
+  );
   const [activeTokens, setActiveTokens] = useState<CharToken[]>(
     scene.active_characters.map((name: string, i: number): CharToken => {
       const dt = scene.tag_personal_datetimes?.find(
@@ -766,17 +795,29 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isWritingScene, setIsWritingScene] = useState(false);
+  const [linkedProseBaselineAtOpen, setLinkedProseBaselineAtOpen] = useState<
+    string | undefined
+  >(undefined);
   const [pendingSourcebookEntryId, setPendingSourcebookEntryId] = useState<
     string | null
   >(null);
   const [hoveredEntry, setHoveredEntry] = useState<SourcebookEntry | null>(null);
   const [hoverPos, setHoverPos] = useState({ x: 0, y: 0 });
   const [availableImages, setAvailableImages] = useState<ProjectImage[]>([]);
+  const initializedSceneIdRef = useRef<SceneId | null>(null);
 
   const initialSnapshotRef = useRef<DirtySnapshot | null>(null);
 
   useEffect((): void => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      initializedSceneIdRef.current = null;
+      return;
+    }
+
+    if (initializedSceneIdRef.current === scene.id) {
+      return;
+    }
+    initializedSceneIdRef.current = scene.id;
 
     setSummary(scene.summary);
     setBeats(scene.beats);
@@ -821,17 +862,18 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
     setAgeEditValue('');
     setColorTag(scene.color_tag ?? null);
     setStatus(scene.status);
-    setProseLink(scene.prose_link ?? null);
-    setLocalProseText(
+    const initialLinkedProseText =
       scene.prose_link && getLinkedProseText
         ? (getLinkedProseText(scene.prose_link) ?? '')
-        : ''
-    );
+        : '';
+    setProseLink(scene.prose_link ?? null);
+    setLocalProseText(initialLinkedProseText);
+    setLinkedProseBaselineAtOpen(initialLinkedProseText);
     setProseDirty(false);
     setConfirmDelete(false);
     setPendingSourcebookEntryId(null);
     setHoveredEntry(null);
-    setShowDiff(Boolean(openedViaTrigger));
+    setShowDiff(Boolean(openedViaTrigger || defaultShowDiff));
 
     initialSnapshotRef.current = {
       summary: scene.summary,
@@ -847,7 +889,57 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
       sceneTimeValue: scene.scene_time?.temporal_zoned_datetime ?? null,
       timelineId: scene.timeline_id ?? 'main',
     };
-  }, [isOpen, scene, getLinkedProseText, openedViaTrigger, baselineScene]);
+  }, [
+    isOpen,
+    scene.id,
+    getLinkedProseText,
+    openedViaTrigger,
+    defaultShowDiff,
+    baselineScene,
+  ]);
+
+  useEffect((): (() => void) | void => {
+    if (!isWritingScene || !isOpen || !proseLink || !getLinkedProseText) return;
+
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const syncFromLinkedProse = (): void => {
+      if (cancelled) return;
+
+      const nextText = getLinkedProseText(proseLink) ?? '';
+      setLocalProseText((prev: string) => {
+        // Avoid wiping streamed/generated prose if a transient stale link
+        // resolves to an empty slice while write-scene updates are propagating.
+        if (nextText.length === 0 && prev.length > 0) {
+          return prev;
+        }
+        return prev === nextText ? prev : nextText;
+      });
+
+      timer = setTimeout(syncFromLinkedProse, 32);
+    };
+
+    syncFromLinkedProse();
+
+    return (): void => {
+      cancelled = true;
+      if (timer) {
+        clearTimeout(timer);
+      }
+    };
+  }, [isWritingScene, isOpen, proseLink, getLinkedProseText]);
+
+  useEffect((): void => {
+    if (!isOpen) return;
+    const nextLink = scene.prose_link ?? null;
+    setProseLink((prev: SceneProseLink | null): SceneProseLink | null => {
+      if (JSON.stringify(prev) === JSON.stringify(nextLink)) {
+        return prev;
+      }
+      return nextLink;
+    });
+  }, [isOpen, scene.prose_link]);
 
   useEffect((): void => {
     if (hoveredEntry && availableImages.length === 0) {
@@ -967,6 +1059,32 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
     ((baselineScene ? summary !== (baselineScene.summary ?? '') : summary.length > 0) ||
       hasFieldHint('summary', 'summary_patch'));
   const baselineProseLink = baselineScene?.prose_link ?? null;
+  const linkedProseBaseline = useMemo((): string | undefined => {
+    if (!showDiff) return undefined;
+    if (!baselineProseLink) {
+      return linkedProseBaselineAtOpen ?? (openedViaTrigger ? '' : undefined);
+    }
+    const scoped = getScopedBaselineContent(baselineStoryState, baselineProseLink);
+    if (scoped === null) {
+      return openedViaTrigger ? '' : undefined;
+    }
+    const docLen = scoped.length;
+    const from = Math.min(
+      Math.max(Number(baselineProseLink.start_offset ?? 0), 0),
+      docLen
+    );
+    const to = Math.min(
+      Math.max(Number(baselineProseLink.end_offset ?? from), from),
+      docLen
+    );
+    return scoped.slice(from, to);
+  }, [
+    baselineProseLink,
+    baselineStoryState,
+    linkedProseBaselineAtOpen,
+    openedViaTrigger,
+    showDiff,
+  ]);
   const baselineOutgoingCauseIds = baselineScene?.causes ?? [];
 
   const beatsChanged =
@@ -1015,7 +1133,8 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
     ((baselineScene ? status !== baselineStatus : false) || hasFieldHint('status'));
   const linkedProseChanged =
     showDiff &&
-    (JSON.stringify(proseLink ?? null) !== JSON.stringify(baselineProseLink ?? null) ||
+    (localProseText !== (linkedProseBaseline ?? localProseText) ||
+      JSON.stringify(proseLink ?? null) !== JSON.stringify(baselineProseLink ?? null) ||
       hasFieldHint('prose_link'));
   const causesChanged =
     showDiff &&
@@ -1345,9 +1464,25 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
 
   const handleWriteScene = async (): Promise<void> => {
     if (!onWriteScene) return;
+    setShowDiff(true);
     setIsWritingScene(true);
     try {
-      await onWriteScene();
+      const generatedText = await onWriteScene();
+      const generated = typeof generatedText === 'string' ? generatedText : '';
+      if (generated.length > 0) {
+        const chunkSize = 48;
+        for (let end = chunkSize; end < generated.length; end += chunkSize) {
+          setLocalProseText(generated.slice(0, end));
+          await new Promise<void>((resolve: () => void) => {
+            if (typeof window !== 'undefined' && window.requestAnimationFrame) {
+              window.requestAnimationFrame(() => resolve());
+            } else {
+              setTimeout(resolve, 8);
+            }
+          });
+        }
+        setLocalProseText(generated);
+      }
     } finally {
       setIsWritingScene(false);
     }
@@ -1381,8 +1516,9 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
 
   const onStatusChange = (e: React.ChangeEvent<HTMLSelectElement>): void =>
     setStatus(e.target.value as Scene['status']);
-  const onProseTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>): void => {
-    setLocalProseText(e.target.value);
+
+  const onProseTextChange = (value: string): void => {
+    setLocalProseText(value);
     setProseDirty(true);
   };
 
@@ -2101,13 +2237,21 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
             {proseLink ? (
               <>
                 {getLinkedProseText ? (
-                  <textarea
-                    className={`${inputCls} font-mono`}
-                    rows={6}
-                    value={localProseText}
-                    onChange={onProseTextChange}
-                    aria-label={t('Linked Prose')}
-                  />
+                  <div className="rounded-md border border-brand-gray-300 dark:border-brand-gray-700 overflow-hidden">
+                    <CodeMirrorEditor
+                      ref={linkedProseEditorRef}
+                      value={localProseText}
+                      onChange={onProseTextChange}
+                      className={`${inputCls} min-h-[9rem] font-mono`}
+                      placeholder={t('Linked Prose')}
+                      language={storyLanguage || 'en'}
+                      spellCheck
+                      viewMode="raw"
+                      showDiff={showDiff}
+                      baselineValue={linkedProseBaseline}
+                      searchHighlightRanges={[]}
+                    />
+                  </div>
                 ) : (
                   <p className={`text-xs ${tc.muted}`}>
                     {t('Open in split mode to edit linked prose')}

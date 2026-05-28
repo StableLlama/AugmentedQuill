@@ -140,6 +140,7 @@ const sceneWithNoLink: Scene = {
 // Tests
 // ---------------------------------------------------------------------------
 
+// eslint-disable-next-line max-lines-per-function
 describe('useSceneProseSync', () => {
   let editor: ReturnType<typeof makeEditorHandle>;
   beforeEach(() => {
@@ -602,5 +603,90 @@ describe('useSceneProseSync', () => {
     });
 
     expect(result.current.selectedSceneId).toBe(scene2Id);
+  });
+
+  it('keeps raw offsets when chapter content contains inline markers', () => {
+    const marker = (id: string, edge: 'start' | 'end'): string =>
+      `<!--scene:${id}:${edge}-->`;
+    const scene1Id = '101';
+    const scene2Id = '102';
+
+    const chapterWithMarkers: WritingUnit = {
+      ...chapterUnit,
+      content:
+        `${marker(scene1Id, 'start')}Alpha${marker(scene1Id, 'end')} ` +
+        `${marker(scene2Id, 'start')}Beta${marker(scene2Id, 'end')}`,
+    };
+
+    const scene1: Scene = {
+      ...sceneWithChapterLink,
+      id: scene1Id,
+      prose_link: {
+        scope_type: 'chapter',
+        chapter_id: 'ch1',
+        start_offset: chapterWithMarkers.content.indexOf('Alpha'),
+        end_offset: chapterWithMarkers.content.indexOf('Alpha') + 5,
+        content_hash: 'hash1',
+      },
+    };
+
+    const scene2: Scene = {
+      ...sceneWithChapterLink,
+      id: scene2Id,
+      prose_link: {
+        scope_type: 'chapter',
+        chapter_id: 'ch1',
+        start_offset: chapterWithMarkers.content.indexOf('Beta'),
+        end_offset: chapterWithMarkers.content.indexOf('Beta') + 4,
+        content_hash: 'hash2',
+      },
+    };
+    const betaStart = chapterWithMarkers.content.indexOf('Beta');
+
+    const ref = makeRef(editor.handle);
+    const { result } = renderHook(() =>
+      useSceneProseSync([scene1, scene2], chapterWithMarkers, ref)
+    );
+
+    act(() => {
+      result.current.handleSelectScene(scene2Id);
+    });
+
+    expect(editor.setProseHighlights).toHaveBeenLastCalledWith([
+      { sceneId: scene2Id, from: betaStart, to: betaStart + 4 },
+    ] as ProseHighlightRange[]);
+
+    act(() => {
+      editor.triggerCursorChange(0, betaStart + 1);
+    });
+
+    expect(result.current.selectedSceneId).toBe(scene2Id);
+  });
+
+  it('matches chapter prose links regardless of chapter ID string formatting', () => {
+    const ref = makeRef(editor.handle);
+    const scene = {
+      ...sceneWithChapterLink,
+      prose_link: {
+        ...sceneWithChapterLink.prose_link!,
+        chapter_id: '01',
+      },
+    };
+    const chapterWithNormalizedId: WritingUnit = {
+      ...chapterUnit,
+      id: '1',
+    };
+
+    const { result } = renderHook(() =>
+      useSceneProseSync([scene], chapterWithNormalizedId, ref)
+    );
+
+    act(() => {
+      result.current.handleSelectScene(scene.id);
+    });
+
+    expect(editor.setProseHighlights).toHaveBeenCalledWith([
+      { sceneId: scene.id, from: 5, to: 10 },
+    ] as ProseHighlightRange[]);
   });
 });

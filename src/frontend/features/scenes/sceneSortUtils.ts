@@ -107,9 +107,17 @@ export function buildChapterOrderMap(
 }
 
 export function normalizeChapterId(chapterId: unknown): string {
-  if (typeof chapterId === 'string') return chapterId.trim();
-  if (typeof chapterId === 'number' && Number.isFinite(chapterId))
+  if (typeof chapterId === 'number' && Number.isFinite(chapterId)) {
     return String(chapterId);
+  }
+  if (typeof chapterId === 'string') {
+    const trimmed = chapterId.trim();
+    if (trimmed.length === 0) return '';
+    if (/^\d+$/.test(trimmed)) {
+      return String(parseInt(trimmed, 10));
+    }
+    return trimmed;
+  }
   return '';
 }
 

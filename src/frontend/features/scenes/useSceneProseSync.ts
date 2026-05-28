@@ -23,6 +23,7 @@ import type { Scene, SceneId, SceneProseLink } from '../../types';
 import type { WritingUnit } from '../../types/domain';
 import type { EditorHandle } from '../editor/Editor';
 import type { ProseHighlightRange } from '../editor/CodeMirrorEditor';
+import { normalizeChapterId } from './sceneSortUtils';
 
 /** Returns true when two sets contain exactly the same SceneId members. */
 function setsEqual(a: ReadonlySet<SceneId>, b: ReadonlySet<SceneId>): boolean {
@@ -33,7 +34,7 @@ function setsEqual(a: ReadonlySet<SceneId>, b: ReadonlySet<SceneId>): boolean {
   return true;
 }
 
-const INLINE_SCENE_MARKER_REGEX = /<!--scene:\d+:(?:start|end)-->/;
+const INLINE_SCENE_MARKER_REGEX = /<!--scene:[^:>]+:(?:start|end)-->/;
 
 function sceneMarkerLength(sceneId: SceneId, edge: 'start' | 'end'): number {
   return `<!--scene:${String(sceneId)}:${edge}-->`.length;
@@ -42,14 +43,11 @@ function sceneMarkerLength(sceneId: SceneId, edge: 'start' | 'end'): number {
 function linkMatchesChapter(link: SceneProseLink, chapter: WritingUnit): boolean {
   return link.scope_type === 'story'
     ? chapter.scope === 'story'
-    : link.scope_type === 'chapter' && link.chapter_id === chapter.id;
+    : link.scope_type === 'chapter' &&
+        normalizeChapterId(link.chapter_id) === normalizeChapterId(chapter.id);
 }
 
 function shouldAdjustOffsets(chapter: WritingUnit, scenes: readonly Scene[]): boolean {
-  if (INLINE_SCENE_MARKER_REGEX.test(chapter.content)) {
-    return false;
-  }
-
   const scoped = scenes
     .map((scene: Scene) => ({ sceneId: scene.id, link: scene.prose_link }))
     .filter(
@@ -61,6 +59,12 @@ function shouldAdjustOffsets(chapter: WritingUnit, scenes: readonly Scene[]): bo
     );
 
   if (scoped.length === 0) {
+    return false;
+  }
+
+  if (INLINE_SCENE_MARKER_REGEX.test(chapter.content)) {
+    // Editor doc still contains marker tokens (they are visually hidden only),
+    // so offsets are already in the same coordinate space.
     return false;
   }
 

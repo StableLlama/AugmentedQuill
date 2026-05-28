@@ -16,7 +16,14 @@
 // @vitest-environment jsdom
 
 import React from 'react';
-import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
+import {
+  render,
+  screen,
+  fireEvent,
+  cleanup,
+  act,
+  waitFor,
+} from '@testing-library/react';
 import { I18nextProvider } from 'react-i18next';
 import type { EditorView } from '@codemirror/view';
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
@@ -87,6 +94,9 @@ vi.mock('../layout/ThemeContext', () => ({
 
 const wrap = (ui: React.ReactElement): ReturnType<typeof render> =>
   render(<I18nextProvider i18n={i18n}>{ui}</I18nextProvider>);
+
+const readLinkedProseEditorText = (): string =>
+  screen.getByRole('textbox', { name: /Linked Prose/i }).textContent ?? '';
 
 function makeScene(overrides: Record<string, unknown> = {}): Scene {
   const legacy = overrides as {
@@ -605,6 +615,7 @@ describe('SceneEditorDialog rendering', () => {
 // Save flow
 // ---------------------------------------------------------------------------
 
+// eslint-disable-next-line max-lines-per-function
 describe('SceneEditorDialog save flow', () => {
   it('calls onSave with updated values and then onClose', async () => {
     const onSave = vi.fn<SceneSaveHandler>(
@@ -678,6 +689,7 @@ describe('SceneEditorDialog save flow', () => {
 
   it('calls onSaveProseContent BEFORE onSave when prose text was edited', async () => {
     const callOrder: string[] = [];
+    const linkedProseEditorRef = React.createRef<EditorView | null>();
     const onSaveProseContent = vi.fn(async () => {
       callOrder.push('prose');
     });
@@ -706,12 +718,19 @@ describe('SceneEditorDialog save flow', () => {
         onDelete={NOOP_DELETE}
         getLinkedProseText={getLinkedProseText}
         onSaveProseContent={onSaveProseContent}
+        linkedProseEditorRef={linkedProseEditorRef}
       />
     );
 
-    // Find and edit the prose textarea (it shows the linked text)
-    const proseTextarea = screen.getByDisplayValue('hello');
-    fireEvent.change(proseTextarea, { target: { value: 'modified prose' } });
+    await act(async () => {
+      linkedProseEditorRef.current?.dispatch({
+        changes: {
+          from: 0,
+          to: linkedProseEditorRef.current.state.doc.length,
+          insert: 'modified prose',
+        },
+      });
+    });
 
     const saveBtn = screen.getByRole('button', { name: /Save/i });
     await act(async () => {
@@ -743,6 +762,353 @@ describe('SceneEditorDialog save flow', () => {
     });
 
     expect(onSaveProseContent).not.toHaveBeenCalled();
+  });
+
+  it('updates linked prose text while write-scene is still running', async () => {
+    vi.useFakeTimers();
+    try {
+      const proseLink: SceneProseLink = {
+        scope_type: 'story',
+        start_offset: 0,
+        end_offset: 5,
+        content_hash: 'abc',
+        chapter_id: null,
+        book_id: null,
+        is_stale: false,
+      };
+
+      let linkedProse = 'initial prose';
+      const getLinkedProseText = vi.fn(() => linkedProse);
+      const onWriteScene = vi.fn(async () => {
+        linkedProse = 'chunk 1';
+        await new Promise<void>((resolve: () => void) => setTimeout(resolve, 20));
+        linkedProse = 'chunk 2';
+        await new Promise<void>((resolve: () => void) => setTimeout(resolve, 20));
+        linkedProse = 'chunk 3';
+        await new Promise<void>((resolve: () => void) => setTimeout(resolve, 20));
+      });
+
+      wrap(
+        <SceneEditorDialog
+          scene={makeScene({ prose_link: proseLink })}
+          isOpen
+          onClose={NOOP_CLOSE}
+          onSave={NOOP_SAVE}
+          onDelete={NOOP_DELETE}
+          getLinkedProseText={getLinkedProseText}
+          onWriteScene={onWriteScene}
+        />
+      );
+
+      expect(readLinkedProseEditorText()).toContain('initial prose');
+
+      fireEvent.click(screen.getByRole('button', { name: /Write Scene/i }));
+
+      await act(async () => {
+        vi.advanceTimersByTime(25);
+        await Promise.resolve();
+      });
+
+      expect(readLinkedProseEditorText()).toContain('chunk 1');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('streams returned generated text when linked prose polling is unchanged', async () => {
+    vi.useFakeTimers();
+    try {
+      const proseLink: SceneProseLink = {
+        scope_type: 'story',
+        start_offset: 0,
+        end_offset: 5,
+        content_hash: 'abc',
+        chapter_id: null,
+        book_id: null,
+        is_stale: false,
+      };
+
+      const getLinkedProseText = vi.fn(() => 'initial prose');
+      const onWriteScene = vi.fn(
+        async () =>
+          'Generated prose returned from write-scene for progressive rendering.'
+      );
+
+      wrap(
+        <SceneEditorDialog
+          scene={makeScene({ prose_link: proseLink })}
+          isOpen
+          onClose={NOOP_CLOSE}
+          onSave={NOOP_SAVE}
+          onDelete={NOOP_DELETE}
+          getLinkedProseText={getLinkedProseText}
+          onWriteScene={onWriteScene}
+        />
+      );
+
+      expect(readLinkedProseEditorText()).toContain('initial prose');
+
+      fireEvent.click(screen.getByRole('button', { name: /Write Scene/i }));
+
+      await act(async () => {
+        await Promise.resolve();
+        vi.advanceTimersByTime(40);
+      });
+
+      expect(readLinkedProseEditorText()).toContain(
+        'Generated prose returned from write-scene for progressive rendering.'
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('enables diff view after write-scene without rendering a separate prose preview block', async () => {
+    const proseLink: SceneProseLink = {
+      scope_type: 'story',
+      start_offset: 0,
+      end_offset: 5,
+      content_hash: 'abc',
+      chapter_id: null,
+      book_id: null,
+      is_stale: false,
+    };
+
+    const getLinkedProseText = vi.fn(() => 'initial prose');
+    const onWriteScene = vi.fn(async () => 'updated prose from write scene');
+
+    wrap(
+      <SceneEditorDialog
+        scene={makeScene({ prose_link: proseLink })}
+        isOpen
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+        getLinkedProseText={getLinkedProseText}
+        onWriteScene={onWriteScene}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Write Scene/i }));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const diffButton = screen.getByRole('button', { name: /Toggle diff view/i });
+    expect(diffButton.getAttribute('aria-pressed')).toBe('true');
+    expect(screen.queryByLabelText('Linked Prose Diff Preview')).toBeNull();
+  });
+
+  it('shows inline linked prose diff markers in normal diff mode after write-scene', async () => {
+    const proseLink: SceneProseLink = {
+      scope_type: 'story',
+      start_offset: 0,
+      end_offset: 5,
+      content_hash: 'abc',
+      chapter_id: null,
+      book_id: null,
+      is_stale: false,
+    };
+
+    const getLinkedProseText = vi.fn(() => 'initial prose');
+    const onWriteScene = vi.fn(async () => 'updated prose from write scene');
+    wrap(
+      <SceneEditorDialog
+        scene={makeScene({ prose_link: proseLink })}
+        isOpen
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+        getLinkedProseText={getLinkedProseText}
+        onWriteScene={onWriteScene}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Write Scene/i }));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      const content = readLinkedProseEditorText();
+      expect(content).toContain('initial pros');
+      expect(content).toContain('updated prose from write scene');
+    });
+    expect(screen.queryByLabelText('Linked Prose Diff Preview')).toBeNull();
+  });
+
+  it('does not reset streamed prose on same-scene rerender after write', async () => {
+    const proseLink: SceneProseLink = {
+      scope_type: 'story',
+      start_offset: 0,
+      end_offset: 5,
+      content_hash: 'abc',
+      chapter_id: null,
+      book_id: null,
+      is_stale: false,
+    };
+
+    const getLinkedProseText = vi.fn(() => 'initial prose');
+    const onWriteScene = vi.fn(async () => 'updated prose');
+    const scene = makeScene({
+      id: 'scene-1',
+      prose_link: proseLink,
+      summary: 'before',
+    });
+    const { rerender } = wrap(
+      <SceneEditorDialog
+        scene={scene}
+        isOpen
+        defaultShowDiff={true}
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+        getLinkedProseText={getLinkedProseText}
+        onWriteScene={onWriteScene}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Write Scene/i }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(readLinkedProseEditorText()).toContain('updated prose');
+    expect(screen.queryByLabelText('Linked Prose Diff Preview')).toBeNull();
+
+    rerender(
+      <I18nextProvider i18n={i18n}>
+        <SceneEditorDialog
+          scene={makeScene({
+            id: 'scene-1',
+            prose_link: proseLink,
+            summary: 'after store patch',
+          })}
+          isOpen
+          onClose={NOOP_CLOSE}
+          onSave={NOOP_SAVE}
+          onDelete={NOOP_DELETE}
+          getLinkedProseText={getLinkedProseText}
+          onWriteScene={onWriteScene}
+        />
+      </I18nextProvider>
+    );
+
+    expect(readLinkedProseEditorText()).toContain('updated prose');
+    expect(screen.queryByLabelText('Linked Prose Diff Preview')).toBeNull();
+  });
+
+  it('does not clear streamed prose when linked prose polling later returns empty', async () => {
+    vi.useFakeTimers();
+    try {
+      const proseLink: SceneProseLink = {
+        scope_type: 'story',
+        start_offset: 0,
+        end_offset: 5,
+        content_hash: 'abc',
+        chapter_id: null,
+        book_id: null,
+        is_stale: false,
+      };
+
+      let linkedProse = 'initial prose';
+      const getLinkedProseText = vi.fn(() => linkedProse);
+      const onWriteScene = vi.fn(async () => {
+        linkedProse = 'freshly generated prose';
+        await new Promise<void>((resolve: () => void) => setTimeout(resolve, 20));
+        linkedProse = '';
+        await new Promise<void>((resolve: () => void) => setTimeout(resolve, 40));
+      });
+
+      wrap(
+        <SceneEditorDialog
+          scene={makeScene({ prose_link: proseLink })}
+          isOpen
+          onClose={NOOP_CLOSE}
+          onSave={NOOP_SAVE}
+          onDelete={NOOP_DELETE}
+          getLinkedProseText={getLinkedProseText}
+          onWriteScene={onWriteScene}
+        />
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: /Write Scene/i }));
+
+      await act(async () => {
+        vi.advanceTimersByTime(80);
+        await Promise.resolve();
+      });
+
+      expect(readLinkedProseEditorText()).toContain('freshly generated prose');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps diff mode active after closing and reopening the same scene dialog', async () => {
+    const proseLink: SceneProseLink = {
+      scope_type: 'story',
+      start_offset: 0,
+      end_offset: 5,
+      content_hash: 'abc',
+      chapter_id: null,
+      book_id: null,
+      is_stale: false,
+    };
+
+    const getLinkedProseText = vi.fn(() => 'initial prose');
+    const onWriteScene = vi.fn(async () => 'updated prose');
+    const scene = makeScene({
+      id: 'scene-1',
+      prose_link: proseLink,
+      summary: 'before',
+    });
+    const { unmount } = wrap(
+      <SceneEditorDialog
+        scene={scene}
+        isOpen
+        defaultShowDiff={true}
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+        getLinkedProseText={getLinkedProseText}
+        onWriteScene={onWriteScene}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Write Scene/i }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(
+      screen
+        .getByRole('button', { name: /Toggle diff view/i })
+        .getAttribute('aria-pressed')
+    ).toBe('true');
+
+    unmount();
+
+    wrap(
+      <SceneEditorDialog
+        scene={scene}
+        isOpen
+        defaultShowDiff={true}
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+        getLinkedProseText={getLinkedProseText}
+        onWriteScene={onWriteScene}
+      />
+    );
+
+    expect(
+      screen
+        .getByRole('button', { name: /Toggle diff view/i })
+        .getAttribute('aria-pressed')
+    ).toBe('true');
   });
 });
 
@@ -850,6 +1216,7 @@ describe('SceneEditorDialog state reset', () => {
 
   it('resets proseDirty flag when dialog re-opens for new scene', async () => {
     const onSaveProseContent = vi.fn(async () => undefined);
+    const linkedProseEditorRef = React.createRef<EditorView | null>();
     const proseLink: SceneProseLink = {
       scope_type: 'story',
       start_offset: 0,
@@ -870,12 +1237,18 @@ describe('SceneEditorDialog state reset', () => {
         onDelete={NOOP_DELETE}
         getLinkedProseText={getLinkedProseText}
         onSaveProseContent={onSaveProseContent}
+        linkedProseEditorRef={linkedProseEditorRef}
       />
     );
 
-    // Edit prose → makes it dirty
-    fireEvent.change(screen.getByDisplayValue('hello'), {
-      target: { value: 'edited' },
+    await act(async () => {
+      linkedProseEditorRef.current?.dispatch({
+        changes: {
+          from: 0,
+          to: linkedProseEditorRef.current.state.doc.length,
+          insert: 'edited',
+        },
+      });
     });
 
     // Re-open with a different scene (same isOpen=true but scene changed)
@@ -889,6 +1262,7 @@ describe('SceneEditorDialog state reset', () => {
           onDelete={NOOP_DELETE}
           getLinkedProseText={getLinkedProseText}
           onSaveProseContent={onSaveProseContent}
+          linkedProseEditorRef={linkedProseEditorRef}
         />
       </I18nextProvider>
     );

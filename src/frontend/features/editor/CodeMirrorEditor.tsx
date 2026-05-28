@@ -266,7 +266,7 @@ const mdHighlightStyle = HighlightStyle.define([
 ]);
 
 const sceneMarkerHideDecorator = new MatchDecorator({
-  regexp: /<!--scene:\d+:(?:start|end)-->/g,
+  regexp: /<!--scene:[^:>]+:(?:start|end)-->/g,
   decoration: Decoration.replace({}),
 });
 
@@ -1046,26 +1046,29 @@ export const CodeMirrorEditor = React.forwardRef<
       lastEmittedRef.current = value;
     }, [value]);
 
+    useEffect((): (() => void) | void => {
+      const container = containerRef.current;
+      if (!container) return;
+
+      const handleContainerDragStart = (e: DragEvent): void => {
+        const view = viewRef.current;
+        if (view) {
+          onDragStartRef.current?.(e, view);
+        }
+      };
+
+      container.addEventListener('dragstart', handleContainerDragStart);
+      return () => {
+        container.removeEventListener('dragstart', handleContainerDragStart);
+      };
+    }, []);
+
     // Intercept dragstart as it bubbles up from CM's contentDOM.
     // By the time the event reaches this wrapper div, CM6's own dragstart
     // handler on contentDOM has already run and set
     // `effectAllowed = "copyMove"`.  We can override that here because we
     // are still within the same dragstart event dispatch cycle.
-    const handleContainerDragStart = (e: React.DragEvent): void => {
-      const view = viewRef.current;
-      if (view) {
-        onDragStartRef.current?.(e.nativeEvent, view);
-      }
-    };
-
-    return (
-      <div
-        ref={containerRef}
-        className={className}
-        style={style}
-        onDragStart={handleContainerDragStart}
-      />
-    );
+    return <div ref={containerRef} className={className} style={style} />;
   }
 );
 

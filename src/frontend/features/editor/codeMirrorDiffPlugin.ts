@@ -36,7 +36,7 @@ const diffMark = Decoration.mark({
   class: 'cm-diff-inserted',
 });
 
-const INLINE_SCENE_MARKER_REGEX = /<!--scene:\d+:(?:start|end)-->/g;
+const INLINE_SCENE_MARKER_REGEX = /<!--scene:[^:>]+:(?:start|end)-->/g;
 
 type DeletedWsKind = 'space' | 'tab' | 'newline';
 

@@ -29,12 +29,16 @@ import { I18nextProvider } from 'react-i18next';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import i18n from '../app/i18n';
 import { ScenesPanelContainer } from './ScenesPanelContainer';
-import { normalizeChapterId } from './sceneSortUtils';
 import { resetUIStore, useUIStore } from '../../stores/uiStore';
 import type { Scene, SceneProseLink, SceneId } from '../../types';
 import type { WritingUnit, Chapter, Book } from '../../types/domain';
 import type { EditorHandle } from '../editor/Editor';
 import type { ProseBoundaryCallback } from '../editor/CodeMirrorEditor';
+
+var patchSceneMock: ReturnType<typeof vi.fn>;
+var recordHistoryEntryMock: ReturnType<typeof vi.fn>;
+var setStoryMock: ReturnType<typeof vi.fn>;
+var useStoryStoreMock: ReturnType<typeof vi.fn>;
 
 type SceneLaneCaptureProps = {
   initialVisibleLaneEntryIds: string[];
@@ -60,8 +64,6 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 const {
-  patchSceneMock,
-  recordHistoryEntryMock,
   useScenesMock,
   projectTypeState,
   chaptersMetaMock,
@@ -70,9 +72,11 @@ const {
   captured,
   proseSyncState,
   useSceneProseSyncMock,
+  storyState,
 } = vi.hoisted(() => {
-  const patchSceneMock = vi.fn();
-  const recordHistoryEntryMock = vi.fn();
+  patchSceneMock = vi.fn();
+  setStoryMock = vi.fn();
+  recordHistoryEntryMock = vi.fn();
   const useScenesMock = vi.fn(() => [] as Scene[]);
   const projectTypeState = {
     value: 'novel' as 'short-story' | 'novel' | 'series',
@@ -113,10 +117,41 @@ const {
     handleMultipleSelectScenes: vi.fn(),
   };
   const useSceneProseSyncMock = vi.fn(() => proseSyncState);
+  const storyState: {
+    sourcebook: unknown[];
+    draft?: { content: string };
+    chapters: Array<{
+      id: string;
+      scope: 'chapter';
+      title: string;
+      summary: string;
+      content: string;
+    }>;
+  } = {
+    sourcebook: [] as unknown[],
+    draft: undefined,
+    chapters: [],
+  };
+
+  useStoryStoreMock = vi.fn(
+    (
+      selector: (state: {
+        patchScene: unknown;
+        setStory: unknown;
+        story: { sourcebook: unknown[] };
+      }) => unknown
+    ) =>
+      selector({
+        patchScene: patchSceneMock,
+        setStory: setStoryMock,
+        story: storyState,
+      })
+  );
 
   return {
     patchSceneMock,
     recordHistoryEntryMock,
+    setStoryMock,
     useScenesMock,
     projectTypeState,
     chaptersMetaMock,
@@ -125,12 +160,29 @@ const {
     captured,
     proseSyncState,
     useSceneProseSyncMock,
+    storyState,
+    useStoryStoreMock,
   };
 });
 
 vi.mock('../../stores/storyStore', () => ({
   useScenes: () => useScenesMock(),
-  useStoryStore: () => patchSceneMock,
+  useStoryStore: (
+    selector: (state: {
+      patchScene: unknown;
+      setStory: unknown;
+      story: { sourcebook: unknown[] };
+    }) => unknown
+  ) =>
+    (
+      useStoryStoreMock as unknown as (
+        innerSelector: (state: {
+          patchScene: unknown;
+          setStory: unknown;
+          story: { sourcebook: unknown[] };
+        }) => unknown
+      ) => unknown
+    )(selector),
   useStoryMeta: () => ({ projectType: projectTypeState.value }),
   useStoryChaptersListMeta: () => chaptersMetaMock(),
   useStoryBooks: () => booksMetaMock(),
@@ -206,6 +258,7 @@ interface PinboardHandlers {
 }
 
 interface DialogHandlers {
+  onClose: () => void;
   onSave: (updates: Partial<Omit<Scene, 'id'>>) => Promise<void>;
   onDelete: () => Promise<void>;
   onSaveProseContent: ((text: string) => Promise<void>) | undefined;
@@ -310,6 +363,45 @@ function makeEditorRef(docText: string = 'Hello world, some prose here.'): {
   return { ref, view, dispatch, doc };
 }
 
+function makeMutableEditorRef(initialText: string = ''): {
+  ref: React.RefObject<EditorHandle | null>;
+  getText: () => string;
+} {
+  let currentText = initialText;
+  const doc = {
+    get length(): number {
+      return currentText.length;
+    },
+    sliceString: (from: number, to: number): string => currentText.slice(from, to),
+  };
+  const view = {
+    state: { doc },
+    dispatch: vi.fn(
+      (spec: { changes?: { from: number; to: number; insert: string } }) => {
+        const changes = spec?.changes;
+        if (!changes) return;
+        const from = Math.max(0, Math.min(changes.from, currentText.length));
+        const to = Math.max(from, Math.min(changes.to, currentText.length));
+        currentText = `${currentText.slice(0, from)}${changes.insert}${currentText.slice(to)}`;
+      }
+    ),
+  };
+  const ref: React.RefObject<EditorHandle | null> = {
+    current: {
+      setOnCursorChange: vi.fn(),
+      setProseHighlights: vi.fn(),
+      clearProseHighlight: vi.fn(),
+      setOnProseBoundaryChange: vi.fn(),
+      getEditorView: vi.fn(() => view),
+    },
+  };
+
+  return {
+    ref,
+    getText: (): string => currentText,
+  };
+}
+
 /**
  * Like makeEditorRef, but the setOnProseBoundaryChange spy actually captures
  * the callback registered by the container's useEffect so tests can invoke it
@@ -384,6 +476,9 @@ afterEach(() => {
   proseSyncState.selectedSceneId = null;
   vi.clearAllMocks();
   useScenesMock.mockReturnValue([]);
+  storyState.sourcebook = [];
+  storyState.draft = undefined;
+  storyState.chapters = [];
   recordHistoryEntryMock.mockReset();
   resetUIStore();
 });
@@ -739,6 +834,7 @@ describe('handleSaveProseContent', () => {
 // handleWriteScene (via dialog's onWriteScene)
 // ---------------------------------------------------------------------------
 
+// eslint-disable-next-line max-lines-per-function
 describe('handleWriteScene', () => {
   it('calls writeScene API and patches returned scenes', async () => {
     const scene = makeScene({ id: 'write-1', prose_link: null });
@@ -770,6 +866,452 @@ describe('handleWriteScene', () => {
     });
     expect(patchSceneMock).toHaveBeenCalledWith(updatedScene);
     expect(patchSceneMock).toHaveBeenCalledWith(sideEffectScene);
+  });
+
+  it('updates editor content when write-scene assignment IDs differ by type', async () => {
+    const scene = makeScene({
+      id: '1',
+      prose_link: makeProseLink({
+        scope_type: 'chapter',
+        chapter_id: 'ch-1',
+        start_offset: 0,
+        end_offset: 14,
+      }),
+    });
+    const updatedScene = makeScene({ id: '1' });
+    const { ref, dispatch } = makeEditorRef('Existing linked text.');
+
+    apiMock.scenes.writeScene.mockResolvedValueOnce({
+      scene: updatedScene,
+      generated_text: 'Refreshed scene prose',
+      assignments: [{ scene_id: 1, start_offset: 0, end_offset: 14 }],
+      scenes: [],
+    });
+
+    await renderAndOpenDialog([scene], { currentChapter: CHAPTER, editorRef: ref });
+    expect(dlg().onWriteScene).toBeDefined();
+
+    await act(async () => {
+      await dlg().onWriteScene!();
+    });
+
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        changes: { from: 0, to: 14, insert: 'Refreshed scene prose' },
+      })
+    );
+  });
+
+  it('uses updated scene prose link when write-scene assignments are not returned', async () => {
+    const scene = makeScene({
+      id: '1',
+      prose_link: makeProseLink({
+        scope_type: 'chapter',
+        chapter_id: 'ch-1',
+        start_offset: 0,
+        end_offset: 5,
+      }),
+    });
+    const updatedScene = makeScene({
+      id: '1',
+      prose_link: makeProseLink({
+        scope_type: 'chapter',
+        chapter_id: 'ch-1',
+        start_offset: 0,
+        end_offset: 10,
+      }),
+    });
+    const { ref, dispatch } = makeEditorRef('Existing linked text.');
+
+    apiMock.scenes.writeScene.mockResolvedValueOnce({
+      scene: updatedScene,
+      generated_text: 'Refreshed scene prose',
+      assignments: [],
+      scenes: [],
+    });
+
+    await renderAndOpenDialog([scene], { currentChapter: CHAPTER, editorRef: ref });
+    expect(dlg().onWriteScene).toBeDefined();
+
+    await act(async () => {
+      await dlg().onWriteScene!();
+    });
+
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        changes: { from: 0, to: 10, insert: 'Refreshed scene prose' },
+      })
+    );
+  });
+
+  it('syncs updated chapter content back into story state after writeScene', async () => {
+    const scene = makeScene({
+      id: '1',
+      prose_link: makeProseLink({
+        scope_type: 'chapter',
+        chapter_id: 'ch-1',
+        start_offset: 0,
+        end_offset: 5,
+      }),
+    });
+    const updatedScene = makeScene({
+      id: '1',
+      prose_link: makeProseLink({
+        scope_type: 'chapter',
+        chapter_id: 'ch-1',
+        start_offset: 0,
+        end_offset: 10,
+      }),
+    });
+    const { ref, dispatch } = makeEditorRef('Existing linked text.');
+
+    apiMock.scenes.writeScene.mockResolvedValueOnce({
+      scene: updatedScene,
+      generated_text: 'Refreshed scene prose',
+      assignments: [],
+      scenes: [],
+    });
+
+    await renderAndOpenDialog([scene], {
+      currentChapter: CHAPTER,
+      editorRef: ref,
+    });
+
+    await act(async () => {
+      await dlg().onWriteScene!();
+    });
+
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        changes: { from: 0, to: 10, insert: 'Refreshed scene prose' },
+      })
+    );
+    expect(setStoryMock).toHaveBeenCalled();
+  });
+
+  it('replaces existing prose span before progressive chunk inserts', async () => {
+    const scene = makeScene({
+      id: '1',
+      prose_link: makeProseLink({
+        scope_type: 'chapter',
+        chapter_id: 'ch-1',
+        start_offset: 0,
+        end_offset: 14,
+      }),
+    });
+    const updatedScene = makeScene({ id: '1' });
+    const { ref, dispatch } = makeEditorRef('Existing linked text.');
+    const longGenerated =
+      'Refreshed scene prose with enough length to trigger chunked streaming updates.';
+
+    apiMock.scenes.writeScene.mockResolvedValueOnce({
+      scene: updatedScene,
+      generated_text: longGenerated,
+      assignments: [{ scene_id: 1, start_offset: 0, end_offset: 14 }],
+      scenes: [],
+    });
+
+    await renderAndOpenDialog([scene], { currentChapter: CHAPTER, editorRef: ref });
+
+    await act(async () => {
+      await dlg().onWriteScene!();
+    });
+
+    expect(dispatch).toHaveBeenCalled();
+    expect(dispatch.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        changes: expect.objectContaining({ from: 0, to: 14 }),
+      })
+    );
+  });
+
+  it('prefers prose-link raw offsets over assignment offsets when chapter content includes markers', async () => {
+    const markerStart = '<!--scene:1:start-->';
+    const markerEnd = '<!--scene:1:end-->';
+    const docText = `${markerStart}OLD${markerEnd}`;
+    const proseStart = docText.indexOf('OLD');
+    const proseEnd = proseStart + 3;
+    const scene = makeScene({
+      id: '1',
+      prose_link: makeProseLink({
+        scope_type: 'chapter',
+        chapter_id: 'ch-1',
+        start_offset: proseStart,
+        end_offset: proseEnd,
+      }),
+    });
+    const updatedScene = makeScene({
+      id: '1',
+      prose_link: makeProseLink({
+        scope_type: 'chapter',
+        chapter_id: 'ch-1',
+        start_offset: proseStart,
+        end_offset: proseEnd,
+      }),
+    });
+    const { ref, dispatch } = makeEditorRef(docText);
+    const chapterWithMarkers = {
+      ...CHAPTER,
+      content: docText,
+    } as WritingUnit;
+
+    apiMock.scenes.writeScene.mockResolvedValueOnce({
+      scene: updatedScene,
+      generated_text:
+        'Generated prose that is long enough to force chunked progressive replacement.',
+      assignments: [{ scene_id: 1, start_offset: 0, end_offset: 3 }],
+      scenes: [],
+    });
+
+    await renderAndOpenDialog([scene], {
+      currentChapter: chapterWithMarkers,
+      editorRef: ref,
+    });
+
+    await act(async () => {
+      await dlg().onWriteScene!();
+    });
+
+    expect(dispatch).toHaveBeenCalled();
+    expect(dispatch.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        changes: expect.objectContaining({
+          from: proseStart,
+          to: proseEnd,
+        }),
+      })
+    );
+  });
+
+  it('prefers prose-link offsets when editor doc has markers but chapter metadata text does not', async () => {
+    const markerStart = '<!--scene:1:start-->';
+    const markerEnd = '<!--scene:1:end-->';
+    const docText = `${markerStart}OLD${markerEnd}`;
+    const proseStart = docText.indexOf('OLD');
+    const proseEnd = proseStart + 3;
+    const scene = makeScene({
+      id: '1',
+      prose_link: makeProseLink({
+        scope_type: 'chapter',
+        chapter_id: 'ch-1',
+        start_offset: proseStart,
+        end_offset: proseEnd,
+      }),
+    });
+    const updatedScene = makeScene({
+      id: '1',
+      prose_link: makeProseLink({
+        scope_type: 'chapter',
+        chapter_id: 'ch-1',
+        start_offset: proseStart,
+        end_offset: proseEnd,
+      }),
+    });
+    const { ref, dispatch } = makeEditorRef(docText);
+    const chapterWithoutMarkers = {
+      ...CHAPTER,
+      content: 'OLD',
+    } as WritingUnit;
+
+    apiMock.scenes.writeScene.mockResolvedValueOnce({
+      scene: updatedScene,
+      generated_text:
+        'Generated prose that is long enough to force chunked progressive replacement.',
+      assignments: [{ scene_id: 1, start_offset: 0, end_offset: 3 }],
+      scenes: [],
+    });
+
+    await renderAndOpenDialog([scene], {
+      currentChapter: chapterWithoutMarkers,
+      editorRef: ref,
+    });
+
+    await act(async () => {
+      await dlg().onWriteScene!();
+    });
+
+    expect(dispatch).toHaveBeenCalled();
+    expect(dispatch.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        changes: expect.objectContaining({
+          from: proseStart,
+          to: proseEnd,
+        }),
+      })
+    );
+  });
+
+  it('snaps replacement range outside marker tokens when fallback offsets point into a marker', async () => {
+    const endMarker = '<!--scene:6:end-->';
+    const docText = `${endMarker} tail prose content`;
+    const markerStart = docText.indexOf(endMarker);
+    const markerEnd = markerStart + endMarker.length;
+    const scene = makeScene({
+      id: '22',
+      prose_link: makeProseLink({
+        scope_type: 'chapter',
+        chapter_id: 'ch-1',
+        start_offset: markerStart + 6,
+        end_offset: docText.length,
+      }),
+    });
+    const updatedScene = makeScene({
+      id: '22',
+      prose_link: makeProseLink({
+        scope_type: 'chapter',
+        chapter_id: 'ch-1',
+        start_offset: markerStart + 6,
+        end_offset: docText.length,
+      }),
+    });
+    const { ref, dispatch } = makeEditorRef(docText);
+
+    apiMock.scenes.writeScene.mockResolvedValueOnce({
+      scene: updatedScene,
+      generated_text:
+        'Generated prose that is long enough to force chunked progressive replacement.',
+      assignments: [],
+      scenes: [],
+    });
+
+    await renderAndOpenDialog([scene], {
+      currentChapter: { ...CHAPTER, content: 'tail prose content' } as WritingUnit,
+      editorRef: ref,
+    });
+
+    await act(async () => {
+      await dlg().onWriteScene!();
+    });
+
+    expect(dispatch).toHaveBeenCalled();
+    expect(dispatch.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        changes: expect.objectContaining({
+          from: markerEnd,
+        }),
+      })
+    );
+  });
+
+  it('updates linked chapter content in story state when writing a scene linked to a different chapter', async () => {
+    const scene = makeScene({
+      id: '1',
+      prose_link: makeProseLink({
+        scope_type: 'chapter',
+        chapter_id: 'ch-2',
+        start_offset: 7,
+        end_offset: 10,
+      }),
+    });
+    const updatedScene = makeScene({
+      id: '1',
+      prose_link: makeProseLink({
+        scope_type: 'chapter',
+        chapter_id: 'ch-2',
+        start_offset: 7,
+        end_offset: 10,
+      }),
+    });
+    storyState.chapters = [
+      {
+        id: 'ch-2',
+        scope: 'chapter',
+        title: 'Chapter 2',
+        summary: '',
+        content: 'Prefix OLD suffix',
+      },
+    ];
+    setStoryMock.mockImplementation((updater: (prev: unknown) => unknown) => {
+      const next = updater(storyState);
+      Object.assign(storyState, next as object);
+    });
+
+    apiMock.scenes.writeScene.mockResolvedValueOnce({
+      scene: updatedScene,
+      generated_text: 'NEW',
+      assignments: [],
+      scenes: [],
+    });
+
+    const { ref, dispatch } = makeEditorRef('Current chapter text');
+    await renderAndOpenDialog([scene], { currentChapter: CHAPTER, editorRef: ref });
+
+    await act(async () => {
+      await dlg().onWriteScene!();
+    });
+
+    expect(apiMock.scenes.writeScene).toHaveBeenCalledWith('1', {
+      scope_type: 'chapter',
+      chapter_id: 'ch-2',
+      book_id: null,
+      include_following_scenes: 1,
+      detect_boundaries: true,
+    });
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(storyState.chapters[0].content).toBe('Prefix NEW suffix');
+    expect(dlg().getLinkedProseText!(updatedScene.prose_link as SceneProseLink)).toBe(
+      'NEW'
+    );
+  });
+
+  it('keeps generated linked prose visible after closing and reopening the scene dialog', async () => {
+    const sceneId = '1';
+    const generatedText = 'Gamma';
+    const markerStartLen = `<!--scene:${sceneId}:start-->`.length;
+    const separatorLen = 1;
+
+    let scenesState: Scene[] = [makeScene({ id: sceneId, prose_link: null })];
+    useScenesMock.mockImplementation(() => scenesState);
+    patchSceneMock.mockImplementationOnce((updated: Scene) => {
+      scenesState = scenesState.map((scene: Scene) =>
+        scene.id === updated.id ? updated : scene
+      );
+    });
+
+    const updatedScene = makeScene({
+      id: sceneId,
+      prose_link: makeProseLink({
+        scope_type: 'chapter',
+        chapter_id: 'ch-1',
+        start_offset: separatorLen + markerStartLen,
+        end_offset: separatorLen + markerStartLen + generatedText.length,
+      }),
+    });
+    apiMock.scenes.writeScene.mockResolvedValueOnce({
+      scene: updatedScene,
+      generated_text: generatedText,
+      assignments: [],
+      scenes: [],
+    });
+
+    const { ref, getText } = makeMutableEditorRef('');
+    wrap(
+      <ScenesPanelContainer
+        currentChapter={{ ...CHAPTER, content: '' } as WritingUnit}
+        editorRef={ref}
+      />
+    );
+
+    await act(async () => {
+      pb().onEditScene(sceneId);
+    });
+
+    await act(async () => {
+      await dlg().onWriteScene!();
+    });
+
+    expect(getText().endsWith(generatedText)).toBe(true);
+
+    await act(async () => {
+      dlg().onClose();
+    });
+
+    await act(async () => {
+      pb().onEditScene(sceneId);
+    });
+
+    const reopenedLink = scenesState[0].prose_link as SceneProseLink;
+    expect(dlg().getLinkedProseText!(reopenedLink)).toBe(generatedText);
   });
 });
 
@@ -835,6 +1377,48 @@ describe('getLinkedProseText', () => {
     expect(dlg().getLinkedProseText!(link)).toBeNull();
   });
 
+  it('returns linked chapter prose from story state when a different chapter is currently open', async () => {
+    const scene = makeScene({ id: 's1' });
+    const { ref } = makeEditorRef('Current chapter text only.');
+    const linkedChapterContent = 'Prefix target prose suffix';
+    storyState.chapters = [
+      {
+        id: 'ch-2',
+        scope: 'chapter',
+        title: 'Chapter 2',
+        summary: '',
+        content: linkedChapterContent,
+      },
+    ];
+
+    await renderAndOpenDialog([scene], { editorRef: ref, currentChapter: CHAPTER });
+
+    const link: SceneProseLink = makeProseLink({
+      scope_type: 'chapter',
+      chapter_id: 'ch-2',
+      start_offset: 7,
+      end_offset: 19,
+    });
+
+    expect(dlg().getLinkedProseText!(link)).toBe('target prose');
+  });
+
+  it('returns story-scoped linked prose from story draft even when a chapter is currently open', async () => {
+    const scene = makeScene({ id: 's1' });
+    const { ref } = makeEditorRef('Current chapter text only.');
+    storyState.draft = { content: 'Lead generated prose trail' };
+
+    await renderAndOpenDialog([scene], { editorRef: ref, currentChapter: CHAPTER });
+
+    const link: SceneProseLink = makeProseLink({
+      scope_type: 'story',
+      start_offset: 5,
+      end_offset: 20,
+    });
+
+    expect(dlg().getLinkedProseText!(link)).toBe('generated prose');
+  });
+
   it('returns null when currentChapter is null', async () => {
     const { ref } = makeEditorRef('Content.');
     const scene = makeScene({ id: 's1' });
@@ -872,6 +1456,42 @@ describe('getLinkedProseText', () => {
     await renderAndOpenDialog([scene]);
 
     expect(dlg().getLinkedProseText).toBeUndefined();
+  });
+
+  it('maps marker-inclusive prose offsets to visible editor offsets when chapter text is marker-free', async () => {
+    const visibleDoc = 'Alpha Beta';
+    const { ref } = makeEditorRef(visibleDoc);
+
+    const s1Start = '<!--scene:1:start-->'.length;
+    const s1End = '<!--scene:1:end-->'.length;
+    const s2Start = '<!--scene:2:start-->'.length;
+
+    const scene1 = makeScene({
+      id: '1',
+      prose_link: makeProseLink({
+        scope_type: 'chapter',
+        chapter_id: 'ch-1',
+        start_offset: s1Start,
+        end_offset: s1Start + 5,
+      }),
+    });
+    const scene2StartOffset = s1Start + 5 + s1End + 1 + s2Start;
+    const scene2 = makeScene({
+      id: '2',
+      prose_link: makeProseLink({
+        scope_type: 'chapter',
+        chapter_id: 'ch-1',
+        start_offset: scene2StartOffset,
+        end_offset: scene2StartOffset + 4,
+      }),
+    });
+
+    await renderAndOpenDialog([scene1, scene2], {
+      editorRef: ref,
+      currentChapter: { ...CHAPTER, content: visibleDoc },
+    });
+
+    expect(dlg().getLinkedProseText!(scene2.prose_link as SceneProseLink)).toBe('Beta');
   });
 });
 
