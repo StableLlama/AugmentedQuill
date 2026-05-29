@@ -398,6 +398,7 @@ async def write_scene_and_link(
         story=story,
         scope=scope_type,
         chap_id=chapter_index,
+        chap_book_id=book_id,
         target_scene_id=scene_id,
         include_following_scenes=max(0, request.include_following_scenes),
     )

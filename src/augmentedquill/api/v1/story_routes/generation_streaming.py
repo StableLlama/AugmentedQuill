@@ -609,17 +609,22 @@ async def api_story_sourcebook_relevance(
 
             _, path, pos = get_chapter_locator(chap_id, active=project_dir)
         current_text = (payload or {}).get("current_text")
+        scope_text: str | None = None
         if not isinstance(current_text, str):
             current_text = (
                 read_story_content(active=project_dir)
                 if scope == "story"
                 else read_text_or_raise(path)
             )
+            scope_text = current_text
+        elif scope == "chapter" and path is not None:
+            scope_text = read_text_or_raise(path)
         scene_context = get_scene_context_for_scope(
             story=story,
             scope=scope,
             chap_id=(payload or {}).get("chap_id") if scope == "chapter" else None,
             current_text=current_text,
+            scope_text=scope_text,
             include_all_scenes=False,
         )
         return {"relevant": scene_context.get("sourcebook_ids", [])}

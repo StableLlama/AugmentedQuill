@@ -42,6 +42,7 @@ from augmentedquill.services.story.story_api_state_ops import (
     get_normalized_chapters,
     read_text_or_raise,
 )
+from augmentedquill.services.scenes.scene_markers import remove_markers
 
 
 def _resolve_story_draft_path(active: Any, story: dict) -> Any:
@@ -104,10 +105,48 @@ def sanitize_prompt(prompt: str) -> str:
                 continue
         filtered.append(line)
 
+    def _heading_level(text: str) -> int | None:
+        match = re.match(r"^\s{0,3}(#{1,6})\s+\S", text)
+        if not match:
+            return None
+        return len(match.group(1))
+
+    pruned: list[str] = []
+    index = 0
+    while index < len(filtered):
+        line = filtered[index]
+        level = _heading_level(line)
+        if level is not None and level >= 2:
+            lookahead = index + 1
+            while lookahead < len(filtered) and not filtered[lookahead].strip():
+                lookahead += 1
+
+            drop_heading = False
+            if lookahead >= len(filtered):
+                drop_heading = True
+            else:
+                next_line = filtered[lookahead]
+                next_level = _heading_level(next_line)
+                if next_line.strip() == "---":
+                    drop_heading = True
+                elif next_level is not None and next_level <= level:
+                    drop_heading = True
+                elif next_line.strip().lower().startswith("task:"):
+                    drop_heading = True
+
+            if drop_heading:
+                index += 1
+                while index < len(filtered) and not filtered[index].strip():
+                    index += 1
+                continue
+
+        pruned.append(line)
+        index += 1
+
     # collapse consecutive blank lines
     cleaned: list[str] = []
     prev_blank = False
-    for line in filtered:
+    for line in pruned:
         if not line.strip():
             if not prev_blank:
                 cleaned.append("")
@@ -186,14 +225,19 @@ def _iter_story_scenes(story: dict) -> list[dict[str, Any]]:
 
 
 def _scene_matches_scope(
-    scene: dict[str, Any], *, scope: str, chap_id: int | None
+    scene: dict[str, Any],
+    *,
+    scope: str,
+    chap_id: int | None,
+    chap_book_id: str | None = None,
 ) -> bool:
     """Return whether a scene is linked into the requested prose scope."""
     link = scene.get("prose_link")
     if not isinstance(link, dict):
-        # Unlinked scenes are planning entities and should still participate in
-        # deterministic scene guidance for both story and chapter scopes.
-        return True
+        # Legacy scenes without a persisted prose_link cannot be scoped reliably
+        # to a specific chapter/story draft and must not leak into Extend/Rewrite
+        # scene guidance.
+        return False
 
     if scope == "story":
         return link.get("scope_type") == "story"
@@ -202,14 +246,23 @@ def _scene_matches_scope(
         return False
 
     raw_chapter_id = link.get("chapter_id")
+    chapter_match = False
     if isinstance(raw_chapter_id, int):
-        return raw_chapter_id == chap_id
-    if isinstance(raw_chapter_id, str):
+        chapter_match = raw_chapter_id == chap_id
+    elif isinstance(raw_chapter_id, str):
         stripped = raw_chapter_id.strip()
-        return stripped == str(chap_id) or (
+        chapter_match = stripped == str(chap_id) or (
             stripped.isdigit() and int(stripped) == chap_id
         )
-    return False
+
+    if not chapter_match:
+        return False
+
+    expected_book_id = (chap_book_id or "").strip() or None
+    linked_book_id = str(link.get("book_id") or "").strip() or None
+    if expected_book_id is None:
+        return linked_book_id is None
+    return linked_book_id == expected_book_id
 
 
 def _scene_sort_key(scene: dict[str, Any]) -> tuple[int, int, int, int]:
@@ -253,6 +306,34 @@ def _scene_reference_ids(scene: dict[str, Any]) -> list[str]:
 
 
 _TEMPORAL_BRACKET_TOKEN_RE = re.compile(r"\[[^\]]+\]")
+_INLINE_SCENE_MARKER_RE = re.compile(r"<!--\s*scene:\d+:(?:start|end)\s*-->")
+
+
+def _visible_offset_to_raw_offset(raw_text: str, visible_offset: int) -> int:
+    """Map marker-stripped offsets back to raw text offsets."""
+    target = max(0, int(visible_offset))
+    cursor_raw = 0
+    cursor_visible = 0
+
+    for match in _INLINE_SCENE_MARKER_RE.finditer(raw_text):
+        segment_len = match.start() - cursor_raw
+        if cursor_visible + segment_len >= target:
+            return cursor_raw + (target - cursor_visible)
+        cursor_visible += segment_len
+        cursor_raw = match.end()
+
+    remaining = len(raw_text) - cursor_raw
+    if cursor_visible + remaining >= target:
+        return cursor_raw + (target - cursor_visible)
+    return len(raw_text)
+
+
+def _cursor_for_scene_selection(current_text: str, scope_text: str | None) -> int:
+    """Resolve a stable cursor offset for scene-range selection."""
+    visible_cursor = len(_INLINE_SCENE_MARKER_RE.sub("", current_text or ""))
+    if not scope_text or not _INLINE_SCENE_MARKER_RE.search(scope_text):
+        return max(0, visible_cursor)
+    return _visible_offset_to_raw_offset(scope_text, visible_cursor)
 
 
 def _parse_temporal_datetime(raw_value: str) -> datetime | None:
@@ -457,7 +538,9 @@ def get_scene_context_for_scope(
     story: dict,
     scope: str,
     chap_id: int | None,
+    chap_book_id: str | None = None,
     current_text: str,
+    scope_text: str | None = None,
     include_all_scenes: bool,
 ) -> dict[str, Any]:
     """Derive deterministic scene guidance and referenced sourcebook IDs.
@@ -469,7 +552,12 @@ def get_scene_context_for_scope(
     scoped_scenes = [
         scene
         for scene in _iter_story_scenes(story)
-        if _scene_matches_scope(scene, scope=scope, chap_id=chap_id)
+        if _scene_matches_scope(
+            scene,
+            scope=scope,
+            chap_id=chap_id,
+            chap_book_id=chap_book_id,
+        )
     ]
     scoped_scenes.sort(key=_scene_sort_key)
 
@@ -480,7 +568,7 @@ def get_scene_context_for_scope(
     if include_all_scenes:
         selected_scenes = scoped_scenes
     else:
-        cursor = max(0, len(current_text or ""))
+        cursor = _cursor_for_scene_selection(current_text or "", scope_text)
         current_index: int | None = None
         for index, scene in enumerate(scoped_scenes):
             link = scene.get("prose_link") or {}
@@ -543,9 +631,12 @@ def get_scene_context_for_scope(
             scene_lines.append(
                 "Preview only: reference this next scene summary but do not include it in the generated output."
             )
-            next_summary = str(selected_scenes[1].get("summary") or "").strip()
             scene_lines.append(
-                f"Summary: {next_summary}" if next_summary else "Summary: (empty)"
+                _format_scene_brief(
+                    selected_scenes[1],
+                    active_character_ages=_active_character_age_map(selected_scenes[1]),
+                )
+                or "Summary: (empty)"
             )
 
     return {
@@ -560,6 +651,7 @@ def get_scene_context_for_target(
     story: dict,
     scope: str,
     chap_id: int | None,
+    chap_book_id: str | None = None,
     target_scene_id: int,
     include_following_scenes: int,
 ) -> dict[str, Any]:
@@ -568,6 +660,7 @@ def get_scene_context_for_target(
         story=story,
         scope=scope,
         chap_id=chap_id,
+        chap_book_id=chap_book_id,
         current_text="",
         include_all_scenes=True,
     )
@@ -613,9 +706,12 @@ def get_scene_context_for_target(
             scene_lines.append(
                 "Preview only: reference this next scene summary but do not include it in the generated output."
             )
-            next_summary = str(scene.get("summary") or "").strip()
             scene_lines.append(
-                f"Summary: {next_summary}" if next_summary else "Summary: (empty)"
+                _format_scene_brief(
+                    scene,
+                    active_character_ages=_active_character_age_map(scene),
+                )
+                or "Summary: (empty)"
             )
         else:
             scene_lines.append(f"## Following scene {index}")
@@ -1165,6 +1261,11 @@ def prepare_ai_action_generation(payload: dict, active: Path | None = None) -> d
     if not isinstance(existing_content, str):
         existing_content = actual_chapter_text or ""
 
+    # Scene markers are an internal persistence detail and should never appear
+    # in chapter Extend/Rewrite prompts.
+    if target == "chapter" and action in ("extend", "rewrite"):
+        existing_content = remove_markers(existing_content)
+
     response_prefill = (
         _build_prefill_for_chapter_action(
             action=action,
@@ -1196,12 +1297,18 @@ def prepare_ai_action_generation(payload: dict, active: Path | None = None) -> d
         if not actual_chapter_text or not actual_chapter_text.strip():
             raise BadRequestError("No story content available to generate summary from")
         existing_content = actual_chapter_text
+
+    actual_chapter_text_for_compare = (
+        remove_markers(actual_chapter_text)
+        if isinstance(actual_chapter_text, str)
+        else actual_chapter_text
+    )
     if (
         not is_notes_source
         and isinstance(existing_content, str)
-        and actual_chapter_text is not None
+        and actual_chapter_text_for_compare is not None
         and existing_content.strip()
-        and existing_content.strip() != actual_chapter_text.strip()
+        and existing_content.strip() != actual_chapter_text_for_compare.strip()
     ):
         is_notes_source = True
 
@@ -1230,12 +1337,23 @@ def prepare_ai_action_generation(payload: dict, active: Path | None = None) -> d
 
     scene_context: dict[str, Any] = {"scene_block": "", "sourcebook_ids": []}
     payload_with_scene_entries = dict(payload)
+    chapter_book_id: str | None = None
+    if (
+        scope == "chapter"
+        and project_type == "series"
+        and isinstance(path, Path)
+        and path.parent.name == "chapters"
+        and path.parent.parent.parent.name == "books"
+    ):
+        chapter_book_id = path.parent.parent.name
     if target == "chapter" and action in ("extend", "rewrite"):
         scene_context = get_scene_context_for_scope(
             story=story,
             scope=scope,
             chap_id=chap_id if isinstance(chap_id, int) else None,
+            chap_book_id=chapter_book_id,
             current_text=existing_content,
+            scope_text=actual_chapter_text,
             include_all_scenes=action == "rewrite",
         )
         merged_sourcebook_ids = list(
@@ -1255,12 +1373,28 @@ def prepare_ai_action_generation(payload: dict, active: Path | None = None) -> d
         summary=chapter_summary,
         payload=payload_with_scene_entries,
     )
-    if scene_context.get("scene_block"):
-        context["background"] = "\n\n".join(
-            part
-            for part in [context.get("background", ""), scene_context["scene_block"]]
-            if part
+    if target == "chapter" and action in ("extend", "rewrite"):
+        story_notes = str(context.get("story_notes") or "").strip()
+        story_notes_block = f"## Story notes\n{story_notes}" if story_notes else ""
+        scene_guidance_block = (
+            f"# Scene guidance\n\n{scene_context['scene_block']}"
+            if scene_context.get("scene_block")
+            else ""
         )
+        section_blocks = [
+            section
+            for section in [
+                (
+                    f"## Background\n{context.get('background', '').strip()}"
+                    if str(context.get("background", "")).strip()
+                    else ""
+                ),
+                story_notes_block,
+                scene_guidance_block,
+            ]
+            if section
+        ]
+        context["background"] = "\n\n---\n\n".join(section_blocks)
 
     model_type = (
         EDITING_ROLE
@@ -1287,7 +1421,9 @@ def prepare_ai_action_generation(payload: dict, active: Path | None = None) -> d
         chapter_summary=chapter_summary,
         chapter_conflicts=context["chapter_conflicts"],
         chapter_notes=context["chapter_notes"],
-        existing_content=existing_content,
+        existing_content=(
+            "" if target == "chapter" and action == "extend" else existing_content
+        ),
         chapter_summaries=chapter_summaries_text,
         style_tags=context["story_tags"],
         content_label=get_system_message(

@@ -689,4 +689,160 @@ describe('useSceneProseSync', () => {
       { sceneId: scene.id, from: 5, to: 10 },
     ] as ProseHighlightRange[]);
   });
+
+  it('prefers explicit marker span when chapter content contains markers but offsets drift', () => {
+    const marker = (id: string, edge: 'start' | 'end'): string =>
+      `<!--scene:${id}:${edge}-->`;
+    const sceneId = 'drift-1';
+    const chapterWithMarkers: WritingUnit = {
+      ...chapterUnit,
+      content: `${marker(sceneId, 'start')}Alpha${marker(sceneId, 'end')}`,
+    };
+
+    const sceneWithDriftedOffsets: Scene = {
+      ...sceneWithChapterLink,
+      id: sceneId,
+      prose_link: {
+        scope_type: 'chapter',
+        chapter_id: 'ch1',
+        start_offset: 999,
+        end_offset: 1005,
+        content_hash: 'drifted',
+      },
+    };
+
+    const expectedFrom = chapterWithMarkers.content.indexOf('Alpha');
+    const expectedTo = expectedFrom + 'Alpha'.length;
+    const ref = makeRef(editor.handle);
+    const { result } = renderHook(() =>
+      useSceneProseSync([sceneWithDriftedOffsets], chapterWithMarkers, ref)
+    );
+
+    act(() => {
+      result.current.handleSelectScene(sceneId);
+    });
+
+    expect(editor.setProseHighlights).toHaveBeenLastCalledWith([
+      { sceneId, from: expectedFrom, to: expectedTo },
+    ] as ProseHighlightRange[]);
+  });
+
+  it('keeps selection boundaries correct after an extend-style prose update with drifted offsets', () => {
+    const marker = (id: string, edge: 'start' | 'end'): string =>
+      `<!--scene:${id}:${edge}-->`;
+    const sceneId = 'extend-1';
+    const initialChapter: WritingUnit = {
+      ...chapterUnit,
+      content: `${marker(sceneId, 'start')}Old prose${marker(sceneId, 'end')}`,
+    };
+    const sceneBeforeExtend: Scene = {
+      ...sceneWithChapterLink,
+      id: sceneId,
+      prose_link: {
+        scope_type: 'chapter',
+        chapter_id: 'ch1',
+        start_offset: initialChapter.content.indexOf('Old prose'),
+        end_offset: initialChapter.content.indexOf('Old prose') + 'Old prose'.length,
+        content_hash: 'before-extend',
+      },
+    };
+
+    const ref = makeRef(editor.handle);
+    const { result, rerender } = renderHook(
+      ({ scenes, chapter }: { scenes: Scene[]; chapter: WritingUnit }) =>
+        useSceneProseSync(scenes, chapter, ref),
+      {
+        initialProps: {
+          scenes: [sceneBeforeExtend],
+          chapter: initialChapter,
+        },
+      }
+    );
+
+    act(() => {
+      result.current.handleSelectScene(sceneId);
+    });
+    expect(editor.setProseHighlights).toHaveBeenLastCalledWith([
+      {
+        sceneId,
+        from: initialChapter.content.indexOf('Old prose'),
+        to: initialChapter.content.indexOf('Old prose') + 'Old prose'.length,
+      },
+    ] as ProseHighlightRange[]);
+
+    // Simulate chapter Extend result persisted with marker tokens intact while
+    // the returned link offsets drift out of sync.
+    const updatedChapter: WritingUnit = {
+      ...chapterUnit,
+      content: `${marker(sceneId, 'start')}New extended prose${marker(sceneId, 'end')}`,
+    };
+    const sceneAfterExtend: Scene = {
+      ...sceneBeforeExtend,
+      prose_link: {
+        ...sceneBeforeExtend.prose_link!,
+        start_offset: 2048,
+        end_offset: 2066,
+        content_hash: 'after-extend',
+      },
+    };
+
+    rerender({ scenes: [sceneAfterExtend], chapter: updatedChapter });
+    editor.setProseHighlights.mockClear();
+
+    act(() => {
+      result.current.handleSelectScene(null);
+      result.current.handleSelectScene(sceneId);
+    });
+
+    const expectedFrom = updatedChapter.content.indexOf('New extended prose');
+    const expectedTo = expectedFrom + 'New extended prose'.length;
+    expect(editor.setProseHighlights).toHaveBeenLastCalledWith([
+      { sceneId, from: expectedFrom, to: expectedTo },
+    ] as ProseHighlightRange[]);
+  });
+
+  it('recomputes highlight ranges on rerender for a still-selected scene', () => {
+    const marker = (id: string, edge: 'start' | 'end'): string =>
+      `<!--scene:${id}:${edge}-->`;
+    const sceneId = 'extend-2';
+    const firstChapter: WritingUnit = {
+      ...chapterUnit,
+      content: `${marker(sceneId, 'start')}A${marker(sceneId, 'end')}`,
+    };
+    const secondChapter: WritingUnit = {
+      ...chapterUnit,
+      content: `${marker(sceneId, 'start')}BBBB${marker(sceneId, 'end')}`,
+    };
+    const selectedScene: Scene = {
+      ...sceneWithChapterLink,
+      id: sceneId,
+      prose_link: {
+        scope_type: 'chapter',
+        chapter_id: 'ch1',
+        start_offset: 999,
+        end_offset: 1003,
+        content_hash: 'extend-2',
+      },
+    };
+    const ref = makeRef(editor.handle);
+    const { result, rerender } = renderHook(
+      ({ chapter }: { chapter: WritingUnit }) =>
+        useSceneProseSync([selectedScene], chapter, ref),
+      {
+        initialProps: { chapter: firstChapter },
+      }
+    );
+
+    act(() => {
+      result.current.handleSelectScene(sceneId);
+    });
+
+    rerender({ chapter: secondChapter });
+
+    const expectedFrom = secondChapter.content.indexOf('BBBB');
+    const expectedTo = expectedFrom + 'BBBB'.length;
+    expect(editor.setProseHighlights).toHaveBeenLastCalledWith([
+      { sceneId, from: expectedFrom, to: expectedTo },
+    ] as ProseHighlightRange[]);
+  });
 });

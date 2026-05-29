@@ -88,6 +88,49 @@ const createPrefillStripper =
 const normalizeAiActionText = (text: string): string =>
   text.replace(/^(\*\*?|##\s*)?(Updated )?Summary:?\*\*?\s*/i, '');
 
+const fillLastEmptySceneSpanForExtend = (
+  baseContent: string,
+  generatedText: string
+): string => {
+  if (!generatedText.trim()) {
+    return baseContent;
+  }
+
+  const markerRe = /<!--scene:([^:>]+):start-->([\s\S]*?)<!--scene:\1:end-->/g;
+  let match: RegExpExecArray | null = markerRe.exec(baseContent);
+  let lastEmpty: {
+    innerStart: number;
+    innerEnd: number;
+  } | null = null;
+
+  while (match) {
+    const sceneId = String(match[1]);
+    const innerText = String(match[2] ?? '');
+    if (innerText.trim().length === 0) {
+      const fullStart = match.index;
+      const fullEnd = markerRe.lastIndex;
+      const startToken = `<!--scene:${sceneId}:start-->`;
+      const endToken = `<!--scene:${sceneId}:end-->`;
+      lastEmpty = {
+        innerStart: fullStart + startToken.length,
+        innerEnd: fullEnd - endToken.length,
+      };
+    }
+    match = markerRe.exec(baseContent);
+  }
+
+  if (!lastEmpty) {
+    return joinSuggestionToContent(baseContent, generatedText);
+  }
+
+  const inserted = joinSuggestionToContent('', generatedText);
+  return (
+    baseContent.slice(0, lastEmpty.innerStart) +
+    inserted +
+    baseContent.slice(lastEmpty.innerEnd)
+  );
+};
+
 const getImposedHeadingPrefix = (
   target: 'summary' | 'chapter',
   action: 'update' | 'rewrite' | 'extend',
@@ -142,7 +185,7 @@ function createStreamingPusher(
     const normalizedPartial = stripPrefillEcho(partial);
     const nextContent =
       action === 'extend'
-        ? joinSuggestionToContent(baseContent, normalizedPartial)
+        ? fillLastEmptySceneSpanForExtend(baseContent, normalizedPartial)
         : normalizedPartial;
     const writeMode = action === 'rewrite' ? 'replace' : 'append';
     onLastStreamed({ chapterId, content: nextContent });
@@ -350,12 +393,12 @@ export function useAiActions({
       if (target === 'summary') {
         await updateChapter(currentUnit.id, { summary: result });
       } else if (action === 'extend') {
-        const nextContent = joinSuggestionToContent(
+        const nextContent = fillLastEmptySceneSpanForExtend(
           baseContent,
           stripPrefillEcho(result)
         );
         await updateChapter(currentUnit.id, {
-          content: joinSuggestionToContent(baseContent, stripPrefillEcho(result)),
+          content: nextContent,
         });
         const linked = await api.scenes.autoLinkScope(
           buildAutoLinkPayload(currentUnit, nextContent)

@@ -31,8 +31,8 @@ export const normalizeProjectType = (
   return 'novel';
 };
 
-const mapStoryBook = (b: StoryBook): Book => ({
-  id: b.id ?? '',
+const mapStoryBook = (b: StoryBook, index: number): Book => ({
+  id: (b.id ?? b.folder ?? '').trim() || `book-${index + 1}`,
   title: b.title ?? '',
   chapters: [],
 });

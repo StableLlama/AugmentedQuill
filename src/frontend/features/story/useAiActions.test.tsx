@@ -263,6 +263,37 @@ describe('useAiActions', () => {
     });
   });
 
+  it('fills the last empty scene marker span before appending during chapter extend', async () => {
+    const updateChapter = vi.fn().mockResolvedValue(undefined);
+    const chapterWithEmptyLastScene: WritingUnit = {
+      ...baseUnit,
+      content:
+        'Prefix <!--scene:1:start-->Filled<!--scene:1:end--><!--scene:2:start--><!--scene:2:end--> Suffix',
+    };
+    vi.mocked(streamAiAction).mockResolvedValue('Newly generated scene text.');
+    vi.mocked(api.scenes.autoLinkScope).mockResolvedValue({ scenes: [] });
+
+    const { result } = renderHook(() =>
+      useAiActions(makeParams(updateChapter, chapterWithEmptyLastScene))
+    );
+
+    await act(async () => {
+      await result.current.handleAiAction('chapter', 'extend');
+    });
+
+    const expectedContent =
+      'Prefix <!--scene:1:start-->Filled<!--scene:1:end--><!--scene:2:start-->Newly generated scene text.<!--scene:2:end--> Suffix';
+    expect(updateChapter).toHaveBeenCalledWith('1', {
+      content: expectedContent,
+    });
+    expect(api.scenes.autoLinkScope).toHaveBeenCalledWith({
+      scope_type: 'chapter',
+      chapter_id: '1',
+      book_id: null,
+      current_text: expectedContent,
+    });
+  });
+
   it('patches all auto-linked scenes returned after a chapter rewrite', async () => {
     const updateChapter = vi.fn().mockResolvedValue(undefined);
     const linkedA = makeLinkedScene(1, {

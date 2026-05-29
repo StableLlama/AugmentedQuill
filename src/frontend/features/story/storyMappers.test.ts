@@ -10,7 +10,11 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { mapSelectStoryToState, reanchorChapterSelection } from './storyMappers';
+import {
+  mapSelectStoryToState,
+  mapStoryBooks,
+  reanchorChapterSelection,
+} from './storyMappers';
 import { Chapter } from '../../types';
 
 describe('storyMappers reanchorChapterSelection', () => {
@@ -65,6 +69,20 @@ describe('storyMappers reanchorChapterSelection', () => {
 });
 
 describe('storyMappers mapSelectStoryToState', () => {
+  it('maps books with stable IDs when story book id is missing', () => {
+    const mapped = mapStoryBooks([
+      { id: null, folder: 'book-folder-1', title: 'Book One' },
+      { id: null, folder: null, title: 'Book Two' },
+      { id: 'book-3', folder: null, title: 'Book Three' },
+    ]);
+
+    expect(mapped.map((book: { id: string | null }) => book.id)).toEqual([
+      'book-folder-1',
+      'book-2',
+      'book-3',
+    ]);
+  });
+
   it('maps story-level notes and private notes from API payload', () => {
     const mapped = mapSelectStoryToState(
       'demo-project',
