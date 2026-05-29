@@ -1291,9 +1291,10 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
       const hasInlineSceneMarkers =
         chapterHasInlineSceneMarkers || docHasInlineSceneMarkers;
 
-      const linkSource = hasInlineSceneMarkers
-        ? (proseLinkSource ?? editedAssignment ?? null)
-        : (editedAssignment ?? proseLinkSource);
+      // Use this scene's prose_link range first. Assignment offsets can be
+      // computed in a different coordinate space and should not drive
+      // single-scene replacement when a stable scene-local link is available.
+      const linkSource = proseLinkSource ?? editedAssignment ?? null;
       if (hasInlineSceneMarkers && !proseLinkSource) {
         updateCurrentChapterContent(view.state.doc.toString());
         return result.generated_text;

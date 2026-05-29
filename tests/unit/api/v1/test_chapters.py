@@ -326,7 +326,7 @@ class ChaptersApiTest(ApiTestCase):
         scenes = list_scenes(pdir)
         scene = scenes[0]
         self.assertEqual(scene["id"], 1)
-        self.assertIsNone(scene["prose_link"])
+        self.assertEqual((scene["prose_link"] or {}).get("scope_type"), "unlinked")
 
     def test_delete_series_chapter_moves_scene_within_same_book_only(self):
         ok, msg = select_project("delete_series_same_book")

@@ -118,7 +118,9 @@ def _project_overview(include_notes: bool = False) -> dict:
     Notes are excluded by default to keep the overview lightweight.
     """
     active = get_active_project_dir()
-    raw_story = load_story_config((active / "story.json") if active else None) or {}
+    raw_story = (
+        load_story_config(active / "story.json") if active is not None else {}
+    ) or {}
     story = normalize_story_for_frontend(raw_story)
     p_type = story.get("project_type", "novel")
 

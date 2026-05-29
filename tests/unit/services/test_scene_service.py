@@ -270,7 +270,7 @@ def test_list_scenes_migrates_v7_and_creates_unlinked_marker_scope(
     assert [scene["id"] for scene in scenes] == [2, 1]
 
     migrated = json.loads(story_path.read_text(encoding="utf-8"))
-    assert migrated["metadata"]["version"] == 7
+    assert migrated["metadata"]["version"] == 8
     assert "order_index" not in migrated["scenes"]["1"]
     assert "order_index" not in migrated["scenes"]["2"]
 

@@ -116,6 +116,38 @@ def sanitize_prompt(prompt: str) -> str:
     return "\n".join(cleaned)
 
 
+def normalize_included_markdown_headings(text: str) -> str:
+    """Normalize markdown heading levels in included context blocks."""
+    if not isinstance(text, str) or not text.strip():
+        return text
+
+    lines = text.splitlines()
+    heading_levels: list[int] = []
+    for line in lines:
+        match = re.match(r"^(#{1,6})\s+", line)
+        if match:
+            heading_levels.append(len(match.group(1)))
+
+    if not heading_levels:
+        return text
+
+    min_level = min(heading_levels)
+    shift = 3 - min_level
+    if shift == 0:
+        return text
+
+    def _adjust(line: str) -> str:
+        match = re.match(r"^(#{1,6})\s+(.*)$", line)
+        if not match:
+            return line
+        current = len(match.group(1))
+        new_level = current + shift
+        new_level = max(1, min(6, new_level))
+        return f"{'#' * new_level} {match.group(2)}"
+
+    return "\n".join(_adjust(line) for line in lines)
+
+
 def _coerce_scene_id(raw_id: object) -> int | None:
     """Return a positive integer scene ID when the stored value is valid."""
     if isinstance(raw_id, int) and raw_id > 0:
@@ -218,11 +250,11 @@ def _scene_reference_ids(scene: dict[str, Any]) -> list[str]:
     return ids
 
 
-def _format_scene_brief(scene: dict[str, Any]) -> str:
+def _format_scene_brief(scene: dict[str, Any], *, include_summary: bool = True) -> str:
     """Render one compact scene guidance block for writing prompts."""
     lines: list[str] = []
     summary = str(scene.get("summary") or "").strip()
-    if summary:
+    if include_summary and summary:
         lines.append(f"Summary: {summary}")
 
     active_characters = scene.get("active_characters")
@@ -244,14 +276,6 @@ def _format_scene_brief(scene: dict[str, Any]) -> str:
     location = str(scene.get("location") or "").strip()
     if location:
         lines.append(f"Location: {location}")
-
-    extra_refs = scene.get("sourcebook_entry_ids")
-    if isinstance(extra_refs, list):
-        refs = ", ".join(
-            str(value).strip() for value in extra_refs if str(value).strip()
-        )
-        if refs:
-            lines.append(f"Referenced entries: {refs}")
 
     return "\n".join(lines)
 
@@ -283,7 +307,6 @@ def get_scene_context_for_scope(
     selected_scenes: list[dict[str, Any]]
     if include_all_scenes:
         selected_scenes = scoped_scenes
-        header = "Scene plan for this draft"
     else:
         cursor = max(0, len(current_text or ""))
         current_index: int | None = None
@@ -316,24 +339,32 @@ def get_scene_context_for_scope(
         if not selected_scenes:
             return {"scene_block": "", "sourcebook_ids": [], "scenes": []}
 
-        header = "Scene guidance"
-
     sourcebook_ids: list[str] = []
     for scene in selected_scenes:
         for entry_id in _scene_reference_ids(scene):
             if entry_id not in sourcebook_ids:
                 sourcebook_ids.append(entry_id)
 
-    scene_lines: list[str] = [header]
+    scene_lines: list[str] = []
     if include_all_scenes:
+        scene_lines.append("## Scene plan for this draft")
         for index, scene in enumerate(selected_scenes, start=1):
-            scene_lines.append(f"Scene {index}")
+            scene_lines.append(f"### Scene {index}")
             scene_lines.append(_format_scene_brief(scene) or "Summary: (empty)")
     else:
-        labels = ["Current scene", "Next scene"]
-        for label, scene in zip(labels, selected_scenes):
-            scene_lines.append(label)
-            scene_lines.append(_format_scene_brief(scene) or "Summary: (empty)")
+        scene_lines.append("## Current scene")
+        scene_lines.append(
+            _format_scene_brief(selected_scenes[0]) or "Summary: (empty)"
+        )
+        if len(selected_scenes) > 1:
+            scene_lines.append("## Next scene preview")
+            scene_lines.append(
+                "Preview only: reference this next scene summary but do not include it in the generated output."
+            )
+            next_summary = str(selected_scenes[1].get("summary") or "").strip()
+            scene_lines.append(
+                f"Summary: {next_summary}" if next_summary else "Summary: (empty)"
+            )
 
     return {
         "scene_block": "\n".join(scene_lines),
@@ -384,16 +415,23 @@ def get_scene_context_for_target(
             if entry_id not in sourcebook_ids:
                 sourcebook_ids.append(entry_id)
 
-    scene_lines: list[str] = ["Scene guidance"]
+    scene_lines: list[str] = []
     for index, scene in enumerate(selected):
         if index == 0:
-            label = "Current scene"
+            scene_lines.append("## Current scene")
+            scene_lines.append(_format_scene_brief(scene) or "Summary: (empty)")
         elif index == 1:
-            label = "Next scene"
+            scene_lines.append("## Next scene preview")
+            scene_lines.append(
+                "Preview only: reference this next scene summary but do not include it in the generated output."
+            )
+            next_summary = str(scene.get("summary") or "").strip()
+            scene_lines.append(
+                f"Summary: {next_summary}" if next_summary else "Summary: (empty)"
+            )
         else:
-            label = f"Following scene {index}"
-        scene_lines.append(label)
-        scene_lines.append(_format_scene_brief(scene) or "Summary: (empty)")
+            scene_lines.append(f"## Following scene {index}")
+            scene_lines.append(_format_scene_brief(scene) or "Summary: (empty)")
 
     return {
         "scene_block": "\n".join(scene_lines),
@@ -449,6 +487,11 @@ def gather_writing_context(
                 conflict_lines.append(line)
     conflicts_text = "\n".join(conflict_lines)
 
+    # story notes
+    story_notes = normalize_included_markdown_headings(
+        str(story.get("notes", "") or "").strip()
+    )
+
     # draft notes
     chapter_notes = ""
     try:
@@ -458,6 +501,7 @@ def gather_writing_context(
             chapter_notes = str(chapters_data[pos].get("notes", "") or "").strip()
     except Exception:
         chapter_notes = ""
+    chapter_notes = normalize_included_markdown_headings(chapter_notes)
 
     # background (sourcebook)
     background = ""
@@ -498,7 +542,7 @@ def gather_writing_context(
                         desc = entry.get("description", "")
                         lines.append(f"[{entry.get('name', eid)}]\n" f"{desc}\n")
 
-        background = "\n".join(lines)
+        background = normalize_included_markdown_headings("\n".join(lines))
     except Exception:
         # sourcebook is optional; don't fail generation if it's broken
         pass
@@ -508,6 +552,7 @@ def gather_writing_context(
         "story_title": story_title,
         "story_summary": story_summary,
         "story_tags": story_tags,
+        "story_notes": story_notes,
         "background": background,
         "chapter_conflicts": conflicts_text,
         "chapter_notes": chapter_notes,

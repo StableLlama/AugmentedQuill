@@ -92,7 +92,17 @@ class MetadataPatchingTest(TestCase):
             ]
         )
         result = apply_conflict_list_patch([], patch)
-        self.assertEqual(result, [{"description": "b", "resolution": "open"}])
+        self.assertEqual(
+            result,
+            [
+                {
+                    "id": None,
+                    "description": "b",
+                    "resolved": False,
+                    "resolution": "open",
+                }
+            ],
+        )
 
     def test_conflict_patch_out_of_bounds_fails(self):
         patch = ConflictListPatch(

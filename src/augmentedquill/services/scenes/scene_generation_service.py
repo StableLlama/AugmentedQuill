@@ -37,6 +37,7 @@ from augmentedquill.services.story.story_generation_common import (
     gather_writing_context,
     get_scene_context_for_scope,
     get_scene_context_for_target,
+    sanitize_prompt,
 )
 
 
@@ -89,6 +90,18 @@ def _extract_scene_ids(scene_list: list[dict[str, Any]]) -> list[int]:
         if scene_id not in result:
             result.append(scene_id)
     return result
+
+
+def _has_persisted_runtime_link(project_dir: Path, scene_id: int) -> bool:
+    """Return whether *scene_id* currently has a non-unlinked prose marker span."""
+    scene = get_scene(project_dir, scene_id)
+    if not isinstance(scene, dict):
+        return False
+    link = scene.get("prose_link")
+    if not isinstance(link, dict):
+        return False
+    scope_type = str(link.get("scope_type") or "").strip().lower()
+    return scope_type not in {"", "unlinked"}
 
 
 def _paragraph_ranges(segment_text: str, absolute_start: int) -> list[tuple[int, int]]:
@@ -356,11 +369,7 @@ async def write_scene_and_link(
         else {}
     )
 
-    target_summary = str(scene.get("summary") or "").strip()
-    next_summary = ""
     selected_scenes = scoped_context.get("scenes") or []
-    if len(selected_scenes) > 1:
-        next_summary = str(selected_scenes[1].get("summary") or "").strip()
 
     chapter_title = title
     chapter_summary = ""
@@ -384,20 +393,42 @@ async def write_scene_and_link(
 
     system_msg = get_system_message("story_writer", model_overrides, language=language)
     existing_tail_text = remove_markers(existing_text)
+    story_notes = context.get("story_notes") or ""
+    story_notes_section = f"## Story notes\n{story_notes}" if story_notes else ""
+
+    background = context["background"] or ""
+    background_section = f"## Background\n{background}" if background else ""
+
+    chapter_notes = context.get("chapter_notes") or ""
+    chapter_notes_section = f"## Draft notes\n{chapter_notes}" if chapter_notes else ""
+
+    scene_guidance = scoped_context.get("scene_block") or ""
+    scene_guidance_section = (
+        f"# Scene guidance\n\n{scene_guidance}" if scene_guidance else ""
+    )
+
+    existing_tail = existing_tail_text[-2000:] if existing_tail_text else ""
+    existing_tail_section = (
+        f"## Recent prose tail (style continuity only, do not repeat):\n{existing_tail}"
+        if existing_tail
+        else ""
+    )
+
     user_msg = get_user_prompt(
         "write_scene_prose",
         language=language,
         story_title=title,
         story_summary=summary,
+        story_notes_section=story_notes_section,
         story_tags=context.get("story_tags") or "(none)",
-        background=context["background"],
+        background_section=background_section,
         chapter_title=chapter_title,
         chapter_summary=chapter_summary,
-        current_scene_summary=target_summary,
-        next_scene_summary=next_summary,
-        scene_guidance=scoped_context.get("scene_block") or "",
-        existing_tail=existing_tail_text[-2000:] if existing_tail_text else "",
+        chapter_notes_section=chapter_notes_section,
+        scene_guidance_section=scene_guidance_section,
+        existing_tail_section=existing_tail_section,
     )
+    user_msg = sanitize_prompt(user_msg)
 
     response = await llm.unified_chat_complete(
         caller_id="scene_generation.write_scene_and_link",
@@ -445,9 +476,16 @@ async def write_scene_and_link(
         new_content = f"{existing_text}{separator}{generated_text}"
         _write_text_atomic(content_path, new_content)
 
-        scene_ids = _extract_scene_ids(selected_scenes)
-        if scene_id not in scene_ids:
-            scene_ids.insert(0, scene_id)
+        scene_ids = [scene_id]
+        for candidate_scene_id in _extract_scene_ids(selected_scenes):
+            if candidate_scene_id == scene_id:
+                continue
+            # Do not relink already-linked neighbour scenes when writing one
+            # scene; otherwise marker ownership can shift and corrupt chapter
+            # marker layout.
+            if _has_persisted_runtime_link(project_dir, candidate_scene_id):
+                continue
+            scene_ids.append(candidate_scene_id)
 
         if request.detect_boundaries:
             detect_result = await detect_scene_boundaries_and_link(

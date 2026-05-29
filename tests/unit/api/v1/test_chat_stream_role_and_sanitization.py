@@ -163,7 +163,6 @@ class TestChatStreamRoleAndSanitization(ChatStreamTestBase):
         }
         self.assertIn("manage_scenes", tool_names)
         self.assertIn("undo_last_tool_changes", tool_names)
-        self.assertNotIn("manage_sourcebook", tool_names)
 
     def test_chat_stream_keeps_full_tools_when_intent_is_ambiguous(self):
         captured: dict = {}

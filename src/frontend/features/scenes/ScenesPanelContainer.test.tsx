@@ -902,6 +902,47 @@ describe('handleWriteScene', () => {
     );
   });
 
+  it('prefers existing scene prose-link offsets over assignment offsets in marker-free docs', async () => {
+    const scene = makeScene({
+      id: '1',
+      prose_link: makeProseLink({
+        scope_type: 'chapter',
+        chapter_id: 'ch-1',
+        start_offset: 0,
+        end_offset: 8,
+      }),
+    });
+    const updatedScene = makeScene({
+      id: '1',
+      prose_link: makeProseLink({
+        scope_type: 'chapter',
+        chapter_id: 'ch-1',
+        start_offset: 0,
+        end_offset: 8,
+      }),
+    });
+    const { ref, dispatch } = makeEditorRef('Existing linked text. Trailing text.');
+
+    apiMock.scenes.writeScene.mockResolvedValueOnce({
+      scene: updatedScene,
+      generated_text: 'Refreshed scene prose',
+      assignments: [{ scene_id: 1, start_offset: 20, end_offset: 28 }],
+      scenes: [],
+    });
+
+    await renderAndOpenDialog([scene], { currentChapter: CHAPTER, editorRef: ref });
+
+    await act(async () => {
+      await dlg().onWriteScene!();
+    });
+
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        changes: expect.objectContaining({ from: 0, to: 8 }),
+      })
+    );
+  });
+
   it('uses updated scene prose link when write-scene assignments are not returned', async () => {
     const scene = makeScene({
       id: '1',
@@ -1312,6 +1353,176 @@ describe('handleWriteScene', () => {
 
     const reopenedLink = scenesState[0].prose_link as SceneProseLink;
     expect(dlg().getLinkedProseText!(reopenedLink)).toBe(generatedText);
+  });
+
+  it('preserves marker boundaries for first/middle/last writes with same vs different selected chapter', async () => {
+    const targetIndexes = [0, 1, 2];
+    const chapterScopes = [
+      {
+        name: 'same-selected-chapter',
+        currentChapter: {
+          ...CHAPTER,
+          id: 'ch-1',
+          summary: '',
+          content: '',
+        } as WritingUnit,
+        scopeMatches: true,
+      },
+      {
+        name: 'different-selected-chapter',
+        currentChapter: {
+          ...CHAPTER,
+          id: 'ch-2',
+          summary: '',
+          content: '',
+        } as WritingUnit,
+        scopeMatches: false,
+      },
+    ];
+
+    for (const targetIndex of targetIndexes) {
+      for (const neighborsHaveText of [false, true]) {
+        for (const chapterScope of chapterScopes) {
+          const sceneIds = ['1', '2', '3'];
+          const initialTexts = sceneIds.map((_: string, index: number): string => {
+            if (index === targetIndex) return `target-before-${targetIndex}`;
+            return neighborsHaveText ? `neighbor-${index + 1}` : '';
+          });
+
+          let docText = '';
+          const scenes: Scene[] = [];
+          const offsets: Array<{ from: number; to: number }> = [];
+          sceneIds.forEach((id: string, index: number): void => {
+            const startToken = `<!--scene:${id}:start-->`;
+            const endToken = `<!--scene:${id}:end-->`;
+            const prose = initialTexts[index];
+            const from = docText.length + startToken.length;
+            const to = from + prose.length;
+            docText += `${startToken}${prose}${endToken}`;
+            if (index < sceneIds.length - 1) {
+              docText += '\n';
+            }
+            offsets.push({ from, to });
+            scenes.push(
+              makeScene({
+                id,
+                prose_link: makeProseLink({
+                  scope_type: 'chapter',
+                  chapter_id: 'ch-1',
+                  start_offset: from,
+                  end_offset: to,
+                }),
+              })
+            );
+          });
+
+          const targetScene = scenes[targetIndex];
+          const generated = `generated-${targetIndex}-${neighborsHaveText ? 'neighbors' : 'empty'}-${chapterScope.name}`;
+
+          const { ref, getText } = makeMutableEditorRef(docText);
+          storyState.chapters = [
+            {
+              id: 'ch-1',
+              scope: 'chapter',
+              title: 'Chapter 1',
+              summary: '',
+              content: docText,
+            },
+            {
+              id: 'ch-2',
+              scope: 'chapter',
+              title: 'Chapter 2',
+              summary: '',
+              content: 'other chapter prose',
+            },
+          ];
+
+          apiMock.scenes.writeScene.mockResolvedValueOnce({
+            scene: makeScene({
+              id: targetScene.id,
+              prose_link: makeProseLink({
+                scope_type: 'chapter',
+                chapter_id: 'ch-1',
+                start_offset: offsets[targetIndex].from,
+                end_offset: offsets[targetIndex].to,
+              }),
+            }),
+            generated_text: generated,
+            assignments: [
+              {
+                scene_id: Number(targetScene.id),
+                start_offset: 0,
+                end_offset: Math.min(2, docText.length),
+              },
+            ],
+            scenes: [],
+          });
+
+          useScenesMock.mockReturnValue(scenes);
+          wrap(
+            <ScenesPanelContainer
+              editorRef={ref}
+              currentChapter={chapterScope.currentChapter}
+            />
+          );
+
+          await act(async () => {
+            pb().onEditScene(targetScene.id);
+          });
+
+          await act(async () => {
+            await dlg().onWriteScene!();
+          });
+
+          const renderedDoc = getText();
+          for (const sceneId of sceneIds) {
+            expect(
+              renderedDoc.match(new RegExp(`<!--scene:${sceneId}:start-->`, 'g'))
+                ?.length ?? 0
+            ).toBe(1);
+            expect(
+              renderedDoc.match(new RegExp(`<!--scene:${sceneId}:end-->`, 'g'))
+                ?.length ?? 0
+            ).toBe(1);
+          }
+
+          if (chapterScope.scopeMatches) {
+            expect(renderedDoc).toContain(
+              `<!--scene:${targetScene.id}:start-->${generated}<!--scene:${targetScene.id}:end-->`
+            );
+          } else {
+            expect(renderedDoc).toBe(docText);
+            expect(setStoryMock).toHaveBeenCalled();
+            const updater = setStoryMock.mock.calls[
+              setStoryMock.mock.calls.length - 1
+            ]?.[0] as ((prev: typeof storyState) => typeof storyState) | undefined;
+            expect(typeof updater).toBe('function');
+            if (updater) {
+              const prevState = {
+                ...storyState,
+                chapters: storyState.chapters.map(
+                  (chapter: (typeof storyState.chapters)[number]) => ({ ...chapter })
+                ),
+              };
+              const nextState = updater(prevState);
+              const writtenChapter = nextState.chapters.find(
+                (chapter: (typeof storyState.chapters)[number]) => chapter.id === 'ch-1'
+              );
+              expect(writtenChapter?.content).toContain(generated);
+            }
+          }
+
+          for (let index = 0; index < scenes.length; index += 1) {
+            if (index === targetIndex) continue;
+            const id = scenes[index].id;
+            const expected = initialTexts[index];
+            expect(renderedDoc).toContain(
+              `<!--scene:${id}:start-->${expected}<!--scene:${id}:end-->`
+            );
+          }
+        }
+      }
+    }
   });
 });
 

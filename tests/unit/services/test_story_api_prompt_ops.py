@@ -17,6 +17,7 @@ from augmentedquill.services.story.story_api_prompt_ops import (
 )
 from augmentedquill.services.story.story_generation_common import (
     gather_writing_context,
+    normalize_included_markdown_headings,
     sanitize_prompt,
 )
 
@@ -157,6 +158,23 @@ Story tags: cozy
         self.assertNotIn("Story description:", cleaned)
         self.assertIn("Story title: My Short Story", cleaned)
         self.assertIn("Story tags: cozy", cleaned)
+
+    def test_normalize_included_markdown_headings_aligns_to_level_three(self):
+        text = "# Heading 1\n## Subheading\n### Subsubheading\n"
+        normalized = normalize_included_markdown_headings(text)
+        self.assertIn("### Heading 1", normalized)
+        self.assertIn("#### Subheading", normalized)
+        self.assertIn("##### Subsubheading", normalized)
+
+        text2 = "## Section\n### Detail\n"
+        normalized2 = normalize_included_markdown_headings(text2)
+        self.assertIn("### Section", normalized2)
+        self.assertIn("#### Detail", normalized2)
+
+        text3 = "#### Deep section\n##### Detail\n"
+        normalized3 = normalize_included_markdown_headings(text3)
+        self.assertIn("### Deep section", normalized3)
+        self.assertIn("#### Detail", normalized3)
 
     # -----------------------------------------------------------------------
     # story_summary target – template selection and placeholder filling
