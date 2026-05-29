@@ -187,6 +187,12 @@ class ScenesApiTest(ApiTestCase):
             self.assertIn(start_count, (0, 1))
             self.assertEqual(start_count, end_count)
 
+    def _scene_marker_order(self, content: str) -> list[int]:
+        return [
+            int(match.group(1))
+            for match in re.finditer(r"<!--scene:(\d+):start-->", content)
+        ]
+
     def test_create_list_get_delete_crud(self) -> None:
         created = self._create(summary="Scene A")
 
@@ -684,6 +690,70 @@ class ScenesApiTest(ApiTestCase):
                             fetched = self.client.get(self._url(f"/{scene['id']}"))
                             self.assertEqual(fetched.status_code, 200, fetched.text)
                             self.assertIsNotNone(fetched.json().get("prose_link"))
+
+    def test_write_scene_linked_middle_empty_neighbors_preserves_order_and_returns_shifted_neighbors(
+        self,
+    ) -> None:
+        scope_payload, content_path = self._configure_scope(project_case="novel")
+
+        scenes = [
+            self._create(summary="Scene 1"),
+            self._create(summary="Scene 2"),
+            self._create(summary="Scene 3"),
+        ]
+
+        content_path.write_text("A B C", encoding="utf-8")
+        for scene, (start_offset, end_offset) in zip(scenes, [(0, 1), (2, 3), (4, 5)]):
+            link_resp = self.client.post(
+                self._url(f"/{scene['id']}/link-prose"),
+                json={
+                    **scope_payload,
+                    "start_offset": start_offset,
+                    "end_offset": end_offset,
+                },
+            )
+            self.assertEqual(link_resp.status_code, 200, link_resp.text)
+
+        for scene in (scenes[0], scenes[2]):
+            patch_resp = self.client.patch(
+                self._url(f"/{scene['id']}/prose-content"),
+                json={"text": ""},
+            )
+            self.assertEqual(patch_resp.status_code, 200, patch_resp.text)
+
+        before_content = content_path.read_text(encoding="utf-8")
+        before_order = self._scene_marker_order(before_content)
+        before_by_id = {
+            scene["id"]: self.client.get(self._url(f"/{scene['id']}"))
+            for scene in scenes
+        }
+        for response in before_by_id.values():
+            self.assertEqual(response.status_code, 200, response.text)
+        generated = "Generated middle scene prose that shifts downstream offsets."
+        with patch(
+            "augmentedquill.services.scenes.scene_generation_service.llm.unified_chat_complete",
+            new=AsyncMock(return_value={"content": generated}),
+        ):
+            write_resp = self.client.post(
+                self._url(f"/{scenes[1]['id']}/write"),
+                json={
+                    **scope_payload,
+                    "include_following_scenes": 1,
+                    "detect_boundaries": True,
+                },
+            )
+
+        self.assertEqual(write_resp.status_code, 200, write_resp.text)
+        payload = write_resp.json()
+        self.assertEqual(payload["scene"]["id"], scenes[1]["id"])
+
+        # Regression assertion: the write payload must include neighboring scenes
+        # whose marker offsets shifted when replacing middle-scene prose.
+        updated_neighbor_ids = {scene["id"] for scene in payload["scenes"]}
+        self.assertIn(scenes[2]["id"], updated_neighbor_ids)
+
+        after_content = content_path.read_text(encoding="utf-8")
+        self.assertEqual(self._scene_marker_order(after_content), before_order)
 
     def test_auto_link_scope(self) -> None:
         scene = self._create(summary="Auto")

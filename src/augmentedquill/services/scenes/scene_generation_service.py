@@ -28,6 +28,7 @@ from augmentedquill.services.scenes.scene_service import (
     _write_text_atomic,
     get_scene,
     link_prose,
+    list_scenes,
     relink_scope_prose,
     update_prose_content,
 )
@@ -102,6 +103,57 @@ def _has_persisted_runtime_link(project_dir: Path, scene_id: int) -> bool:
         return False
     scope_type = str(link.get("scope_type") or "").strip().lower()
     return scope_type not in {"", "unlinked"}
+
+
+def _is_same_write_scope(
+    link: dict[str, Any] | None,
+    *,
+    scope_type: str,
+    chapter_id: str | None,
+    book_id: str | None,
+) -> bool:
+    if not isinstance(link, dict):
+        return False
+
+    link_scope_type = str(link.get("scope_type") or "").strip()
+    if link_scope_type != scope_type:
+        return False
+
+    if scope_type != "chapter":
+        return True
+
+    link_chapter_id = str(link.get("chapter_id") or "").strip() or None
+    request_chapter_id = str(chapter_id or "").strip() or None
+    link_book_id = str(link.get("book_id") or "").strip() or None
+    request_book_id = str(book_id or "").strip() or None
+    return link_chapter_id == request_chapter_id and link_book_id == request_book_id
+
+
+def _list_other_scenes_in_scope(
+    project_dir: Path,
+    *,
+    scene_id: int,
+    scope_type: str,
+    chapter_id: str | None,
+    book_id: str | None,
+) -> list[dict[str, Any]]:
+    scoped_scenes: list[dict[str, Any]] = []
+    for candidate in list_scenes(project_dir):
+        candidate_id = _safe_int(candidate.get("id"))
+        if candidate_id is None or candidate_id == scene_id:
+            continue
+        if _is_same_write_scope(
+            (
+                candidate.get("prose_link")
+                if isinstance(candidate.get("prose_link"), dict)
+                else None
+            ),
+            scope_type=scope_type,
+            chapter_id=chapter_id,
+            book_id=book_id,
+        ):
+            scoped_scenes.append(candidate)
+    return scoped_scenes
 
 
 def _paragraph_ranges(segment_text: str, absolute_start: int) -> list[tuple[int, int]]:
@@ -459,7 +511,16 @@ async def write_scene_and_link(
         )
         if updated_scene is None:
             raise LookupError(f"Scene '{scene_id}' not found")
-        updated_scenes = [updated_scene]
+        updated_scenes = [
+            updated_scene,
+            *_list_other_scenes_in_scope(
+                project_dir,
+                scene_id=scene_id,
+                scope_type=scope_type,
+                chapter_id=chapter_id,
+                book_id=book_id,
+            ),
+        ]
         link = updated_scene.get("prose_link") or {}
         start_offset = int(link.get("start_offset") or 0)
         end_offset = int(link.get("end_offset") or start_offset)
