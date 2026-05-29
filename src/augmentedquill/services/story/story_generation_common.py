@@ -10,6 +10,8 @@
 from __future__ import annotations
 
 from typing import Any
+from datetime import datetime, timezone
+import calendar
 import re
 from pathlib import Path
 
@@ -250,18 +252,188 @@ def _scene_reference_ids(scene: dict[str, Any]) -> list[str]:
     return ids
 
 
-def _format_scene_brief(scene: dict[str, Any], *, include_summary: bool = True) -> str:
+_TEMPORAL_BRACKET_TOKEN_RE = re.compile(r"\[[^\]]+\]")
+
+
+def _parse_temporal_datetime(raw_value: str) -> datetime | None:
+    """Parse normalized temporal strings (optionally with bracket annotations)."""
+    cleaned = _TEMPORAL_BRACKET_TOKEN_RE.sub("", raw_value.strip())
+    if not cleaned:
+        return None
+    if "T" not in cleaned:
+        cleaned = f"{cleaned}T00:00:00+00:00"
+    elif cleaned.endswith("Z"):
+        cleaned = f"{cleaned[:-1]}+00:00"
+
+    try:
+        parsed = datetime.fromisoformat(cleaned)
+    except ValueError:
+        return None
+
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _replace_year_safe(value: datetime, year: int) -> datetime:
+    if value.month == 2 and value.day == 29 and not calendar.isleap(year):
+        return value.replace(year=year, day=28)
+    return value.replace(year=year)
+
+
+def _add_months_safe(value: datetime, months: int) -> datetime:
+    month_index = value.month - 1 + months
+    target_year = value.year + month_index // 12
+    target_month = month_index % 12 + 1
+    max_day = calendar.monthrange(target_year, target_month)[1]
+    return value.replace(
+        year=target_year, month=target_month, day=min(value.day, max_day)
+    )
+
+
+def _format_compact_age(origin_dt: datetime, scene_dt: datetime) -> str | None:
+    negative = False
+    start_dt = origin_dt
+    end_dt = scene_dt
+    if scene_dt < origin_dt:
+        negative = True
+        start_dt, end_dt = scene_dt, origin_dt
+
+    years = end_dt.year - start_dt.year
+    anniversary = _replace_year_safe(start_dt, start_dt.year + years)
+    if anniversary > end_dt:
+        years -= 1
+        anniversary = _replace_year_safe(start_dt, start_dt.year + years)
+
+    months = 0
+    cursor = anniversary
+    while True:
+        next_cursor = _add_months_safe(cursor, 1)
+        if next_cursor <= end_dt:
+            months += 1
+            cursor = next_cursor
+            continue
+        break
+
+    remainder = end_dt - cursor
+    total_seconds = int(remainder.total_seconds())
+    days, rem = divmod(total_seconds, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes, seconds = divmod(rem, 60)
+
+    compact = None
+    if years > 0:
+        compact = f"{years}y"
+    elif months > 0:
+        compact = f"{months}m"
+    elif days > 0:
+        compact = f"{days}d"
+    elif hours > 0:
+        compact = f"{hours}h"
+    elif minutes > 0:
+        compact = f"{minutes}min"
+    elif seconds > 0:
+        compact = f"{seconds}s"
+    else:
+        compact = "0s"
+
+    return f"-{compact}" if negative else compact
+
+
+def _extract_scene_time(scene: dict[str, Any]) -> datetime | None:
+    scene_time = scene.get("scene_time")
+    if isinstance(scene_time, dict):
+        raw_value = scene_time.get("temporal_zoned_datetime")
+        if isinstance(raw_value, str):
+            parsed = _parse_temporal_datetime(raw_value)
+            if parsed is not None:
+                return parsed
+
+    raw_time = scene.get("time")
+    if isinstance(raw_time, str):
+        return _parse_temporal_datetime(raw_time)
+    return None
+
+
+def _active_character_age_map(scene: dict[str, Any]) -> dict[str, str]:
+    """Build compact age labels for active character refs when possible."""
+    scene_dt = _extract_scene_time(scene)
+    if scene_dt is None:
+        return {}
+
+    active_characters = scene.get("active_characters")
+    if not isinstance(active_characters, list) or not active_characters:
+        return {}
+
+    try:
+        from augmentedquill.services.sourcebook.sourcebook_helpers import (
+            sourcebook_get_entry,
+        )
+    except Exception:
+        return {}
+
+    labels: dict[str, str] = {}
+    for raw_ref in active_characters:
+        ref = str(raw_ref).strip()
+        if not ref or ref in labels:
+            continue
+        try:
+            entry = sourcebook_get_entry(ref)
+        except Exception:
+            entry = None
+        if not isinstance(entry, dict):
+            continue
+        origin_date = entry.get("origin_date")
+        if not isinstance(origin_date, str) or not origin_date.strip():
+            continue
+
+        origin_dt = _parse_temporal_datetime(origin_date)
+        if origin_dt is None:
+            continue
+        compact_age = _format_compact_age(origin_dt, scene_dt)
+        if compact_age:
+            labels[ref] = compact_age
+    return labels
+
+
+def _format_scene_brief(
+    scene: dict[str, Any],
+    *,
+    include_summary: bool = True,
+    active_character_ages: dict[str, str] | None = None,
+) -> str:
     """Render one compact scene guidance block for writing prompts."""
     lines: list[str] = []
     summary = str(scene.get("summary") or "").strip()
     if include_summary and summary:
         lines.append(f"Summary: {summary}")
 
+    beats = scene.get("beats")
+    if isinstance(beats, list):
+        beat_lines: list[str] = []
+        for index, beat in enumerate(beats, start=1):
+            beat_text = ""
+            if isinstance(beat, dict):
+                beat_text = str(beat.get("text") or "").strip()
+            else:
+                beat_text = str(beat).strip()
+            if beat_text:
+                beat_lines.append(f"{index}. {beat_text}")
+        if beat_lines:
+            lines.append("Beats:")
+            lines.extend(beat_lines)
+
     active_characters = scene.get("active_characters")
     if isinstance(active_characters, list):
-        active = ", ".join(
-            str(value).strip() for value in active_characters if str(value).strip()
-        )
+        labels = active_character_ages or {}
+        active_items: list[str] = []
+        for value in active_characters:
+            ref = str(value).strip()
+            if not ref:
+                continue
+            age = labels.get(ref)
+            active_items.append(f"{ref} [{age}]" if age else ref)
+        active = ", ".join(active_items)
         if active:
             lines.append(f"Active characters: {active}")
 
@@ -350,11 +522,21 @@ def get_scene_context_for_scope(
         scene_lines.append("## Scene plan for this draft")
         for index, scene in enumerate(selected_scenes, start=1):
             scene_lines.append(f"### Scene {index}")
-            scene_lines.append(_format_scene_brief(scene) or "Summary: (empty)")
+            scene_lines.append(
+                _format_scene_brief(
+                    scene,
+                    active_character_ages=_active_character_age_map(scene),
+                )
+                or "Summary: (empty)"
+            )
     else:
         scene_lines.append("## Current scene")
         scene_lines.append(
-            _format_scene_brief(selected_scenes[0]) or "Summary: (empty)"
+            _format_scene_brief(
+                selected_scenes[0],
+                active_character_ages=_active_character_age_map(selected_scenes[0]),
+            )
+            or "Summary: (empty)"
         )
         if len(selected_scenes) > 1:
             scene_lines.append("## Next scene preview")
@@ -419,7 +601,13 @@ def get_scene_context_for_target(
     for index, scene in enumerate(selected):
         if index == 0:
             scene_lines.append("## Current scene")
-            scene_lines.append(_format_scene_brief(scene) or "Summary: (empty)")
+            scene_lines.append(
+                _format_scene_brief(
+                    scene,
+                    active_character_ages=_active_character_age_map(scene),
+                )
+                or "Summary: (empty)"
+            )
         elif index == 1:
             scene_lines.append("## Next scene preview")
             scene_lines.append(
@@ -431,7 +619,13 @@ def get_scene_context_for_target(
             )
         else:
             scene_lines.append(f"## Following scene {index}")
-            scene_lines.append(_format_scene_brief(scene) or "Summary: (empty)")
+            scene_lines.append(
+                _format_scene_brief(
+                    scene,
+                    active_character_ages=_active_character_age_map(scene),
+                )
+                or "Summary: (empty)"
+            )
 
     return {
         "scene_block": "\n".join(scene_lines),

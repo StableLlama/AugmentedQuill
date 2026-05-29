@@ -387,6 +387,10 @@ class ScenesApiTest(ApiTestCase):
 
         current_scene = self._create(
             summary="Current scene summary",
+            beats=[
+                {"id": "beat-1", "text": "Hero enters the town square."},
+                {"id": "beat-2", "text": "A hidden watcher observes."},
+            ],
             active_characters=["Hero"],
             location="Town",
         )
@@ -426,6 +430,9 @@ class ScenesApiTest(ApiTestCase):
         self.assertIn("Story notes here.", prompt)
         self.assertIn("Chapter notes here.", prompt)
         self.assertIn("# Scene guidance", prompt)
+        self.assertIn("Beats:", prompt)
+        self.assertIn("1. Hero enters the town square.", prompt)
+        self.assertIn("2. A hidden watcher observes.", prompt)
         self.assertIn("## Next scene preview", prompt)
         self.assertIn(
             "Preview only: reference this next scene summary but do not include it in the generated output.",
@@ -434,6 +441,51 @@ class ScenesApiTest(ApiTestCase):
         self.assertIn("Summary: Next scene summary", prompt)
         self.assertEqual(prompt.count("Active characters:"), 1)
         self.assertNotIn("Referenced entries", prompt)
+
+    def test_write_scene_prompt_includes_active_character_age_brackets(self) -> None:
+        scope_payload, _ = self._configure_scope(project_case="novel")
+        pdir = self.projects_root / self.pname
+        story = json.loads((pdir / "story.json").read_text(encoding="utf-8"))
+        story["sourcebook"] = {
+            "Hero": {
+                "category": "Character",
+                "description": "A known character.",
+                "origin_date": "2000-01-01T00:00:00Z",
+            }
+        }
+        (pdir / "story.json").write_text(json.dumps(story), encoding="utf-8")
+
+        current_scene = self._create(
+            summary="Current scene summary",
+            active_characters=["Hero"],
+            scene_time={"value": "2026-05-29T12:00:00Z"},
+        )
+
+        captured: dict[str, str] = {}
+
+        async def fake_complete(**kwargs: object) -> dict[str, str]:
+            messages = kwargs.get("messages") or []
+            captured["prompt"] = "\n\n".join(
+                str(m.get("content", "")) for m in messages
+            )
+            return {"content": "Generated prose."}
+
+        with patch(
+            "augmentedquill.services.scenes.scene_generation_service.llm.unified_chat_complete",
+            new=AsyncMock(side_effect=fake_complete),
+        ):
+            resp = self.client.post(
+                self._url(f"/{current_scene['id']}/write"),
+                json={
+                    **scope_payload,
+                    "include_following_scenes": 0,
+                    "detect_boundaries": False,
+                },
+            )
+
+        self.assertEqual(resp.status_code, 200, resp.text)
+        prompt = captured["prompt"]
+        self.assertIn("Active characters: Hero [26y]", prompt)
 
     def test_write_scene_detect_boundaries_keeps_existing_following_scene_markers(
         self,

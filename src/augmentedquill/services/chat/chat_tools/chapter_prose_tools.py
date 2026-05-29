@@ -8,7 +8,10 @@
 """Defines the chapter prose tools unit so this responsibility stays isolated, testable, and easy to evolve."""
 
 from typing import Any
+from datetime import datetime, timezone
+import calendar
 import json
+import re
 
 from pydantic import AliasChoices, Field
 from augmentedquill.services.chat.chat_tool_decorator import ToolModel
@@ -27,6 +30,103 @@ from augmentedquill.services.projects.projects import (
     write_chapter_content as _write_chapter_content,
 )
 from augmentedquill.services.chat.chat_tools.chapter_tools import MARKER
+
+_BRACKET_TOKEN_RE = re.compile(r"\[[^\]]+\]")
+
+
+def _current_utc_datetime() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _parse_origin_datetime(origin_date: str) -> datetime | None:
+    cleaned = _BRACKET_TOKEN_RE.sub("", origin_date.strip())
+    if not cleaned:
+        return None
+    if "T" not in cleaned:
+        cleaned = f"{cleaned}T00:00:00+00:00"
+    elif cleaned.endswith("Z"):
+        cleaned = f"{cleaned[:-1]}+00:00"
+
+    try:
+        parsed = datetime.fromisoformat(cleaned)
+    except ValueError:
+        return None
+
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _replace_year_safe(value: datetime, year: int) -> datetime:
+    if value.month == 2 and value.day == 29 and not calendar.isleap(year):
+        return value.replace(year=year, day=28)
+    return value.replace(year=year)
+
+
+def _add_months_safe(value: datetime, months: int) -> datetime:
+    month_index = value.month - 1 + months
+    target_year = value.year + month_index // 12
+    target_month = month_index % 12 + 1
+    max_day = calendar.monthrange(target_year, target_month)[1]
+    return value.replace(
+        year=target_year, month=target_month, day=min(value.day, max_day)
+    )
+
+
+def _format_age_text(origin_dt: datetime, reference_dt: datetime) -> str | None:
+    if origin_dt > reference_dt:
+        return None
+
+    years = reference_dt.year - origin_dt.year
+    anniversary = _replace_year_safe(origin_dt, origin_dt.year + years)
+    if anniversary > reference_dt:
+        years -= 1
+        anniversary = _replace_year_safe(origin_dt, origin_dt.year + years)
+
+    months = 0
+    cursor = anniversary
+    while True:
+        next_cursor = _add_months_safe(cursor, 1)
+        if next_cursor <= reference_dt:
+            months += 1
+            cursor = next_cursor
+            continue
+        break
+
+    days = (reference_dt.date() - cursor.date()).days
+
+    if years >= 3:
+        return f"{years} years old"
+    if years >= 1:
+        month_unit = "month" if months == 1 else "months"
+        return f"{years} years and {months} {month_unit} old"
+    if months >= 1:
+        day_unit = "day" if days == 1 else "days"
+        return f"{months} months and {days} {day_unit} old"
+    day_unit = "day" if days == 1 else "days"
+    return f"{days} {day_unit} old"
+
+
+def _format_sourcebook_entry_age_prompt(entry: dict, language: str) -> str:
+    origin_date = str(entry.get("origin_date") or "").strip()
+    if not origin_date:
+        return ""
+
+    origin_dt = _parse_origin_datetime(origin_date)
+    if not origin_dt:
+        return ""
+
+    reference_dt = _current_utc_datetime()
+    age_text = _format_age_text(origin_dt, reference_dt)
+    if not age_text:
+        return ""
+
+    return get_user_prompt(
+        "sourcebook_entry_age",
+        language=language,
+        age_text=age_text,
+        as_of_date=reference_dt.date().isoformat(),
+    )
 
 
 def _count_leading_newlines(text: str) -> int:
@@ -111,13 +211,18 @@ def _format_sourcebook_entry_prompt(entry: dict, language: str) -> str:
         category=category,
         description=description,
     )
+    age_line = _format_sourcebook_entry_age_prompt(entry, language=language)
     relations_line = get_user_prompt(
         "sourcebook_entry_relations",
         language=language,
         relation_text=relation_text,
     )
 
-    return f"{summary}\n{relations_line}"
+    parts = [summary]
+    if age_line:
+        parts.append(age_line)
+    parts.append(relations_line)
+    return "\n".join(parts)
 
 
 def _build_sourcebook_entries_context(entry_names: list[str], language: str) -> str:

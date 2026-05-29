@@ -10,6 +10,7 @@
 import json
 import os
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest import TestCase
 from unittest.mock import AsyncMock, patch
@@ -975,7 +976,62 @@ class ChatToolsTest(TestCase):
             "- Hero Entry (Character): A known sourcebook character",
             sent_messages[1]["content"],
         )
+        self.assertNotIn("Age:", sent_messages[1]["content"])
         self.assertIn("Relations: None", sent_messages[1]["content"])
+
+    def test_call_writing_llm_includes_sourcebook_age_in_prompt(self):
+        self._bootstrap_project()
+        self._post_single_tool(
+            "update_story_metadata",
+            {
+                "conflicts": [
+                    {
+                        "id": "c1",
+                        "description": "Test conflict",
+                        "resolution": "Test resolution",
+                    }
+                ]
+            },
+        )
+        self._post_single_tool(
+            "create_sourcebook_entry",
+            {
+                "name": "Veteran",
+                "description": "A long-lived character",
+                "category": "character",
+                "origin_date": "2000-01-01",
+            },
+        )
+
+        with (
+            patch(
+                "augmentedquill.services.llm.llm.resolve_openai_credentials",
+                return_value=("http://localhost:11434/v1", None, "dummy", 30, "dummy"),
+            ),
+            patch(
+                "augmentedquill.services.chat.chat_tools.chapter_prose_tools._current_utc_datetime",
+                return_value=datetime(2026, 5, 29, tzinfo=timezone.utc),
+            ),
+            patch(
+                "augmentedquill.services.llm.llm.unified_chat_stream",
+                new=_CapturingStreamMock("Generated text."),
+            ) as mock_chat,
+        ):
+            _ = self._post_single_tool(
+                "call_writing_llm",
+                {
+                    "instruction": "Include sourcebook context",
+                    "context": "Context text",
+                    "sourcebook_entries": ["Veteran"],
+                },
+            )
+
+        sent_messages = mock_chat.await_args.kwargs["messages"]
+        self.assertEqual(len(sent_messages), 2)
+        self.assertIn(
+            "Age: 26 years old (as of 2026-05-29)",
+            sent_messages[1]["content"],
+        )
 
     def test_call_writing_llm_append_mode_with_chap_id(self):
         """Test write_mode='append' appends generated text to chapter."""

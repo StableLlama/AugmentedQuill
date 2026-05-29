@@ -592,6 +592,10 @@
       "_use": "WRITING",
       "en": ["  Relations: {relation_text}"]
     },
+    "sourcebook_entry_age": {
+      "_use": "WRITING",
+      "en": ["  Age: {age_text} (as of {as_of_date})"]
+    },
     "sourcebook_entry_relations_none": {
       "_use": "WRITING",
       "en": ["None"]
