@@ -271,14 +271,6 @@
       "Append the new text to the end. Do not repeat existing content."
     ]
   },
-  "ai_action_chapter_rewrite": {
-    "_use": "WRITING",
-    "en": [
-      "You are a skilled novelist.",
-      "Rewrite the FULL content for the current draft based on the provided story context and strictly on the supplied summary.",
-      "Respect the story's themes, tags, and any unresolved conflicts provided in the prompt."
-    ]
-  },
   "scene_boundary_linker": {
     "_use": "EDITING",
     "en": [
@@ -381,9 +373,7 @@
         "",
         "---",
         "",
-        "Existing draft text (do not change):",
-        "",
-        "{existing_text}",
+        "{existing_text_section}",
         "",
         "Task: Continue the current draft from where it stops to advance the summary coherently."
       ]
@@ -482,8 +472,7 @@
         "",
         "---",
         "",
-        "## Existing text (reference)",
-        "{existing_text}",
+        "{existing_text_section}",
         "",
         "Task: Continue or rewrite the current draft according to the selected action while preserving coherence, voice, and pacing."
       ]

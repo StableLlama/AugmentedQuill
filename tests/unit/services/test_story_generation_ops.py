@@ -220,7 +220,7 @@ async def test_generate_chapter_summary_discard_clears_existing_summary_before_l
     assert final_story.get("chapters", [])[0].get("summary") == "New chapter summary"
 
 
-def test_prepare_ai_action_chapter_rewrite_uses_imposed_heading_prefix():
+def test_prepare_ai_action_chapter_rewrite_reuses_extend_prompt_without_prefill():
     ok, msg = select_project("rewrite_heading_prefix")
     assert ok, msg
 
@@ -256,13 +256,8 @@ def test_prepare_ai_action_chapter_rewrite_uses_imposed_heading_prefix():
     )
 
     assert prepared["existing_content"] == "This text should be ignored for rewrite."
-    assert prepared["response_prefill"] == "# My chapter title\n\n"
-    assert prepared["extra_body"] == {
-        "chat_template_kwargs": {
-            "continue_final_message": True,
-            "enable_thinking": False,
-        }
-    }
+    assert prepared["response_prefill"] is None
+    assert prepared["extra_body"] is None
 
 
 def test_prepare_ai_action_chapter_extend_prefills_full_draft_with_heading():
@@ -494,6 +489,8 @@ def test_prepare_ai_action_chapter_rewrite_includes_all_scene_context_and_refere
     assert "Hero profile." in prompt_text
     assert "Guide profile." in prompt_text
     assert "Ancient relic lore." in prompt_text
+    assert "Existing draft text" not in prompt_text
+    assert "Task: Continue or rewrite the current draft" in prompt_text
 
 
 def test_prepare_ai_action_chapter_extend_uses_marker_aware_cursor_for_scene_context():

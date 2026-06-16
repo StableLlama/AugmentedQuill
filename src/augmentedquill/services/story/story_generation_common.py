@@ -1272,7 +1272,7 @@ def prepare_ai_action_generation(payload: dict, active: Path | None = None) -> d
             chapter_title=chapter_title,
             existing_content=existing_content,
         )
-        if target == "chapter"
+        if target == "chapter" and action == "extend"
         else None
     )
     extra_body = None
@@ -1422,7 +1422,9 @@ def prepare_ai_action_generation(payload: dict, active: Path | None = None) -> d
         chapter_conflicts=context["chapter_conflicts"],
         chapter_notes=context["chapter_notes"],
         existing_content=(
-            "" if target == "chapter" and action == "extend" else existing_content
+            ""
+            if target == "chapter" and action in ("extend", "rewrite")
+            else existing_content
         ),
         chapter_summaries=chapter_summaries_text,
         style_tags=context["story_tags"],

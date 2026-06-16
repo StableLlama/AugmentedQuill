@@ -359,20 +359,13 @@ def build_ai_action_messages(
                 else "story_summary_update"
             )
     else:
-        # Keep chapter Extend/Rewrite on a shared continuation-style prompt path.
+        # Keep chapter Extend/Rewrite on the same continuation-style prompt path.
         if action in ("extend", "rewrite"):
             sys_key = "ai_action_chapter_extend"
             user_key = "chapter_ai_prefill_task"
         else:
             sys_key = f"ai_action_chapter_{action}"
             user_key = f"ai_action_chapter_{action}_user"
-
-    # User templates for chapter AI actions are currently the standard chapter templates.
-    if user_key.startswith("ai_action_chapter_"):
-        if action == "extend":
-            user_key = "continue_chapter"
-        elif action == "rewrite":
-            user_key = "continue_chapter"
 
     # Additional placeholders for EDITING tasks
     story_context = ""
@@ -434,6 +427,11 @@ def build_ai_action_messages(
     else:
         summary_heading = ""
 
+    existing_text_section = (
+        f"Existing draft text (do not change):\n\n{existing_content}"
+        if existing_content
+        else ""
+    )
     return _build_messages(
         system_message_key=sys_key,
         user_prompt_key=user_key,
@@ -450,6 +448,7 @@ def build_ai_action_messages(
         existing_content=existing_content,
         chapter_text=existing_content,
         existing_text=existing_content,
+        existing_text_section=existing_text_section,
         existing_summary=chapter_summary,
         chapter_summaries=chapter_summaries,
         source_summaries=chapter_summaries,
