@@ -49,6 +49,8 @@ import { buildClipboardExtension } from './clipboardExtension';
 import { buildDiffPlugin, externalValueSyncAnnotation } from './codeMirrorDiffPlugin';
 import { buildWhitespacePlugin } from './codeMirrorWhitespacePlugin';
 import { buildEnterExtension, buildTabExtension } from './codeMirrorKeymap';
+import { INLINE_INTERNAL_MARKER_REGEX } from './internalTags';
+import { buildAnnotationExtensions } from './annotationPlugin';
 
 // ─── Prose-link highlight StateEffect / StateField ───────────────────────────
 // Exported so that EditorHandle.setProseHighlight can dispatch it directly on
@@ -266,7 +268,7 @@ const mdHighlightStyle = HighlightStyle.define([
 ]);
 
 const sceneMarkerHideDecorator = new MatchDecorator({
-  regexp: /<!--scene:[^:>]+:(?:start|end)-->/g,
+  regexp: INLINE_INTERNAL_MARKER_REGEX,
   decoration: Decoration.replace({}),
 });
 
@@ -669,7 +671,6 @@ export const CodeMirrorEditor = React.forwardRef<
     const markerHideCompartment = useRef(new Compartment());
     const selectionBgCompartment = useRef(new Compartment());
     const proseHighlightBgCompartment = useRef(new Compartment());
-
     // ── Extension builders ──────────────────────────────────────────────────
 
     const buildAttributesExtension = (
@@ -870,6 +871,8 @@ export const CodeMirrorEditor = React.forwardRef<
         // Prose-link highlight: StateField persists the ranges, ViewPlugin renders them.
         proseHighlightField,
         buildProseHighlightPlugin(proseBoundaryCallbackRef),
+        // Annotation highlights.
+        ...buildAnnotationExtensions(),
         EditorView.updateListener.of((update: ViewUpdate): void => {
           if (update.docChanged) {
             const isExternalSync = update.transactions.some((tx: Transaction) =>

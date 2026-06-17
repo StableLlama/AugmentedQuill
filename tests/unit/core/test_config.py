@@ -87,6 +87,59 @@ class ConfigLoaderTest(TestCase):
             self.assertEqual(cfg["format"], "markdown")
             self.assertEqual(cfg["chapters"], ["000-intro.md", "010-conflict.md"])
 
+    def test_story_config_loads_legacy_scene_prose_link_fields(self):
+        with tempfile.TemporaryDirectory() as td:
+            project_dir = Path(td)
+            story_path = project_dir / "story.json"
+            (project_dir / "content.md").write_text(
+                "Hello legacy world",
+                encoding="utf-8",
+            )
+            story_path.write_text(
+                json.dumps(
+                    {
+                        "metadata": {"version": 4},
+                        "project_title": "Legacy",
+                        "format": "markdown",
+                        "scenes": {
+                            "1": {
+                                "summary": "Legacy scene",
+                                "beats": [],
+                                "active_characters": [],
+                                "passive_characters": [],
+                                "sourcebook_entry_ids": [],
+                                "location": None,
+                                "time": None,
+                                "scene_time": None,
+                                "color_tag": None,
+                                "causes": [],
+                                "pinboard_x": 0,
+                                "pinboard_y": 0,
+                                "status": "active",
+                                "prose_link": {
+                                    "scope_type": "story",
+                                    "start_offset": 0,
+                                    "end_offset": 5,
+                                    "content_hash": "2095b47960c1dc52",
+                                    "is_stale": False,
+                                },
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            loaded = load_story_config(story_path)
+            scenes = loaded.get("scenes")
+            self.assertTrue(isinstance(scenes, dict))
+            self.assertTrue(isinstance(scenes.get("1"), dict))
+            prose_link = scenes["1"].get("prose_link")
+            self.assertTrue(isinstance(prose_link, dict))
+            self.assertEqual(prose_link.get("scope_type"), "story")
+            self.assertEqual(prose_link.get("content_hash"), "2095b47960c1dc52")
+            self.assertEqual(prose_link.get("is_stale"), False)
+
 
 class MachineSchemaValidationTest(TestCase):
     """Tests for schema-based validation inside load_machine_config."""

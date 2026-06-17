@@ -94,7 +94,7 @@ function ChapterListInner({
   onOpenImages: _onOpenImages,
   baselineChapters = [],
   spellCheck = true,
-}: ChapterListProps): JSX.Element {
+}: ChapterListProps): React.ReactElement {
   const DRAG_SCENE_MIME = 'application/x-augmentedquill-scene-id';
   const DRAG_SCENES_MIME = 'application/x-augmentedquill-scene-ids';
   const { isLight } = useThemeClasses();

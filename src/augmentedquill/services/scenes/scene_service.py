@@ -38,8 +38,10 @@ from augmentedquill.services.scenes.scene_markers import (
     parse_scene_spans,
     remap_offset_after_marker_removal,
     remove_markers,
+    scene_block_bounds,
     snap_range_outside_markers,
     snap_offset_outside_markers,
+    validate_internal_marker_tokens,
     validate_scene_marker_tokens,
 )
 from augmentedquill.updates.migrate_story_v3 import migrate_project_v3
@@ -471,6 +473,7 @@ def _read_validated_marker_content(path: Path) -> str:
     """Read prose content and fail fast when marker syntax is malformed."""
     content = path.read_text(encoding="utf-8")
     validate_scene_marker_tokens(content)
+    validate_internal_marker_tokens(content)
     return content
 
 
@@ -1135,6 +1138,15 @@ def reorder_scene_prose(
 
     same_scope = _same_prose_scope(src_link, tgt_link)
 
+    # Load annotation metadata before any reorder so splits can be persisted.
+    from augmentedquill.services.annotations.annotation_service import (
+        split_straddling_annotations,
+    )
+
+    story_ann_meta = (
+        story.get("annotations") if isinstance(story.get("annotations"), list) else []
+    )
+
     if same_scope:
         content = _read_validated_marker_content(src_path)
         spans = {s.scene_id: s for s in parse_scene_spans(content)}
@@ -1144,15 +1156,39 @@ def reorder_scene_prose(
         if src_span is None or tgt_span is None:
             raise ValueError("Markers not found for one or both scenes")
 
-        src_marker_start = f"<!--scene:{src_id}:start-->"
-        src_marker_end = f"<!--scene:{src_id}:end-->"
-        tgt_marker_start = f"<!--scene:{tgt_id}:start-->"
-        tgt_marker_end = f"<!--scene:{tgt_id}:end-->"
+        src_block = scene_block_bounds(content, src_id)
+        tgt_block = scene_block_bounds(content, tgt_id)
+        if src_block is None or tgt_block is None:
+            raise ValueError("Unable to derive scene marker block boundaries")
+        src_block_start, src_block_end = src_block
+        tgt_block_start, tgt_block_end = tgt_block
 
-        src_block_start = src_span.start - len(src_marker_start)
-        src_block_end = src_span.end + len(src_marker_end)
-        tgt_block_start = tgt_span.start - len(tgt_marker_start)
-        tgt_block_end = tgt_span.end + len(tgt_marker_end)
+        # Save original content properties BEFORE annotation split so that
+        # scope_start/scope_end returned to the frontend are valid in the
+        # editor's pre-reorder document (the frontend has not yet seen the
+        # annotation-split markers).
+        old_content_len = len(content)
+        orig_scope_start = min(src_block_start, tgt_block_start)
+        orig_scope_end = max(src_block_end, tgt_block_end)
+
+        # Split any annotations that straddle the src_block boundary before moving.
+        content, story_ann_meta = split_straddling_annotations(
+            content, src_block_start, src_block_end, story_ann_meta
+        )
+        story["annotations"] = story_ann_meta
+
+        # How many bytes were inserted by the annotation split.
+        offset_shift = len(content) - old_content_len
+
+        # Re-derive block bounds after any annotation marker insertions.
+        src_block_bounds_fresh = scene_block_bounds(content, src_id)
+        tgt_block_bounds_fresh = scene_block_bounds(content, tgt_id)
+        if src_block_bounds_fresh is None or tgt_block_bounds_fresh is None:
+            raise ValueError(
+                "Unable to re-derive scene marker block boundaries after annotation split"
+            )
+        src_block_start, src_block_end = src_block_bounds_fresh
+        tgt_block_start, tgt_block_end = tgt_block_bounds_fresh
 
         src_block = content[src_block_start:src_block_end]
 
@@ -1160,24 +1196,42 @@ def reorder_scene_prose(
         # source-free content. This ensures true placement semantics (adjacent
         # before/after target) even when source and target have blocks between.
         without_src = content[:src_block_start] + content[src_block_end:]
-        spans_without_src = {s.scene_id: s for s in parse_scene_spans(without_src)}
+
+        # Strip any residual source-scene markers from without_src.  Corrupted
+        # files from previous failed reorder attempts may contain duplicate
+        # start/end markers for the source scene (e.g. an orphaned start that
+        # predates the correctly-paired block).  If we don't clean them here
+        # the reorder will leave the orphaned fragment in place.
+        from augmentedquill.services.scenes.scene_markers import (
+            remove_markers as _rm_markers,
+        )
+
+        clean_without = _rm_markers(without_src, {src_id})
+
+        spans_without_src = {s.scene_id: s for s in parse_scene_spans(clean_without)}
         tgt_span_after = spans_without_src.get(tgt_id)
         if tgt_span_after is None:
             raise ValueError("Target markers not found after removing source block")
 
-        tgt_block_start_after = tgt_span_after.start - len(tgt_marker_start)
-        tgt_block_end_after = tgt_span_after.end + len(tgt_marker_end)
+        tgt_block_after = scene_block_bounds(clean_without, tgt_id)
+        if tgt_block_after is None:
+            raise ValueError("Unable to derive target block boundaries after move")
+        tgt_block_start_after, tgt_block_end_after = tgt_block_after
         insert_pos = (
             tgt_block_start_after if request.place_before else tgt_block_end_after
         )
 
-        new_content = without_src[:insert_pos] + src_block + without_src[insert_pos:]
+        new_content = (
+            clean_without[:insert_pos] + src_block + clean_without[insert_pos:]
+        )
 
-        scope_start = min(src_block_start, tgt_block_start)
-        scope_end = max(src_block_end, tgt_block_end)
-        rebuilt_text = new_content[scope_start:scope_end]
-        if new_content != content:
-            _write_text_atomic(src_path, new_content)
+        # Use original (pre-split) offsets so the frontend can apply the change
+        # to its pre-reorder document.  The rebuilt_text must span the extra
+        # annotation-split bytes to produce a correct final document.
+        scope_start = orig_scope_start
+        scope_end = orig_scope_end
+        rebuilt_text = new_content[orig_scope_start : orig_scope_end + offset_shift]
+        _write_text_atomic(src_path, new_content)
 
         new_spans = {s.scene_id: s for s in parse_scene_spans(new_content)}
         _normalize_scope_order_indices(
@@ -1190,6 +1244,7 @@ def reorder_scene_prose(
         )
 
         story["scenes"] = _drop_prose_links_for_persistence(scenes_dict)
+        story["annotations"] = story_ann_meta
         save_story_config(story_path, story)
 
         affected = []
@@ -1221,14 +1276,12 @@ def reorder_scene_prose(
 
     src_prose = src_content[src_span.start : src_span.end]
 
-    src_start_marker = f"<!--scene:{src_id}:start-->"
-    src_end_marker = f"<!--scene:{src_id}:end-->"
-    tgt_start_marker = f"<!--scene:{tgt_id}:start-->"
-    tgt_end_marker = f"<!--scene:{tgt_id}:end-->"
-    src_block_start = src_span.start - len(src_start_marker)
-    src_block_end = src_span.end + len(src_end_marker)
-    tgt_block_start = tgt_span.start - len(tgt_start_marker)
-    tgt_block_end = tgt_span.end + len(tgt_end_marker)
+    src_block = scene_block_bounds(src_content, src_id)
+    tgt_block = scene_block_bounds(tgt_content, tgt_id)
+    if src_block is None or tgt_block is None:
+        raise ValueError("Unable to derive scene marker block boundaries")
+    src_block_start, src_block_end = src_block
+    tgt_block_start, tgt_block_end = tgt_block
     new_src_content = src_content[:src_block_start] + src_content[src_block_end:]
     _write_text_atomic(src_path, new_src_content)
 

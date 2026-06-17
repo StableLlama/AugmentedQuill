@@ -225,3 +225,56 @@ class ProjectsTest(ApiTestCase):
         self.assertEqual(payload.get("error"), "invalid_config")
         self.assertIn("schema requirements", payload.get("error_message", ""))
         self.assertIsNone(payload.get("story"))
+
+    def test_select_legacy_scene_prose_link_fields_are_sanitized_for_payload(self):
+        project_name = "legacy_scene_prose_link_project"
+        ok, msg = select_project(project_name)
+        self.assertTrue(ok, msg)
+
+        project_dir = self.projects_root / project_name
+        story_path = project_dir / "story.json"
+        story = json.loads(story_path.read_text(encoding="utf-8"))
+        story["metadata"] = {"version": 4}
+        story["scenes"] = {
+            "1": {
+                "summary": "Legacy scene",
+                "beats": [],
+                "active_characters": [],
+                "passive_characters": [],
+                "sourcebook_entry_ids": [],
+                "location": None,
+                "time": None,
+                "scene_time": None,
+                "color_tag": None,
+                "causes": [],
+                "pinboard_x": 5,
+                "pinboard_y": 7,
+                "status": "active",
+                "prose_link": {
+                    "scope_type": "story",
+                    "start_offset": 0,
+                    "end_offset": 6,
+                    "content_hash": "2095b47960c1dc52",
+                    "is_stale": False,
+                },
+            }
+        }
+        story_path.write_text(json.dumps(story, indent=2), encoding="utf-8")
+        (project_dir / "content.md").write_text("Legacy prose text", encoding="utf-8")
+
+        response = self.client.post(
+            "/api/v1/projects/select", json={"name": project_name}
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertIsNone(payload.get("error"))
+        self.assertIsNotNone(payload.get("story"))
+        scenes = payload.get("story", {}).get("scenes") or []
+        self.assertEqual(len(scenes), 1)
+        prose_link = scenes[0].get("prose_link") or {}
+        self.assertEqual(prose_link.get("scope_type"), "story")
+        self.assertEqual(prose_link.get("start_offset"), 0)
+        self.assertEqual(prose_link.get("end_offset"), 6)
+        self.assertNotIn("content_hash", prose_link)
+        self.assertNotIn("is_stale", prose_link)

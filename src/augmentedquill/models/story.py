@@ -87,6 +87,7 @@ class StoryPayload(BaseModel):
     notes: Optional[str] = None
     private_notes: Optional[str] = None
     tags: Optional[list[str]] = None
+    annotations: Optional[list[Any]] = None
     image_style: Optional[str] = None
     image_additional_info: Optional[str] = None
     project_type: Optional[str] = None

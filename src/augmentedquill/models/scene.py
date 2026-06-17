@@ -81,6 +81,27 @@ class SceneTagPersonalDatetime(BaseModel):
         return stripped
 
 
+class SceneAnnotation(BaseModel):
+    """Inline annotation metadata mirrored from prose markers."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(..., description="Stable annotation identifier.")
+    comment: str = Field(..., description="Human-readable annotation comment.")
+    scope_type: Literal["story", "chapter", "unlinked"] = Field(
+        default="story",
+        description="Scope where the annotation lives.",
+    )
+    chapter_id: Optional[str] = Field(
+        None,
+        description="Chapter ID when scope_type='chapter'.",
+    )
+    book_id: Optional[str] = Field(
+        None,
+        description="Book ID when scope_type='chapter' and the chapter is nested.",
+    )
+
+
 class SceneProseLink(BaseModel):
     """A link between a scene (or beat) and a specific content file.
 
@@ -252,6 +273,10 @@ class Scene(BaseModel):
     tag_personal_datetimes: list[SceneTagPersonalDatetime] = Field(
         default_factory=list
     )  # per-tag personal age overrides (supports duplicate characters)
+    annotations: list[SceneAnnotation] = Field(
+        default_factory=list,
+        description="Optional inline annotations associated with this scene.",
+    )
 
 
 # ---------------------------------------------------------------------------

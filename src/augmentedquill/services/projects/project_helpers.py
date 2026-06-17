@@ -18,6 +18,53 @@ from augmentedquill.services.chapters.chapter_helpers import (
 )
 
 
+def _sanitize_scene_prose_links_for_frontend(scene_value: Any) -> Any:
+    """Drop legacy prose_link keys that violate strict frontend scene models."""
+    if not isinstance(scene_value, dict):
+        return scene_value
+
+    scene_copy = scene_value.copy()
+    prose_link = scene_copy.get("prose_link")
+    if isinstance(prose_link, dict):
+        clean_link = {
+            "scope_type": prose_link.get("scope_type"),
+            "chapter_id": prose_link.get("chapter_id"),
+            "book_id": prose_link.get("book_id"),
+            "start_offset": prose_link.get("start_offset"),
+            "end_offset": prose_link.get("end_offset"),
+        }
+        scene_copy["prose_link"] = {
+            key: value for key, value in clean_link.items() if value is not None
+        }
+
+    beats = scene_copy.get("beats")
+    if isinstance(beats, list):
+        normalized_beats: list[Any] = []
+        for beat in beats:
+            if not isinstance(beat, dict):
+                normalized_beats.append(beat)
+                continue
+            beat_copy = beat.copy()
+            beat_link = beat_copy.get("prose_link")
+            if isinstance(beat_link, dict):
+                clean_beat_link = {
+                    "scope_type": beat_link.get("scope_type"),
+                    "chapter_id": beat_link.get("chapter_id"),
+                    "book_id": beat_link.get("book_id"),
+                    "start_offset": beat_link.get("start_offset"),
+                    "end_offset": beat_link.get("end_offset"),
+                }
+                beat_copy["prose_link"] = {
+                    key: value
+                    for key, value in clean_beat_link.items()
+                    if value is not None
+                }
+            normalized_beats.append(beat_copy)
+        scene_copy["beats"] = normalized_beats
+
+    return scene_copy
+
+
 def normalize_story_for_frontend(story: dict) -> dict:
     """Prepare story data for the frontend by converting internal storage formats
     (like dict-based sourcebook) back into frontend-friendly formats (like sorted lists).
@@ -76,10 +123,17 @@ def normalize_story_for_frontend(story: dict) -> dict:
     # Scenes: normalise from dict (on-disk format) to sorted list for frontend.
     scenes_raw = res.get("scenes", {})
     if isinstance(scenes_raw, dict):
-        scenes_list = [{"id": sid, **data} for sid, data in scenes_raw.items()]
+        scenes_list = [
+            _sanitize_scene_prose_links_for_frontend({"id": sid, **data})
+            for sid, data in scenes_raw.items()
+        ]
         scenes_list.sort(key=lambda s: (s.get("pinboard_y", 0), s.get("pinboard_x", 0)))
         res["scenes"] = scenes_list
-    elif not isinstance(scenes_raw, list):
+    elif isinstance(scenes_raw, list):
+        res["scenes"] = [
+            _sanitize_scene_prose_links_for_frontend(scene) for scene in scenes_raw
+        ]
+    else:
         res["scenes"] = []
 
     # Conflict IDs are synthesized when missing so editing and reordering

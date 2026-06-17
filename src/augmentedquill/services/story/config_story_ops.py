@@ -154,7 +154,9 @@ def clean_story_config_for_disk(config: Dict[str, Any]) -> Dict[str, Any]:
         if isinstance(data, dict):
             res = {}
             for k, v in data.items():
-                if k == "id":
+                # Keep ids for annotation records; all other runtime ids are
+                # stripped for persisted story config compatibility.
+                if k == "id" and current_key != "annotations":
                     continue
                 if current_key == "sourcebook":
                     entry_data = _clean_for_disk(v)
@@ -177,7 +179,7 @@ def clean_story_config_for_disk(config: Dict[str, Any]) -> Dict[str, Any]:
                         }
                         res[name] = entry_copy
                 return res
-            return [_clean_for_disk(x) for x in data]
+            return [_clean_for_disk(x, current_key) for x in data]
         return data
 
     return _clean_for_disk(config)

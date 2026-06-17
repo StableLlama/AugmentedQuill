@@ -704,5 +704,26 @@ export const fr = {
     Chicago: 'Chicago',
     'Los Angeles': 'Los Angeles',
     'Sao Paulo': 'São Paulo',
+    annotation_panel_region_label: 'Panneau des annotations',
+    annotation_panel_title: 'Annotations',
+    annotation_hotkey_hint: 'Ctrl/Cmd+Maj+A',
+    annotation_add_from_selection:
+      'Ajouter une annotation à partir du texte sélectionné',
+    annotation_context_menu_label: 'Menu contextuel des annotations',
+    annotation_context_add: 'Ajouter une annotation',
+    add_annotation: 'Ajouter une annotation',
+    edit_annotation: "Modifier l'annotation",
+    delete_annotation: "Supprimer l'annotation",
+    edit_annotation_comment: "Modifier le commentaire de l'annotation",
+    annotation_comment_label: 'Commentaire',
+    annotation_comment_placeholder: "Écrivez un commentaire d'annotation...",
+    annotation_item: 'Annotation : {{comment}}',
+    loading_annotations: 'Chargement des annotations...',
+    no_annotations: "Aucune annotation pour l'instant.",
+    annotation_hint:
+      'Sélectionnez du texte puis utilisez Ctrl/Cmd+Maj+A ou clic droit.',
+    annotation_unanchored:
+      "L'ancre de l'annotation est introuvable dans le texte actuel.",
+    no_comment: 'Aucun commentaire',
   },
 };

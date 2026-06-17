@@ -21,6 +21,7 @@ import { debugApi } from './apiClients/debug';
 import { createCheckpointsApi } from './apiClients/checkpoints';
 import { createSearchApi } from './apiClients/search';
 import { createScenesApi } from './apiClients/scenes';
+import { createAnnotationsApi } from './apiClients/annotations';
 import { useStoryStore } from '../stores/storyStore';
 
 type ProjectApiClients = {
@@ -33,6 +34,7 @@ type ProjectApiClients = {
   checkpoints: ReturnType<typeof createCheckpointsApi>;
   search: ReturnType<typeof createSearchApi>;
   scenes: ReturnType<typeof createScenesApi>;
+  annotations: ReturnType<typeof createAnnotationsApi>;
 };
 
 const projectApiCache = new Map<string, ProjectApiClients>();
@@ -66,6 +68,7 @@ function forProject(projectName: string): ProjectApiClients {
     checkpoints: createCheckpointsApi(projectName),
     search: createSearchApi(projectName),
     scenes: createScenesApi(projectName),
+    annotations: createAnnotationsApi(projectName),
   };
   projectApiCache.set(projectName, scoped);
   return scoped;
@@ -273,5 +276,15 @@ export const api = {
     ) => currentProjectApi().scenes.autoLinkScope(...args),
     writeScene: (...args: Parameters<ProjectApiClients['scenes']['writeScene']>) =>
       currentProjectApi().scenes.writeScene(...args),
+  },
+  annotations: {
+    list: (...args: Parameters<ProjectApiClients['annotations']['list']>) =>
+      currentProjectApi().annotations.list(...args),
+    create: (...args: Parameters<ProjectApiClients['annotations']['create']>) =>
+      currentProjectApi().annotations.create(...args),
+    update: (...args: Parameters<ProjectApiClients['annotations']['update']>) =>
+      currentProjectApi().annotations.update(...args),
+    remove: (...args: Parameters<ProjectApiClients['annotations']['remove']>) =>
+      currentProjectApi().annotations.remove(...args),
   },
 };

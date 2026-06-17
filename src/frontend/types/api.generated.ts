@@ -1763,6 +1763,78 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/projects/{project_name}/annotations': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Api List Annotations
+     * @description List all annotations for the project.
+     */
+    get: operations['api_list_annotations_api_v1_projects__project_name__annotations_get'];
+    put?: never;
+    /**
+     * Api Create Annotation
+     * @description Create a new inline annotation.
+     */
+    post: operations['api_create_annotation_api_v1_projects__project_name__annotations_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/projects/{project_name}/annotations/scope': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Api List Annotations For Scope
+     * @description List annotations for a specific prose scope.
+     */
+    get: operations['api_list_annotations_for_scope_api_v1_projects__project_name__annotations_scope_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/projects/{project_name}/annotations/{annotation_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Api Get Annotation
+     * @description Fetch a single annotation by ID.
+     */
+    get: operations['api_get_annotation_api_v1_projects__project_name__annotations__annotation_id__get'];
+    /**
+     * Api Update Annotation
+     * @description Update an annotation's comment.
+     */
+    put: operations['api_update_annotation_api_v1_projects__project_name__annotations__annotation_id__put'];
+    post?: never;
+    /**
+     * Api Delete Annotation
+     * @description Delete an annotation and remove its inline markers.
+     */
+    delete: operations['api_delete_annotation_api_v1_projects__project_name__annotations__annotation_id__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/health': {
     parameters: {
       query?: never;
@@ -1804,6 +1876,26 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    /**
+     * AnnotationResponse
+     * @description A single annotation with runtime offsets attached.
+     */
+    AnnotationResponse: {
+      /** Id */
+      id: string;
+      /** Comment */
+      comment: string;
+      /** Scope Type */
+      scope_type: string;
+      /** Chapter Id */
+      chapter_id?: string | null;
+      /** Book Id */
+      book_id?: string | null;
+      /** Start Offset */
+      start_offset?: number | null;
+      /** End Offset */
+      end_offset?: number | null;
+    };
     /**
      * AutoLinkScopeRequest
      * @description Body for auto-linking a saved prose scope to its scenes.
@@ -2126,6 +2218,42 @@ export interface components {
     CheckpointLoadDeleteRequest: {
       /** Timestamp */
       timestamp: string;
+    };
+    /**
+     * CreateAnnotationRequest
+     * @description Payload for creating a new annotation.
+     */
+    CreateAnnotationRequest: {
+      /**
+       * Scope Type
+       * @description 'story', 'chapter', or 'unlinked'
+       */
+      scope_type: string;
+      /**
+       * Chapter Id
+       * @description Chapter ID for chapter scope
+       */
+      chapter_id?: string | null;
+      /**
+       * Book Id
+       * @description Book ID for nested chapter scope
+       */
+      book_id?: string | null;
+      /**
+       * Start Offset
+       * @description Raw character offset (markers included)
+       */
+      start_offset: number;
+      /**
+       * End Offset
+       * @description Raw character offset (markers included)
+       */
+      end_offset: number;
+      /**
+       * Comment
+       * @description Human-readable annotation comment
+       */
+      comment: string;
     };
     /**
      * DebugLogEntry
@@ -2855,6 +2983,44 @@ export interface components {
       status: string;
       /** Tag Personal Datetimes */
       tag_personal_datetimes?: components['schemas']['SceneTagPersonalDatetime'][];
+      /**
+       * Annotations
+       * @description Optional inline annotations associated with this scene.
+       */
+      annotations?: components['schemas']['SceneAnnotation'][];
+    };
+    /**
+     * SceneAnnotation
+     * @description Inline annotation metadata mirrored from prose markers.
+     */
+    SceneAnnotation: {
+      /**
+       * Id
+       * @description Stable annotation identifier.
+       */
+      id: string;
+      /**
+       * Comment
+       * @description Human-readable annotation comment.
+       */
+      comment: string;
+      /**
+       * Scope Type
+       * @description Scope where the annotation lives.
+       * @default story
+       * @enum {string}
+       */
+      scope_type: 'story' | 'chapter' | 'unlinked';
+      /**
+       * Chapter Id
+       * @description Chapter ID when scope_type='chapter'.
+       */
+      chapter_id?: string | null;
+      /**
+       * Book Id
+       * @description Book ID when scope_type='chapter' and the chapter is nested.
+       */
+      book_id?: string | null;
     };
     /**
      * SceneBeat
@@ -3656,6 +3822,8 @@ export interface components {
       private_notes?: string | null;
       /** Tags */
       tags?: string[] | null;
+      /** Annotations */
+      annotations?: unknown[] | null;
       /** Image Style */
       image_style?: string | null;
       /** Image Additional Info */
@@ -3729,6 +3897,14 @@ export interface components {
       tags?: string[] | null;
       /** Detail */
       detail?: string | null;
+    };
+    /**
+     * UpdateAnnotationRequest
+     * @description Payload for updating an annotation's comment.
+     */
+    UpdateAnnotationRequest: {
+      /** Comment */
+      comment: string;
     };
     /** ValidationError */
     ValidationError: {
@@ -6782,6 +6958,211 @@ export interface operations {
         content: {
           'application/json': components['schemas']['AutoLinkScopeResponse'];
         };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  api_list_annotations_api_v1_projects__project_name__annotations_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Directory name of the project */
+        project_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AnnotationResponse'][];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  api_create_annotation_api_v1_projects__project_name__annotations_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Directory name of the project */
+        project_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateAnnotationRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AnnotationResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  api_list_annotations_for_scope_api_v1_projects__project_name__annotations_scope_get: {
+    parameters: {
+      query?: {
+        scope_type?: string;
+        chapter_id?: string | null;
+        book_id?: string | null;
+      };
+      header?: never;
+      path: {
+        /** @description Directory name of the project */
+        project_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AnnotationResponse'][];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  api_get_annotation_api_v1_projects__project_name__annotations__annotation_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        annotation_id: string;
+        /** @description Directory name of the project */
+        project_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AnnotationResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  api_update_annotation_api_v1_projects__project_name__annotations__annotation_id__put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        annotation_id: string;
+        /** @description Directory name of the project */
+        project_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateAnnotationRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AnnotationResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  api_delete_annotation_api_v1_projects__project_name__annotations__annotation_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        annotation_id: string;
+        /** @description Directory name of the project */
+        project_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
       /** @description Validation Error */
       422: {

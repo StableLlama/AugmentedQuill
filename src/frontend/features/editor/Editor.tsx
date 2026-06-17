@@ -38,6 +38,7 @@ import {
   type ProseHighlightRange,
   type ProseBoundaryCallback,
 } from './CodeMirrorEditor';
+import { setAnnotationRangesEffect, type AnnotationRange } from './annotationPlugin';
 import { EditorSuggestionPanel } from './EditorSuggestionPanel';
 import { EditorMobileToolbar } from './EditorMobileToolbar';
 import { EditorProvider } from './EditorContext';
@@ -123,6 +124,10 @@ export interface EditorHandle {
    * handle to a new position.  Pass null to unsubscribe.
    */
   setOnProseBoundaryChange: (cb: ProseBoundaryCallback | null) => void;
+  /** Push a new set of annotation highlight ranges to the editor. */
+  setAnnotationRanges: (ranges: AnnotationRange[]) => void;
+  /** Return current selection (anchor/head) or null when editor is unavailable. */
+  getSelection: () => { anchor: number; head: number } | null;
 }
 
 /* eslint-disable complexity */
@@ -665,8 +670,11 @@ export const Editor = React.memo(
         jumpToPosition: (start: number, end: number): void => {
           const view = editorViewRef.current;
           if (!view) return;
+          const docLen = view.state.doc.length;
+          const safeEnd = Math.min(Math.max(start, end), docLen);
+          const safeStart = Math.min(Math.max(0, start), safeEnd);
           view.dispatch({
-            selection: { anchor: start, head: end },
+            selection: { anchor: safeStart, head: safeEnd },
             scrollIntoView: true,
           });
           view.focus();
@@ -692,6 +700,15 @@ export const Editor = React.memo(
         },
         setOnProseBoundaryChange: (cb: ProseBoundaryCallback | null): void => {
           proseBoundaryCallbackRef.current = cb;
+        },
+        setAnnotationRanges: (ranges: AnnotationRange[]): void => {
+          editorViewRef.current?.dispatch({
+            effects: setAnnotationRangesEffect.of(ranges),
+          });
+        },
+        getSelection: (): { anchor: number; head: number } | null => {
+          const sel = editorViewRef.current?.state.selection.main;
+          return sel ? { anchor: sel.anchor, head: sel.head } : null;
         },
       }));
 

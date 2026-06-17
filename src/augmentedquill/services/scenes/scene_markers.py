@@ -22,6 +22,10 @@ import re
 from dataclasses import dataclass
 
 _MARKER_RE = re.compile(r"<!--scene:(\d+):(start|end)-->")
+_ANNOTATION_MARKER_RE = re.compile(r"<!--annotation:([^:>]+):(start|end)-->")
+_INTERNAL_MARKER_RE = re.compile(
+    r"<!--(?:scene:(\d+)|annotation:([^:>]+)):(start|end)-->"
+)
 
 
 @dataclass(frozen=True)
@@ -37,6 +41,15 @@ class SceneSpan:
     """
 
     scene_id: int
+    start: int
+    end: int
+
+
+@dataclass(frozen=True)
+class AnnotationSpan:
+    """Prose extent for a single inline annotation derived from markers."""
+
+    annotation_id: str
     start: int
     end: int
 
@@ -63,6 +76,128 @@ def parse_scene_spans(content: str) -> list[SceneSpan]:
                 )
             )
     return sorted(spans, key=lambda s: s.start)
+
+
+def parse_annotation_spans(content: str) -> list[AnnotationSpan]:
+    """Return all annotation spans parsed from *content*, sorted by start."""
+    open_starts: dict[str, int] = {}
+    spans: list[AnnotationSpan] = []
+    for match in _ANNOTATION_MARKER_RE.finditer(content):
+        annotation_id = match.group(1)
+        kind = match.group(2)
+        if kind == "start":
+            open_starts[annotation_id] = match.end()
+        elif kind == "end" and annotation_id in open_starts:
+            spans.append(
+                AnnotationSpan(
+                    annotation_id=annotation_id,
+                    start=open_starts.pop(annotation_id),
+                    end=match.start(),
+                )
+            )
+    return sorted(spans, key=lambda s: s.start)
+
+
+def scene_marker_token(scene_id: int, edge: str) -> str:
+    """Return canonical scene marker token for *scene_id* and *edge*."""
+    return f"<!--scene:{scene_id}:{edge}-->"
+
+
+def annotation_marker_token(annotation_id: str, edge: str) -> str:
+    """Return canonical annotation marker token for *annotation_id* and *edge*."""
+    return f"<!--annotation:{annotation_id}:{edge}-->"
+
+
+def find_scene_marker_span(content: str, scene_id: int) -> SceneSpan | None:
+    """Return the parsed scene prose span for *scene_id* or ``None``."""
+    for span in parse_scene_spans(content):
+        if span.scene_id == scene_id:
+            return span
+    return None
+
+
+def scene_block_bounds(content: str, scene_id: int) -> tuple[int, int] | None:
+    """Return marker-inclusive block bounds for *scene_id*.
+
+    The returned tuple is ``(block_start, block_end)`` where ``block_start``
+    points at the first character of ``<!--scene:N:start-->`` and
+    ``block_end`` points after the final character of ``<!--scene:N:end-->``.
+    """
+    span = find_scene_marker_span(content, scene_id)
+    if span is None:
+        return None
+
+    start_token = scene_marker_token(scene_id, "start")
+    end_token = scene_marker_token(scene_id, "end")
+
+    start_index = content.rfind(start_token, 0, span.start)
+    if start_index < 0:
+        return None
+    end_index = content.find(end_token, span.end)
+    if end_index < 0:
+        return None
+
+    return start_index, end_index + len(end_token)
+
+
+def annotation_block_bounds(content: str, annotation_id: str) -> tuple[int, int] | None:
+    """Return marker-inclusive block bounds for *annotation_id*."""
+    for span in parse_annotation_spans(content):
+        if span.annotation_id != annotation_id:
+            continue
+        start_token = annotation_marker_token(annotation_id, "start")
+        end_token = annotation_marker_token(annotation_id, "end")
+        start_index = content.rfind(start_token, 0, span.start)
+        if start_index < 0:
+            return None
+        end_index = content.find(end_token, span.end)
+        if end_index < 0:
+            return None
+        return start_index, end_index + len(end_token)
+    return None
+
+
+def inject_annotation_markers(
+    content: str,
+    assignments: list[tuple[str, int, int]],
+) -> str:
+    """Insert annotation markers into *content*.
+
+    The semantics mirror :func:`inject_markers`, but use string annotation IDs
+    instead of integer scene IDs.
+    """
+    sorted_assignments = sorted(assignments, key=lambda a: a[1])
+    parts: list[str] = []
+    cursor = 0
+    for annotation_id, start, end in sorted_assignments:
+        if start < cursor:
+            raise ValueError(
+                f"Overlapping annotation assignments: annotation {annotation_id} "
+                f"starts at {start} but cursor is already at {cursor}."
+            )
+        parts.append(content[cursor:start])
+        parts.append(annotation_marker_token(annotation_id, "start"))
+        parts.append(content[start:end])
+        parts.append(annotation_marker_token(annotation_id, "end"))
+        cursor = end
+    parts.append(content[cursor:])
+    return "".join(parts)
+
+
+def remove_annotation_markers(
+    content: str,
+    annotation_ids: set[str] | None = None,
+) -> str:
+    """Strip annotation markers from *content*."""
+    if annotation_ids is None:
+        return _ANNOTATION_MARKER_RE.sub("", content)
+    if not annotation_ids:
+        return content
+    ids_pattern = "|".join(
+        re.escape(annotation_id) for annotation_id in sorted(annotation_ids)
+    )
+    pattern = re.compile(rf"<!--annotation:(?:{ids_pattern}):(?:start|end)-->")
+    return pattern.sub("", content)
 
 
 def inject_markers(
@@ -160,6 +295,41 @@ def validate_scene_marker_tokens(content: str) -> None:
             snippet = content[marker_pos : marker_pos + 60].replace("\n", "\\n")
             raise ValueError(f"Malformed scene marker token near: {snippet}")
         search_pos = match.end()
+
+
+def validate_internal_marker_tokens(content: str) -> None:
+    """Validate all supported internal marker tokens.
+
+    Supported tags:
+      - ``<!--scene:<id>:(start|end)-->``
+      - ``<!--annotation:<id>:(start|end)-->``
+    """
+    search_pos = 0
+    while True:
+        marker_pos = content.find("<!--", search_pos)
+        if marker_pos < 0:
+            return
+        if not (
+            content.startswith("<!--scene:", marker_pos)
+            or content.startswith("<!--annotation:", marker_pos)
+        ):
+            search_pos = marker_pos + 4
+            continue
+        match = _INTERNAL_MARKER_RE.match(content, marker_pos)
+        if match is None:
+            snippet = content[marker_pos : marker_pos + 80].replace("\n", "\\n")
+            raise ValueError(f"Malformed internal marker token near: {snippet}")
+        search_pos = match.end()
+
+
+def validate_internal_marker_only_edit(original: str, edited: str) -> None:
+    """Assert that *edited* differs from *original* only by internal markers."""
+    cleaned_original = _INTERNAL_MARKER_RE.sub("", original)
+    cleaned_edited = _INTERNAL_MARKER_RE.sub("", edited)
+    if cleaned_original != cleaned_edited:
+        raise ValueError(
+            "Edited content modified prose text beyond internal marker insertion."
+        )
 
 
 def snap_offset_outside_markers(content: str, offset: int) -> int:

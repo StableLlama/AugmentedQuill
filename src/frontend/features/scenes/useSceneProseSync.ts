@@ -23,7 +23,7 @@ import type { Scene, SceneId, SceneProseLink } from '../../types';
 import type { WritingUnit } from '../../types/domain';
 import type { EditorHandle } from '../editor/Editor';
 import type { ProseHighlightRange } from '../editor/CodeMirrorEditor';
-import { normalizeChapterId } from './sceneSortUtils';
+import { toVisibleRange } from './proseLinkCoordinates';
 
 /** Returns true when two sets contain exactly the same SceneId members. */
 function setsEqual(a: ReadonlySet<SceneId>, b: ReadonlySet<SceneId>): boolean {
@@ -32,135 +32,6 @@ function setsEqual(a: ReadonlySet<SceneId>, b: ReadonlySet<SceneId>): boolean {
     if (!b.has(item)) return false;
   }
   return true;
-}
-
-const INLINE_SCENE_MARKER_REGEX = /<!--scene:[^:>]+:(?:start|end)-->/;
-
-function getMarkerSpanRange(
-  sourceText: string,
-  sceneId: SceneId
-): { from: number; to: number } | null {
-  const startToken = `<!--scene:${String(sceneId)}:start-->`;
-  const endToken = `<!--scene:${String(sceneId)}:end-->`;
-  const markerStart = sourceText.indexOf(startToken);
-  if (markerStart < 0) return null;
-  const contentStart = markerStart + startToken.length;
-  const markerEnd = sourceText.indexOf(endToken, contentStart);
-  if (markerEnd < contentStart) return null;
-  return { from: contentStart, to: markerEnd };
-}
-
-function sceneMarkerLength(sceneId: SceneId, edge: 'start' | 'end'): number {
-  return `<!--scene:${String(sceneId)}:${edge}-->`.length;
-}
-
-function linkMatchesChapter(link: SceneProseLink, chapter: WritingUnit): boolean {
-  return link.scope_type === 'story'
-    ? chapter.scope === 'story'
-    : link.scope_type === 'chapter' &&
-        normalizeChapterId(link.chapter_id) === normalizeChapterId(chapter.id);
-}
-
-function shouldAdjustOffsets(chapter: WritingUnit, scenes: readonly Scene[]): boolean {
-  const scoped = scenes
-    .map((scene: Scene) => ({ sceneId: scene.id, link: scene.prose_link }))
-    .filter(
-      (item: {
-        sceneId: SceneId;
-        link: SceneProseLink | null | undefined;
-      }): item is { sceneId: SceneId; link: SceneProseLink } =>
-        item.link != null && linkMatchesChapter(item.link, chapter)
-    );
-
-  if (scoped.length === 0) {
-    return false;
-  }
-
-  if (INLINE_SCENE_MARKER_REGEX.test(chapter.content)) {
-    // Editor doc still contains marker tokens (they are visually hidden only),
-    // so offsets are already in the same coordinate space.
-    return false;
-  }
-
-  if (
-    scoped.some(
-      ({ link }: { sceneId: SceneId; link: SceneProseLink }) => link.start_offset === 0
-    )
-  ) {
-    return false;
-  }
-
-  return scoped.every(
-    ({ sceneId, link }: { sceneId: SceneId; link: SceneProseLink }) =>
-      link.start_offset >= sceneMarkerLength(sceneId, 'start')
-  );
-}
-
-function toVisibleOffset(
-  offset: number,
-  chapter: WritingUnit,
-  scenes: readonly Scene[]
-): number {
-  let removedBefore = 0;
-  for (const scene of scenes) {
-    const link = scene.prose_link;
-    if (!link || !linkMatchesChapter(link, chapter)) continue;
-
-    if (link.start_offset <= offset) {
-      removedBefore += sceneMarkerLength(scene.id, 'start');
-    }
-    if (link.end_offset != null && link.end_offset < offset) {
-      removedBefore += sceneMarkerLength(scene.id, 'end');
-    }
-  }
-
-  return Math.max(0, offset - removedBefore);
-}
-
-function toVisibleRange(
-  scene: Scene,
-  chapter: WritingUnit,
-  scenes: readonly Scene[]
-): { from: number; to: number } | null {
-  const link = scene.prose_link;
-  if (!link || link.end_offset == null) return null;
-  if (!linkMatchesChapter(link, chapter)) return null;
-
-  if (INLINE_SCENE_MARKER_REGEX.test(chapter.content)) {
-    const markerRange = getMarkerSpanRange(chapter.content, scene.id);
-    if (markerRange) {
-      return markerRange.from < markerRange.to ? markerRange : null;
-    }
-  }
-
-  const rawFrom = Math.max(Number(link.start_offset ?? 0), 0);
-  const rawTo = Math.max(Number(link.end_offset ?? rawFrom), rawFrom);
-
-  const identity = {
-    from: rawFrom,
-    to: rawTo,
-  };
-  const adjusted = {
-    from: toVisibleOffset(rawFrom, chapter, scenes),
-    to: toVisibleOffset(rawTo, chapter, scenes),
-  };
-
-  const identityValid = identity.from < identity.to;
-  const adjustedValid = adjusted.from < adjusted.to;
-  const mustAdjust =
-    shouldAdjustOffsets(chapter, scenes) ||
-    (link.scope_type === 'chapter' &&
-      (rawFrom > chapter.content.length || rawTo > chapter.content.length));
-
-  if (mustAdjust) {
-    if (adjustedValid) return adjusted;
-    if (identityValid) return identity;
-    return null;
-  }
-
-  if (identityValid) return identity;
-  if (adjustedValid) return adjusted;
-  return null;
 }
 
 export interface SceneProseSyncResult {

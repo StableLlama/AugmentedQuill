@@ -25,6 +25,7 @@ import type { Extension } from '@codemirror/state';
 import type { Range } from '@codemirror/state';
 import { diff_match_patch } from 'diff-match-patch';
 import { createWhitespaceMarkerElement } from './codeMirrorWhitespacePlugin';
+import { stripInlineInternalMarkers } from './internalTags';
 
 // Marks transactions that mirror external prop updates so the updateListener
 // can skip emitting onChange for programmatic document replacements.
@@ -35,8 +36,6 @@ const dmp = new diff_match_patch();
 const diffMark = Decoration.mark({
   class: 'cm-diff-inserted',
 });
-
-const INLINE_SCENE_MARKER_REGEX = /<!--scene:[^:>]+:(?:start|end)-->/g;
 
 type DeletedWsKind = 'space' | 'tab' | 'newline';
 
@@ -94,7 +93,7 @@ function addDeletedDecorations(
   text: string,
   showWhitespace: boolean
 ): void {
-  const visibleText = text.replaceAll(INLINE_SCENE_MARKER_REGEX, '');
+  const visibleText = stripInlineInternalMarkers(text);
   if (visibleText.length === 0) {
     return;
   }

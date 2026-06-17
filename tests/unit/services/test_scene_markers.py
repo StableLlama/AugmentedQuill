@@ -8,16 +8,26 @@
 """Unit tests for inline scene marker helpers."""
 
 from augmentedquill.services.scenes.scene_markers import (
+    annotation_block_bounds,
+    annotation_marker_token,
+    inject_annotation_markers,
+    remove_annotation_markers,
+    parse_annotation_spans,
+    find_scene_marker_span,
     inject_markers,
     parse_scene_spans,
     remap_offset_after_marker_removal,
     remove_markers,
+    scene_block_bounds,
     snap_range_outside_markers,
     snap_offset_outside_markers,
     transfer_scene_markers,
+    validate_internal_marker_tokens,
+    validate_internal_marker_only_edit,
     validate_scene_marker_tokens,
     validate_marker_only_edit,
 )
+from augmentedquill.updates.migrate_story_v9 import migrate_project_v9
 
 
 def test_parse_scene_spans_extracts_start_end() -> None:
@@ -27,6 +37,88 @@ def test_parse_scene_spans_extracts_start_end() -> None:
     span = spans[0]
     assert span.scene_id == 1
     assert text[span.start : span.end] == "hello"
+
+
+def test_find_scene_marker_span_returns_matching_scene_only() -> None:
+    text = (
+        "<!--scene:2:start-->two<!--scene:2:end--> "
+        "<!--scene:7:start-->seven<!--scene:7:end-->"
+    )
+    span = find_scene_marker_span(text, 7)
+    assert span is not None
+    assert span.scene_id == 7
+    assert text[span.start : span.end] == "seven"
+
+
+def test_scene_block_bounds_returns_marker_inclusive_range() -> None:
+    text = "pre <!--scene:12:start-->alpha<!--scene:12:end--> post"
+    bounds = scene_block_bounds(text, 12)
+    assert bounds is not None
+    start, end = bounds
+    assert text[start:end] == "<!--scene:12:start-->alpha<!--scene:12:end-->"
+
+
+def test_parse_annotation_spans_extracts_start_end() -> None:
+    text = "X <!--annotation:note-7:start-->comment<!--annotation:note-7:end--> Y"
+    spans = parse_annotation_spans(text)
+    assert len(spans) == 1
+    span = spans[0]
+    assert span.annotation_id == "note-7"
+    assert text[span.start : span.end] == "comment"
+
+
+def test_annotation_block_bounds_returns_marker_inclusive_range() -> None:
+    text = "pre <!--annotation:note-12:start-->alpha<!--annotation:note-12:end--> post"
+    bounds = annotation_block_bounds(text, "note-12")
+    assert bounds is not None
+    start, end = bounds
+    assert text[start:end] == (
+        "<!--annotation:note-12:start-->alpha<!--annotation:note-12:end-->"
+    )
+
+
+def test_annotation_marker_token_constructs_canonical_tokens() -> None:
+    assert (
+        annotation_marker_token("note-1", "start") == "<!--annotation:note-1:start-->"
+    )
+
+
+def test_inject_annotation_markers_wraps_ranges_in_order() -> None:
+    text = "alpha beta gamma"
+    output = inject_annotation_markers(text, [("a1", 0, 5), ("a2", 6, 10)])
+    assert "<!--annotation:a1:start-->" in output
+    assert "<!--annotation:a1:end-->" in output
+    assert "<!--annotation:a2:start-->" in output
+    assert "<!--annotation:a2:end-->" in output
+
+
+def test_remove_annotation_markers_strips_selected_annotation_only() -> None:
+    text = (
+        "<!--annotation:a1:start-->A<!--annotation:a1:end-->"
+        "<!--annotation:a2:start-->B<!--annotation:a2:end-->"
+    )
+    cleaned = remove_annotation_markers(text, {"a1"})
+    assert cleaned == "A<!--annotation:a2:start-->B<!--annotation:a2:end-->"
+
+
+def test_validate_internal_marker_only_edit_accepts_annotation_changes() -> None:
+    original = "hello world"
+    edited = "<!--annotation:note-1:start-->hello world<!--annotation:note-1:end-->"
+    validate_internal_marker_only_edit(original, edited)
+
+
+def test_validate_internal_marker_only_edit_rejects_prose_changes() -> None:
+    original = "hello world"
+    edited = (
+        "<!--annotation:note-1:start-->hello brave world<!--annotation:note-1:end-->"
+    )
+    try:
+        validate_internal_marker_only_edit(original, edited)
+    except ValueError:
+        return
+    raise AssertionError(
+        "Expected validate_internal_marker_only_edit to raise ValueError"
+    )
 
 
 def test_inject_markers_wraps_ranges_in_order() -> None:
@@ -115,6 +207,22 @@ def test_validate_scene_marker_tokens_rejects_malformed_marker_fragments() -> No
     raise AssertionError("Expected malformed scene marker token to raise ValueError")
 
 
+def test_validate_internal_marker_tokens_accepts_annotation_tokens() -> None:
+    valid = "<!--annotation:note-1:start-->A<!--annotation:note-1:end-->"
+    validate_internal_marker_tokens(valid)
+
+
+def test_validate_internal_marker_tokens_rejects_malformed_annotation() -> None:
+    malformed = "<!--annotation:note-1:middle-->"
+    try:
+        validate_internal_marker_tokens(malformed)
+    except ValueError:
+        return
+    raise AssertionError(
+        "Expected malformed annotation marker token to raise ValueError"
+    )
+
+
 def test_snap_offset_outside_markers_moves_inside_offset_to_marker_end() -> None:
     text = "<!--scene:1:start-->Alpha<!--scene:1:end-->"
     marker_start = text.index("<!--scene:1:start-->")
@@ -142,3 +250,67 @@ def test_snap_range_outside_markers_in_marker_only_content_returns_empty_boundar
         marker_end_start + 1,
     )
     assert (start, end) == (len(text), len(text))
+
+
+def test_migrate_project_v9_initializes_annotations_collection(tmp_path) -> None:
+    story_path = tmp_path / "story.json"
+    story_path.write_text(
+        "{"
+        '"metadata": {"version": 8},'
+        '"project_title": "Test",'
+        '"format": "markdown"'
+        "}",
+        encoding="utf-8",
+    )
+
+    migrate_project_v9(tmp_path)
+
+    migrated = story_path.read_text(encoding="utf-8")
+    assert '"version": 9' in migrated
+    assert '"annotations": []' in migrated
+
+
+def test_parse_annotation_spans_with_scene_markers_inside_annotation() -> None:
+    """Annotation spanning across scene markers includes them in the span."""
+    text = (
+        "pre <!--annotation:ann-1:start-->"
+        "annotated text "
+        "<!--scene:3:end--><!--scene:5:start-->"
+        "more annotated text"
+        "<!--annotation:ann-1:end--> post"
+    )
+    spans = parse_annotation_spans(text)
+    assert len(spans) == 1
+    span = spans[0]
+    assert span.annotation_id == "ann-1"
+    assert text[span.start : span.end] == (
+        "annotated text " "<!--scene:3:end--><!--scene:5:start-->" "more annotated text"
+    )
+    assert text[span.start] == "a"
+    assert text[span.end : span.end + 15] == "<!--annotation:"
+
+
+def test_parse_annotation_spans_with_scene_markers_inside_annotation_offsets_are_correct() -> (
+    None
+):
+    """Verify numerical offsets for a cross-scene annotation."""
+    text = (
+        "pre <!--annotation:ann-1:start-->"
+        "annotated text "
+        "<!--scene:3:end--><!--scene:5:start-->"
+        "more annotated text"
+        "<!--annotation:ann-1:end--> post"
+    )
+    spans = parse_annotation_spans(text)
+    assert len(spans) == 1
+    span = spans[0]
+
+    start_marker = "<!--annotation:ann-1:start-->"
+    end_marker = "<!--annotation:ann-1:end-->"
+    sm_pos = text.find(start_marker)
+    em_pos = text.find(end_marker)
+
+    # start_offset should be exactly after the start marker
+    assert span.start == sm_pos + len(start_marker)
+    # end_offset should be exactly at the end marker
+    assert span.end == em_pos

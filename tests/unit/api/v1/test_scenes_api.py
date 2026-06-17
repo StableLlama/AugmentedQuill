@@ -336,6 +336,201 @@ class ScenesApiTest(ApiTestCase):
         self.assertIn(f"<!--scene:{source['id']}:start-->", story_text)
         self.assertNotIn(f"<!--scene:{source['id']}:start-->", chapter_text)
 
+    def test_reorder_prose_with_straddling_annotation(self) -> None:
+        """Reordering scenes with a straddling annotation must return valid
+        scope_start/scope_end that do not exceed the original content length."""
+        first = self._create(summary="First")
+        second = self._create(summary="Second")
+
+        pdir = self.projects_root / self.pname
+        story_path = pdir / "story.json"
+        story = json.loads(story_path.read_text(encoding="utf-8"))
+
+        ann_id = "note1"
+        content = (
+            f"prefix text.\n"
+            f"<!--scene:{first['id']}:start-->"
+            f"scene one text with <!--annotation:{ann_id}:start-->straddling annotation"
+            f"<!--scene:{first['id']}:end-->"
+            f"\n"
+            f"<!--scene:{second['id']}:start-->"
+            f"rest of annotation text<!--annotation:{ann_id}:end--> and scene two"
+            f"<!--scene:{second['id']}:end-->"
+            f"\nsuffix text."
+        )
+        (pdir / "content.md").write_text(content, encoding="utf-8")
+
+        story["annotations"] = [
+            {
+                "id": ann_id,
+                "comment": "Straddling annotation",
+                "scope_type": "story",
+                "chapter_id": None,
+                "book_id": None,
+            }
+        ]
+        (story_path).write_text(json.dumps(story), encoding="utf-8")
+
+        original_len = len(content)
+
+        reorder = self.client.post(
+            self._url("/reorder-prose"),
+            json={
+                "source_scene_id": first["id"],
+                "target_scene_id": second["id"],
+                "place_before": False,
+            },
+        )
+        self.assertEqual(reorder.status_code, 200, reorder.text)
+        payload = reorder.json()
+
+        # scope_start must be non-negative and <= original len
+        self.assertGreaterEqual(payload["scope_start"], 0)
+        self.assertLessEqual(payload["scope_start"], original_len)
+        # scope_end must be within original content length (BEFORE bug fix,
+        # this would exceed original_len due to annotation split markers)
+        self.assertGreaterEqual(payload["scope_end"], 0)
+        self.assertLessEqual(payload["scope_end"], original_len)
+
+        # Verify that applying the rebuilt_text to the original content at the
+        # returned offsets produces a valid document (i.e. the frontend can
+        # dispatch the change without hitting an out-of-bounds error).
+        simulated = (
+            content[: payload["scope_start"]]
+            + payload["rebuilt_text"]
+            + content[payload["scope_end"] :]
+        )
+        # The simulated result should equal the persisted file content.
+        actual_content = (pdir / "content.md").read_text(encoding="utf-8")
+        self.assertEqual(simulated, actual_content)
+
+    def test_reorder_prose_preserves_marker_integrity_with_straddling_annotation(
+        self,
+    ) -> None:
+        """Reordering a scene that shares a straddling annotation must never
+        produce broken/crossing markers or orphaned annotation fragments.
+
+        Regression test for the bug where -in:end was placed *outside* the
+        scene block, causing it to stay behind when the block moved while
+        -in:start moved with it — corrupting the annotation."""
+        first = self._create(summary="First")
+        second = self._create(summary="Second")
+
+        pdir = self.projects_root / self.pname
+        story_path = pdir / "story.json"
+        story = json.loads(story_path.read_text(encoding="utf-8"))
+
+        ann_id = "straddler"
+        # Annotation spans from inside first scene across the boundary into second.
+        content = (
+            f"prefix.\n"
+            f"<!--scene:{first['id']}:start-->"
+            f"scene A text with"
+            f" <!--annotation:{ann_id}:start-->shared annotation"
+            f"<!--scene:{first['id']}:end-->"
+            f"\n"
+            f"<!--scene:{second['id']}:start-->"
+            f"that continues here<!--annotation:{ann_id}:end-->"
+            f" and ends"
+            f"<!--scene:{second['id']}:end-->"
+            f"\nsuffix."
+        )
+        (pdir / "content.md").write_text(content, encoding="utf-8")
+        story["annotations"] = [
+            {
+                "id": ann_id,
+                "comment": "Straddling",
+                "scope_type": "story",
+                "chapter_id": None,
+                "book_id": None,
+            }
+        ]
+        (story_path).write_text(json.dumps(story), encoding="utf-8")
+
+        # Move first scene after second.
+        reorder = self.client.post(
+            self._url("/reorder-prose"),
+            json={
+                "source_scene_id": first["id"],
+                "target_scene_id": second["id"],
+                "place_before": False,
+            },
+        )
+        self.assertEqual(reorder.status_code, 200, reorder.text)
+
+        result = (pdir / "content.md").read_text(encoding="utf-8")
+
+        # --- INVARIANT 1: No duplicate start markers for any scene ---
+        for sid in (first["id"], second["id"]):
+            start_tok = f"<!--scene:{sid}:start-->"
+            self.assertEqual(
+                result.count(start_tok),
+                1,
+                f"Scene {sid} has {result.count(start_tok)} start markers",
+            )
+
+        # --- INVARIANT 2: Every annotation pair is well-ordered ---
+        ann_ids_found = set()
+        import re as _re
+
+        for m in _re.finditer(r"<!--annotation:([^:>]+):(start|end)-->", result):
+            ann_ids_found.add(m.group(1))
+        for aid in sorted(ann_ids_found):
+            start_pos = result.find(f"<!--annotation:{aid}:start-->")
+            end_pos = result.find(f"<!--annotation:{aid}:end-->")
+            self.assertGreater(start_pos, -1, f"Annotation {aid} start marker missing")
+            self.assertGreater(end_pos, -1, f"Annotation {aid} end marker missing")
+            self.assertLess(
+                start_pos,
+                end_pos,
+                f"Annotation {aid} start ({start_pos}) must precede "
+                f"end ({end_pos})",
+            )
+
+        # --- INVARIANT 3: -in markers move WITH the scene block ---
+        # After reorder, first scene is now after second scene.
+        # Find first scene's block.
+        first_start = result.find(f"<!--scene:{first['id']}:start-->")
+        first_end_marker = f"<!--scene:{first['id']}:end-->"
+        first_end = result.find(first_end_marker)
+        self.assertGreater(first_start, -1, "First scene start not found")
+        self.assertGreater(first_end, -1, "First scene end not found")
+        first_block_end = first_end + len(first_end_marker)
+
+        in_start = result.find("<!--annotation:straddler-in:start-->")
+        in_end = result.find("<!--annotation:straddler-in:end-->")
+        self.assertGreater(in_start, -1, "-in:start must exist")
+        self.assertGreater(in_end, -1, "-in:end must exist")
+
+        # Both -in markers must be inside first scene's block
+        self.assertGreaterEqual(
+            in_start,
+            first_start,
+            "-in:start must be at or after first scene start",
+        )
+        self.assertLessEqual(
+            in_end,
+            first_block_end,
+            f"-in:end ({in_end}) must be at or before first scene block end "
+            f"({first_block_end})",
+        )
+        self.assertLess(
+            in_start,
+            in_end,
+            "-in:start must precede -in:end",
+        )
+
+        # --- INVARIANT 4: -out markers must be well-ordered ---
+        out_start = result.find("<!--annotation:straddler-out:start-->")
+        out_end = result.find("<!--annotation:straddler-out:end-->")
+        self.assertGreater(out_start, -1, "-out:start must exist")
+        self.assertGreater(out_end, -1, "-out:end must exist")
+        self.assertLess(
+            out_start,
+            out_end,
+            "-out:start must precede -out:end",
+        )
+
     def test_detect_boundaries_links_single_scene(self) -> None:
         scene = self._create(summary="Boundary")
         resp = self.client.post(
@@ -352,6 +547,131 @@ class ScenesApiTest(ApiTestCase):
         payload = resp.json()
         self.assertEqual(len(payload["assignments"]), 1)
         self.assertEqual(payload["assignments"][0]["scene_id"], scene["id"])
+
+    def test_reorder_prose_cleans_up_duplicate_markers_from_corrupted_file(
+        self,
+    ) -> None:
+        """When the file already has duplicate source-scene markers (from a
+        previous failed reorder), the reorder must clean them up rather than
+        perpetuate the corruption."""
+        first = self._create(summary="First")
+        second = self._create(summary="Second")
+
+        pdir = self.projects_root / self.pname
+
+        # Build a file with DUPLICATE scene markers that simulates the
+        # corrupted state left behind by a previous failed reorder:
+        #   - an orphaned <!--scene:FIRST:start--> with prose fragment
+        #   - annotation -out:end (without matching -out:start)
+        #   - the target scene (second)
+        #   - a well-formed copy of the source scene (first)
+        content = (
+            f"preamble\n"
+            f"<!--scene:{first['id']}:start-->broken prose fragment"
+            f"<!--annotation:ann-out:end-->"
+            f"<!--scene:{second['id']}:start-->target prose<!--scene:{second['id']}:end-->"
+            f"postamble\n"
+            f"<!--scene:{first['id']}:start-->"
+            f"well-formed prose<!--scene:{first['id']}:end-->"
+        )
+        (pdir / "content.md").write_text(content, encoding="utf-8")
+
+        # Reorder — move first after second (which is a no-op structurally
+        # since first is already after second in the well-formed copy, but
+        # the orphaned fragment must be cleaned up).
+        reorder = self.client.post(
+            self._url("/reorder-prose"),
+            json={
+                "source_scene_id": first["id"],
+                "target_scene_id": second["id"],
+                "place_before": False,
+            },
+        )
+        self.assertEqual(reorder.status_code, 200, reorder.text)
+
+        result = (pdir / "content.md").read_text(encoding="utf-8")
+
+        # INVARIANT: exactly one start marker for each scene
+        import re as _re
+
+        for sid in (first["id"], second["id"]):
+            matches = list(_re.finditer(rf"<!--scene:{sid}:start-->", result))
+            self.assertEqual(
+                len(matches),
+                1,
+                f"Scene {sid} has {len(matches)} start markers (expected 1): "
+                f"{[m.start() for m in matches]}",
+            )
+
+        # INVARIANT: annotation markers that were part of the source scene's
+        # original block are removed along with the duplicate scene markers.
+        # Annotation-only orphans (e.g. -out:end without -out:start from a
+        # previous split) are a cosmetic concern, not a scene-marker one.
+
+    def test_reorder_annotated_scene_preserves_full_file_content(self) -> None:
+        """Reproduce exact user scenario: annotation from inside scene A
+        into scene B, then moving scene A after scene B.  The file must
+        not be truncated or lose any scene content."""
+        # Create all needed scenes first.
+        scenes: dict[str, dict] = {}
+        for label in ("a", "b", "c", "d"):
+            s = self._create(summary=label)
+            scenes[label] = s
+
+        pdir = self.projects_root / self.pname
+        (pdir / "content.md").write_text(
+            (
+                f"<!--scene:{scenes['a']['id']}:start-->a<!--scene:{scenes['a']['id']}:end-->\n"
+                f"<!--scene:{scenes['b']['id']}:start-->b<!--scene:{scenes['b']['id']}:end-->\n"
+                f"<!--scene:{scenes['c']['id']}:start-->sceneC <!--annotation:note1:start-->"
+                f"moreC<!--scene:{scenes['c']['id']}:end-->\n"
+                f"<!--scene:{scenes['d']['id']}:start-->sceneD<!--annotation:note1:end-->"
+                f"moreD<!--scene:{scenes['d']['id']}:end-->\n"
+            ),
+            encoding="utf-8",
+        )
+        story_path = pdir / "story.json"
+        story = json.loads(story_path.read_text(encoding="utf-8"))
+        story["annotations"] = [
+            {
+                "id": "note1",
+                "comment": "Straddles",
+                "scope_type": "story",
+                "chapter_id": None,
+                "book_id": None,
+            }
+        ]
+        story_path.write_text(json.dumps(story), encoding="utf-8")
+
+        reorder = self.client.post(
+            self._url("/reorder-prose"),
+            json={
+                "source_scene_id": scenes["c"]["id"],
+                "target_scene_id": scenes["d"]["id"],
+                "place_before": False,
+            },
+        )
+        self.assertEqual(reorder.status_code, 200, reorder.text)
+
+        result = (pdir / "content.md").read_text(encoding="utf-8")
+        # The file must contain ALL scenes — nothing truncated.
+        for label, sid in [(k, s["id"]) for k, s in scenes.items()]:
+            self.assertIn(
+                f"<!--scene:{sid}:start-->",
+                result,
+                f"Scene {label} ({sid}) start marker missing from result",
+            )
+            self.assertIn(
+                f"<!--scene:{sid}:end-->",
+                result,
+                f"Scene {label} ({sid}) end marker missing from result",
+            )
+        # Scene C must come after scene D.
+        self.assertGreater(
+            result.find(f"<!--scene:{scenes['c']['id']}:start-->"),
+            result.find(f"<!--scene:{scenes['d']['id']}:end-->"),
+            "Scene C should be after scene D after reorder",
+        )
 
     def test_write_scene_generates_text_and_links(self) -> None:
         scene = self._create(summary="Write scene")

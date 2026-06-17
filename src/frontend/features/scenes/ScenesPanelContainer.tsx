@@ -43,6 +43,12 @@ import { buildChapterOrderMap, proseSort, normalizeChapterId } from './sceneSort
 import { uiStoreActions, useUIStore } from '../../stores/uiStore';
 import type { UIStoreState } from '../../stores/uiStore';
 import { externalValueSyncAnnotation } from '../editor/codeMirrorDiffPlugin';
+import {
+  getSceneMarkerSpanRange,
+  hasInlineSceneMarkers,
+  sceneMarkerTokenLength,
+} from '../editor/internalTags';
+import { getLinkedProseFromTextSource } from './proseLinkCoordinates';
 
 type ViewMode = 'pinboard' | 'narrative' | 'chronological' | 'convergence-map';
 
@@ -99,12 +105,6 @@ function collectBoundaryAdjustments(
   return toAdjust;
 }
 
-function sceneMarkerTokenLength(sceneId: SceneId, edge: 'start' | 'end'): number {
-  return `<!--scene:${String(sceneId)}:${edge}-->`.length;
-}
-
-const INLINE_SCENE_MARKER_REGEX = /<!--scene:[^:>]+:(?:start|end)-->/;
-
 function linkMatchesCurrentChapter(
   link: SceneProseLink,
   currentChapter: WritingUnit
@@ -113,138 +113,6 @@ function linkMatchesCurrentChapter(
     ? currentChapter.scope === 'story'
     : link.scope_type === 'chapter' &&
         normalizeChapterId(link.chapter_id) === normalizeChapterId(currentChapter.id);
-}
-
-function shouldAdjustLinkedProseOffsets(
-  currentChapter: WritingUnit,
-  scenes: readonly Scene[]
-): boolean {
-  const scoped = scenes
-    .map((scene: Scene) => ({ sceneId: scene.id, link: scene.prose_link }))
-    .filter(
-      (item: {
-        sceneId: SceneId;
-        link: SceneProseLink | null | undefined;
-      }): item is { sceneId: SceneId; link: SceneProseLink } =>
-        item.link != null && linkMatchesCurrentChapter(item.link, currentChapter)
-    );
-
-  if (scoped.length === 0) {
-    return false;
-  }
-
-  if (INLINE_SCENE_MARKER_REGEX.test(currentChapter.content)) {
-    return false;
-  }
-
-  if (
-    scoped.some(
-      ({ link }: { sceneId: SceneId; link: SceneProseLink }) => link.start_offset === 0
-    )
-  ) {
-    return false;
-  }
-
-  return scoped.every(
-    ({ sceneId, link }: { sceneId: SceneId; link: SceneProseLink }) =>
-      link.start_offset >= sceneMarkerTokenLength(sceneId, 'start')
-  );
-}
-
-function toVisibleLinkedProseOffset(
-  offset: number,
-  currentChapter: WritingUnit,
-  scenes: readonly Scene[]
-): number {
-  if (!shouldAdjustLinkedProseOffsets(currentChapter, scenes)) {
-    return offset;
-  }
-
-  let removedBefore = 0;
-  for (const scene of scenes) {
-    const link = scene.prose_link;
-    if (!link || !linkMatchesCurrentChapter(link, currentChapter)) continue;
-
-    if (link.start_offset <= offset) {
-      removedBefore += sceneMarkerTokenLength(scene.id, 'start');
-    }
-    if (link.end_offset != null && link.end_offset < offset) {
-      removedBefore += sceneMarkerTokenLength(scene.id, 'end');
-    }
-  }
-
-  return Math.max(0, offset - removedBefore);
-}
-
-function toVisibleLinkedProseOffsetLoose(
-  offset: number,
-  currentChapter: WritingUnit,
-  scenes: readonly Scene[]
-): number {
-  let removedBefore = 0;
-  for (const scene of scenes) {
-    const link = scene.prose_link;
-    if (!link || !linkMatchesCurrentChapter(link, currentChapter)) continue;
-
-    if (link.start_offset <= offset) {
-      removedBefore += sceneMarkerTokenLength(scene.id, 'start');
-    }
-    if (link.end_offset != null && link.end_offset < offset) {
-      removedBefore += sceneMarkerTokenLength(scene.id, 'end');
-    }
-  }
-
-  return Math.max(0, offset - removedBefore);
-}
-
-function getLinkedProseFromTextSource(
-  sourceText: string,
-  link: SceneProseLink,
-  chapterContext: WritingUnit,
-  scenes: readonly Scene[]
-): string {
-  const rawFrom = Math.max(Number(link.start_offset ?? 0), 0);
-  const rawEnd = Math.max(Number(link.end_offset ?? rawFrom), rawFrom);
-  const rawText = sourceText.slice(
-    Math.min(rawFrom, sourceText.length),
-    Math.min(rawEnd, sourceText.length)
-  );
-  const chapterHasInlineMarkers = INLINE_SCENE_MARKER_REGEX.test(
-    chapterContext.content
-  );
-  if (rawText.length > 0 || chapterHasInlineMarkers) {
-    return rawText;
-  }
-
-  const from = toVisibleLinkedProseOffset(rawFrom, chapterContext, scenes);
-  const end = toVisibleLinkedProseOffset(rawEnd, chapterContext, scenes);
-  let boundedFrom = Math.min(Math.max(from, 0), sourceText.length);
-  let boundedEnd = Math.min(Math.max(end, boundedFrom), sourceText.length);
-  let adjustedText = sourceText.slice(boundedFrom, boundedEnd);
-
-  if (adjustedText.length === 0) {
-    const looseFrom = toVisibleLinkedProseOffsetLoose(rawFrom, chapterContext, scenes);
-    const looseEnd = toVisibleLinkedProseOffsetLoose(rawEnd, chapterContext, scenes);
-    boundedFrom = Math.min(Math.max(looseFrom, 0), sourceText.length);
-    boundedEnd = Math.min(Math.max(looseEnd, boundedFrom), sourceText.length);
-    adjustedText = sourceText.slice(boundedFrom, boundedEnd);
-  }
-
-  return adjustedText;
-}
-
-function getMarkerSpanRange(
-  docText: string,
-  sceneId: SceneId
-): { from: number; to: number } | null {
-  const startToken = `<!--scene:${String(sceneId)}:start-->`;
-  const endToken = `<!--scene:${String(sceneId)}:end-->`;
-  const markerStart = docText.indexOf(startToken);
-  if (markerStart < 0) return null;
-  const contentStart = markerStart + startToken.length;
-  const markerEnd = docText.indexOf(endToken, contentStart);
-  if (markerEnd < contentStart) return null;
-  return { from: contentStart, to: markerEnd };
 }
 
 function snapRangeOutsideMarkers(
@@ -734,10 +602,18 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
 
         if (!scopeMatchesCurrentChapter) return;
 
+        // Guard against stale editor documents: the file on disk may have
+        // grown (e.g. annotation-split markers from a previous server-side
+        // success whose frontend dispatch failed with a RangeError).  Clamp
+        // the replacement range to the actual document length — the
+        // rebuilt_text already spans the extra bytes so the final document
+        // will be correct.
+        const docLength = view.state.doc.length;
+        const safeEnd = Math.min(reorderResult.scope_end, docLength);
         view.dispatch({
           changes: {
             from: reorderResult.scope_start,
-            to: reorderResult.scope_end,
+            to: safeEnd,
             insert: reorderResult.rebuilt_text,
           },
         });
@@ -1272,7 +1148,7 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
           }
         : null;
       const docText = view.state.doc.sliceString(0, docLen);
-      const markerSpanRange = getMarkerSpanRange(docText, editingSceneId);
+      const markerSpanRange = getSceneMarkerSpanRange(docText, editingSceneId);
       if (markerSpanRange) {
         await streamEditorReplace(
           view,
@@ -1281,21 +1157,20 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
           result.generated_text
         );
         updateCurrentChapterContent(view.state.doc.toString());
-        return;
+        return result.generated_text;
       }
 
       const chapterHasInlineSceneMarkers =
         typeof currentChapter.content === 'string' &&
-        INLINE_SCENE_MARKER_REGEX.test(currentChapter.content);
-      const docHasInlineSceneMarkers = INLINE_SCENE_MARKER_REGEX.test(docText);
-      const hasInlineSceneMarkers =
-        chapterHasInlineSceneMarkers || docHasInlineSceneMarkers;
+        hasInlineSceneMarkers(currentChapter.content);
+      const docHasInlineSceneMarkers = hasInlineSceneMarkers(docText);
+      const hasInlineMarkers = chapterHasInlineSceneMarkers || docHasInlineSceneMarkers;
 
       // Use this scene's prose_link range first. Assignment offsets can be
       // computed in a different coordinate space and should not drive
       // single-scene replacement when a stable scene-local link is available.
       const linkSource = proseLinkSource ?? editedAssignment ?? null;
-      if (hasInlineSceneMarkers && !proseLinkSource) {
+      if (hasInlineMarkers && !proseLinkSource) {
         updateCurrentChapterContent(view.state.doc.toString());
         return result.generated_text;
       }
@@ -1307,7 +1182,7 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
         Math.max(linkSource.end_offset ?? rawFrom, rawFrom),
         docLen
       );
-      const { from, to } = hasInlineSceneMarkers
+      const { from, to } = hasInlineMarkers
         ? snapRangeOutsideMarkers(docText, rawFrom, rawTo)
         : { from: rawFrom, to: rawTo };
       await streamEditorReplace(view, from, to, result.generated_text);

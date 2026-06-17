@@ -4222,6 +4222,348 @@
         }
       }
     },
+    "/api/v1/projects/{project_name}/annotations": {
+      "get": {
+        "tags": ["Annotations"],
+        "summary": "Api List Annotations",
+        "description": "List all annotations for the project.",
+        "operationId": "api_list_annotations_api_v1_projects__project_name__annotations_get",
+        "parameters": [
+          {
+            "name": "project_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Directory name of the project",
+              "title": "Project Name"
+            },
+            "description": "Directory name of the project"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AnnotationResponse"
+                  },
+                  "title": "Response Api List Annotations Api V1 Projects  Project Name  Annotations Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Annotations"],
+        "summary": "Api Create Annotation",
+        "description": "Create a new inline annotation.",
+        "operationId": "api_create_annotation_api_v1_projects__project_name__annotations_post",
+        "parameters": [
+          {
+            "name": "project_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Directory name of the project",
+              "title": "Project Name"
+            },
+            "description": "Directory name of the project"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAnnotationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnnotationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_name}/annotations/scope": {
+      "get": {
+        "tags": ["Annotations"],
+        "summary": "Api List Annotations For Scope",
+        "description": "List annotations for a specific prose scope.",
+        "operationId": "api_list_annotations_for_scope_api_v1_projects__project_name__annotations_scope_get",
+        "parameters": [
+          {
+            "name": "project_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Directory name of the project",
+              "title": "Project Name"
+            },
+            "description": "Directory name of the project"
+          },
+          {
+            "name": "scope_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "story",
+              "title": "Scope Type"
+            }
+          },
+          {
+            "name": "chapter_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Chapter Id"
+            }
+          },
+          {
+            "name": "book_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Book Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AnnotationResponse"
+                  },
+                  "title": "Response Api List Annotations For Scope Api V1 Projects  Project Name  Annotations Scope Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_name}/annotations/{annotation_id}": {
+      "get": {
+        "tags": ["Annotations"],
+        "summary": "Api Get Annotation",
+        "description": "Fetch a single annotation by ID.",
+        "operationId": "api_get_annotation_api_v1_projects__project_name__annotations__annotation_id__get",
+        "parameters": [
+          {
+            "name": "annotation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Annotation Id"
+            }
+          },
+          {
+            "name": "project_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Directory name of the project",
+              "title": "Project Name"
+            },
+            "description": "Directory name of the project"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnnotationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": ["Annotations"],
+        "summary": "Api Update Annotation",
+        "description": "Update an annotation's comment.",
+        "operationId": "api_update_annotation_api_v1_projects__project_name__annotations__annotation_id__put",
+        "parameters": [
+          {
+            "name": "annotation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Annotation Id"
+            }
+          },
+          {
+            "name": "project_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Directory name of the project",
+              "title": "Project Name"
+            },
+            "description": "Directory name of the project"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAnnotationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnnotationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Annotations"],
+        "summary": "Api Delete Annotation",
+        "description": "Delete an annotation and remove its inline markers.",
+        "operationId": "api_delete_annotation_api_v1_projects__project_name__annotations__annotation_id__delete",
+        "parameters": [
+          {
+            "name": "annotation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Annotation Id"
+            }
+          },
+          {
+            "name": "project_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Directory name of the project",
+              "title": "Project Name"
+            },
+            "description": "Directory name of the project"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/health": {
       "get": {
         "summary": "<Lambda>",
@@ -4258,6 +4600,70 @@
   },
   "components": {
     "schemas": {
+      "AnnotationResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "comment": {
+            "type": "string",
+            "title": "Comment"
+          },
+          "scope_type": {
+            "type": "string",
+            "title": "Scope Type"
+          },
+          "chapter_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chapter Id"
+          },
+          "book_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Book Id"
+          },
+          "start_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Offset"
+          },
+          "end_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Offset"
+          }
+        },
+        "type": "object",
+        "required": ["id", "comment", "scope_type"],
+        "title": "AnnotationResponse",
+        "description": "A single annotation with runtime offsets attached."
+      },
       "AutoLinkScopeRequest": {
         "properties": {
           "scope_type": {
@@ -5057,6 +5463,58 @@
         "required": ["timestamp"],
         "title": "CheckpointLoadDeleteRequest",
         "description": "Represents the CheckpointLoadDeleteRequest type."
+      },
+      "CreateAnnotationRequest": {
+        "properties": {
+          "scope_type": {
+            "type": "string",
+            "title": "Scope Type",
+            "description": "'story', 'chapter', or 'unlinked'"
+          },
+          "chapter_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chapter Id",
+            "description": "Chapter ID for chapter scope"
+          },
+          "book_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Book Id",
+            "description": "Book ID for nested chapter scope"
+          },
+          "start_offset": {
+            "type": "integer",
+            "title": "Start Offset",
+            "description": "Raw character offset (markers included)"
+          },
+          "end_offset": {
+            "type": "integer",
+            "title": "End Offset",
+            "description": "Raw character offset (markers included)"
+          },
+          "comment": {
+            "type": "string",
+            "title": "Comment",
+            "description": "Human-readable annotation comment"
+          }
+        },
+        "type": "object",
+        "required": ["scope_type", "start_offset", "end_offset", "comment"],
+        "title": "CreateAnnotationRequest",
+        "description": "Payload for creating a new annotation."
       },
       "DebugLogEntry": {
         "properties": {
@@ -6843,12 +7301,70 @@
             },
             "type": "array",
             "title": "Tag Personal Datetimes"
+          },
+          "annotations": {
+            "items": {
+              "$ref": "#/components/schemas/SceneAnnotation"
+            },
+            "type": "array",
+            "title": "Annotations",
+            "description": "Optional inline annotations associated with this scene."
           }
         },
         "type": "object",
         "required": ["id"],
         "title": "Scene",
         "description": "A narrative scene used for structural story planning.\n\nActive characters, passive characters, location, and time are stored as\nsourcebook entry IDs so the frontend can look them up by reference.\n\n``causes`` stores IDs of other scenes that this scene causally precedes.\nThese are not narrative order indexes; they are dependency constraints that\nallow the pinboard to highlight cause/effect relationships.\n\n``pinboard_x`` / ``pinboard_y`` store the card's free-form position on the\npinboard canvas, in logical (unscaled) units."
+      },
+      "SceneAnnotation": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "Stable annotation identifier."
+          },
+          "comment": {
+            "type": "string",
+            "title": "Comment",
+            "description": "Human-readable annotation comment."
+          },
+          "scope_type": {
+            "type": "string",
+            "enum": ["story", "chapter", "unlinked"],
+            "title": "Scope Type",
+            "description": "Scope where the annotation lives.",
+            "default": "story"
+          },
+          "chapter_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chapter Id",
+            "description": "Chapter ID when scope_type='chapter'."
+          },
+          "book_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Book Id",
+            "description": "Book ID when scope_type='chapter' and the chapter is nested."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": ["id", "comment"],
+        "title": "SceneAnnotation",
+        "description": "Inline annotation metadata mirrored from prose markers."
       },
       "SceneBeat": {
         "properties": {
@@ -8589,6 +9105,18 @@
             ],
             "title": "Tags"
           },
+          "annotations": {
+            "anyOf": [
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annotations"
+          },
           "image_style": {
             "anyOf": [
               {
@@ -8935,6 +9463,18 @@
         "required": ["ok"],
         "title": "StoryTagsResponse",
         "description": "Response for ``PUT /api/v1/story/tags``."
+      },
+      "UpdateAnnotationRequest": {
+        "properties": {
+          "comment": {
+            "type": "string",
+            "title": "Comment"
+          }
+        },
+        "type": "object",
+        "required": ["comment"],
+        "title": "UpdateAnnotationRequest",
+        "description": "Payload for updating an annotation's comment."
       },
       "ValidationError": {
         "properties": {
