@@ -24,6 +24,7 @@ import type { WritingUnit } from '../../types/domain';
 import type { EditorHandle } from '../editor/Editor';
 import type { ProseHighlightRange } from '../editor/CodeMirrorEditor';
 import { toVisibleRange } from './proseLinkCoordinates';
+import { stripInlineInternalMarkers } from '../editor/internalTags';
 
 /** Returns true when two sets contain exactly the same SceneId members. */
 function setsEqual(a: ReadonlySet<SceneId>, b: ReadonlySet<SceneId>): boolean {
@@ -59,8 +60,12 @@ export function useSceneProseSync(
   currentChapterRef.current = currentChapter;
 
   // Subscribe to editor cursor changes.  When the cursor moves into a linked
-  // prose range we select the owning scene card (and its highlight appears via
-  // the effect below).  Moving out deselects the card and removes the highlight.
+  // prose range we select the owning scene card and highlight the prose.
+  // Moving out deselects the card and removes the highlight.
+  //
+  // Editor content has stripInlineInternalMarkers applied (markers are never
+  // in the visible document).  We strip the chapter's stored content so
+  // toVisibleRange computes offsets that match the editor's positions.
   useEffect((): (() => void) => {
     const editor = editorRef?.current;
     if (!editor) return (): void => {};
@@ -69,26 +74,34 @@ export function useSceneProseSync(
       const chapter = currentChapterRef.current;
       if (!chapter) {
         setSelectedSceneId(null);
-        setHighlightSceneIds((prev: ReadonlySet<SceneId>) =>
-          prev.size === 0 ? prev : new Set()
-        );
+        editor.clearProseHighlight();
         return;
       }
 
-      const cursor = head; // head is the active/moving end of the selection
+      const strippedChapter: WritingUnit = {
+        ...chapter,
+        content: stripInlineInternalMarkers(chapter.content),
+      };
+
+      const cursor = head;
       const found = scenesRef.current.find((s: Scene): boolean => {
         const link: SceneProseLink | null | undefined = s.prose_link;
         if (!link) return false;
-        const visibleRange = toVisibleRange(s, chapter, scenesRef.current);
+        const visibleRange = toVisibleRange(s, strippedChapter, scenesRef.current);
         if (!visibleRange) return false;
         return cursor >= visibleRange.from && cursor < visibleRange.to;
       });
       const foundId = found?.id ?? null;
       setSelectedSceneId(foundId);
-      setHighlightSceneIds((prev: ReadonlySet<SceneId>) => {
-        const next = foundId ? new Set<SceneId>([foundId]) : new Set<SceneId>();
-        return setsEqual(prev, next) ? prev : next;
-      });
+
+      if (found) {
+        const visibleRange = toVisibleRange(found, strippedChapter, scenesRef.current);
+        if (visibleRange) {
+          editor.setProseHighlights([{ sceneId: found.id, ...visibleRange }]);
+        }
+      } else {
+        editor.clearProseHighlight();
+      }
     });
 
     return (): void => {
@@ -107,11 +120,16 @@ export function useSceneProseSync(
       return;
     }
 
+    const strippedChapter: WritingUnit = {
+      ...currentChapter,
+      content: stripInlineInternalMarkers(currentChapter.content),
+    };
+
     const entries: ProseHighlightRange[] = [];
     for (const sceneId of highlightSceneIds) {
       const scene = scenesRef.current.find((s: Scene): boolean => s.id === sceneId);
       if (!scene) continue;
-      const visibleRange = toVisibleRange(scene, currentChapter, scenesRef.current);
+      const visibleRange = toVisibleRange(scene, strippedChapter, scenesRef.current);
       if (!visibleRange) continue;
       entries.push({ sceneId, from: visibleRange.from, to: visibleRange.to });
     }

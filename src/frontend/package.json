@@ -13,6 +13,8 @@
     "preview": "vite preview",
     "lint": "eslint . --ext .ts,.tsx",
     "test": "vitest run",
+    "test:e2e": "playwright test",
+    "test:e2e:fixture": "cd tests/e2e/fixture && vite --port 5199",
     "test:accessibility": "vitest run features/layout/ConfirmDialog.test.tsx features/chat/ToolCallLimitDialog.test.tsx features/story/MetadataEditorDialog.test.tsx features/settings/settings/SettingsMachine.test.tsx",
     "generate:types": "node scripts/generateTypes.mjs",
     "check:generated-types": "node scripts/generateTypes.mjs && git diff --exit-code types/api.generated.ts"
@@ -21,9 +23,9 @@
     "node": ">=24"
   },
   "dependencies": {
-    "@js-temporal/polyfill": "^0.5.1",
     "@codemirror/lang-markdown": "^6.5.0",
     "@google/genai": "^1.50.1",
+    "@js-temporal/polyfill": "^0.5.1",
     "@lezer/highlight": "^1.2.3",
     "@radix-ui/react-tooltip": "^1.2.8",
     "@testing-library/dom": "^10.4.1",
@@ -47,6 +49,7 @@
     "protobufjs": "^7.5.5"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.0",
     "@tailwindcss/postcss": "^4.2.4",
     "@testing-library/react": "^16.3.2",
     "@types/dompurify": "^3.2.0",

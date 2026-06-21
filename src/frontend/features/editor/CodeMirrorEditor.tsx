@@ -49,7 +49,10 @@ import { buildClipboardExtension } from './clipboardExtension';
 import { buildDiffPlugin, externalValueSyncAnnotation } from './codeMirrorDiffPlugin';
 import { buildWhitespacePlugin } from './codeMirrorWhitespacePlugin';
 import { buildEnterExtension, buildTabExtension } from './codeMirrorKeymap';
-import { INLINE_INTERNAL_MARKER_REGEX } from './internalTags';
+import {
+  INLINE_INTERNAL_MARKER_REGEX,
+  stripInlineInternalMarkers,
+} from './internalTags';
 import { buildAnnotationExtensions } from './annotationPlugin';
 
 // ─── Prose-link highlight StateEffect / StateField ───────────────────────────
@@ -86,8 +89,12 @@ export const proseHighlightField = StateField.define<ProseHighlightRange[]>({
 
 /**
  * Inline widget rendered at the start and end of each prose-link highlight.
- * Dragging the widget updates the linked range live for visual feedback and
- * fires the boundary-change callback on mouse-up to persist the change.
+ *
+ * Visual marker is a thin vertical bar rendered via an absolutely-positioned
+ * ::before pseudo-element — zero width in text flow, no reflow, no character
+ * overlap.  The widget itself is 2 px wide to provide a clickable drag area.
+ * Only mousedown events are intercepted; all other events pass through to the
+ * editor so cursor navigation, selection, and clicks feel natural.
  */
 class ProseHandleWidget extends WidgetType {
   constructor(
@@ -112,8 +119,6 @@ class ProseHandleWidget extends WidgetType {
     const el = document.createElement('span');
     el.className = `cm-prose-handle cm-prose-handle-${this.edge}`;
     el.setAttribute('aria-hidden', 'true');
-    el.setAttribute('contenteditable', 'false');
-    el.textContent = this.edge === 'start' ? '[' : ']';
     el.title =
       this.edge === 'start' ? 'Drag to move scene start' : 'Drag to move scene end';
     const { view, sceneId, edge, callbackRef } = this;
@@ -161,8 +166,9 @@ class ProseHandleWidget extends WidgetType {
     return el;
   }
 
-  ignoreEvent(): boolean {
-    return false;
+  /** Let the editor handle all events except mousedown (drag affordance). */
+  ignoreEvent(event: Event): boolean {
+    return event.type !== 'mousedown';
   }
 }
 
@@ -267,34 +273,7 @@ const mdHighlightStyle = HighlightStyle.define([
   { tag: tags.labelName, opacity: '0.55' },
 ]);
 
-const sceneMarkerHideDecorator = new MatchDecorator({
-  regexp: INLINE_INTERNAL_MARKER_REGEX,
-  decoration: Decoration.replace({}),
-});
-
-function buildSceneMarkerHideExtension(enabled: boolean): Extension {
-  if (!enabled) return [];
-
-  return ViewPlugin.fromClass(
-    class {
-      decorations: DecorationSet;
-
-      constructor(view: EditorView) {
-        this.decorations = sceneMarkerHideDecorator.createDeco(view);
-      }
-
-      update(update: ViewUpdate): void {
-        this.decorations = sceneMarkerHideDecorator.updateDeco(
-          update,
-          this.decorations
-        );
-      }
-    },
-    {
-      decorations: (v: { decorations: DecorationSet }): DecorationSet => v.decorations,
-    }
-  );
-}
+const buildSceneMarkerHideExtension = (): Extension => [];
 
 // ─── Base theme ──────────────────────────────────────────────────────────────
 // Makes CodeMirror transparent so the host element's styles (font, colour, bg)
@@ -459,26 +438,28 @@ const baseTheme = EditorView.theme({
     boxShadow: 'inset 0 -2px 0 rgba(180, 110, 0, 0.45)',
   },
   // Draggable boundary handles rendered at the start/end of each prose-link
-  // highlight.  The bracket characters [ / ] signal the drag affordance without
-  // interrupting reading flow and make it easy to distinguish start from end.
+  // highlight.  The marker is an absolutely-positioned ::before pill — zero
+  // width in text flow so the text never reflows, but 6 px wide visually so
+  // it can be grabbed with the mouse.  Mousedown on the ::before area bubbles
+  // to the widget for drag-to-resize; all other events pass through.
   '.cm-prose-handle': {
     display: 'inline-block',
-    color: 'rgba(180, 100, 0, 0.90)',
-    fontSize: '1em',
-    fontWeight: 'bold',
-    fontStyle: 'normal',
-    fontFamily: 'monospace',
-    lineHeight: '1',
-    verticalAlign: '0.06em',
+    position: 'relative',
+    width: '0px',
+    verticalAlign: 'baseline',
     cursor: 'ew-resize',
     userSelect: 'none',
     pointerEvents: 'all',
   },
-  '.cm-prose-handle-start': {
-    marginRight: '1px',
-  },
-  '.cm-prose-handle-end': {
-    marginLeft: '1px',
+  '.cm-prose-handle::before': {
+    content: '""',
+    position: 'absolute',
+    left: '-3px',
+    top: '-0.35em',
+    height: '0.7em',
+    width: '6px',
+    background: 'rgba(180, 100, 0, 0.50)',
+    borderRadius: '3px',
   },
   // Placeholder styling
   '.cm-placeholder': {
@@ -861,9 +842,7 @@ export const CodeMirrorEditor = React.forwardRef<
         ),
         placeholderCompartment.current.of(buildPlaceholderExtension(placeholder)),
         mdDecorationCompartment.current.of(buildMdDecorationExtension(viewMode)),
-        markerHideCompartment.current.of(
-          buildSceneMarkerHideExtension(hideSceneMarkers)
-        ),
+        markerHideCompartment.current.of(buildSceneMarkerHideExtension()),
         selectionBgCompartment.current.of(buildSelectionBgExtension(selectionBg)),
         proseHighlightBgCompartment.current.of(
           buildProseHighlightBgExtension(proseHighlightBg)
@@ -895,10 +874,15 @@ export const CodeMirrorEditor = React.forwardRef<
         }),
       ];
 
-      const state = EditorState.create({ doc: value, extensions });
+      const state = EditorState.create({
+        doc: hideSceneMarkers ? stripInlineInternalMarkers(value) : value,
+        extensions,
+      });
       const view = new EditorView({ state, parent: containerRef.current });
       viewRef.current = view;
-      lastEmittedRef.current = value;
+      lastEmittedRef.current = hideSceneMarkers
+        ? stripInlineInternalMarkers(value)
+        : value;
 
       // Expose the EditorView via forwardRef
       if (typeof ref === 'function') {
@@ -937,7 +921,7 @@ export const CodeMirrorEditor = React.forwardRef<
     useEffect((): void => {
       viewRef.current?.dispatch({
         effects: markerHideCompartment.current.reconfigure(
-          buildSceneMarkerHideExtension(hideSceneMarkers)
+          buildSceneMarkerHideExtension()
         ),
       });
     }, [hideSceneMarkers]);
@@ -1028,17 +1012,15 @@ export const CodeMirrorEditor = React.forwardRef<
       // or if the last value we emitted matches (user typed ahead of React update cycle)
       if (docStr === value || lastEmittedRef.current === value) return;
 
+      const stripped = hideSceneMarkers ? stripInlineInternalMarkers(value) : value;
+
       const { anchor, head } = view.state.selection.main;
-      const maxPos = value.length;
+      const maxPos = stripped.length;
 
       view.dispatch({
-        changes: { from: 0, to: view.state.doc.length, insert: value },
+        changes: { from: 0, to: view.state.doc.length, insert: stripped },
         annotations: [
           externalValueSyncAnnotation.of(true),
-          // External prop changes (LLM updates, dialog restores) must not enter
-          // CodeMirror's own undo history.  Without this, Ctrl+Z inside the
-          // field would undo the LLM text instead of triggering the dialog-level
-          // undo, corrupting the undo/redo button state.
           Transaction.addToHistory.of(false),
         ],
         selection: {
@@ -1046,7 +1028,7 @@ export const CodeMirrorEditor = React.forwardRef<
           head: Math.min(head, maxPos),
         },
       });
-      lastEmittedRef.current = value;
+      lastEmittedRef.current = stripped;
     }, [value]);
 
     useEffect((): (() => void) | void => {

@@ -17,6 +17,7 @@ import React, {
   useState,
 } from 'react';
 import { EditorView } from '@codemirror/view';
+import type { StateEffect } from '@codemirror/state';
 import {
   EditorSettings,
   SuggestionGenerationMode,
@@ -688,10 +689,21 @@ export const Editor = React.memo(
         setProseHighlights: (entries: ProseHighlightRange[]): void => {
           const view = editorViewRef.current;
           if (!view) return;
-          view.dispatch({ effects: setProseHighlightEffect.of(entries) });
+          const effects: StateEffect<unknown>[] = [setProseHighlightEffect.of(entries)];
           if (entries.length > 0) {
-            view.dispatch({ effects: EditorView.scrollIntoView(entries[0].from) });
+            const targetPos = entries[0].from;
+            let isVisible = false;
+            for (const r of view.visibleRanges) {
+              if (targetPos >= r.from && targetPos <= r.to) {
+                isVisible = true;
+                break;
+              }
+            }
+            if (!isVisible) {
+              effects.push(EditorView.scrollIntoView(targetPos));
+            }
           }
+          view.dispatch({ effects });
         },
         clearProseHighlight: (): void => {
           editorViewRef.current?.dispatch({

@@ -202,7 +202,7 @@ describe('CodeMirrorEditor', () => {
     expect(ref.current?.state.doc.toString()).toBe(value);
   });
 
-  it('hides scene marker comments when hideSceneMarkers is enabled, while preserving document text', async () => {
+  it('strips scene marker comments from document when hideSceneMarkers is enabled', async () => {
     const ref = React.createRef<EditorView | null>();
     const value = '<!--scene:3:start-->Visible prose<!--scene:3:end-->';
     const { container } = render(
@@ -217,10 +217,12 @@ describe('CodeMirrorEditor', () => {
 
     await act(async () => {});
 
-    expect(ref.current?.state.doc.toString()).toBe(value);
-    expect(container.textContent ?? '').not.toContain('<!--scene:3:start-->');
-    expect(container.textContent ?? '').not.toContain('<!--scene:3:end-->');
+    // Markers are stripped from the document; only prose remains
+    expect(ref.current?.state.doc.toString()).not.toContain('<!--scene:3:start-->');
+    expect(ref.current?.state.doc.toString()).not.toContain('<!--scene:3:end-->');
+    expect(ref.current?.state.doc.toString()).toContain('Visible prose');
     expect(container.textContent ?? '').toContain('Visible prose');
+    expect(container.textContent ?? '').not.toContain('<!--scene:3:start-->');
   });
 
   it('toggling showWhitespace does not crash or corrupt the document', async () => {
@@ -711,22 +713,25 @@ describe('prose-link highlight plugin', () => {
     return { container, view: ref.current! };
   }
 
-  it('renders a start handle with text "[" for a single prose range', async () => {
+  it('renders a start handle with correct class and no text content (bar via CSS)', async () => {
     const { container } = await mountWithHighlights([
       { sceneId: 's1', from: 0, to: 5 },
     ]);
     const startHandle = container.querySelector('.cm-prose-handle-start');
     expect(startHandle).not.toBeNull();
-    expect(startHandle?.textContent).toBe('[');
+    // The marker is a vertical bar rendered via CSS ::before; DOM should be clean.
+    expect(startHandle?.textContent).toBe('');
+    expect(startHandle?.getAttribute('title')).toBe('Drag to move scene start');
   });
 
-  it('renders an end handle with text "]" for a single prose range', async () => {
+  it('renders an end handle with correct class and no text content (bar via CSS)', async () => {
     const { container } = await mountWithHighlights([
       { sceneId: 's1', from: 0, to: 5 },
     ]);
     const endHandle = container.querySelector('.cm-prose-handle-end');
     expect(endHandle).not.toBeNull();
-    expect(endHandle?.textContent).toBe(']');
+    expect(endHandle?.textContent).toBe('');
+    expect(endHandle?.getAttribute('title')).toBe('Drag to move scene end');
   });
 
   it('renders two start handles and two end handles for two separate ranges', async () => {
@@ -752,18 +757,18 @@ describe('prose-link highlight plugin', () => {
     expect(marks.length).toBeGreaterThanOrEqual(1); // at least one highlighted span
   });
 
-  it('orders handles as ][ (not []) when two scenes share a boundary position', async () => {
+  it('orders handles end-then-start when two scenes share a boundary position', async () => {
     // The end widget uses side:-1 and the start widget uses side:1 so that at
-    // the same position the ']' sorts before '[', producing the correct ][ order.
+    // the same position the end handle sorts before the start handle.
     const { container } = await mountWithHighlights([
       { sceneId: 'a', from: 0, to: 5 },
       { sceneId: 'b', from: 5, to: 11 },
     ]);
     const handles = container.querySelectorAll('.cm-prose-handle');
-    // In document order the sequence at the shared position must be ][
-    // i.e. the second handle overall is ']' and the third is '['.
-    expect(handles[1].textContent).toBe(']');
-    expect(handles[2].textContent).toBe('[');
+    // The second handle overall must be the end handle and the third the start handle.
+    // Markers are rendered via CSS ::before; verify via class names.
+    expect(handles[1].classList.contains('cm-prose-handle-end')).toBe(true);
+    expect(handles[2].classList.contains('cm-prose-handle-start')).toBe(true);
   });
 
   it('live drag of end handle into adjacent range pushes that range start visually', async () => {
