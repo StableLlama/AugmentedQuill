@@ -21,6 +21,12 @@ export interface CollapsibleSectionProps {
   children: React.ReactNode;
   height?: number;
   onHeightChange?: (height: number) => void;
+  /** Maximum height the section can be resized to. When set, the drag handle
+   *  will not allow the section to exceed this value. */
+  maxHeight?: number;
+  /** Called continuously during drag so the parent can redistribute space
+   *  (e.g. shrink another section to keep the sourcebook header visible). */
+  onDragResize?: (height: number) => void;
   isLast?: boolean;
   isLight?: boolean;
 }
@@ -32,6 +38,8 @@ export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
   children,
   height,
   onHeightChange,
+  maxHeight,
+  onDragResize,
   isLast,
   isLight,
 }: CollapsibleSectionProps) => {
@@ -46,6 +54,8 @@ export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
     height,
     isCollapsed,
     onHeightChange,
+    maxHeight,
+    onDragResize,
   });
 
   const {
@@ -67,7 +77,7 @@ export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
   return (
     <div
       ref={sectionRef}
-      className={`flex flex-col overflow-hidden ${isLast ? 'flex-1' : ''} ${!isLast ? `border-b ${borderClass}` : ''}`}
+      className={`flex flex-col overflow-hidden ${isLast ? 'flex-1 shrink-0' : 'shrink-0'} ${!isLast ? `border-b ${borderClass}` : ''}`}
       style={!isLast && !isCollapsed && height ? { height: `${height}px` } : {}}
     >
       <button
@@ -94,7 +104,7 @@ export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
         </div>
       </button>
       {!isCollapsed && (
-        <div id={contentId} className="flex-1 overflow-hidden flex flex-col">
+        <div id={contentId} className="flex-1 overflow-y-auto flex flex-col">
           {children}
         </div>
       )}
@@ -131,6 +141,8 @@ interface CollapsibleSectionResizeParams {
   height?: number;
   isCollapsed: boolean;
   onHeightChange?: (height: number) => void;
+  maxHeight?: number;
+  onDragResize?: (height: number) => void;
 }
 
 interface CollapsibleSectionResizeResult {
@@ -142,32 +154,46 @@ interface CollapsibleSectionResizeResult {
   handleResizerKeyDown: (e: React.KeyboardEvent<HTMLButtonElement>) => void;
 }
 
+/** Minimum space needed for the drag handle to remain visible (h-1.5 ≈ 6px). */
+const DRAG_HANDLE_HEIGHT = 6;
+
 function useCollapsibleSectionResize(
   params: CollapsibleSectionResizeParams
 ): CollapsibleSectionResizeResult {
-  const { height, isCollapsed, onHeightChange } = params;
+  const { height, isCollapsed, onHeightChange, maxHeight, onDragResize } = params;
   const [isResizing, setIsResizing] = useState(false);
-  const [minHeaderHeight, setMinHeaderHeight] = useState(50);
+  const [minHeaderHeight, setMinHeaderHeight] = useState(50 + DRAG_HANDLE_HEIGHT);
   const sectionRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLButtonElement>(null);
   const heightRef = useRef<number | undefined>(height);
   const startTopRef = useRef<number | null>(null);
   const rafRef = useRef<number | null>(null);
 
+  const clampHeight = useCallback(
+    (next: number): number => {
+      const clampedMin = Math.max(minHeaderHeight, next);
+      if (maxHeight !== undefined && maxHeight > 0) {
+        return Math.min(clampedMin, maxHeight);
+      }
+      return clampedMin;
+    },
+    [minHeaderHeight, maxHeight]
+  );
+
   const applyHeight = useCallback(
     (next: number): void => {
-      const clamped = Math.max(minHeaderHeight, next);
+      const clamped = clampHeight(next);
       if (sectionRef.current) {
         sectionRef.current.style.height = `${clamped}px`;
       }
     },
-    [minHeaderHeight]
+    [clampHeight]
   );
 
   const updateMinHeight = useCallback((): void => {
     if (!headerRef.current) return;
     const headerHeight = Math.round(headerRef.current.getBoundingClientRect().height);
-    setMinHeaderHeight(Math.max(50, headerHeight));
+    setMinHeaderHeight(Math.max(50, headerHeight) + DRAG_HANDLE_HEIGHT);
   }, []);
 
   useEffect((): (() => void) => {
@@ -188,7 +214,7 @@ function useCollapsibleSectionResize(
 
   const stopResizing = useCallback((): void => {
     if (isResizing && onHeightChange && heightRef.current) {
-      onHeightChange(Math.max(minHeaderHeight, heightRef.current));
+      onHeightChange(clampHeight(heightRef.current));
     }
     setIsResizing(false);
     startTopRef.current = null;
@@ -196,22 +222,32 @@ function useCollapsibleSectionResize(
       window.cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
     }
-  }, [isResizing, minHeaderHeight, onHeightChange]);
+  }, [isResizing, clampHeight, onHeightChange]);
 
   const resize = useCallback(
     (e: MouseEvent): void => {
       if (!isResizing || !sectionRef.current || !onHeightChange) return;
       const top = startTopRef.current ?? sectionRef.current.getBoundingClientRect().top;
-      const nextHeight = Math.max(minHeaderHeight, e.clientY - top);
+      const nextHeight = clampHeight(e.clientY - top);
       heightRef.current = nextHeight;
+      // Allow the parent to redistribute space (e.g. shrink another section)
+      onDragResize?.(nextHeight);
       if (rafRef.current !== null) return;
+      // Apply synchronously on the first mousemove of this RAF window so the
+      // section always responds immediately — even if mouseup fires before
+      // the next requestAnimationFrame callback.
+      applyHeight(nextHeight);
       rafRef.current = window.requestAnimationFrame((): void => {
         rafRef.current = null;
         if (!isResizing) return;
-        applyHeight(nextHeight);
+        // Use heightRef.current (always the latest value) instead of the
+        // captured nextHeight so the section follows the mouse accurately
+        // even when multiple mousemove events arrive within one RAF frame.
+        const latestHeight = heightRef.current ?? nextHeight;
+        applyHeight(latestHeight);
       });
     },
-    [applyHeight, isResizing, minHeaderHeight, onHeightChange]
+    [applyHeight, clampHeight, isResizing, onHeightChange, onDragResize]
   );
 
   useEffect((): void => {

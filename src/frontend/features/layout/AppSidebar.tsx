@@ -103,6 +103,65 @@ export const AppSidebar: React.FC<AppSidebarProps> = React.memo(
 
     // canAppUndo / canAppRedo are read from storyStore above, not from sidebarControls.
 
+    // Refs used during render for dynamic maxHeight computation
+    const sidebarContentRef = React.useRef<HTMLDivElement>(null);
+
+    // Minimum visible space reserved for the sourcebook header (never pushed off-screen).
+    const SOURCEBOOK_MIN_VISIBLE = 56;
+
+    // Minimum height for any resizable section (matches CollapsibleSection minHeaderHeight).
+    const SECTION_MIN_HEIGHT = 56;
+
+    const containerEl = sidebarContentRef.current;
+    const containerHeight = containerEl?.clientHeight ?? 0;
+
+    // Redistribute space when one section is resized: if Story grows too large,
+    // shrink Chapters to keep sourcebook visible, and vice versa.
+    const handleResizeHeight = React.useCallback(
+      (key: 'storyHeight' | 'chaptersHeight', newHeight: number): void => {
+        const containerH = sidebarContentRef.current?.clientHeight ?? 0;
+        const available = containerH - SOURCEBOOK_MIN_VISIBLE;
+        if (available <= 0) {
+          updateHeight(key, newHeight);
+          return;
+        }
+
+        const otherKey: 'storyHeight' | 'chaptersHeight' =
+          key === 'storyHeight' ? 'chaptersHeight' : 'storyHeight';
+        const otherHeight = Math.max(sidebarPrefs[otherKey] ?? 0, SECTION_MIN_HEIGHT);
+
+        // Clamp the requested height to at least the section minimum
+        const clamped = Math.max(newHeight, SECTION_MIN_HEIGHT);
+
+        if (clamped + otherHeight <= available) {
+          // Both fit comfortably
+          updateHeight(key, clamped);
+        } else if (clamped + SECTION_MIN_HEIGHT <= available) {
+          // Shrink the other section to its minimum to make room
+          updateHeight(key, clamped);
+          updateHeight(otherKey, Math.max(SECTION_MIN_HEIGHT, available - clamped));
+        } else {
+          // Even at the other's minimum we would overflow: cap the request
+          updateHeight(
+            key,
+            Math.max(SECTION_MIN_HEIGHT, available - SECTION_MIN_HEIGHT)
+          );
+          updateHeight(otherKey, SECTION_MIN_HEIGHT);
+        }
+      },
+      [updateHeight, sidebarPrefs.chaptersHeight, sidebarPrefs.storyHeight]
+    );
+
+    // Stable callbacks for onDragResize (called continuously during drag)
+    const handleStoryDragResize = React.useCallback(
+      (h: number): void => handleResizeHeight('storyHeight', h),
+      [handleResizeHeight]
+    );
+    const handleChaptersDragResize = React.useCallback(
+      (h: number): void => handleResizeHeight('chaptersHeight', h),
+      [handleResizeHeight]
+    );
+
     return (
       <nav
         id="aq-sidebar"
@@ -128,13 +187,17 @@ export const AppSidebar: React.FC<AppSidebarProps> = React.memo(
           ></button>
         )}
 
-        <div className="relative z-40 flex flex-col h-full overflow-hidden flex-1 bg-inherit">
+        <div
+          ref={sidebarContentRef}
+          className="relative z-40 flex flex-col h-full overflow-hidden flex-1 bg-inherit"
+        >
           <CollapsibleSection
             title={t('Story')}
             isCollapsed={!!sidebarPrefs.isStoryCollapsed}
             onToggle={(): void => toggleCollapsed('isStoryCollapsed')}
             height={sidebarPrefs.storyHeight}
-            onHeightChange={(h: number): void => updateHeight('storyHeight', h)}
+            onHeightChange={(h: number): void => handleResizeHeight('storyHeight', h)}
+            onDragResize={handleStoryDragResize}
             isLight={isLight}
           >
             <StoryMetadata
@@ -192,7 +255,10 @@ export const AppSidebar: React.FC<AppSidebarProps> = React.memo(
               isCollapsed={!!sidebarPrefs.isChaptersCollapsed}
               onToggle={(): void => toggleCollapsed('isChaptersCollapsed')}
               height={sidebarPrefs.chaptersHeight}
-              onHeightChange={(h: number): void => updateHeight('chaptersHeight', h)}
+              onHeightChange={(h: number): void =>
+                handleResizeHeight('chaptersHeight', h)
+              }
+              onDragResize={handleChaptersDragResize}
               isLight={isLight}
             >
               <ChapterList
