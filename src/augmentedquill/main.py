@@ -44,6 +44,7 @@ from augmentedquill.api.v1.sourcebook import router as sourcebook_router  # noqa
 from augmentedquill.api.v1.search import router as search_router  # noqa: E402
 from augmentedquill.api.v1.scenes import router as scenes_router  # noqa: E402
 from augmentedquill.api.v1.annotations import router as annotations_router  # noqa: E402
+from augmentedquill.api.v1.view_state import router as view_state_router  # noqa: E402
 
 
 def create_app() -> FastAPI:
@@ -157,6 +158,7 @@ def create_app() -> FastAPI:
     api_v1_router.include_router(search_router)
     api_v1_router.include_router(scenes_router)
     api_v1_router.include_router(annotations_router)
+    api_v1_router.include_router(view_state_router)
 
     # JSON REST APIs to serve dynamic data to the frontend (no server-side injection in HTML)
     api_v1_router.add_api_route(

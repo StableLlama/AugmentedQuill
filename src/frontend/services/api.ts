@@ -22,6 +22,7 @@ import { createCheckpointsApi } from './apiClients/checkpoints';
 import { createSearchApi } from './apiClients/search';
 import { createScenesApi } from './apiClients/scenes';
 import { createAnnotationsApi } from './apiClients/annotations';
+import { createViewStateApi } from './apiClients/viewState';
 import { useStoryStore } from '../stores/storyStore';
 
 type ProjectApiClients = {
@@ -35,6 +36,7 @@ type ProjectApiClients = {
   search: ReturnType<typeof createSearchApi>;
   scenes: ReturnType<typeof createScenesApi>;
   annotations: ReturnType<typeof createAnnotationsApi>;
+  viewState: ReturnType<typeof createViewStateApi>;
 };
 
 const projectApiCache = new Map<string, ProjectApiClients>();
@@ -69,6 +71,7 @@ function forProject(projectName: string): ProjectApiClients {
     search: createSearchApi(projectName),
     scenes: createScenesApi(projectName),
     annotations: createAnnotationsApi(projectName),
+    viewState: createViewStateApi(projectName),
   };
   projectApiCache.set(projectName, scoped);
   return scoped;

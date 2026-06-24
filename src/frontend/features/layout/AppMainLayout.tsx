@@ -615,6 +615,7 @@ export const AppMainLayout: React.FC<AppMainLayoutProps> = React.memo(
                   currentChapter={currentChapter}
                   editorSettings={editorSettings}
                   recordHistoryEntry={recordHistoryEntry}
+                  onSelectChapter={sidebarControls.handleChapterSelect}
                 />
               </div>
               <div className="flex-1 flex flex-col min-w-0 h-full relative">
@@ -694,6 +695,7 @@ export const AppMainLayout: React.FC<AppMainLayoutProps> = React.memo(
                 currentChapter={currentChapter}
                 editorSettings={editorSettings}
                 recordHistoryEntry={recordHistoryEntry}
+                onSelectChapter={sidebarControls.handleChapterSelect}
               />
             </div>
           ) : (

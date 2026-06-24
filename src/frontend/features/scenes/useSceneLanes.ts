@@ -303,29 +303,21 @@ export function useSceneLanes({
     () => new Set<string>(initialRemovedReferencedLaneIds ?? [])
   );
 
-  const updateVisibleLaneEntryIds = useCallback(
-    (nextIds: string[]): void => {
-      setVisibleLaneEntryIds((prev: string[]) => {
-        if (arraysEqual(prev, nextIds)) return prev;
-        onVisibleLaneEntryIdsChange?.(nextIds);
-        return nextIds;
-      });
-    },
-    [onVisibleLaneEntryIdsChange]
-  );
+  const updateVisibleLaneEntryIds = useCallback((nextIds: string[]): void => {
+    setVisibleLaneEntryIds((prev: string[]) => {
+      if (arraysEqual(prev, nextIds)) return prev;
+      return nextIds;
+    });
+  }, []);
 
-  const updateRemovedReferencedLaneIds = useCallback(
-    (nextIds: Set<string>): void => {
-      setRemovedReferencedLaneIds((prev: Set<string>) => {
-        const prevArray = [...prev].sort();
-        const nextArray = [...nextIds].sort();
-        if (arraysEqual(prevArray, nextArray)) return prev;
-        onRemovedReferencedLaneIdsChange?.([...nextIds]);
-        return nextIds;
-      });
-    },
-    [onRemovedReferencedLaneIdsChange]
-  );
+  const updateRemovedReferencedLaneIds = useCallback((nextIds: Set<string>): void => {
+    setRemovedReferencedLaneIds((prev: Set<string>) => {
+      const prevArray = [...prev].sort();
+      const nextArray = [...nextIds].sort();
+      if (arraysEqual(prevArray, nextArray)) return prev;
+      return nextIds;
+    });
+  }, []);
 
   useEffect(() => {
     if (initialVisibleLaneEntryIds) {
@@ -338,6 +330,19 @@ export function useSceneLanes({
       updateRemovedReferencedLaneIds(new Set(initialRemovedReferencedLaneIds));
     }
   }, [initialRemovedReferencedLaneIds, updateRemovedReferencedLaneIds]);
+
+  // Sync local visibleLaneEntryIds to the parent's external store.
+  // This must be a separate effect (not inside the useState updater) to
+  // avoid calling setSceneLaneState (or any external store update) during
+  // React's state reconciliation, which triggers cross-component re-renders
+  // in the middle of the render phase.
+  useEffect(() => {
+    onVisibleLaneEntryIdsChange?.(visibleLaneEntryIds);
+  }, [visibleLaneEntryIds, onVisibleLaneEntryIdsChange]);
+
+  useEffect(() => {
+    onRemovedReferencedLaneIdsChange?.([...removedReferencedLaneIds]);
+  }, [removedReferencedLaneIds, onRemovedReferencedLaneIdsChange]);
 
   const [selectedLaneEntryIds, setSelectedLaneEntryIds] = useState<Set<string>>(
     () => new Set<string>()

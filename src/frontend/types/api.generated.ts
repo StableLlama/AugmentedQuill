@@ -1835,6 +1835,30 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/projects/{project_name}/view-state': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get View State
+     * @description Return the saved view state for the project, with defaults for missing fields.
+     */
+    get: operations['get_view_state_api_v1_projects__project_name__view_state_get'];
+    /**
+     * Put View State
+     * @description Persist view state for the project.
+     */
+    put: operations['put_view_state_api_v1_projects__project_name__view_state_put'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/health': {
     parameters: {
       query?: never;
@@ -3918,6 +3942,44 @@ export interface components {
       input?: unknown;
       /** Context */
       ctx?: Record<string, never>;
+    };
+    /**
+     * ViewStatePayload
+     * @description View state for a single project.
+     *
+     *     All fields are optional so partial updates are safe; the service layer
+     *     fills missing fields with defaults on load.
+     */
+    ViewStatePayload: {
+      /** Current Chapter Id */
+      current_chapter_id?: string | null;
+      /**
+       * Scroll Position
+       * @default 0
+       */
+      scroll_position: number;
+      /**
+       * Workspace Mode
+       * @default page
+       */
+      workspace_mode: string;
+      /**
+       * Scenes View Type
+       * @default narrative
+       */
+      scenes_view_type: string;
+    };
+    /**
+     * ViewStateResponse
+     * @description Response body for view state endpoints.
+     */
+    ViewStateResponse: {
+      /**
+       * Ok
+       * @default true
+       */
+      ok: boolean;
+      view_state?: components['schemas']['ViewStatePayload'] | null;
     };
     /**
      * OkResponse
@@ -7163,6 +7225,74 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_view_state_api_v1_projects__project_name__view_state_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Directory name of the project */
+        project_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ViewStateResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  put_view_state_api_v1_projects__project_name__view_state_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Directory name of the project */
+        project_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ViewStatePayload'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ViewStateResponse'];
+        };
       };
       /** @description Validation Error */
       422: {

@@ -4564,6 +4564,100 @@
         }
       }
     },
+    "/api/v1/projects/{project_name}/view-state": {
+      "get": {
+        "tags": ["View State"],
+        "summary": "Get View State",
+        "description": "Return the saved view state for the project, with defaults for missing fields.",
+        "operationId": "get_view_state_api_v1_projects__project_name__view_state_get",
+        "parameters": [
+          {
+            "name": "project_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Directory name of the project",
+              "title": "Project Name"
+            },
+            "description": "Directory name of the project"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ViewStateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": ["View State"],
+        "summary": "Put View State",
+        "description": "Persist view state for the project.",
+        "operationId": "put_view_state_api_v1_projects__project_name__view_state_put",
+        "parameters": [
+          {
+            "name": "project_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Directory name of the project",
+              "title": "Project Name"
+            },
+            "description": "Directory name of the project"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ViewStatePayload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ViewStateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/health": {
       "get": {
         "summary": "<Lambda>",
@@ -9511,6 +9605,61 @@
         "type": "object",
         "required": ["loc", "msg", "type"],
         "title": "ValidationError"
+      },
+      "ViewStatePayload": {
+        "properties": {
+          "current_chapter_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Chapter Id"
+          },
+          "scroll_position": {
+            "type": "integer",
+            "title": "Scroll Position",
+            "default": 0
+          },
+          "workspace_mode": {
+            "type": "string",
+            "title": "Workspace Mode",
+            "default": "page"
+          },
+          "scenes_view_type": {
+            "type": "string",
+            "title": "Scenes View Type",
+            "default": "narrative"
+          }
+        },
+        "type": "object",
+        "title": "ViewStatePayload",
+        "description": "View state for a single project.\n\nAll fields are optional so partial updates are safe; the service layer\nfills missing fields with defaults on load."
+      },
+      "ViewStateResponse": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok",
+            "default": true
+          },
+          "view_state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ViewStatePayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "ViewStateResponse",
+        "description": "Response body for view state endpoints."
       },
       "augmentedquill__models__chat__OkResponse": {
         "properties": {

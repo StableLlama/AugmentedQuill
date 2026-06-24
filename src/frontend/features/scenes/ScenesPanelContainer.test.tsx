@@ -467,6 +467,12 @@ async function renderAndOpenDialog(
   });
 }
 
+beforeEach(() => {
+  // Set the default scenes view type to pinboard for tests that interact
+  // with the PinboardView.  Individual test suites may override this.
+  useUIStore.getState().setScenesViewType('pinboard');
+});
+
 afterEach(() => {
   cleanup();
   captured.pinboard = null;
@@ -2144,6 +2150,46 @@ describe('scene view mode wiring', () => {
 
     expect(captured.convergence?.onCreateCause).toBeInstanceOf(Function);
   });
+
+  it('does not trigger a render-loop when NarrativeView mounts with scene-lane state callbacks', async () => {
+    // Regression test: inline onVisibleLaneEntryIdsChange/onRemovedReferencedLaneIdsChange
+    // callbacks can cause an infinite render loop because they recreate on every
+    // ScenesPanelContainer render, which causes useSceneLanes to re-run effects,
+    // which call setSceneLaneState, which re-renders ScenesPanelContainer.
+    useScenesMock.mockReturnValue([makeScene({ id: 'scene-a' })]);
+    useUIStore.setState({
+      scenesViewType: 'narrative',
+      workspaceMode: 'scenes',
+      sceneLaneState: {
+        visibleLaneEntryIds: [],
+        removedReferencedLaneIds: [],
+      },
+    });
+
+    const initialSceneLaneState = { ...useUIStore.getState().sceneLaneState };
+
+    // Render in narrative mode – NarrativeView should mount immediately
+    wrap(<ScenesPanelContainer />);
+
+    // After the initial render cycle settles, the sceneLaneState in the store
+    // should NOT have been mutated by a render-loop.  It should still match
+    // the initial value (or only have changed via effects, not during render).
+    expect(captured.narrative).not.toBeNull();
+    expect(captured.pinboard).toBeNull();
+
+    // The store values should be stable — if there's a render loop, the
+    // store would be continuously updated.
+    const currentState = useUIStore.getState().sceneLaneState;
+    // At minimum, visibleLaneEntryIds should be a defined array (not mutated
+    // by a render-loop into some unexpected shape).
+    expect(Array.isArray(currentState.visibleLaneEntryIds)).toBe(true);
+    // The cleanest check: after a single render, the store should have had
+    // zero net additional updates beyond what the initial mount produces
+    // (i.e. the effect runs once and settles).
+    expect(currentState.removedReferencedLaneIds).toEqual(
+      initialSceneLaneState.removedReferencedLaneIds
+    );
+  });
 });
 
 describe('scene lane persistence', () => {
@@ -3704,5 +3750,49 @@ describe('scene mutations record history entries', () => {
       (call: [{ label: string }]) => call[0].label
     );
     expect(labels).toContain('Adjust scene prose boundary');
+  });
+
+  // -------------------------------------------------------------------------
+  // Cross-chapter scene selection
+  // -------------------------------------------------------------------------
+
+  it('calls onSelectChapter when a scene from a different chapter is clicked', () => {
+    const onSelectChapter = vi.fn();
+    const sceneFromCh2 = makeScene({
+      id: 'scene-ch2',
+      prose_link: makeProseLink({ scope_type: 'chapter', chapter_id: 'ch-2' }),
+    });
+    useScenesMock.mockReturnValue([sceneFromCh2]);
+    wrap(
+      <ScenesPanelContainer
+        currentChapter={CHAPTER}
+        onSelectChapter={onSelectChapter}
+      />
+    );
+    act(() => {
+      (captured.pinboard as Record<string, unknown>)?.onSelectScene?.('scene-ch2');
+    });
+    expect(onSelectChapter).toHaveBeenCalledWith('ch-2');
+  });
+
+  it('still calls handleSelectScene even for cross-chapter scenes', () => {
+    const onSelectChapter = vi.fn();
+    const sceneFromCh2 = makeScene({
+      id: 'scene-ch2',
+      prose_link: makeProseLink({ scope_type: 'chapter', chapter_id: 'ch-2' }),
+    });
+    useScenesMock.mockReturnValue([sceneFromCh2]);
+    wrap(
+      <ScenesPanelContainer
+        currentChapter={CHAPTER}
+        onSelectChapter={onSelectChapter}
+      />
+    );
+    act(() => {
+      (captured.pinboard as Record<string, unknown>)?.onSelectScene?.('scene-ch2');
+    });
+    // handleSelectScene must be called so the useSceneProseSync effect
+    // re-applies the highlight when currentChapter changes after async load.
+    expect(proseSyncState.handleSelectScene).toHaveBeenCalledWith('scene-ch2');
   });
 });

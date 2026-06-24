@@ -75,6 +75,8 @@ export interface UIStoreState {
   // ── Editor UI flags ───────────────────────────────────────────────────────
   viewMode: ViewMode;
   workspaceMode: 'page' | 'scenes' | 'split';
+  /** Scenes panel sub-view type (narrative, pinboard, chronological, convergence-map). Persisted. */
+  scenesViewType: string;
   showWhitespace: boolean;
   activeFormats: string[];
   isViewMenuOpen: boolean;
@@ -133,6 +135,7 @@ export interface UIStoreState {
       | 'split'
       | ((prev: 'page' | 'scenes' | 'split') => 'page' | 'scenes' | 'split')
   ) => void;
+  setScenesViewType: (viewType: string | ((prev: string) => string)) => void;
   setViewMode: (mode: ViewMode | ((prev: ViewMode) => ViewMode)) => void;
   setShowWhitespace: (show: boolean | ((prev: boolean) => boolean)) => void;
   setActiveFormats: (formats: string[] | ((prev: string[]) => string[])) => void;
@@ -189,6 +192,7 @@ export const useUIStore = create<UIStoreState>()(
       // ── Editor UI flags (not persisted) ─────────────────────────────────
       viewMode: 'raw' as ViewMode,
       workspaceMode: 'page' as 'page' | 'scenes' | 'split',
+      scenesViewType: 'narrative',
       showWhitespace: false,
       activeFormats: [] as string[],
       isViewMenuOpen: false,
@@ -348,6 +352,10 @@ export const useUIStore = create<UIStoreState>()(
         set((s: UIStoreState): { workspaceMode: 'page' | 'scenes' | 'split' } => ({
           workspaceMode: resolve(v, s.workspaceMode),
         })),
+      setScenesViewType: (v: string | ((prev: string) => string)) =>
+        set((s: UIStoreState): { scenesViewType: string } => ({
+          scenesViewType: resolve(v, s.scenesViewType),
+        })),
       setViewMode: (v: ViewMode | ((prev: ViewMode) => ViewMode)) =>
         set((s: UIStoreState): { viewMode: ViewMode } => ({
           viewMode: resolve(v, s.viewMode),
@@ -416,13 +424,15 @@ export const useUIStore = create<UIStoreState>()(
           clear: (): void => undefined,
         };
       }),
-      // Only persist panel open/close state – dialogs and editor flags are
-      // transient and should reset on page load.
+      // Persist panel open/close state and view state preferences so they
+      // survive page reloads.  Dialogs and transient editor flags reset.
       partialize: (
         state: UIStoreState
       ): {
         isChatOpen: boolean;
         isSidebarOpen: boolean;
+        workspaceMode: 'page' | 'scenes' | 'split';
+        scenesViewType: string;
         sceneLaneState: {
           visibleLaneEntryIds: string[];
           removedReferencedLaneIds: string[];
@@ -430,6 +440,8 @@ export const useUIStore = create<UIStoreState>()(
       } => ({
         isChatOpen: state.isChatOpen,
         isSidebarOpen: state.isSidebarOpen,
+        workspaceMode: state.workspaceMode,
+        scenesViewType: state.scenesViewType,
         sceneLaneState: state.sceneLaneState,
       }),
     }
@@ -467,6 +479,11 @@ export function useWorkspaceMode(): 'page' | 'scenes' | 'split' {
   return useUIStore((s: UIStoreState) => s.workspaceMode);
 }
 
+/** Subscribe to scenes view type state only. */
+export function useScenesViewType(): string {
+  return useUIStore((s: UIStoreState) => s.scenesViewType);
+}
+
 // ---------------------------------------------------------------------------
 // Test helpers
 // ---------------------------------------------------------------------------
@@ -496,6 +513,8 @@ export function resetUIStore(): void {
       mutationHint: null,
     },
     viewMode: 'raw' as ViewMode,
+    workspaceMode: 'page' as 'page' | 'scenes' | 'split',
+    scenesViewType: 'narrative',
     showWhitespace: false,
     activeFormats: [],
     isViewMenuOpen: false,

@@ -62,6 +62,11 @@ export { isSafeImageUrl } from './editorUtils';
 import { isSafeImageUrl } from './editorUtils';
 import { isRangeVisible } from '../../utils/scrollUtils';
 
+// Pending highlights stored when editorViewRef is null during Editor
+// remount (e.g. chapter loading skeleton).  Module-level so they
+// survive Editor unmount/remount cycles.
+let gPendingHighlights: ProseHighlightRange[] | null = null;
+
 interface EditorProps {
   chapter: WritingUnit;
   settings: EditorSettings;
@@ -705,15 +710,39 @@ export const Editor = React.memo(
         },
         setProseHighlights: (entries: ProseHighlightRange[]): void => {
           const view = editorViewRef.current;
-          if (!view) return;
-          const effects: StateEffect<unknown>[] = [setProseHighlightEffect.of(entries)];
-          if (entries.length > 0) {
-            const { from, to } = entries[0];
-            if (!isRangeVisible(from, to, view.visibleRanges)) {
-              effects.push(EditorView.scrollIntoView(from));
+          if (view) {
+            gPendingHighlights = null;
+            const effects: StateEffect<unknown>[] = [
+              setProseHighlightEffect.of(entries),
+            ];
+            if (entries.length > 0) {
+              const { from, to } = entries[0];
+              if (!isRangeVisible(from, to, view.visibleRanges)) {
+                effects.push(EditorView.scrollIntoView(from));
+              }
             }
+            view.dispatch({ effects });
+          } else {
+            // EditorView not created yet — store and retry after effects
+            gPendingHighlights = entries;
+            const capturedRef = editorViewRef;
+            setTimeout((): void => {
+              const rv = capturedRef.current;
+              if (!rv || !gPendingHighlights) return;
+              const pending = gPendingHighlights;
+              gPendingHighlights = null;
+              const rEffects: StateEffect<unknown>[] = [
+                setProseHighlightEffect.of(pending),
+              ];
+              if (pending.length > 0) {
+                const { from, to } = pending[0];
+                if (!isRangeVisible(from, to, rv.visibleRanges)) {
+                  rEffects.push(EditorView.scrollIntoView(from));
+                }
+              }
+              rv.dispatch({ effects: rEffects });
+            }, 0);
           }
-          view.dispatch({ effects });
         },
         clearProseHighlight: (): void => {
           editorViewRef.current?.dispatch({

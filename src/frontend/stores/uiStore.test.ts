@@ -57,6 +57,56 @@ describe('uiStore', () => {
 
     expect(useUIStore.getState().sceneSelectionChapterIds).toEqual(chapterIds);
   });
+
+  it('defaults workspace mode to page on first launch', async () => {
+    const { useUIStore, resetUIStore } = await import('./uiStore');
+
+    resetUIStore();
+    expect(useUIStore.getState().workspaceMode).toBe('page');
+  });
+
+  it('defaults scenes view type to narrative on first launch', async () => {
+    const { useUIStore, resetUIStore } = await import('./uiStore');
+
+    resetUIStore();
+    expect(useUIStore.getState().scenesViewType).toBe('narrative');
+  });
+
+  it('persists workspace mode and scenes view type through partialize', async () => {
+    const { useUIStore, resetUIStore } = await import('./uiStore');
+
+    resetUIStore();
+    useUIStore.getState().setWorkspaceMode('scenes');
+    useUIStore.getState().setScenesViewType('convergence-map');
+
+    const state = useUIStore.getState();
+    expect(state.workspaceMode).toBe('scenes');
+    expect(state.scenesViewType).toBe('convergence-map');
+  });
+
+  it('setScenesViewType accepts functional updater', async () => {
+    const { useUIStore, resetUIStore } = await import('./uiStore');
+
+    resetUIStore();
+    useUIStore.getState().setScenesViewType('pinboard');
+    useUIStore.getState().setScenesViewType((prev: string) => `${prev}-updated`);
+
+    expect(useUIStore.getState().scenesViewType).toBe('pinboard-updated');
+  });
+
+  it('setWorkspaceMode accepts functional updater', async () => {
+    const { useUIStore, resetUIStore } = await import('./uiStore');
+
+    resetUIStore();
+    useUIStore.getState().setWorkspaceMode('split');
+    useUIStore
+      .getState()
+      .setWorkspaceMode((prev: 'page' | 'scenes' | 'split') =>
+        prev === 'split' ? 'scenes' : prev
+      );
+
+    expect(useUIStore.getState().workspaceMode).toBe('scenes');
+  });
 });
 
 describe('useChapterSuggestions', () => {

@@ -36,6 +36,10 @@ import { useEditorUIState } from './features/app/useEditorUIState';
 import { useSettingsPersistence } from './features/app/useSettingsPersistence';
 import { useToolCallGate } from './features/app/useToolCallGate';
 import { useUIPanels } from './features/app/useUIPanels';
+import {
+  restoreViewState,
+  useAutoViewStatePersistence,
+} from './features/app/useViewStatePersistence';
 import { useSidebarIntents } from './features/layout/sidebarIntents';
 import { useCurrentWritingUnit } from './features/story/useCurrentWritingUnit';
 import {
@@ -416,6 +420,17 @@ const App: React.FC = () => {
     recordHistoryEntry: pushExternalHistoryEntry,
   });
   refreshProjectsRef.current = refreshProjects;
+
+  // Restore view state (chapter, workspace mode, scenes view type) from
+  // backend when the active project changes.
+  useEffect((): void => {
+    if (story.id) {
+      restoreViewState(story.id);
+    }
+  }, [story.id]);
+
+  // Auto-persist view state to backend when chapter/workspace/scenes-view changes.
+  useAutoViewStatePersistence(story.id);
 
   const { searchState, openSearch, searchHighlightValue, searchReplaceDialogProps } =
     useAppSearchNavigation({

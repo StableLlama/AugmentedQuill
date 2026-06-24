@@ -40,7 +40,7 @@ import type {
 import type { ProseDropData } from './types';
 import { useSceneProseSync } from './useSceneProseSync';
 import { buildChapterOrderMap, proseSort, normalizeChapterId } from './sceneSortUtils';
-import { uiStoreActions, useUIStore } from '../../stores/uiStore';
+import { uiStoreActions, useUIStore, useScenesViewType } from '../../stores/uiStore';
 import type { UIStoreState } from '../../stores/uiStore';
 import { externalValueSyncAnnotation } from '../editor/codeMirrorDiffPlugin';
 import {
@@ -63,6 +63,8 @@ interface ScenesPanelContainerProps {
     onRedo?: () => Promise<void> | void;
     forceNewHistory?: boolean;
   }) => void;
+  /** Called when the user selects a scene from a different chapter. */
+  onSelectChapter?: (chapterId: string) => void;
 }
 
 type BoundaryAdjustment = {
@@ -213,6 +215,7 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
   currentChapter,
   editorSettings,
   recordHistoryEntry,
+  onSelectChapter,
 }: ScenesPanelContainerProps) => {
   const { t } = useTranslation();
   const tc = useThemeClasses();
@@ -241,7 +244,31 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
   const chapters = useStoryChaptersListMeta();
   const books = useStoryBooks();
 
-  const [viewMode, setViewMode] = useState<ViewMode>('pinboard');
+  const scenesViewType = useScenesViewType();
+  const setScenesViewType = useUIStore((s: UIStoreState) => s.setScenesViewType);
+  const [viewMode, setViewMode] = useState<ViewMode>(
+    (scenesViewType as ViewMode) || 'narrative'
+  );
+
+  // Stable callback references for scene-lane state sync — these are
+  // wrapped in useCallback with empty deps because they use the Zustand
+  // functional updater form (prev => ...) which requires no closure
+  // over external state.  Without this, every ScenesPanelContainer render
+  // creates new inline functions, causing useSceneLanes to recreate its
+  // updateVisibleLaneEntryIds callback, which re-runs effects, which call
+  // setSceneLaneState, which re-renders ScenesPanelContainer → infinite loop.
+  const handleVisibleLaneEntryIdsChange = useCallback((ids: string[]): void => {
+    setSceneLaneState((prev: UIStoreState['sceneLaneState']) => ({
+      ...prev,
+      visibleLaneEntryIds: ids,
+    }));
+  }, []);
+  const handleRemovedReferencedLaneIdsChange = useCallback((ids: string[]): void => {
+    setSceneLaneState((prev: UIStoreState['sceneLaneState']) => ({
+      ...prev,
+      removedReferencedLaneIds: ids,
+    }));
+  }, []);
   const [editingSceneId, setEditingSceneId] = useState<SceneId | null>(null);
   const lastHandledSceneIntentVersionRef = React.useRef(0);
 
@@ -288,6 +315,24 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
   // ---- Scene selection + bidirectional prose-link sync ----
   const { selectedSceneId, handleSelectScene, handleMultipleSelectScenes } =
     useSceneProseSync(scenes, currentChapter, editorRef);
+
+  const handleSelectSceneWithChapterSwitch = useCallback(
+    (id: SceneId | null): void => {
+      if (id && currentChapter && onSelectChapter) {
+        const scene = scenes.find((s: Scene): boolean => s.id === id);
+        if (
+          scene?.prose_link?.scope_type === 'chapter' &&
+          scene.prose_link.chapter_id &&
+          normalizeChapterId(scene.prose_link.chapter_id) !==
+            normalizeChapterId(currentChapter.id)
+        ) {
+          onSelectChapter(scene.prose_link.chapter_id);
+        }
+      }
+      handleSelectScene(id);
+    },
+    [scenes, currentChapter, onSelectChapter, handleSelectScene]
+  );
 
   const dialogOpenedViaTrigger =
     sceneEditorDialog.openedViaTrigger && sceneEditorDialog.isOpen;
@@ -1222,7 +1267,10 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
                 key={mode}
                 type="button"
                 aria-pressed={viewMode === mode}
-                onClick={() => setViewMode(mode)}
+                onClick={() => {
+                  setViewMode(mode);
+                  setScenesViewType(mode);
+                }}
                 className={`px-3 py-1 text-xs font-medium rounded-sm transition-colors ${
                   viewMode === mode
                     ? isLight
@@ -1269,7 +1317,7 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
           <PinboardView
             scenes={scenes}
             primarySelectedSceneId={selectedSceneId}
-            onSelectScene={handleSelectScene}
+            onSelectScene={handleSelectSceneWithChapterSwitch}
             onSelectionChange={handleSceneSelectionChange}
             relatedSceneIds={chapterRelatedSceneIds}
             onMoveScene={handleMoveScene}
@@ -1287,7 +1335,7 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
             books={books}
             sortMode={viewMode === 'chronological' ? 'chronological' : 'narrative'}
             primarySelectedSceneId={selectedSceneId}
-            onSelectScene={handleSelectScene}
+            onSelectScene={handleSelectSceneWithChapterSwitch}
             onSelectionChange={handleSceneSelectionChange}
             relatedSceneIds={chapterRelatedSceneIds}
             onEditScene={setEditingSceneId}
@@ -1301,18 +1349,8 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
             }
             initialVisibleLaneEntryIds={sceneLaneState.visibleLaneEntryIds}
             initialRemovedReferencedLaneIds={sceneLaneState.removedReferencedLaneIds}
-            onVisibleLaneEntryIdsChange={(ids: string[]): void =>
-              setSceneLaneState((prev: UIStoreState['sceneLaneState']) => ({
-                ...prev,
-                visibleLaneEntryIds: ids,
-              }))
-            }
-            onRemovedReferencedLaneIdsChange={(ids: string[]): void =>
-              setSceneLaneState((prev: UIStoreState['sceneLaneState']) => ({
-                ...prev,
-                removedReferencedLaneIds: ids,
-              }))
-            }
+            onVisibleLaneEntryIdsChange={handleVisibleLaneEntryIdsChange}
+            onRemovedReferencedLaneIdsChange={handleRemovedReferencedLaneIdsChange}
           />
         )}
         {viewMode === 'convergence-map' && (
@@ -1323,7 +1361,7 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
             chapters={chapters}
             books={books}
             primarySelectedSceneId={selectedSceneId}
-            onSelectScene={handleSelectScene}
+            onSelectScene={handleSelectSceneWithChapterSwitch}
             onSelectionChange={handleSceneSelectionChange}
             relatedSceneIds={chapterRelatedSceneIds}
             onEditScene={setEditingSceneId}
@@ -1332,18 +1370,8 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
             editorSettings={editorSettings}
             initialVisibleLaneEntryIds={sceneLaneState.visibleLaneEntryIds}
             initialRemovedReferencedLaneIds={sceneLaneState.removedReferencedLaneIds}
-            onVisibleLaneEntryIdsChange={(ids: string[]): void =>
-              setSceneLaneState((prev: UIStoreState['sceneLaneState']) => ({
-                ...prev,
-                visibleLaneEntryIds: ids,
-              }))
-            }
-            onRemovedReferencedLaneIdsChange={(ids: string[]): void =>
-              setSceneLaneState((prev: UIStoreState['sceneLaneState']) => ({
-                ...prev,
-                removedReferencedLaneIds: ids,
-              }))
-            }
+            onVisibleLaneEntryIdsChange={handleVisibleLaneEntryIdsChange}
+            onRemovedReferencedLaneIdsChange={handleRemovedReferencedLaneIdsChange}
           />
         )}
       </div>
@@ -1363,7 +1391,7 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
           }}
           onNavigateScene={(sceneId: SceneId): void => {
             setEditingSceneId(sceneId);
-            handleSelectScene(sceneId);
+            handleSelectSceneWithChapterSwitch(sceneId);
           }}
           onSave={handleSaveScene}
           onDelete={handleDeleteScene}
