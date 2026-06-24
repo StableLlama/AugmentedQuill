@@ -665,19 +665,43 @@ def get_scene_context_for_target(
         include_all_scenes=True,
     )
     scoped_scenes = context.get("scenes") or []
-    if not scoped_scenes:
-        return {"scene_block": "", "sourcebook_ids": [], "scenes": []}
 
-    target_index = next(
-        (
-            idx
-            for idx, scene in enumerate(scoped_scenes)
-            if int(scene.get("id") or 0) == target_scene_id
-        ),
-        -1,
-    )
-    if target_index < 0:
-        return context
+    target_index = -1
+    if scoped_scenes:
+        target_index = next(
+            (
+                idx
+                for idx, scene in enumerate(scoped_scenes)
+                if int(scene.get("id") or 0) == target_scene_id
+            ),
+            -1,
+        )
+
+    if not scoped_scenes or target_index < 0:
+        # The target scene is not yet linked to any scope (or no scenes match).
+        # Include it directly so scene guidance is still generated
+        # for unlinked scenes being written into a scope.
+        all_scenes = _iter_story_scenes(story)
+        target_scene = next(
+            (s for s in all_scenes if int(s.get("id") or 0) == target_scene_id),
+            None,
+        )
+        if not target_scene:
+            return {"scene_block": "", "sourcebook_ids": [], "scenes": []}
+        scoped_scenes = [target_scene]
+        # Try to find following scenes by dict insertion order
+        if include_following_scenes > 0:
+            seen = False
+            following = []
+            for s in all_scenes:
+                if seen:
+                    following.append(s)
+                    if len(following) >= include_following_scenes:
+                        break
+                elif int(s.get("id") or 0) == target_scene_id:
+                    seen = True
+            scoped_scenes = [target_scene] + following
+        target_index = 0
 
     take_count = max(1, include_following_scenes + 1)
     selected = scoped_scenes[target_index : target_index + take_count]

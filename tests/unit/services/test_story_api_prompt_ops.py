@@ -95,11 +95,11 @@ class StoryApiPromptOpsTest(TestCase):
         user_msg = next((m for m in messages if m["role"] == "user"), None)
         self.assertIsNotNone(user_msg)
         self.assertIn(
-            "Task: Write the full current draft as continuous prose.",
+            "Task: Continue or rewrite the current draft according to the selected action while preserving coherence, voice, and pacing.",
             user_msg["content"],
         )
-        self.assertNotIn("Existing draft text (do not change)", user_msg["content"])
-        self.assertNotIn("# Chapter 1", user_msg["content"])
+        self.assertIn("Existing draft text (do not change):", user_msg["content"])
+        self.assertIn("# Chapter 1", user_msg["content"])
 
     def test_read_only_tool_schema_filter_excludes_editing_functions(self):
         tools = _get_read_only_tool_schemas(project_type="series")

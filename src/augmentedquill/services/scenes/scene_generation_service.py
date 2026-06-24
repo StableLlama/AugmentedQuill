@@ -35,8 +35,8 @@ from augmentedquill.services.scenes.scene_service import (
 from augmentedquill.services.scenes.scene_markers import remove_markers
 from augmentedquill.services.story.story_api_prompt_ops import resolve_model_runtime
 from augmentedquill.services.story.story_generation_common import (
+    _iter_story_scenes,
     gather_writing_context,
-    get_scene_context_for_scope,
     get_scene_context_for_target,
     sanitize_prompt,
 )
@@ -647,20 +647,23 @@ async def auto_link_scope_text(
     payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Auto-link a saved prose scope to all scene boundaries in that scope."""
-    story = load_story_config(project_dir / "story.json") or {}
-    chapter_numeric = _safe_int(chapter_id)
-    scene_context = get_scene_context_for_scope(
-        story=story,
-        scope=scope_type,
-        chap_id=chapter_numeric,
-        current_text=current_text,
-        include_all_scenes=True,
-    )
-    scene_ids: list[int] = []
-    for scene in scene_context.get("scenes") or []:
-        scene_id = _safe_int(scene.get("id"))
-        if scene_id is not None and scene_id not in scene_ids:
-            scene_ids.append(scene_id)
+    payload = payload or {}
+    scene_ids: list[int] = list(payload.get("scene_ids") or [])
+
+    if not scene_ids:
+        # Fall back to discovering scenes: include unlinked scenes and
+        # already-scoped scenes so the auto-link can bind them all.
+        story = load_story_config(project_dir / "story.json") or {}
+        for scene in _iter_story_scenes(story):
+            link = (
+                scene.get("prose_link")
+                if isinstance(scene.get("prose_link"), dict)
+                else {}
+            )
+            if link.get("scope_type") in (None, "", "unlinked"):
+                scene_id = _safe_int(scene.get("id"))
+                if scene_id is not None and scene_id not in scene_ids:
+                    scene_ids.append(scene_id)
 
     if not scene_ids:
         return {"assignments": [], "scenes": []}

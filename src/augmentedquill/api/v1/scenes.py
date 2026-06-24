@@ -232,7 +232,11 @@ async def auto_link_saved_scope(
             chapter_id=payload.chapter_id,
             book_id=payload.book_id,
             current_text=payload.current_text,
-            payload={},
+            payload={
+                "scene_ids": payload.scene_ids,
+                "start_offset": payload.start_offset,
+                "end_offset": payload.end_offset,
+            },
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

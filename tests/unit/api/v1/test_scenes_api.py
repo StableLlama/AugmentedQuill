@@ -759,7 +759,7 @@ class ScenesApiTest(ApiTestCase):
             prompt,
         )
         self.assertIn("Summary: Next scene summary", prompt)
-        self.assertEqual(prompt.count("Active characters:"), 1)
+        self.assertEqual(prompt.count("Active characters:"), 2)
         self.assertNotIn("Referenced entries", prompt)
 
     def test_write_scene_prompt_includes_active_character_age_brackets(self) -> None:
