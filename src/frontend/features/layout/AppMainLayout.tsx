@@ -10,7 +10,14 @@
  * Composes AppSidebar, the story editor pane, and AppChatPanel.
  */
 
-import React, { useRef, useEffect, useCallback, useMemo, useState } from 'react';
+import React, {
+  useRef,
+  useEffect,
+  useLayoutEffect,
+  useCallback,
+  useMemo,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { MessageSquarePlus } from 'lucide-react';
 
@@ -34,7 +41,10 @@ import { useAnnotations } from '../annotations/useAnnotations';
 import { AnnotationSidebar } from '../annotations/AnnotationSidebar';
 import { AnnotationDialog } from '../annotations/AnnotationDialog';
 import { getAnnotationMarkerSpanRange } from '../editor/internalTags';
-import { annotationsToRanges } from '../editor/annotationPlugin';
+import {
+  annotationsToRanges,
+  adjustAnnotationRangesForStrippedMarkers,
+} from '../editor/annotationPlugin';
 import type { Annotation } from '../../services/apiClients/annotations';
 
 import { useWorkspaceMode } from '../../stores/uiStore';
@@ -219,6 +229,20 @@ export const AppMainLayout: React.FC<AppMainLayoutProps> = React.memo(
 
     const projectName = useStoryStore((s: StoryStoreState): string => s.story.id);
     const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(null);
+    // Tracks whether the editor ref has been populated.  The annotation
+    // dispatch effect waits for this flag so that it never silently drops
+    // ranges because editorRef.current is null on first render.
+    const [editorReady, setEditorReady] = useState(false);
+
+    // useLayoutEffect without deps runs on every render — this is the only
+    // reliable way to detect when a ref object's .current transitions from
+    // null to a value (React doesn't track ref.current changes).
+    useLayoutEffect((): void => {
+      const ready = !!editorRef.current;
+      if (ready !== editorReady) {
+        setEditorReady(ready);
+      }
+    });
     const [isAnnotationDialogOpen, setIsAnnotationDialogOpen] = useState(false);
     const [pendingSelection, setPendingSelection] = useState<{
       from: number;
@@ -258,6 +282,59 @@ export const AppMainLayout: React.FC<AppMainLayoutProps> = React.memo(
     const shouldShowAnnotationPanel =
       workspaceMode !== 'scenes' && !!currentChapter && annotations.length > 0;
 
+    // Compute and dispatch annotation ranges whenever annotations, chapter
+    // content, or editor readiness changes.  Defined after useAnnotations so
+    // `annotations` is in scope.
+    const dispatchAnnotationsToEditor = useCallback((): void => {
+      if (!currentChapter || !editorReady) return;
+      const docText = currentChapter.content ?? '';
+      if (!docText) return;
+      const rawRanges = annotationsToRanges(docText, annotations);
+      const adjustedRanges = adjustAnnotationRangesForStrippedMarkers(
+        rawRanges,
+        docText
+      );
+      editorRef.current?.setOnAnnotationClick(setActiveAnnotationId);
+      editorRef.current?.setAnnotationRanges(adjustedRanges);
+    }, [currentChapter, annotations, editorReady, editorRef, workspaceMode]);
+
+    // Dispatch deferred via microtask so the editor view is guaranteed to
+    // exist when the Editor remounts (e.g. workspaceMode switch unmounts the
+    // old Editor instance and mounts a new one).
+    const pendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    useEffect(() => {
+      if (pendingTimerRef.current !== null) {
+        clearTimeout(pendingTimerRef.current);
+        pendingTimerRef.current = null;
+      }
+      if (!currentChapter) {
+        editorRef.current?.setAnnotationRanges([]);
+        return;
+      }
+      pendingTimerRef.current = setTimeout(() => {
+        pendingTimerRef.current = null;
+        dispatchAnnotationsToEditor();
+      }, 0);
+      return () => {
+        if (pendingTimerRef.current !== null) {
+          clearTimeout(pendingTimerRef.current);
+          pendingTimerRef.current = null;
+        }
+      };
+    }, [dispatchAnnotationsToEditor]);
+
+    // Safety net: retry editor-ready detection via microtask in case React
+    // batches the state update that populates the ref.
+    useEffect(() => {
+      if (!currentChapter || editorReady) return;
+      const id = setTimeout(() => {
+        if (editorRef.current) {
+          setEditorReady(true);
+        }
+      }, 0);
+      return () => clearTimeout(id);
+    }, [currentChapter, editorReady, editorRef]);
+
     useEffect((): void => {
       if (!annotationScope) {
         setActiveAnnotationId(null);
@@ -267,19 +344,6 @@ export const AppMainLayout: React.FC<AppMainLayoutProps> = React.memo(
       refreshAnnotations(annotationScope);
       setActiveAnnotationId(null);
     }, [annotationScope, refreshAnnotations, editorRef]);
-
-    useEffect((): void => {
-      if (!currentChapter) {
-        editorRef.current?.setAnnotationRanges([]);
-        return;
-      }
-      // Compute annotation ranges from the store content (which always has
-      // the markers).  The annotationRangesField maps positions on document
-      // changes, so even if the CodeMirror doc is stale now the positions
-      // will be corrected when the editor syncs.
-      const docText = currentChapter.content ?? '';
-      editorRef.current?.setAnnotationRanges(annotationsToRanges(docText, annotations));
-    }, [annotations, currentChapter, editorRef]);
 
     const openAnnotationDialogFromSelection = useCallback((): void => {
       if (!currentChapter || !annotationScope) return;
@@ -409,14 +473,23 @@ export const AppMainLayout: React.FC<AppMainLayoutProps> = React.memo(
       (id: string): void => {
         setActiveAnnotationId(id);
         const view = editorRef.current?.getEditorView();
-        if (!view) return;
-        const docText = view.state.doc.toString();
-        const span = getAnnotationMarkerSpanRange(docText, id);
+        if (!view || !currentChapter?.content) return;
+        // Search for markers in the full chapter content (which has markers
+        // preserved), not the editor document (which has them stripped when
+        // hideSceneMarkers is true).
+        const span = getAnnotationMarkerSpanRange(currentChapter.content, id);
         if (span) {
-          editorRef.current?.jumpToPosition(span.from, span.to);
+          // Adjust from full-content coordinates to visible (stripped) coordinates
+          const adjusted = adjustAnnotationRangesForStrippedMarkers(
+            [{ id, from: span.from, to: span.to, comment: '' }],
+            currentChapter.content
+          );
+          if (adjusted.length > 0) {
+            editorRef.current?.jumpToPosition(adjusted[0].from, adjusted[0].to);
+          }
         }
       },
-      [editorRef]
+      [editorRef, currentChapter]
     );
 
     const handleUpdateAnnotation = useCallback(

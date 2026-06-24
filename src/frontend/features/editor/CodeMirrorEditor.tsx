@@ -1008,11 +1008,13 @@ export const CodeMirrorEditor = React.forwardRef<
       const view = viewRef.current;
       if (!view) return;
       const docStr = view.state.doc.toString();
-      // Skip if CodeMirror already has this value (our own edit echoed back)
-      // or if the last value we emitted matches (user typed ahead of React update cycle)
-      if (docStr === value || lastEmittedRef.current === value) return;
-
+      // When hideSceneMarkers is true, the editor document is stripped of
+      // internal markers while the value prop carries the full content with
+      // markers (injected by Editor.tsx via transferInternalMarkers).  Compare
+      // the stripped forms so the sync is skipped when the document already
+      // matches the intended visible content.
       const stripped = hideSceneMarkers ? stripInlineInternalMarkers(value) : value;
+      if (docStr === stripped || lastEmittedRef.current === stripped) return;
 
       const { anchor, head } = view.state.selection.main;
       const maxPos = stripped.length;

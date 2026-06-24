@@ -84,10 +84,16 @@ export function useSceneProseSync(
       };
 
       const cursor = head;
+      const fullContent = chapter.content;
       const found = scenesRef.current.find((s: Scene): boolean => {
         const link: SceneProseLink | null | undefined = s.prose_link;
         if (!link) return false;
-        const visibleRange = toVisibleRange(s, strippedChapter, scenesRef.current);
+        const visibleRange = toVisibleRange(
+          s,
+          strippedChapter,
+          scenesRef.current,
+          fullContent
+        );
         if (!visibleRange) return false;
         return cursor >= visibleRange.from && cursor < visibleRange.to;
       });
@@ -95,7 +101,12 @@ export function useSceneProseSync(
       setSelectedSceneId(foundId);
 
       if (found) {
-        const visibleRange = toVisibleRange(found, strippedChapter, scenesRef.current);
+        const visibleRange = toVisibleRange(
+          found,
+          strippedChapter,
+          scenesRef.current,
+          fullContent
+        );
         if (visibleRange) {
           editor.setProseHighlights([{ sceneId: found.id, ...visibleRange }]);
         }
@@ -124,12 +135,18 @@ export function useSceneProseSync(
       ...currentChapter,
       content: stripInlineInternalMarkers(currentChapter.content),
     };
+    const fullContent = currentChapter.content;
 
     const entries: ProseHighlightRange[] = [];
     for (const sceneId of highlightSceneIds) {
       const scene = scenesRef.current.find((s: Scene): boolean => s.id === sceneId);
       if (!scene) continue;
-      const visibleRange = toVisibleRange(scene, strippedChapter, scenesRef.current);
+      const visibleRange = toVisibleRange(
+        scene,
+        strippedChapter,
+        scenesRef.current,
+        fullContent
+      );
       if (!visibleRange) continue;
       entries.push({ sceneId, from: visibleRange.from, to: visibleRange.to });
     }

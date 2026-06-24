@@ -40,6 +40,8 @@ import {
   type ProseBoundaryCallback,
 } from './CodeMirrorEditor';
 import { setAnnotationRangesEffect, type AnnotationRange } from './annotationPlugin';
+import { setAnnotationClickCallback } from './annotationPlugin';
+import { transferInternalMarkers } from './internalTags';
 import { EditorSuggestionPanel } from './EditorSuggestionPanel';
 import { EditorMobileToolbar } from './EditorMobileToolbar';
 import { EditorProvider } from './EditorContext';
@@ -127,6 +129,12 @@ export interface EditorHandle {
   setOnProseBoundaryChange: (cb: ProseBoundaryCallback | null) => void;
   /** Push a new set of annotation highlight ranges to the editor. */
   setAnnotationRanges: (ranges: AnnotationRange[]) => void;
+  /**
+   * Register a callback that fires when the user clicks on an annotation
+   * decoration in the editor (annotationId) or on unannotated text (null).
+   * Pass null to unsubscribe.
+   */
+  setOnAnnotationClick: (cb: ((annotationId: string | null) => void) | null) => void;
   /** Return current selection (anchor/head) or null when editor is unavailable. */
   getSelection: () => { anchor: number; head: number } | null;
 }
@@ -194,6 +202,9 @@ export const Editor = React.memo(
       // Keep the last non-undefined baseline so undo can restore the diff view.
       const savedBaselineRef = useRef<string | undefined>(baselineContent);
       const lastChapterIdRef = useRef(chapter.id);
+      // Tracks the last full content (with markers) that was saved to the backend.
+      // Used to re-inject markers after user edits strip them from the editor doc.
+      const lastSavedFullContentRef = useRef(chapter.content);
 
       useEffect((): void => {
         const isChapterSwitch = chapter.id !== lastChapterIdRef.current;
@@ -262,6 +273,7 @@ export const Editor = React.memo(
 
         if (isChapterSwitch) {
           deferredStreamingContentRef.current = null;
+          lastSavedFullContentRef.current = chapter.content;
         }
 
         // During active streaming the streaming-slot effect below owns
@@ -282,6 +294,10 @@ export const Editor = React.memo(
         if (isChapterSwitch || (!editorFocused && !shouldDeferStreamingSync)) {
           localContentRef.current = chapter.content;
           setLocalContent(chapter.content);
+          if (!isChapterSwitch) {
+            // AI/undo/redo updated the content externally — update our marker baseline
+            lastSavedFullContentRef.current = chapter.content;
+          }
         }
       }, [chapter.id, chapter.content, proseStreamingActive]);
 
@@ -718,6 +734,11 @@ export const Editor = React.memo(
             effects: setAnnotationRangesEffect.of(ranges),
           });
         },
+        setOnAnnotationClick: (
+          cb: ((annotationId: string | null) => void) | null
+        ): void => {
+          setAnnotationClickCallback(cb);
+        },
         getSelection: (): { anchor: number; head: number } | null => {
           const sel = editorViewRef.current?.state.selection.main;
           return sel ? { anchor: sel.anchor, head: sel.head } : null;
@@ -982,7 +1003,20 @@ export const Editor = React.memo(
                           clearTimeout(contentDebounceRef.current);
                         }
                         contentDebounceRef.current = setTimeout((): void => {
-                          onChange(chapter.id, { content: val }, isUndoRedo);
+                          // Re-inject internal markers (scene + annotation) that
+                          // were stripped from the editor document when
+                          // hideSceneMarkers is true.  The backend expects content
+                          // with markers so markers are preserved across saves.
+                          const contentWithMarkers = transferInternalMarkers(
+                            lastSavedFullContentRef.current,
+                            val
+                          );
+                          lastSavedFullContentRef.current = contentWithMarkers;
+                          onChange(
+                            chapter.id,
+                            { content: contentWithMarkers },
+                            isUndoRedo
+                          );
                         }, DEBOUNCE_MS);
                       }}
                       onSelectionChange={(anchor: number, head: number): void => {

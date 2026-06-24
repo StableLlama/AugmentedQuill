@@ -26,6 +26,8 @@ import { StateEffect, StateField, Transaction } from '@codemirror/state';
 import type { Extension } from '@codemirror/state';
 import type { Range } from '@codemirror/state';
 import { getAnnotationMarkerSpanRange } from './internalTags';
+import { INLINE_INTERNAL_MARKER_REGEX } from './internalTags';
+import { externalValueSyncAnnotation } from './codeMirrorDiffPlugin';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -58,10 +60,15 @@ export const annotationRangesField = StateField.define<AnnotationRange[]>({
     //   - `from`: assoc=1  → inserted text at boundary stays outside
     //   - `to`:   assoc=-1 → inserted text at boundary stays outside
     //
+    // Skip position mapping on external value syncs: a full-document
+    // replacement collapses all positions to 0 via mapPos.  The annotation
+    // dispatch effect will recompute and re-dispatch correct ranges after
+    // the sync completes.
+    //
     // If a stored position lies beyond the start document, it was computed
     // from external content (e.g. currentChapter.content) that matches the
     // target document — keep it unchanged.
-    if (tr.docChanged) {
+    if (tr.docChanged && !tr.annotation(externalValueSyncAnnotation)) {
       const startLen = tr.startState.doc.length;
       return value
         .map(
@@ -100,6 +107,15 @@ function buildDecorations(ranges: AnnotationRange[], docLength: number): Decorat
 // ViewPlugin
 // ---------------------------------------------------------------------------
 
+/** Callback invoked when the user clicks on an annotation decoration. */
+let onAnnotationClickCallback: ((annotationId: string | null) => void) | null = null;
+
+export function setAnnotationClickCallback(
+  cb: ((annotationId: string | null) => void) | null
+): void {
+  onAnnotationClickCallback = cb;
+}
+
 function buildPlugin(): Extension {
   return ViewPlugin.fromClass(
     class {
@@ -135,6 +151,36 @@ function buildPlugin(): Extension {
   );
 }
 
+/**
+ * Extension that listens for clicks on annotation decorations and fires
+ * the registered callback with the clicked annotation's ID.
+ */
+const annotationClickHandler = EditorView.domEventHandlers({
+  click: (event: MouseEvent, view: EditorView): boolean => {
+    if (!onAnnotationClickCallback) return false;
+    // Try posAtCoords first (real browser with layout), fall back to
+    // posAtDOM (works in jsdom test environment without layout).
+    let pos: number | null = view.posAtCoords({
+      x: event.clientX,
+      y: event.clientY,
+    });
+    if (pos == null && event.target instanceof Node) {
+      pos = view.posAtDOM(event.target, 0);
+    }
+    if (pos == null) return false;
+    const ranges = view.state.field(annotationRangesField);
+    for (const r of ranges) {
+      if (pos >= r.from && pos <= r.to) {
+        onAnnotationClickCallback(r.id);
+        return true;
+      }
+    }
+    // Click landed on unannotated text — clear the active annotation.
+    onAnnotationClickCallback(null);
+    return false;
+  },
+});
+
 // ---------------------------------------------------------------------------
 // CSS theme
 // ---------------------------------------------------------------------------
@@ -154,7 +200,7 @@ const theme = EditorView.baseTheme({
 // ---------------------------------------------------------------------------
 
 export function buildAnnotationExtensions(): Extension[] {
-  return [annotationRangesField, buildPlugin(), theme];
+  return [annotationRangesField, buildPlugin(), annotationClickHandler, theme];
 }
 
 /**
@@ -182,6 +228,60 @@ export function annotationsToRanges(
       to: span.to,
       comment: ann.comment,
     });
+  }
+  return result;
+}
+
+/**
+ * Adjust annotation ranges from full-content coordinate space to stripped
+ * coordinate space.  When the editor has ``hideSceneMarkers`` enabled, the
+ * document no longer contains the ``<!--scene:...-->`` and
+ * ``<!--annotation:...-->`` marker tokens.  The ranges computed by
+ * :func:`annotationsToRanges` are in the full-content space (markers present),
+ * so they must be shifted left by the cumulative length of all internal
+ * markers that appear before each position.
+ *
+ * Returns a new array of ranges with adjusted ``from`` and ``to`` values.
+ * Ranges whose adjusted span collapses (from >= to) are dropped.
+ */
+export function adjustAnnotationRangesForStrippedMarkers(
+  ranges: AnnotationRange[],
+  fullContent: string
+): AnnotationRange[] {
+  // Collect all internal marker positions and their lengths
+  const markerPositions: Array<{ pos: number; len: number }> = [];
+  let match: RegExpExecArray | null;
+  const regex = new RegExp(INLINE_INTERNAL_MARKER_REGEX.source, 'g');
+  while ((match = regex.exec(fullContent)) !== null) {
+    markerPositions.push({ pos: match.index, len: match[0].length });
+  }
+
+  // Precompute cumulative stripped length up to each marker position
+  // Using a sorted array for binary search
+  markerPositions.sort(
+    (a: { pos: number; len: number }, b: { pos: number; len: number }): number =>
+      a.pos - b.pos
+  );
+
+  const adjustOffset = (offset: number): number => {
+    let removed = 0;
+    for (const mp of markerPositions) {
+      if (mp.pos < offset) {
+        removed += mp.len;
+      } else {
+        break;
+      }
+    }
+    return Math.max(0, offset - removed);
+  };
+
+  const result: AnnotationRange[] = [];
+  for (const range of ranges) {
+    const adjustedFrom = adjustOffset(range.from);
+    const adjustedTo = adjustOffset(range.to);
+    if (adjustedFrom < adjustedTo) {
+      result.push({ ...range, from: adjustedFrom, to: adjustedTo });
+    }
   }
   return result;
 }

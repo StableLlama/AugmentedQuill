@@ -87,3 +87,123 @@ export function getAnnotationMarkerSpanRange(
   }
   return { from: contentStart, to: markerEnd };
 }
+
+// ─── Marker transfer ───────────────────────────────────────────────────────
+
+interface MarkerSpan {
+  /** The full marker token including brackets, e.g. `<!--scene:1:start-->` */
+  startToken: string;
+  endToken: string;
+  /** The prose text between the markers in the old content. */
+  prose: string;
+}
+
+/**
+ * Parse all internal marker spans (scene + annotation) from *content*.
+ * Returns spans in order of appearance.
+ */
+function parseAllMarkerSpans(content: string): MarkerSpan[] {
+  const spans: MarkerSpan[] = [];
+  const regex = new RegExp(INLINE_INTERNAL_MARKER_REGEX.source, 'g');
+  const openStarts: Array<{
+    startToken: string;
+    endToken: string;
+    proseStart: number;
+  }> = [];
+
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(content)) !== null) {
+    const fullToken = match[0];
+    const isStart = fullToken.endsWith(':start-->');
+    const endToken = fullToken.replace(':start-->', ':end-->');
+
+    if (isStart) {
+      openStarts.push({
+        startToken: fullToken,
+        endToken,
+        proseStart: match.index + fullToken.length,
+      });
+    } else {
+      // end marker — find matching start
+      const startMarker = fullToken.replace(':end-->', ':start-->');
+      for (let i = openStarts.length - 1; i >= 0; i--) {
+        if (openStarts[i].startToken === startMarker) {
+          const opened = openStarts[i];
+          openStarts.splice(i, 1);
+          spans.push({
+            startToken: opened.startToken,
+            endToken: fullToken,
+            prose: content.slice(opened.proseStart, match.index),
+          });
+          break;
+        }
+      }
+    }
+  }
+  return spans;
+}
+
+/**
+ * Transfer internal markers (scene + annotation) from *oldFullContent* to
+ * *newStrippedContent*.  For each marker span found in the old content, the
+ * prose text between the markers is located in the new content and the
+ * markers are re-inserted around it.
+ *
+ * When a span's prose cannot be found in the new content the markers are
+ * silently dropped (the edit removed that text entirely).
+ *
+ * Returns the new content with markers re-injected.
+ */
+export function transferInternalMarkers(
+  oldFullContent: string,
+  newStrippedContent: string
+): string {
+  const spans = parseAllMarkerSpans(oldFullContent);
+  if (spans.length === 0) {
+    return newStrippedContent;
+  }
+
+  // Sort spans by the position of their prose in the new content so we can
+  // inject markers from right to left without invalidating offsets.
+  const injections: Array<{
+    pos: number;
+    startToken: string;
+    endToken: string;
+    proseLen: number;
+  }> = [];
+
+  for (const span of spans) {
+    const idx = newStrippedContent.indexOf(span.prose);
+    if (idx < 0) continue; // prose not found — drop this marker span
+    injections.push({
+      pos: idx,
+      startToken: span.startToken,
+      endToken: span.endToken,
+      proseLen: span.prose.length,
+    });
+  }
+
+  if (injections.length === 0) {
+    return newStrippedContent;
+  }
+
+  // Sort by position (ascending) so we can inject right-to-left
+  injections.sort(
+    (
+      a: { pos: number; startToken: string; endToken: string; proseLen: number },
+      b: { pos: number; startToken: string; endToken: string; proseLen: number }
+    ): number => a.pos - b.pos
+  );
+
+  // Build result by injecting markers from right to left
+  let result = newStrippedContent;
+  for (let i = injections.length - 1; i >= 0; i--) {
+    const { pos, startToken, endToken, proseLen } = injections[i];
+    const before = result.slice(0, pos);
+    const prose = result.slice(pos, pos + proseLen);
+    const after = result.slice(pos + proseLen);
+    result = before + startToken + prose + endToken + after;
+  }
+
+  return result;
+}

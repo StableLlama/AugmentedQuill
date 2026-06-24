@@ -15,6 +15,7 @@ import {
   getSceneMarkerSpanRange,
   hasInlineSceneMarkers,
   sceneMarkerTokenLength,
+  INLINE_INTERNAL_MARKER_REGEX,
 } from '../editor/internalTags';
 import { normalizeChapterId } from './sceneSortUtils';
 
@@ -62,12 +63,34 @@ export function toVisibleLinkedOffset(
   offset: number,
   unit: WritingUnit,
   scenes: readonly Scene[],
-  loose: boolean = false
+  loose: boolean = false,
+  fullContent?: string
 ): number {
   if (!loose && !shouldAdjustOffsets(unit, scenes)) {
     return offset;
   }
 
+  // When full content is available, use exact marker positions (accounts for
+  // BOTH scene and annotation markers — stripInlineInternalMarkers removes both).
+  if (fullContent !== undefined && fullContent.length > 0) {
+    let removedBefore = 0;
+    let markerFound = false;
+    const regex = new RegExp(INLINE_INTERNAL_MARKER_REGEX.source, 'g');
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(fullContent)) !== null) {
+      markerFound = true;
+      if (match.index < offset) {
+        removedBefore += match[0].length;
+      }
+    }
+    if (markerFound) {
+      return Math.max(0, offset - removedBefore);
+    }
+    // Fall through to scene-based fallback when fullContent has no markers
+  }
+
+  // Fallback: approximate using scene marker tokens only (legacy path for
+  // callers that don't pass fullContent).
   let removedBefore = 0;
   for (const scene of scenes) {
     const link = scene.prose_link;
@@ -89,7 +112,8 @@ export function toVisibleLinkedOffset(
 export function toVisibleRange(
   scene: Scene,
   unit: WritingUnit,
-  scenes: readonly Scene[]
+  scenes: readonly Scene[],
+  fullContent?: string
 ): { from: number; to: number } | null {
   const link = scene.prose_link;
   if (!link || link.end_offset == null) {
@@ -111,8 +135,8 @@ export function toVisibleRange(
 
   const identity = { from: rawFrom, to: rawTo };
   const adjusted = {
-    from: toVisibleLinkedOffset(rawFrom, unit, scenes),
-    to: toVisibleLinkedOffset(rawTo, unit, scenes),
+    from: toVisibleLinkedOffset(rawFrom, unit, scenes, false, fullContent),
+    to: toVisibleLinkedOffset(rawTo, unit, scenes, false, fullContent),
   };
 
   const identityValid = identity.from < identity.to;

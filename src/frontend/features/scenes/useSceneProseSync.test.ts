@@ -769,4 +769,217 @@ describe('useSceneProseSync', () => {
       { sceneId, from: 0, to: 4 },
     ] as ProseHighlightRange[]);
   });
+
+  it('adjusts full-content prose_link offsets when chapter has inline markers', () => {
+    // Simulates the real scenario: backend stores prose_link offsets in the
+    // full-content coordinate space (marker-inclusive), and useSceneProseSync
+    // must adjust them to match the editor's stripped content when
+    // hideSceneMarkers is true.
+    const marker = (id: string, edge: 'start' | 'end'): string =>
+      `<!--scene:${id}:${edge}-->`;
+    const scene1Id = 'sc1';
+    const scene2Id = 'sc2';
+
+    // Build content with inline markers — this is what the backend stores
+    const chapterWithMarkers: WritingUnit = {
+      ...chapterUnit,
+      content:
+        'Before ' +
+        `${marker(scene1Id, 'start')}Alpha prose${marker(scene1Id, 'end')} ` +
+        `${marker(scene2Id, 'start')}Beta text${marker(scene2Id, 'end')} ` +
+        'After',
+    };
+
+    // Compute the backend-style offsets (positions in full content)
+    // Scene 1's prose is "Alpha prose" between its markers
+    const scene1StartMarker = marker(scene1Id, 'start');
+    const scene1EndMarker = marker(scene1Id, 'end');
+    const scene1RawStart =
+      chapterWithMarkers.content.indexOf(scene1StartMarker) + scene1StartMarker.length;
+    const scene1RawEnd = chapterWithMarkers.content.indexOf(
+      scene1EndMarker,
+      scene1RawStart
+    );
+
+    // Scene 2's prose is "Beta text" between its markers
+    const scene2StartMarker = marker(scene2Id, 'start');
+    const scene2EndMarker = marker(scene2Id, 'end');
+    const scene2RawStart =
+      chapterWithMarkers.content.indexOf(scene2StartMarker) + scene2StartMarker.length;
+    const scene2RawEnd = chapterWithMarkers.content.indexOf(
+      scene2EndMarker,
+      scene2RawStart
+    );
+
+    const scene1: Scene = {
+      ...sceneWithChapterLink,
+      id: scene1Id,
+      prose_link: {
+        scope_type: 'chapter',
+        chapter_id: 'ch1',
+        start_offset: scene1RawStart,
+        end_offset: scene1RawEnd,
+        content_hash: 'hash1',
+      },
+    };
+
+    const scene2: Scene = {
+      ...sceneWithChapterLink,
+      id: scene2Id,
+      prose_link: {
+        scope_type: 'chapter',
+        chapter_id: 'ch1',
+        start_offset: scene2RawStart,
+        end_offset: scene2RawEnd,
+        content_hash: 'hash2',
+      },
+    };
+
+    const ref = makeRef(editor.handle);
+    const { result } = renderHook(() =>
+      useSceneProseSync([scene1, scene2], chapterWithMarkers, ref)
+    );
+
+    // Select scene 2: its visible range should be adjusted for stripped markers
+    act(() => {
+      result.current.handleSelectScene(scene2Id);
+    });
+
+    // Compute expected visible positions
+    const strippedContent = chapterWithMarkers.content.replace(
+      /<!--(?:scene|annotation):[^:>]+:(?:start|end)-->/g,
+      ''
+    );
+    const expectedBetaStart = strippedContent.indexOf('Beta text');
+    const expectedBetaEnd = expectedBetaStart + 'Beta text'.length;
+
+    expect(editor.setProseHighlights).toHaveBeenLastCalledWith([
+      { sceneId: scene2Id, from: expectedBetaStart, to: expectedBetaEnd },
+    ] as ProseHighlightRange[]);
+
+    // Cursor inside the adjusted range should select scene 2
+    act(() => {
+      editor.triggerCursorChange(expectedBetaStart, expectedBetaStart + 2);
+    });
+    expect(result.current.selectedSceneId).toBe(scene2Id);
+  });
+
+  it('adjusts scene positions when content has annotation markers before scene prose', () => {
+    // Annotation markers embedded in the content should also be accounted for
+    // when computing visible scene positions (both scene and annotation markers
+    // are stripped by hideSceneMarkers).
+    const marker = (id: string, edge: 'start' | 'end'): string =>
+      `<!--scene:${id}:${edge}-->`;
+    const annMarker = (id: string, edge: 'start' | 'end'): string =>
+      `<!--annotation:${id}:${edge}-->`;
+
+    const chapterWithMarkers: WritingUnit = {
+      ...chapterUnit,
+      content:
+        `${annMarker('ann1', 'start')}ann prose${annMarker('ann1', 'end')}` +
+        ` before ${marker('sc1', 'start')}Scene prose${marker('sc1', 'end')} after`,
+    };
+
+    // Backend-style offsets in full-content space
+    const startMarker = marker('sc1', 'start');
+    const endMarker = marker('sc1', 'end');
+    const rawStart =
+      chapterWithMarkers.content.indexOf(startMarker) + startMarker.length;
+    const rawEnd = chapterWithMarkers.content.indexOf(endMarker, rawStart);
+
+    const scene1: Scene = {
+      ...sceneWithChapterLink,
+      id: 'sc1',
+      prose_link: {
+        scope_type: 'chapter',
+        chapter_id: 'ch1',
+        start_offset: rawStart,
+        end_offset: rawEnd,
+        content_hash: 'h1',
+      },
+    };
+
+    const ref = makeRef(editor.handle);
+    const { result } = renderHook(() =>
+      useSceneProseSync([scene1], chapterWithMarkers, ref)
+    );
+
+    act(() => {
+      result.current.handleSelectScene('sc1');
+    });
+
+    const strippedContent = chapterWithMarkers.content.replace(
+      /<!--(?:scene|annotation):[^:>]+:(?:start|end)-->/g,
+      ''
+    );
+    const expectedStart = strippedContent.indexOf('Scene prose');
+    const expectedEnd = expectedStart + 'Scene prose'.length;
+
+    expect(editor.setProseHighlights).toHaveBeenLastCalledWith([
+      { sceneId: 'sc1', from: expectedStart, to: expectedEnd },
+    ] as ProseHighlightRange[]);
+
+    // Cursor inside range should select scene
+    act(() => {
+      editor.triggerCursorChange(expectedStart, expectedStart + 2);
+    });
+    expect(result.current.selectedSceneId).toBe('sc1');
+  });
+
+  it('adjusts scene positions when annotation markers are inside scene prose', () => {
+    // Annotation inside scene prose should not affect the scene's own visible
+    // range calculation — the annotation markers are stripped along with scene
+    // markers, and the scene's prose is the text between its scene markers
+    // (excluding the annotation markers that happen to be inside).
+    const marker = (id: string, edge: 'start' | 'end'): string =>
+      `<!--scene:${id}:${edge}-->`;
+    const annMarker = (id: string, edge: 'start' | 'end'): string =>
+      `<!--annotation:${id}:${edge}-->`;
+
+    const chapterWithMarkers: WritingUnit = {
+      ...chapterUnit,
+      content:
+        `${marker('sc1', 'start')}` +
+        `prose ${annMarker('ann1', 'start')}with annotation${annMarker('ann1', 'end')} inside` +
+        `${marker('sc1', 'end')}`,
+    };
+
+    const startMarker = marker('sc1', 'start');
+    const endMarker = marker('sc1', 'end');
+    const rawStart =
+      chapterWithMarkers.content.indexOf(startMarker) + startMarker.length;
+    const rawEnd = chapterWithMarkers.content.indexOf(endMarker, rawStart);
+
+    const scene1: Scene = {
+      ...sceneWithChapterLink,
+      id: 'sc1',
+      prose_link: {
+        scope_type: 'chapter',
+        chapter_id: 'ch1',
+        start_offset: rawStart,
+        end_offset: rawEnd,
+        content_hash: 'h1',
+      },
+    };
+
+    const ref = makeRef(editor.handle);
+    const { result } = renderHook(() =>
+      useSceneProseSync([scene1], chapterWithMarkers, ref)
+    );
+
+    act(() => {
+      result.current.handleSelectScene('sc1');
+    });
+
+    const strippedContent = chapterWithMarkers.content.replace(
+      /<!--(?:scene|annotation):[^:>]+:(?:start|end)-->/g,
+      ''
+    );
+    const expectedStart = strippedContent.indexOf('prose with annotation inside');
+    const expectedEnd = expectedStart + 'prose with annotation inside'.length;
+
+    expect(editor.setProseHighlights).toHaveBeenLastCalledWith([
+      { sceneId: 'sc1', from: expectedStart, to: expectedEnd },
+    ] as ProseHighlightRange[]);
+  });
 });
