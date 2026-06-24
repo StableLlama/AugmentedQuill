@@ -207,3 +207,49 @@ export function transferInternalMarkers(
 
   return result;
 }
+
+// ─── Stripped-to-full-content coordinate conversion ──────────────────────────
+
+/**
+ * Convert a stripped-space offset (editor document with markers removed) to
+ * a full-content-space offset (raw file with markers present).
+ *
+ * The editor strips internal markers (``<!--scene:...-->``,
+ * ``<!--annotation:...-->``) from the visible document.  Selection offsets
+ * from ``getSelection()`` are therefore in stripped space.  When sending
+ * offsets to the backend (which expects full-content coordinates), they must
+ * be converted via this function.
+ *
+ * @param fullContent  The raw content string containing all internal markers.
+ * @param strippedOffset  Offset in the stripped (marker-free) document.
+ * @returns Equivalent offset in the full-content coordinate space, clamped to
+ *   the length of *fullContent*.
+ */
+export function strippedToFullOffset(
+  fullContent: string,
+  strippedOffset: number
+): number {
+  let fullPos = 0;
+  let strippedPos = 0;
+
+  // Walk over each internal marker token and advance the cursor past it.
+  const regex = new RegExp(INLINE_INTERNAL_MARKER_REGEX.source, 'g');
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(fullContent)) !== null) {
+    const proseBeforeLen = match.index - fullPos;
+    if (strippedPos + proseBeforeLen > strippedOffset) {
+      // The target stripped offset falls inside the prose segment before
+      // this marker.
+      return fullPos + (strippedOffset - strippedPos);
+    }
+    strippedPos += proseBeforeLen;
+    fullPos = match.index + match[0].length;
+  }
+
+  // After all markers: remaining prose (or clamp if strippedOffset exceeds
+  // the stripped content length).
+  return Math.min(
+    fullPos + Math.max(0, strippedOffset - strippedPos),
+    fullContent.length
+  );
+}

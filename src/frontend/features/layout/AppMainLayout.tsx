@@ -40,7 +40,10 @@ import {
 import { useAnnotations } from '../annotations/useAnnotations';
 import { AnnotationSidebar } from '../annotations/AnnotationSidebar';
 import { AnnotationDialog } from '../annotations/AnnotationDialog';
-import { getAnnotationMarkerSpanRange } from '../editor/internalTags';
+import {
+  getAnnotationMarkerSpanRange,
+  strippedToFullOffset,
+} from '../editor/internalTags';
 import {
   annotationsToRanges,
   adjustAnnotationRangesForStrippedMarkers,
@@ -352,6 +355,8 @@ export const AppMainLayout: React.FC<AppMainLayoutProps> = React.memo(
       const from = Math.min(sel.anchor, sel.head);
       const to = Math.max(sel.anchor, sel.head);
       if (from === to) return;
+      // Store editor-space (stripped) offsets.  Full-content conversion
+      // happens at API-call time in handleCreateAnnotation.
       setPendingSelection({ from, to });
       setAnnotationMenu({ open: false, x: 0, y: 0 });
       setIsAnnotationDialogOpen(true);
@@ -371,6 +376,8 @@ export const AppMainLayout: React.FC<AppMainLayoutProps> = React.memo(
         if (from === to) return;
 
         e.preventDefault();
+        // Store editor-space (stripped) offsets.  Full-content conversion
+        // happens at API-call time in handleCreateAnnotation.
         setPendingSelection({ from, to });
         setAnnotationMenu({ open: true, x: e.clientX, y: e.clientY });
       };
@@ -407,52 +414,63 @@ export const AppMainLayout: React.FC<AppMainLayoutProps> = React.memo(
 
     const handleCreateAnnotation = useCallback(
       async (comment: string): Promise<void> => {
-        if (!annotationScope || !pendingSelection) return;
+        if (!annotationScope || !pendingSelection || !currentChapter) return;
+
+        // Convert editor-space (stripped) offsets to full-content offsets
+        // for the backend API.  The editor strips internal marker tokens
+        // from the visible document, so getSelection() returns stripped
+        // positions that must be mapped back to the raw file coordinates.
+        const fullContent = currentChapter.content ?? '';
+        const fromFull = strippedToFullOffset(fullContent, pendingSelection.from);
+        const toFull = strippedToFullOffset(fullContent, pendingSelection.to);
+
         const created = await createAnnotation({
           ...annotationScope,
-          start_offset: pendingSelection.from,
-          end_offset: pendingSelection.to,
+          start_offset: fromFull,
+          end_offset: toFull,
           comment,
         });
         setIsAnnotationDialogOpen(false);
         if (created) {
-          // Insert markers into the editor document so that the marker-based
-          // range computation in annotationsToRanges finds them immediately.
-          const view = editorRef.current?.getEditorView();
-          if (view) {
-            const startMarker = `<!--annotation:${created.id}:start-->`;
-            const endMarker = `<!--annotation:${created.id}:end-->`;
-            // Insert start marker first, then end marker (position shifted).
-            view.dispatch({
-              changes: {
-                from: pendingSelection.from,
-                to: pendingSelection.from,
-                insert: startMarker,
-              },
-              annotations: [],
-            });
-            view.dispatch({
-              changes: {
-                from: pendingSelection.to + startMarker.length,
-                to: pendingSelection.to + startMarker.length,
-                insert: endMarker,
-              },
-              annotations: [],
-            });
-          }
+          // Construct the new full content with annotation markers so the
+          // chapter store and annotation dispatch can pick up the change
+          // immediately.  Never inject markers directly into the editor
+          // document — the editor runs with hideSceneMarkers=true and
+          // expects a clean document.
+          const startToken = `<!--annotation:${created.id}:start-->`;
+          const endToken = `<!--annotation:${created.id}:end-->`;
+          const newFullContent =
+            fullContent.slice(0, fromFull) +
+            startToken +
+            fullContent.slice(fromFull, toFull) +
+            endToken +
+            fullContent.slice(toFull);
+
+          // Update the chapter in the store (sync=false because the
+          // backend already persisted the markers via createAnnotation).
+          await editorControls.updateChapter(
+            currentChapter.id,
+            { content: newFullContent },
+            false,
+            false,
+            false
+          );
+
           setPendingSelection(null);
           await refreshAnnotations(annotationScope);
           setActiveAnnotationId(created.id);
-          // Navigate to the annotation in the editor.
-          const span = editorRef.current?.getEditorView()?.state.doc.toString();
+
+          // Navigate to the annotation in the editor.  Find markers in
+          // the new full content and convert to visible (stripped) editor
+          // positions.
+          const span = getAnnotationMarkerSpanRange(newFullContent, created.id);
           if (span) {
-            const smPos = span.indexOf(`<!--annotation:${created.id}:start-->`);
-            const emPos = span.indexOf(`<!--annotation:${created.id}:end-->`);
-            if (smPos >= 0 && emPos > smPos) {
-              editorRef.current?.jumpToPosition(
-                smPos + `<!--annotation:${created.id}:start-->`.length,
-                emPos
-              );
+            const adjusted = adjustAnnotationRangesForStrippedMarkers(
+              [{ id: created.id, from: span.from, to: span.to, comment: '' }],
+              newFullContent
+            );
+            if (adjusted.length > 0) {
+              editorRef.current?.jumpToPosition(adjusted[0].from, adjusted[0].to);
             }
           }
         } else {
@@ -466,6 +484,8 @@ export const AppMainLayout: React.FC<AppMainLayoutProps> = React.memo(
         createAnnotation,
         refreshAnnotations,
         editorRef,
+        currentChapter,
+        editorControls,
       ]
     );
 

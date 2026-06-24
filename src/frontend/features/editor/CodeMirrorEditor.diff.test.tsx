@@ -497,4 +497,28 @@ describe('CodeMirrorEditor Diff Highlighting', () => {
     expect(newlineCount).toBeGreaterThan(0);
     expect(redBreaks).toBe(newlineCount);
   });
+
+  it('shows no diff when baseline differs from value only by markers', async () => {
+    // Simulates the annotation-creation scenario: the baseline (from
+    // baselineState) contains internal markers, the editor document is
+    // always stripped.  When prose is identical the diff must be empty.
+    const { container } = render(
+      <CodeMirrorEditor
+        value={'The scent of jasmine filled the air'}
+        baselineValue={
+          '<!--scene:1:start-->The scent of <!--annotation:a1:start-->jasmine' +
+          '<!--annotation:a1:end--> filled the air<!--scene:1:end-->'
+        }
+        showWhitespace={false}
+        showDiff={true}
+        hideSceneMarkers={true}
+        onChange={vi.fn()}
+      />
+    );
+
+    await act(async () => {});
+
+    expect(container.querySelector('.cm-diff-inserted')).toBeNull();
+    expect(container.querySelector('.cm-diff-deleted')).toBeNull();
+  });
 });

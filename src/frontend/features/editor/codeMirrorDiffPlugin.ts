@@ -272,7 +272,12 @@ export const buildDiffPlugin = (
       /** Build the requested value. */
       build(view: EditorView): DecorationSet {
         const currentText = view.state.doc.toString();
-        if (baseline === currentText) return Decoration.none;
+        // The editor document is always stripped of internal markers
+        // (hideSceneMarkers=true).  Strip the baseline too so that
+        // marker-only differences (e.g. after creating an annotation)
+        // don't produce a spurious diff.
+        const strippedBaseline = stripInlineInternalMarkers(baseline);
+        if (strippedBaseline === currentText) return Decoration.none;
 
         if (streamingMode) {
           // During streaming we use a common-prefix strategy instead of LCS:
@@ -283,8 +288,8 @@ export const buildDiffPlugin = (
           // This avoids flickering caused by diff_match_patch finding accidental
           // common subsequences inside a partially-written rewrite, which made
           // earlier chunks look "equal" and only the latest chunk look new.
-          const prefixLen = commonPrefixLength(baseline, currentText);
-          const deletedSuffix = baseline.slice(prefixLen);
+          const prefixLen = commonPrefixLength(strippedBaseline, currentText);
+          const deletedSuffix = strippedBaseline.slice(prefixLen);
           const insertedEnd = currentText.length;
           const decs: Range<Decoration>[] = [];
           if (deletedSuffix.length > 0) {
@@ -296,7 +301,7 @@ export const buildDiffPlugin = (
           return decs.length > 0 ? Decoration.set(decs, true) : Decoration.none;
         }
 
-        const diffs = dmp.diff_main(baseline, currentText);
+        const diffs = dmp.diff_main(strippedBaseline, currentText);
         dmp.diff_cleanupSemantic(diffs);
 
         const decs: Range<Decoration>[] = [];

@@ -395,3 +395,77 @@ def test_split_straddling_annotations_start_outside_keeps_in_markers_inside_bloc
         f"at or before block start ({re_start})"
     )
     assert out_start_pos < out_end_pos, "-out:start must precede -out:end"
+
+
+def test_create_annotation_snaps_offset_outside_marker() -> None:
+    """Offsets that land inside a scene marker token are snapped to the
+    marker boundary so the annotation is never inserted mid-marker."""
+    import tempfile
+    import json
+
+    tmp = Path(tempfile.mkdtemp())
+    story: dict[str, object] = {
+        "metadata": {"version": 8},
+        "project_title": "SnapTest",
+        "project_type": "short-story",
+        "format": "markdown",
+        "scenes": {},
+        "annotations": [],
+    }
+    (tmp / "story.json").write_text(json.dumps(story), encoding="utf-8")
+    (tmp / "content.md").write_text(
+        "<!--scene:1:start-->Hello World<!--scene:1:end-->", encoding="utf-8"
+    )
+
+    # Offset 3 is inside the start marker; backend should snap it to 20.
+    ann = create_annotation(
+        tmp,
+        scope_type="story",
+        chapter_id=None,
+        book_id=None,
+        start_offset=3,
+        end_offset=25,
+        comment="Snapped annotation",
+    )
+    # Start is snapped past the scene start marker.
+    assert ann["start_offset"] is not None and ann["start_offset"] >= 20
+    # End is valid prose; returned offset is in the new content after marker
+    # injection, so it will be larger than the original 25.
+    assert ann["end_offset"] is not None and ann["end_offset"] >= 25
+    # Verify the annotated prose is "Hello".
+    content = (tmp / "content.md").read_text(encoding="utf-8")
+    prose = content[ann["start_offset"] : ann["end_offset"]]
+    assert prose == "Hello"
+
+
+def test_create_annotation_raises_when_entirely_within_marker() -> None:
+    """When both start and end fall inside the same marker token, the
+    snap reduces the range to zero width => ValueError."""
+    import tempfile
+    import json
+
+    tmp = Path(tempfile.mkdtemp())
+    story: dict[str, object] = {
+        "metadata": {"version": 8},
+        "project_title": "FailTest",
+        "project_type": "short-story",
+        "format": "markdown",
+        "scenes": {},
+        "annotations": [],
+    }
+    (tmp / "story.json").write_text(json.dumps(story), encoding="utf-8")
+    (tmp / "content.md").write_text(
+        "<!--scene:1:start-->Hello<!--scene:1:end-->", encoding="utf-8"
+    )
+
+    # Offset 3-10 is entirely inside the start marker (positions 0-19).
+    with pytest.raises(ValueError, match="entirely within internal marker"):
+        create_annotation(
+            tmp,
+            scope_type="story",
+            chapter_id=None,
+            book_id=None,
+            start_offset=3,
+            end_offset=10,
+            comment="Should fail",
+        )
