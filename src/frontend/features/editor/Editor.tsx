@@ -60,6 +60,7 @@ const STREAM_FOLLOW_ATTACH_DISTANCE_PX = 200;
 // URL sanitizer — re-exported for backward compat with Editor.url.test.ts
 export { isSafeImageUrl } from './editorUtils';
 import { isSafeImageUrl } from './editorUtils';
+import { isRangeVisible } from '../../utils/scrollUtils';
 
 interface EditorProps {
   chapter: WritingUnit;
@@ -707,16 +708,9 @@ export const Editor = React.memo(
           if (!view) return;
           const effects: StateEffect<unknown>[] = [setProseHighlightEffect.of(entries)];
           if (entries.length > 0) {
-            const targetPos = entries[0].from;
-            let isVisible = false;
-            for (const r of view.visibleRanges) {
-              if (targetPos >= r.from && targetPos <= r.to) {
-                isVisible = true;
-                break;
-              }
-            }
-            if (!isVisible) {
-              effects.push(EditorView.scrollIntoView(targetPos));
+            const { from, to } = entries[0];
+            if (!isRangeVisible(from, to, view.visibleRanges)) {
+              effects.push(EditorView.scrollIntoView(from));
             }
           }
           view.dispatch({ effects });

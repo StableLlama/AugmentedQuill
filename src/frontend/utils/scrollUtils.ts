@@ -17,3 +17,29 @@
 export function scrollDistanceFromBottom(el: HTMLElement): number {
   return Math.max(0, el.scrollHeight - el.scrollTop - el.clientHeight);
 }
+
+/**
+ * Represents a range of document positions, matching CodeMirror's
+ * `EditorView.visibleRanges` shape.
+ */
+export interface VisibleRange {
+  from: number;
+  to: number;
+}
+
+/**
+ * Returns true when at least part of the range [rangeFrom, rangeTo) overlaps
+ * with any of the given visibleRanges.
+ *
+ * This is used to decide whether to auto-scroll the editor when a scene is
+ * selected: if any portion is already visible we skip scrolling.
+ */
+export function isRangeVisible(
+  rangeFrom: number,
+  rangeTo: number,
+  visibleRanges: readonly VisibleRange[]
+): boolean {
+  return visibleRanges.some(
+    (vr: VisibleRange) => rangeFrom < vr.to && rangeTo > vr.from
+  );
+}
