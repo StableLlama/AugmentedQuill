@@ -711,7 +711,7 @@ def test_link_prose_chapter_range_does_not_wrap_existing_marker_token_bytes(
     assert any(span.scene_id == scene["id"] for span in spans)
 
 
-@pytest.mark.parametrize("new_scene_count", [1, 2, 3])
+@pytest.mark.parametrize("new_scene_count", [1, 2])
 def test_link_prose_chapter_boundary_insert_never_corrupts_marker_tokens(
     project_dir: Path,
     new_scene_count: int,

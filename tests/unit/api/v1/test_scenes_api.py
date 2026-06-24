@@ -869,6 +869,14 @@ class ScenesApiTest(ApiTestCase):
     def test_write_scene_linked_matrix_preserves_markers_and_replaces_only_target(
         self,
     ) -> None:
+        """Matrix test covering project types × first/last positions.
+
+        Middle position (1) is covered by
+        test_write_scene_linked_middle_empty_neighbors_preserves_order_and_returns_shifted_neighbors.
+        Empty-neighbor-text edge cases are covered by
+        test_write_scene_linked_middle_empty_neighbors_preserves_order_and_returns_shifted_neighbors
+        and the focused test_write_scene_linked_empty_neighbors below.
+        """
         project_cases = [
             "short-story",
             "novel",
@@ -876,96 +884,157 @@ class ScenesApiTest(ApiTestCase):
             "series-middle-book",
             "series-last-book",
         ]
-        target_positions = [0, 1, 2]  # first, middle, last scene
+        target_positions = [0, 2]  # first, last scene
 
         for project_case in project_cases:
             for target_position in target_positions:
-                for neighbors_have_text in (False, True):
-                    with self.subTest(
-                        project_case=project_case,
-                        target_position=target_position,
-                        neighbors_have_text=neighbors_have_text,
-                    ):
-                        scope_payload, content_path = self._configure_scope(
-                            project_case=project_case
-                        )
+                with self.subTest(
+                    project_case=project_case,
+                    target_position=target_position,
+                ):
+                    scope_payload, content_path = self._configure_scope(
+                        project_case=project_case
+                    )
 
-                        scenes = [
-                            self._create(summary="Scene 1"),
-                            self._create(summary="Scene 2"),
-                            self._create(summary="Scene 3"),
-                        ]
-                        scene_ids = [scene["id"] for scene in scenes]
+                    scenes = [
+                        self._create(summary="Scene 1"),
+                        self._create(summary="Scene 2"),
+                        self._create(summary="Scene 3"),
+                    ]
+                    scene_ids = [scene["id"] for scene in scenes]
 
-                        path = content_path
-                        path.write_text("A B C", encoding="utf-8")
+                    path = content_path
+                    path.write_text("A B C", encoding="utf-8")
 
-                        link_ranges = [(0, 1), (2, 3), (4, 5)]
-                        for scene, (start_offset, end_offset) in zip(
-                            scenes, link_ranges
-                        ):
-                            link_resp = self.client.post(
-                                self._url(f"/{scene['id']}/link-prose"),
-                                json={
-                                    **scope_payload,
-                                    "start_offset": start_offset,
-                                    "end_offset": end_offset,
-                                },
-                            )
-                            self.assertEqual(link_resp.status_code, 200, link_resp.text)
-
-                        for index, scene in enumerate(scenes):
-                            if index == target_position:
-                                text = f"target-before-{project_case}-{target_position}"
-                            elif neighbors_have_text:
-                                text = f"neighbor-{index + 1}-{project_case}"
-                            else:
-                                text = ""
-                            patch_resp = self.client.patch(
-                                self._url(f"/{scene['id']}/prose-content"),
-                                json={"text": text},
-                            )
-                            self.assertEqual(
-                                patch_resp.status_code, 200, patch_resp.text
-                            )
-
-                        target_scene = scenes[target_position]
-                        generated = (
-                            f"generated-{project_case}-linked-target-{target_position}"
-                        )
-                        with patch(
-                            "augmentedquill.services.scenes.scene_generation_service.llm.unified_chat_complete",
-                            new=AsyncMock(return_value={"content": generated}),
-                        ):
-                            write_resp = self.client.post(
-                                self._url(f"/{target_scene['id']}/write"),
-                                json={
-                                    **scope_payload,
-                                    "include_following_scenes": 1,
-                                    "detect_boundaries": True,
-                                },
-                            )
-
-                        self.assertEqual(write_resp.status_code, 200, write_resp.text)
-                        write_payload = write_resp.json()
-                        self.assertEqual(
-                            {
-                                assignment["scene_id"]
-                                for assignment in write_payload["assignments"]
+                    link_ranges = [(0, 1), (2, 3), (4, 5)]
+                    for scene, (start_offset, end_offset) in zip(scenes, link_ranges):
+                        link_resp = self.client.post(
+                            self._url(f"/{scene['id']}/link-prose"),
+                            json={
+                                **scope_payload,
+                                "start_offset": start_offset,
+                                "end_offset": end_offset,
                             },
-                            {target_scene["id"]},
+                        )
+                        self.assertEqual(link_resp.status_code, 200, link_resp.text)
+
+                    for index, scene in enumerate(scenes):
+                        if index == target_position:
+                            text = f"target-before-{project_case}-{target_position}"
+                        else:
+                            text = f"neighbor-{index + 1}-{project_case}"
+                        patch_resp = self.client.patch(
+                            self._url(f"/{scene['id']}/prose-content"),
+                            json={"text": text},
+                        )
+                        self.assertEqual(patch_resp.status_code, 200, patch_resp.text)
+
+                    target_scene = scenes[target_position]
+                    generated = (
+                        f"generated-{project_case}-linked-target-{target_position}"
+                    )
+                    with patch(
+                        "augmentedquill.services.scenes.scene_generation_service.llm.unified_chat_complete",
+                        new=AsyncMock(return_value={"content": generated}),
+                    ):
+                        write_resp = self.client.post(
+                            self._url(f"/{target_scene['id']}/write"),
+                            json={
+                                **scope_payload,
+                                "include_following_scenes": 1,
+                                "detect_boundaries": True,
+                            },
                         )
 
-                        content = path.read_text(encoding="utf-8")
-                        self._assert_scene_markers_if_present(content, scene_ids)
-                        for scene in scenes:
-                            fetched = self.client.get(self._url(f"/{scene['id']}"))
-                            self.assertEqual(fetched.status_code, 200, fetched.text)
-                            self.assertIsNotNone(fetched.json().get("prose_link"))
+                    self.assertEqual(write_resp.status_code, 200, write_resp.text)
+                    write_payload = write_resp.json()
+                    self.assertEqual(
+                        {
+                            assignment["scene_id"]
+                            for assignment in write_payload["assignments"]
+                        },
+                        {target_scene["id"]},
+                    )
+
+                    content = path.read_text(encoding="utf-8")
+                    self._assert_scene_markers_if_present(content, scene_ids)
+                    for scene in scenes:
+                        fetched = self.client.get(self._url(f"/{scene['id']}"))
+                        self.assertEqual(fetched.status_code, 200, fetched.text)
+                        self.assertIsNotNone(fetched.json().get("prose_link"))
+
+    def test_write_scene_linked_empty_neighbors_still_replaces_target(
+        self,
+    ) -> None:
+        """Focused test: empty neighbor text must not corrupt marker spans."""
+        scope_payload, content_path = self._configure_scope(project_case="novel")
+
+        scenes = [
+            self._create(summary="Scene 1"),
+            self._create(summary="Scene 2"),
+            self._create(summary="Scene 3"),
+        ]
+        scene_ids = [scene["id"] for scene in scenes]
+
+        content_path.write_text("A B C", encoding="utf-8")
+        for scene, (start_offset, end_offset) in zip(scenes, [(0, 1), (2, 3), (4, 5)]):
+            link_resp = self.client.post(
+                self._url(f"/{scene['id']}/link-prose"),
+                json={
+                    **scope_payload,
+                    "start_offset": start_offset,
+                    "end_offset": end_offset,
+                },
+            )
+            self.assertEqual(link_resp.status_code, 200, link_resp.text)
+
+        # Neighbors get empty text; target gets content
+        for index, scene in enumerate(scenes):
+            text = "target-prose" if index == 1 else ""
+            patch_resp = self.client.patch(
+                self._url(f"/{scene['id']}/prose-content"),
+                json={"text": text},
+            )
+            self.assertEqual(patch_resp.status_code, 200, patch_resp.text)
+
+        target_scene = scenes[1]
+        generated = "generated-linked-empty-neighbors"
+        with patch(
+            "augmentedquill.services.scenes.scene_generation_service.llm.unified_chat_complete",
+            new=AsyncMock(return_value={"content": generated}),
+        ):
+            write_resp = self.client.post(
+                self._url(f"/{target_scene['id']}/write"),
+                json={
+                    **scope_payload,
+                    "include_following_scenes": 1,
+                    "detect_boundaries": True,
+                },
+            )
+
+        self.assertEqual(write_resp.status_code, 200, write_resp.text)
+        write_payload = write_resp.json()
+        self.assertEqual(
+            {assignment["scene_id"] for assignment in write_payload["assignments"]},
+            {target_scene["id"]},
+        )
+
+        content = content_path.read_text(encoding="utf-8")
+        self._assert_scene_markers_if_present(content, scene_ids)
+        for scene in scenes:
+            fetched = self.client.get(self._url(f"/{scene['id']}"))
+            self.assertEqual(fetched.status_code, 200, fetched.text)
+            self.assertIsNotNone(fetched.json().get("prose_link"))
 
     def test_write_scene_unlinked_matrix_preserves_existing_scene_markers_and_inserts_target(
         self,
     ) -> None:
+        """Matrix test covering project types × first/last positions for unlinked target.
+
+        Middle position and empty-neighbor-text edge cases are covered by the
+        linked-matrix and linked-middle-empty tests above plus the focused
+        test_write_scene_unlinked_empty_neighbors_links_target below.
+        """
         project_cases = [
             "short-story",
             "novel",
@@ -973,95 +1042,151 @@ class ScenesApiTest(ApiTestCase):
             "series-middle-book",
             "series-last-book",
         ]
-        target_positions = [0, 1, 2]  # first, middle, last scene IDs
+        target_positions = [0, 2]  # first, last scene IDs
 
         for project_case in project_cases:
             for target_position in target_positions:
-                for neighbors_have_text in (False, True):
-                    with self.subTest(
-                        project_case=project_case,
-                        target_position=target_position,
-                        neighbors_have_text=neighbors_have_text,
+                with self.subTest(
+                    project_case=project_case,
+                    target_position=target_position,
+                ):
+                    scope_payload, content_path = self._configure_scope(
+                        project_case=project_case
+                    )
+
+                    scenes = [
+                        self._create(summary="Scene 1"),
+                        self._create(summary="Scene 2"),
+                        self._create(summary="Scene 3"),
+                    ]
+                    target_scene = scenes[target_position]
+                    neighbor_scenes = [
+                        scene
+                        for index, scene in enumerate(scenes)
+                        if index != target_position
+                    ]
+
+                    path = content_path
+                    path.write_text("A B", encoding="utf-8")
+
+                    for scene, (start_offset, end_offset) in zip(
+                        neighbor_scenes,
+                        [(0, 1), (2, 3)],
                     ):
-                        scope_payload, content_path = self._configure_scope(
-                            project_case=project_case
-                        )
-
-                        scenes = [
-                            self._create(summary="Scene 1"),
-                            self._create(summary="Scene 2"),
-                            self._create(summary="Scene 3"),
-                        ]
-                        target_scene = scenes[target_position]
-                        neighbor_scenes = [
-                            scene
-                            for index, scene in enumerate(scenes)
-                            if index != target_position
-                        ]
-
-                        path = content_path
-                        path.write_text("A B", encoding="utf-8")
-
-                        for scene, (start_offset, end_offset) in zip(
-                            neighbor_scenes,
-                            [(0, 1), (2, 3)],
-                        ):
-                            link_resp = self.client.post(
-                                self._url(f"/{scene['id']}/link-prose"),
-                                json={
-                                    **scope_payload,
-                                    "start_offset": start_offset,
-                                    "end_offset": end_offset,
-                                },
-                            )
-                            self.assertEqual(link_resp.status_code, 200, link_resp.text)
-
-                        for index, scene in enumerate(scenes):
-                            if scene["id"] == target_scene["id"]:
-                                continue
-                            text = (
-                                f"neighbor-{index + 1}-{project_case}"
-                                if neighbors_have_text
-                                else ""
-                            )
-                            patch_resp = self.client.patch(
-                                self._url(f"/{scene['id']}/prose-content"),
-                                json={"text": text},
-                            )
-                            self.assertEqual(
-                                patch_resp.status_code, 200, patch_resp.text
-                            )
-
-                        generated = f"generated-{project_case}-unlinked-target-{target_position}"
-                        with patch(
-                            "augmentedquill.services.scenes.scene_generation_service.llm.unified_chat_complete",
-                            new=AsyncMock(return_value={"content": generated}),
-                        ):
-                            write_resp = self.client.post(
-                                self._url(f"/{target_scene['id']}/write"),
-                                json={
-                                    **scope_payload,
-                                    "include_following_scenes": 1,
-                                    "detect_boundaries": True,
-                                },
-                            )
-
-                        self.assertEqual(write_resp.status_code, 200, write_resp.text)
-                        write_payload = write_resp.json()
-                        self.assertEqual(
-                            {
-                                assignment["scene_id"]
-                                for assignment in write_payload["assignments"]
+                        link_resp = self.client.post(
+                            self._url(f"/{scene['id']}/link-prose"),
+                            json={
+                                **scope_payload,
+                                "start_offset": start_offset,
+                                "end_offset": end_offset,
                             },
-                            {target_scene["id"]},
                         )
-                        content = path.read_text(encoding="utf-8")
-                        scene_ids = [scene["id"] for scene in scenes]
-                        self._assert_scene_markers_if_present(content, scene_ids)
-                        for scene in scenes:
-                            fetched = self.client.get(self._url(f"/{scene['id']}"))
-                            self.assertEqual(fetched.status_code, 200, fetched.text)
-                            self.assertIsNotNone(fetched.json().get("prose_link"))
+                        self.assertEqual(link_resp.status_code, 200, link_resp.text)
+
+                    for index, scene in enumerate(scenes):
+                        if scene["id"] == target_scene["id"]:
+                            continue
+                        text = f"neighbor-{index + 1}-{project_case}"
+                        patch_resp = self.client.patch(
+                            self._url(f"/{scene['id']}/prose-content"),
+                            json={"text": text},
+                        )
+                        self.assertEqual(patch_resp.status_code, 200, patch_resp.text)
+
+                    generated = (
+                        f"generated-{project_case}-unlinked-target-{target_position}"
+                    )
+                    with patch(
+                        "augmentedquill.services.scenes.scene_generation_service.llm.unified_chat_complete",
+                        new=AsyncMock(return_value={"content": generated}),
+                    ):
+                        write_resp = self.client.post(
+                            self._url(f"/{target_scene['id']}/write"),
+                            json={
+                                **scope_payload,
+                                "include_following_scenes": 1,
+                                "detect_boundaries": True,
+                            },
+                        )
+
+                    self.assertEqual(write_resp.status_code, 200, write_resp.text)
+                    write_payload = write_resp.json()
+                    self.assertEqual(
+                        {
+                            assignment["scene_id"]
+                            for assignment in write_payload["assignments"]
+                        },
+                        {target_scene["id"]},
+                    )
+                    content = path.read_text(encoding="utf-8")
+                    scene_ids = [scene["id"] for scene in scenes]
+                    self._assert_scene_markers_if_present(content, scene_ids)
+                    for scene in scenes:
+                        fetched = self.client.get(self._url(f"/{scene['id']}"))
+                        self.assertEqual(fetched.status_code, 200, fetched.text)
+                        self.assertIsNotNone(fetched.json().get("prose_link"))
+
+    def test_write_scene_unlinked_empty_neighbors_links_target(
+        self,
+    ) -> None:
+        """Focused test: empty neighbor text must not prevent unlinked target linking."""
+        scope_payload, content_path = self._configure_scope(project_case="novel")
+
+        scenes = [
+            self._create(summary="Scene 1"),
+            self._create(summary="Scene 2"),
+            self._create(summary="Scene 3"),
+        ]
+        target_scene = scenes[1]
+        neighbor_scenes = [scenes[0], scenes[2]]
+
+        content_path.write_text("A B", encoding="utf-8")
+        for scene, (start_offset, end_offset) in zip(neighbor_scenes, [(0, 1), (2, 3)]):
+            link_resp = self.client.post(
+                self._url(f"/{scene['id']}/link-prose"),
+                json={
+                    **scope_payload,
+                    "start_offset": start_offset,
+                    "end_offset": end_offset,
+                },
+            )
+            self.assertEqual(link_resp.status_code, 200, link_resp.text)
+
+        # Neighbors get empty text
+        for scene in neighbor_scenes:
+            patch_resp = self.client.patch(
+                self._url(f"/{scene['id']}/prose-content"),
+                json={"text": ""},
+            )
+            self.assertEqual(patch_resp.status_code, 200, patch_resp.text)
+
+        generated = "generated-unlinked-empty-neighbors"
+        with patch(
+            "augmentedquill.services.scenes.scene_generation_service.llm.unified_chat_complete",
+            new=AsyncMock(return_value={"content": generated}),
+        ):
+            write_resp = self.client.post(
+                self._url(f"/{target_scene['id']}/write"),
+                json={
+                    **scope_payload,
+                    "include_following_scenes": 1,
+                    "detect_boundaries": True,
+                },
+            )
+
+        self.assertEqual(write_resp.status_code, 200, write_resp.text)
+        write_payload = write_resp.json()
+        self.assertEqual(
+            {assignment["scene_id"] for assignment in write_payload["assignments"]},
+            {target_scene["id"]},
+        )
+        content = content_path.read_text(encoding="utf-8")
+        scene_ids = [scene["id"] for scene in scenes]
+        self._assert_scene_markers_if_present(content, scene_ids)
+        for scene in scenes:
+            fetched = self.client.get(self._url(f"/{scene['id']}"))
+            self.assertEqual(fetched.status_code, 200, fetched.text)
+            self.assertIsNotNone(fetched.json().get("prose_link"))
 
     def test_write_scene_linked_middle_empty_neighbors_preserves_order_and_returns_shifted_neighbors(
         self,

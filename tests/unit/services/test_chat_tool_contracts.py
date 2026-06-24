@@ -169,6 +169,26 @@ class ChatToolContractsTest(TestCase):
     def _tool_names(self):
         return [t["function"]["name"] for t in get_story_tools()]
 
+    def _representative_tool_names(self):
+        """Return a curated subset of tool names covering tool categories.
+
+        Each tool's full contract is validated exhaustively in
+        test_chat_tools.py.  This subset ensures the framework-level
+        error-handling and validation patterns work across categories
+        without iterating every registered tool.
+        """
+        return [
+            "manage_story_core",  # mutation
+            "manage_project",  # read-only / listing
+            "manage_sourcebook",  # sourcebook CRUD
+            "manage_scenes",  # scene CRUD
+            "manage_scratchpad",  # scratchpad
+            "manage_images",  # image management
+            "search_and_replace",  # search
+            "delete_chapter",  # deletion (has confirm)
+            "replace_text_in_chapter",  # editing-only (EDITING role)
+        ]
+
     def _call_tool(self, name: str, args, model_type: str = "CHAT"):
         if isinstance(args, str):
             arguments = args
@@ -1212,7 +1232,7 @@ class ChatToolContractsTest(TestCase):
         )
 
     def test_all_tools_handle_malformed_arguments_gracefully(self):
-        for name in self._tool_names():
+        for name in self._representative_tool_names():
             content = self._call_tool(
                 name,
                 "{this is not valid json",
@@ -1223,13 +1243,15 @@ class ChatToolContractsTest(TestCase):
             )
 
     def test_all_tools_handle_invalid_content_gracefully(self):
-        for tool_schema in get_story_tools():
+        for name in self._representative_tool_names():
+            tool_schema = next(
+                t for t in get_story_tools() if t["function"]["name"] == name
+            )
             args = self._build_args_for_schema(tool_schema, invalid=True)
-            tool_name = tool_schema["function"]["name"]
             content = self._call_tool(
-                tool_name,
+                name,
                 args,
-                model_type=self._tool_role_for_execution(tool_name),
+                model_type=self._tool_role_for_execution(name),
             )
             # Contract: invalid semantic input must never crash tool execution.
             self.assertIsInstance(
@@ -1237,7 +1259,10 @@ class ChatToolContractsTest(TestCase):
             )
 
     def test_all_tools_reject_unknown_argument_keys(self):
-        for tool_schema in get_story_tools():
+        for name in self._representative_tool_names():
+            tool_schema = next(
+                t for t in get_story_tools() if t["function"]["name"] == name
+            )
             tool_name = tool_schema["function"]["name"]
             args = self._build_args_for_schema(tool_schema, invalid=False)
             args["unexpected_key"] = "unexpected_value"
@@ -1249,7 +1274,10 @@ class ChatToolContractsTest(TestCase):
             self._assert_invalid_parameters(tool_name, content)
 
     def test_all_tools_reject_missing_required_keys(self):
-        for tool_schema in get_story_tools():
+        for name in self._representative_tool_names():
+            tool_schema = next(
+                t for t in get_story_tools() if t["function"]["name"] == name
+            )
             fn = tool_schema["function"]
             tool_name = fn["name"]
             required = (fn.get("parameters") or {}).get("required") or []
@@ -1506,11 +1534,13 @@ class ChatToolContractsTest(TestCase):
                 side_effect=fake_image_description,
             ),
         ):
-            for tool_schema in get_story_tools():
+            for name in self._representative_tool_names():
                 ok, msg = select_project("tool_contracts")
                 self.assertTrue(ok, msg)
 
-                name = tool_schema["function"]["name"]
+                tool_schema = next(
+                    t for t in get_story_tools() if t["function"]["name"] == name
+                )
 
                 if name in ("call_writing_llm", "call_editing_assistant"):
                     self._call_tool(
