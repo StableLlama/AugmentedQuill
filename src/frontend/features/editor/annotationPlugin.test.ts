@@ -25,14 +25,17 @@ import {
   buildAnnotationExtensions,
   adjustAnnotationRangesForStrippedMarkers,
   setAnnotationClickCallback,
+  resetAnnotationClickCycle,
+  AnnotationRange,
 } from './annotationPlugin';
 import { externalValueSyncAnnotation } from './codeMirrorDiffPlugin';
 import { proseHighlightField, setProseHighlightEffect } from './CodeMirrorEditor';
 import { EditorState, EditorSelection } from '@codemirror/state';
 
 afterEach(() => {
-  // Reset the click callback between tests
+  // Reset the click callback and cycling state between tests
   setAnnotationClickCallback(null);
+  resetAnnotationClickCycle();
 });
 
 // ===========================================================================
@@ -105,6 +108,35 @@ describe('annotationsToRanges', () => {
     expect(ranges).toHaveLength(1);
     expect(ranges[0].id).toBe('present');
   });
+
+  it('finds nested annotations where one annotation is inside another', () => {
+    // Simulates two annotations covering the same prose region:
+    // outer wraps inner — both markers are interleaved correctly.
+    const doc =
+      '<!--annotation:outer:start-->' +
+      '<!--annotation:inner:start-->' +
+      'shared prose text' +
+      '<!--annotation:inner:end-->' +
+      '<!--annotation:outer:end-->';
+    const ranges = annotationsToRanges(doc, [
+      { id: 'outer', comment: 'outer wrap' },
+      { id: 'inner', comment: 'inner detail' },
+    ]);
+    expect(ranges).toHaveLength(2);
+
+    const outerRange = ranges.find((r: AnnotationRange): boolean => r.id === 'outer');
+    const innerRange = ranges.find((r: AnnotationRange): boolean => r.id === 'inner');
+    expect(outerRange).toBeDefined();
+    expect(innerRange).toBeDefined();
+
+    // The inner range should cover just the prose text.
+    expect(doc.slice(innerRange!.from, innerRange!.to)).toBe('shared prose text');
+
+    // The outer range covers the inner markers plus the prose.
+    expect(doc.slice(outerRange!.from, outerRange!.to)).toBe(
+      '<!--annotation:inner:start-->shared prose text<!--annotation:inner:end-->'
+    );
+  });
 });
 
 // ===========================================================================
@@ -112,7 +144,7 @@ describe('annotationsToRanges', () => {
 // ===========================================================================
 
 describe('annotationRangesField', () => {
-  function createState(doc: string) {
+  function createState(doc: string): EditorState {
     return EditorState.create({
       doc,
       extensions: buildAnnotationExtensions(),
@@ -457,6 +489,38 @@ describe('end-to-end decoration rendering', () => {
     expect(view.state.doc.sliceString(stored[0].from, stored[0].to)).toBe('annotated');
     view.destroy();
   });
+
+  it('preserves both overlapping annotations that map to the same stripped range', () => {
+    // Outer annotation wraps inner: both cover "shared prose text" after
+    // marker stripping because the inner markers are inside the outer span.
+    const fullContent =
+      '<!--annotation:outer:start-->' +
+      '<!--annotation:inner:start-->' +
+      'shared prose text' +
+      '<!--annotation:inner:end-->' +
+      '<!--annotation:outer:end-->';
+
+    const strippedContent = fullContent.replace(
+      /<!--(?:scene|annotation):[^:>]+:(?:start|end)-->/g,
+      ''
+    );
+    // strippedContent = "shared prose text"
+
+    const ranges = annotationsToRanges(fullContent, [
+      { id: 'outer', comment: 'outer wrap' },
+      { id: 'inner', comment: 'inner detail' },
+    ]);
+    expect(ranges).toHaveLength(2);
+
+    const adjusted = adjustAnnotationRangesForStrippedMarkers(ranges, fullContent);
+    // BOTH must survive — the user needs to see and interact with both.
+    expect(adjusted).toHaveLength(2);
+
+    // Both adjusted ranges should cover "shared prose text" in the stripped content.
+    for (const adj of adjusted) {
+      expect(strippedContent.slice(adj.from, adj.to)).toBe('shared prose text');
+    }
+  });
 });
 
 // ===========================================================================
@@ -465,7 +529,6 @@ describe('end-to-end decoration rendering', () => {
 
 describe('annotation click handler', () => {
   function createView(doc: string): import('@codemirror/view').EditorView {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { EditorView } = require('@codemirror/view');
     const view = new EditorView({
       state: EditorState.create({ doc, extensions: buildAnnotationExtensions() }),
@@ -579,6 +642,45 @@ describe('annotation click handler', () => {
 
     destroyView(view);
   });
+
+  it('cycles through overlapping annotations on repeated clicks at the same position', () => {
+    // When two annotations cover the identical range, clicking should
+    // cycle through them so the user can access all annotations.
+    const callback = vi.fn();
+    setAnnotationClickCallback(callback);
+
+    const doc = 'Hello World';
+    const view = createView(doc);
+
+    // Both annotations cover the exact same text.
+    dispatchRanges(view, [
+      { id: 'ann-outer', from: 0, to: 11, comment: 'outer' },
+      { id: 'ann-inner', from: 0, to: 11, comment: 'inner' },
+    ]);
+
+    // Both decorations must exist in the DOM.
+    const annEls = view.dom.querySelectorAll('.cm-annotation-range');
+    expect(annEls.length).toBeGreaterThanOrEqual(2);
+
+    // First click: should select the first annotation.
+    annEls[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(callback).toHaveBeenCalledTimes(1);
+    expect(callback).toHaveBeenCalledWith('ann-outer');
+
+    // Second click at same position: should cycle to the next annotation.
+    callback.mockClear();
+    annEls[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(callback).toHaveBeenCalledTimes(1);
+    expect(callback).toHaveBeenCalledWith('ann-inner');
+
+    // Third click: cycles back to the first.
+    callback.mockClear();
+    annEls[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(callback).toHaveBeenCalledTimes(1);
+    expect(callback).toHaveBeenCalledWith('ann-outer');
+
+    destroyView(view);
+  });
 });
 
 // ===========================================================================
@@ -587,7 +689,6 @@ describe('annotation click handler', () => {
 
 describe('annotations survive prose highlight dispatch', () => {
   function createView(doc: string): import('@codemirror/view').EditorView {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { EditorView } = require('@codemirror/view');
     const exts = buildAnnotationExtensions();
     exts.push(proseHighlightField);

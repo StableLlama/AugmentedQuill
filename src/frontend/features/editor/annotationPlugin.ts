@@ -116,6 +116,20 @@ export function setAnnotationClickCallback(
   onAnnotationClickCallback = cb;
 }
 
+/** Reset cycling state (used in tests to ensure clean state). */
+export function resetAnnotationClickCycle(): void {
+  lastClickPos = null;
+  lastCycledIndex = 0;
+}
+
+/**
+ * Click-position cycling state so that when multiple annotations overlap
+ * at the same position, repeated clicks cycle through them instead of
+ * always selecting the first match.
+ */
+let lastClickPos: number | null = null;
+let lastCycledIndex = 0;
+
 function buildPlugin(): Extension {
   return ViewPlugin.fromClass(
     class {
@@ -169,13 +183,32 @@ const annotationClickHandler = EditorView.domEventHandlers({
     }
     if (pos == null) return false;
     const ranges = view.state.field(annotationRangesField);
+
+    // Collect ALL annotation ranges that cover the click position so
+    // overlapping annotations can be cycled through.
+    const matching: AnnotationRange[] = [];
     for (const r of ranges) {
       if (pos >= r.from && pos <= r.to) {
-        onAnnotationClickCallback(r.id);
-        return true;
+        matching.push(r);
       }
     }
+
+    if (matching.length > 0) {
+      if (pos === lastClickPos && matching.length > 1) {
+        // Cycle to the next overlapping annotation on repeated clicks
+        // at the same position.
+        lastCycledIndex = (lastCycledIndex + 1) % matching.length;
+      } else {
+        lastCycledIndex = 0;
+      }
+      lastClickPos = pos;
+      onAnnotationClickCallback(matching[lastCycledIndex].id);
+      return true;
+    }
+
     // Click landed on unannotated text — clear the active annotation.
+    lastClickPos = null;
+    lastCycledIndex = 0;
     onAnnotationClickCallback(null);
     return false;
   },
