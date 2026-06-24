@@ -117,7 +117,7 @@ npm run check:generated-types
 
 ## 7. Style And Conventions
 
-### Test driven development
+### Test driven development (TDD)
 
 Implement test cases to cover the user specification first and then implement the solution. Finish with implementing test cases that cover every valid input as well as those that have bad input to test correct error handling, so that any regression is easily detected.
 
