@@ -236,6 +236,10 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
     (s: UIStoreState): UIStoreState['setSceneSelectionChapterIds'] =>
       s.setSceneSelectionChapterIds
   );
+  const setSceneSelectionPrimaryId = useUIStore(
+    (s: UIStoreState): UIStoreState['setSceneSelectionPrimaryId'] =>
+      s.setSceneSelectionPrimaryId
+  );
   const scenes = useScenes();
   const story = useStoryStore((s: StoryStoreState) => s.story);
   const patchScene = useStoryStore((s: StoryStoreState) => s.patchScene);
@@ -371,8 +375,15 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
   useEffect((): (() => void) => {
     return (): void => {
       setSceneSelectionChapterIds(new Set<string>());
+      setSceneSelectionPrimaryId(null);
     };
-  }, [setSceneSelectionChapterIds]);
+  }, [setSceneSelectionChapterIds, setSceneSelectionPrimaryId]);
+
+  // Keep uiStore.sceneSelectionPrimaryId in sync with local selection state
+  // so the left-pane SceneTreeView always shows the current selection.
+  useEffect((): void => {
+    setSceneSelectionPrimaryId(selectedSceneId);
+  }, [selectedSceneId, setSceneSelectionPrimaryId]);
 
   useEffect((): void => {
     if (!sceneEditorDialog.isOpen || !sceneEditorDialog.sceneId) {
@@ -869,13 +880,59 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
       'aq-scene-drop-chapter',
       handleExternalChapterDrop as EventListener
     );
+
+    // Listen for scene reorder events dispatched from the left-pane scene tree.
+    const handleExternalSceneReorder = (event: Event): void => {
+      const custom = event as CustomEvent<{
+        sourceSceneId?: SceneId;
+        targetSceneId?: SceneId;
+        placeBefore?: boolean;
+      }>;
+      const sourceSceneId = custom.detail?.sourceSceneId;
+      const targetSceneId = custom.detail?.targetSceneId;
+      const placeBefore = custom.detail?.placeBefore ?? false;
+      if (typeof sourceSceneId !== 'number' || typeof targetSceneId !== 'number') {
+        return;
+      }
+      void handleNarrativeReorder(sourceSceneId, targetSceneId, placeBefore);
+    };
+
+    window.addEventListener(
+      'aq-scene-reorder-prose',
+      handleExternalSceneReorder as EventListener
+    );
+
+    // Listen for scene-select events dispatched from the left-pane scene tree.
+    const handleExternalSceneSelect = (event: Event): void => {
+      const custom = event as CustomEvent<{ sceneId?: SceneId }>;
+      const sceneId = custom.detail?.sceneId;
+      if (typeof sceneId !== 'number') return;
+      handleSelectSceneWithChapterSwitch(sceneId);
+    };
+
+    window.addEventListener(
+      'aq-scene-select',
+      handleExternalSceneSelect as EventListener
+    );
     return (): void => {
       window.removeEventListener(
         'aq-scene-drop-chapter',
         handleExternalChapterDrop as EventListener
       );
+      window.removeEventListener(
+        'aq-scene-reorder-prose',
+        handleExternalSceneReorder as EventListener
+      );
+      window.removeEventListener(
+        'aq-scene-select',
+        handleExternalSceneSelect as EventListener
+      );
     };
-  }, [handleDropScenesOnChapter]);
+  }, [
+    handleDropScenesOnChapter,
+    handleNarrativeReorder,
+    handleSelectSceneWithChapterSwitch,
+  ]);
 
   // ---- Prose-link boundary drag (update start/end offset) ----
   const handleProseBoundaryChange = useCallback(

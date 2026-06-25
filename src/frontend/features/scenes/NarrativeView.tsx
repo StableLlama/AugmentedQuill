@@ -48,6 +48,17 @@ import {
   computeTemporalCauseViolations,
 } from './sceneSortUtils';
 import type { ProjectType } from './sceneSortUtils';
+import {
+  DRAG_SCENE_MIME,
+  DRAG_SCENES_MIME,
+  hasSceneDragMimeTypes,
+  resolveDraggedSceneIdsFromTransfer,
+  reorderIdsByPlacement,
+  dedupeSceneIds,
+  dispatchOptimisticReorder,
+  dispatchReorderProse,
+  EVT_OPTIMISTIC_REORDER,
+} from './sceneDragUtils';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -295,8 +306,6 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
   onVisibleLaneEntryIdsChange,
   onRemovedReferencedLaneIdsChange,
 }: NarrativeViewProps) => {
-  const DRAG_SCENE_MIME = 'application/x-augmentedquill-scene-id';
-  const DRAG_SCENES_MIME = 'application/x-augmentedquill-scene-ids';
   const { t } = useTranslation();
   const { isLight } = useTheme();
 
@@ -393,35 +402,6 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
     return byToken;
   }, [scenes]);
 
-  const coerceSceneId = useCallback(
-    (value: unknown): SceneId | null => {
-      if (typeof value === 'number' && Number.isInteger(value)) {
-        return value as SceneId;
-      }
-      if (typeof value !== 'string') return null;
-      const trimmed = value.trim();
-      if (trimmed.length === 0) return null;
-      const mapped = sceneIdByToken.get(trimmed);
-      if (mapped !== undefined) return mapped;
-      const numeric = Number(trimmed);
-      if (Number.isInteger(numeric)) return numeric as SceneId;
-      return null;
-    },
-    [sceneIdByToken]
-  );
-
-  const dedupeSceneIds = useCallback((ids: SceneId[]): SceneId[] => {
-    const seen = new Set<string>();
-    const deduped: SceneId[] = [];
-    ids.forEach((id: SceneId): void => {
-      const key = String(id);
-      if (seen.has(key)) return;
-      seen.add(key);
-      deduped.push(id);
-    });
-    return deduped;
-  }, []);
-
   const orderViolationSceneIds = useMemo(
     () => computeCauseOrderViolations(displayScenes),
     [displayScenes]
@@ -444,6 +424,19 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
       setOptimisticOrderIds(null);
     }
   }, [optimisticOrderIds, sortedScenes]);
+
+  // Listen for optimistic reorders from the left pane so both panes stay in sync
+  // immediately, without waiting for the server response.
+  useEffect(() => {
+    const handler = (event: Event): void => {
+      const custom = event as CustomEvent<{ orderIds?: SceneId[] }>;
+      const orderIds = custom.detail?.orderIds;
+      if (!Array.isArray(orderIds) || orderIds.length === 0) return;
+      setOptimisticOrderIds(orderIds as SceneId[]);
+    };
+    window.addEventListener(EVT_OPTIMISTIC_REORDER, handler);
+    return (): void => window.removeEventListener(EVT_OPTIMISTIC_REORDER, handler);
+  }, []);
 
   // Multi-select state — identical semantics to PinboardView.
   const { selectedSceneIds, activeSceneId, handleCardSelect } = useSceneSelection({
@@ -733,58 +726,16 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
     [selectedSceneIds, displayScenes]
   );
 
-  const reorderIdsByPlacement = useCallback(
-    (
-      ids: SceneId[],
-      sourceId: SceneId,
-      targetId: SceneId,
-      placeBefore: boolean
-    ): SceneId[] => {
-      const sourceIndex = ids.indexOf(sourceId);
-      const targetIndex = ids.indexOf(targetId);
-      if (sourceIndex < 0 || targetIndex < 0) return ids;
-
-      const next = [...ids];
-      next.splice(sourceIndex, 1);
-      const adjustedTargetIndex =
-        sourceIndex < targetIndex ? targetIndex - 1 : targetIndex;
-      const insertIndex = placeBefore ? adjustedTargetIndex : adjustedTargetIndex + 1;
-      next.splice(insertIndex, 0, sourceId);
-      return next;
-    },
-    []
-  );
-
   const resolveDraggedSceneIds = useCallback(
-    (eventData: DataTransfer): SceneId[] => {
-      if (dragSceneIdsRef.current.length > 0) {
-        return dedupeSceneIds(dragSceneIdsRef.current);
-      }
-
-      const rawIds = eventData.getData(DRAG_SCENES_MIME);
-      if (rawIds) {
-        try {
-          const parsed = JSON.parse(rawIds) as unknown;
-          if (Array.isArray(parsed)) {
-            return dedupeSceneIds(
-              parsed
-                .map((value: unknown): SceneId | null => coerceSceneId(value))
-                .filter((id: SceneId | null): id is SceneId => id !== null)
-            );
-          }
-        } catch {
-          // Ignore malformed payloads.
-        }
-      }
-
-      const single =
-        dragSceneIdRef.current ||
-        coerceSceneId(eventData.getData(DRAG_SCENE_MIME)) ||
-        coerceSceneId(eventData.getData('text/plain')) ||
-        dragSceneId;
-      return single ? [single] : [];
-    },
-    [DRAG_SCENE_MIME, DRAG_SCENES_MIME, coerceSceneId, dedupeSceneIds, dragSceneId]
+    (eventData: DataTransfer): SceneId[] =>
+      resolveDraggedSceneIdsFromTransfer(
+        eventData,
+        sceneIdByToken,
+        dragSceneIdRef.current,
+        dragSceneIdsRef.current,
+        dragSceneId
+      ),
+    [sceneIdByToken, dragSceneId]
   );
 
   const resolveDraggedSceneId = useCallback(
@@ -873,13 +824,12 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
   const handleChapterDragOver = useCallback(
     (e: React.DragEvent<HTMLDivElement>, chapterId: string): void => {
       if (!onDropScenesOnChapter) return;
-      const draggedIds = resolveDraggedSceneIds(e.dataTransfer);
-      if (draggedIds.length === 0) return;
+      if (!hasSceneDragMimeTypes(e.dataTransfer)) return;
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
       setChapterDropTargetId(chapterId);
     },
-    [onDropScenesOnChapter, resolveDraggedSceneIds]
+    [onDropScenesOnChapter]
   );
 
   const handleChapterDrop = useCallback(
@@ -910,6 +860,7 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
           const optimistic = [...withoutDragged];
           optimistic.splice(targetPos + 1, 0, ...draggedIds);
           setOptimisticOrderIds(optimistic);
+          dispatchOptimisticReorder(optimistic);
         }
       }
 
@@ -937,10 +888,21 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
 
   const handleSceneDragOver = useCallback(
     (e: React.DragEvent<HTMLDivElement>, sceneId: SceneId): void => {
-      const sourceId = resolveDraggedSceneId(e.dataTransfer);
-      if (!sourceId || sourceId === sceneId) return;
+      // For cross-pane drags, check MIME types to allow the drop even when
+      // we can't resolve the source ID (dataTransfer.getData is blocked in dragOver).
+      if (!hasSceneDragMimeTypes(e.dataTransfer)) return;
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
+
+      const sourceId = resolveDraggedSceneId(e.dataTransfer);
+      // Cross-pane: source can't be resolved in dragOver, show generic hint.
+      if (!sourceId || sourceId === sceneId) {
+        setDropHint((prev: { id: SceneId; placeBefore: boolean } | null) =>
+          prev && prev.id === sceneId ? prev : { id: sceneId, placeBefore: true }
+        );
+        return;
+      }
+
       const rect = e.currentTarget.getBoundingClientRect();
       const placeBefore = e.clientY < rect.top + rect.height / 2;
       setDropHint((prev: { id: SceneId; placeBefore: boolean } | null) => {
@@ -983,22 +945,25 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
       const placeBefore = hintedPlaceBefore ?? e.clientY < rect.top + rect.height / 2;
 
       const currentIds = displayScenes.map((scene: Scene): SceneId => scene.id);
-      setOptimisticOrderIds(
-        reorderIdsByPlacement(currentIds, sourceId, targetId, placeBefore)
+      const newOrder = reorderIdsByPlacement(
+        currentIds,
+        sourceId,
+        targetId,
+        placeBefore
       );
+      setOptimisticOrderIds(newOrder);
+
+      // Broadcast optimistic order so the left pane syncs immediately.
+      dispatchOptimisticReorder(newOrder);
+      // Also dispatch the reorder-prose event for server-side persistence.
+      dispatchReorderProse(sourceId, targetId, placeBefore);
 
       dragSceneIdRef.current = null;
       setDropHint(null);
       setDragSceneId(null);
       await onReorderScene?.(sourceId, targetId, placeBefore);
     },
-    [
-      displayScenes,
-      dropHint,
-      onReorderScene,
-      reorderIdsByPlacement,
-      resolveDraggedSceneId,
-    ]
+    [displayScenes, dropHint, onReorderScene, resolveDraggedSceneId]
   );
 
   const handleBottomLaneScroll = useCallback(
@@ -1177,16 +1142,10 @@ export const NarrativeView: React.FC<NarrativeViewProps> = ({
             const { scene } = item;
             const displayIndex = sceneIndexMap.get(scene.id) ?? 0;
             const dropTop = Boolean(
-              dropHint &&
-              dropHint.id === scene.id &&
-              dropHint.placeBefore &&
-              dragSceneId
+              dropHint && dropHint.id === scene.id && dropHint.placeBefore
             );
             const dropBottom = Boolean(
-              dropHint &&
-              dropHint.id === scene.id &&
-              !dropHint.placeBefore &&
-              dragSceneId
+              dropHint && dropHint.id === scene.id && !dropHint.placeBefore
             );
 
             return (

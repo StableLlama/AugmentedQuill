@@ -33,7 +33,9 @@ import {
   FolderOpen,
   Book as BookIcon,
   Edit,
+  ListTree,
 } from 'lucide-react';
+import { SceneTreeView } from './SceneTreeView';
 
 interface ChapterListProps {
   chapters: Chapter[];
@@ -108,6 +110,9 @@ function ChapterListInner({
     (s: UIStoreState): ReadonlySet<string> => s.sceneSelectionChapterIds
   );
   const [sceneDropChapterId, setSceneDropChapterId] = useState<string | null>(null);
+
+  // Toggle between summary view and compact scene tree view.
+  const [scenesMode, setScenesMode] = useState(false);
 
   // Keep transient drag state local so failed reorder requests do not corrupt source props.
   const [draggedItem, setDraggedItem] = useState<{
@@ -789,7 +794,7 @@ function ChapterListInner({
           >
             {projectType === 'series' ? t('Books & Chapters') : t('Chapters')}
           </h2>
-          {projectType === 'novel' && (
+          {projectType === 'novel' && !scenesMode && (
             <button
               onClick={(): void => onCreate()}
               className={`p-1 rounded-full transition-colors ${btnHover}`}
@@ -799,209 +804,232 @@ function ChapterListInner({
             </button>
           )}
         </div>
+        <button
+          onClick={(): void => setScenesMode((prev: boolean) => !prev)}
+          className={`p-1 rounded transition-colors ${btnHover}`}
+          title={scenesMode ? t('Show chapters view') : t('Show scenes view')}
+        >
+          {scenesMode ? <FileText size={16} /> : <ListTree size={16} />}
+        </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-2 space-y-2">
-        {projectType === 'series' ? (
-          <div className="space-y-4">
-            {displayBooks.map((book: Book, bIdx: number) => {
-              const bookChapters = displayChapters.filter(
-                (c: Chapter): boolean => c.book_id === book.id
-              );
-              const isExpanded = expandedBooks[book.id] ?? true;
-              const isBookDragging =
-                draggedItem?.type === 'book' && draggedItem.id === book.id;
+      {scenesMode ? (
+        <SceneTreeView
+          scenes={scenes}
+          chapters={displayChapters}
+          books={displayBooks}
+          projectType={projectType === 'series' ? 'series' : 'novel'}
+          currentChapterId={currentChapterId}
+          onSelectChapter={onSelect}
+          isLight={isLight}
+        />
+      ) : (
+        <div className="flex-1 overflow-y-auto p-2 space-y-2">
+          {projectType === 'series' ? (
+            <div className="space-y-4">
+              {displayBooks.map((book: Book, bIdx: number) => {
+                const bookChapters = displayChapters.filter(
+                  (c: Chapter): boolean => c.book_id === book.id
+                );
+                const isExpanded = expandedBooks[book.id] ?? true;
+                const isBookDragging =
+                  draggedItem?.type === 'book' && draggedItem.id === book.id;
 
-              return (
-                <div
-                  key={`book-${(book.id || '').trim() || String(bIdx + 1)}`}
-                  className="space-y-1"
-                >
+                return (
                   <div
-                    className={`flex flex-col p-2 rounded transition-all duration-150 group ${
-                      isLight
-                        ? 'hover:bg-brand-gray-200/50'
-                        : 'hover:bg-brand-gray-800/50'
-                    } ${
-                      isBookDragging
-                        ? 'opacity-20 grayscale border-dashed border-brand-gray-500/50'
-                        : 'opacity-100'
-                    }`}
+                    key={`book-${(book.id || '').trim() || String(bIdx + 1)}`}
+                    className="space-y-1"
                   >
-                    <div className="flex items-center justify-between w-full text-left">
-                      <button
-                        className="flex items-center space-x-2 font-bold text-sm cursor-row-resize"
-                        style={{ cursor: 'row-resize' }}
-                        draggable
-                        onDragStart={(e: React.DragEvent<HTMLButtonElement>): void =>
-                          handleDragStart(e, 'book', book.id, bIdx)
-                        }
-                        onDragEnter={(): void => {
-                          if (draggedItem?.type === 'book' && !isBookDragging) {
-                            handleDragEnter(bIdx);
-                          } else if (draggedItem?.type === 'chapter') {
-                            handleDragEnter(0, book.id);
+                    <div
+                      className={`flex flex-col p-2 rounded transition-all duration-150 group ${
+                        isLight
+                          ? 'hover:bg-brand-gray-200/50'
+                          : 'hover:bg-brand-gray-800/50'
+                      } ${
+                        isBookDragging
+                          ? 'opacity-20 grayscale border-dashed border-brand-gray-500/50'
+                          : 'opacity-100'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between w-full text-left">
+                        <button
+                          className="flex items-center space-x-2 font-bold text-sm cursor-row-resize"
+                          style={{ cursor: 'row-resize' }}
+                          draggable
+                          onDragStart={(e: React.DragEvent<HTMLButtonElement>): void =>
+                            handleDragStart(e, 'book', book.id, bIdx)
                           }
-                        }}
-                        onDragOver={handleDragOver}
-                        onDrop={handleDrop}
-                        onDragEnd={handleDragEnd}
-                        onClick={(): void => toggleBook(book.id)}
-                        aria-expanded={isExpanded}
-                        aria-label={t('Toggle book {{title}}', { title: book.title })}
-                      >
-                        <div className="flex items-center space-x-2 font-bold text-sm pointer-events-none">
-                          {isExpanded ? <FolderOpen size={16} /> : <Folder size={16} />}
-                          <span>{book.title}</span>
-                          <span className="text-xs opacity-50 font-normal">
-                            ({bookChapters.length})
-                          </span>
-                        </div>
-                      </button>
-                      <div className="flex items-center">
+                          onDragEnter={(): void => {
+                            if (draggedItem?.type === 'book' && !isBookDragging) {
+                              handleDragEnter(bIdx);
+                            } else if (draggedItem?.type === 'chapter') {
+                              handleDragEnter(0, book.id);
+                            }
+                          }}
+                          onDragOver={handleDragOver}
+                          onDrop={handleDrop}
+                          onDragEnd={handleDragEnd}
+                          onClick={(): void => toggleBook(book.id)}
+                          aria-expanded={isExpanded}
+                          aria-label={t('Toggle book {{title}}', { title: book.title })}
+                        >
+                          <div className="flex items-center space-x-2 font-bold text-sm pointer-events-none">
+                            {isExpanded ? (
+                              <FolderOpen size={16} />
+                            ) : (
+                              <Folder size={16} />
+                            )}
+                            <span>{book.title}</span>
+                            <span className="text-xs opacity-50 font-normal">
+                              ({bookChapters.length})
+                            </span>
+                          </div>
+                        </button>
                         <div className="flex items-center">
-                          <button
-                            onClick={(
-                              e: React.MouseEvent<HTMLButtonElement, MouseEvent>
-                            ): void => handleEditBookMetadata(e, book)}
-                            className={`p-1 opacity-0 group-hover:opacity-100 hover:text-blue-500 ${textHeader}`}
-                            title={t('Edit Book Metadata')}
-                          >
-                            <Edit size={14} />
-                          </button>
-                          <button
-                            onClick={(
-                              e: React.MouseEvent<HTMLButtonElement, MouseEvent>
-                            ): void => {
-                              e.stopPropagation();
-                              onCreate(book.id);
-                            }}
-                            className={`p-1 opacity-0 group-hover:opacity-100 ${btnHover}`}
-                            title={t('Add Chapter to Book')}
-                          >
-                            <Plus size={14} />
-                          </button>
-                          <button
-                            onClick={async (
-                              e: React.MouseEvent<HTMLButtonElement, MouseEvent>
-                            ): Promise<void> => {
-                              e.stopPropagation();
-                              if (
-                                await confirm(t('Delete Book and all its chapters?'))
-                              ) {
-                                onBookDelete?.(book.id);
-                              }
-                            }}
-                            className="text-brand-gray-400 hover:text-red-500 p-1"
-                            title={t('Delete Book')}
-                          >
-                            <Trash2 size={14} />
-                          </button>
+                          <div className="flex items-center">
+                            <button
+                              onClick={(
+                                e: React.MouseEvent<HTMLButtonElement, MouseEvent>
+                              ): void => handleEditBookMetadata(e, book)}
+                              className={`p-1 opacity-0 group-hover:opacity-100 hover:text-blue-500 ${textHeader}`}
+                              title={t('Edit Book Metadata')}
+                            >
+                              <Edit size={14} />
+                            </button>
+                            <button
+                              onClick={(
+                                e: React.MouseEvent<HTMLButtonElement, MouseEvent>
+                              ): void => {
+                                e.stopPropagation();
+                                onCreate(book.id);
+                              }}
+                              className={`p-1 opacity-0 group-hover:opacity-100 ${btnHover}`}
+                              title={t('Add Chapter to Book')}
+                            >
+                              <Plus size={14} />
+                            </button>
+                            <button
+                              onClick={async (
+                                e: React.MouseEvent<HTMLButtonElement, MouseEvent>
+                              ): Promise<void> => {
+                                e.stopPropagation();
+                                if (
+                                  await confirm(t('Delete Book and all its chapters?'))
+                                ) {
+                                  onBookDelete?.(book.id);
+                                }
+                              }}
+                              className="text-brand-gray-400 hover:text-red-500 p-1"
+                              title={t('Delete Book')}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
                         </div>
                       </div>
+                      <div className="pl-6 mt-1.5 w-full">
+                        <p
+                          className={`text-xs line-clamp-2 pointer-events-none ${
+                            isLight ? 'text-brand-gray-500' : 'text-brand-gray-500'
+                          }`}
+                        >
+                          {book.summary || t('No summary available...')}
+                        </p>
+                      </div>
                     </div>
-                    <div className="pl-6 mt-1.5 w-full">
-                      <p
-                        className={`text-xs line-clamp-2 pointer-events-none ${
-                          isLight ? 'text-brand-gray-500' : 'text-brand-gray-500'
-                        }`}
-                      >
-                        {book.summary || t('No summary available...')}
-                      </p>
-                    </div>
-                  </div>
 
-                  {isExpanded && (
-                    <div className="pl-3 space-y-2 border-l ml-3 border-brand-gray-700/30">
-                      {bookChapters.map(renderChapter)}
+                    {isExpanded && (
+                      <div className="pl-3 space-y-2 border-l ml-3 border-brand-gray-700/30">
+                        {bookChapters.map(renderChapter)}
+                        <button
+                          type="button"
+                          aria-label={t('Add Chapter')}
+                          className={`w-full text-left text-xs p-2 rounded flex items-center space-x-2 opacity-60 hover:opacity-100 ${titleInactive}`}
+                          onClick={(): void => {
+                            onCreate(book.id);
+                          }}
+                        >
+                          <Plus size={14} /> <span>{t('Add Chapter')}</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* New Book UI */}
+              <div className="mt-4 pt-4 border-t border-dashed border-gray-700/30">
+                {isCreatingBook ? (
+                  <div className="flex flex-col gap-2 p-2">
+                    <input
+                      className="bg-transparent border rounded p-1 text-sm outline-none focus:border-brand-500"
+                      lang={language || undefined}
+                      spellCheck={spellCheck}
+                      placeholder={t('Book Title')}
+                      value={newBookTitle}
+                      onChange={(
+                        e: React.ChangeEvent<HTMLInputElement, HTMLInputElement>
+                      ): void => setNewBookTitle(e.target.value)}
+                      onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>): void => {
+                        if (e.key === 'Enter') {
+                          onBookCreate?.(newBookTitle);
+                          setNewBookTitle('');
+                          setIsCreatingBook(false);
+                        }
+                        if (e.key === 'Escape') setIsCreatingBook(false);
+                      }}
+                    />
+                    <div className="flex justify-end gap-2">
                       <button
                         type="button"
-                        aria-label={t('Add Chapter')}
-                        className={`w-full text-left text-xs p-2 rounded flex items-center space-x-2 opacity-60 hover:opacity-100 ${titleInactive}`}
-                        onClick={(): void => {
-                          onCreate(book.id);
-                        }}
+                        aria-label={t('Cancel create book')}
+                        onClick={(): void => setIsCreatingBook(false)}
+                        className="text-xs opacity-50"
                       >
-                        <Plus size={14} /> <span>{t('Add Chapter')}</span>
+                        {t('Cancel')}
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={t('Create book')}
+                        onClick={(): void => {
+                          onBookCreate?.(newBookTitle);
+                          setNewBookTitle('');
+                          setIsCreatingBook(false);
+                        }}
+                        className="text-xs font-bold text-brand-500"
+                      >
+                        {t('Create')}
                       </button>
                     </div>
-                  )}
-                </div>
-              );
-            })}
-
-            {/* New Book UI */}
-            <div className="mt-4 pt-4 border-t border-dashed border-gray-700/30">
-              {isCreatingBook ? (
-                <div className="flex flex-col gap-2 p-2">
-                  <input
-                    className="bg-transparent border rounded p-1 text-sm outline-none focus:border-brand-500"
-                    lang={language || undefined}
-                    spellCheck={spellCheck}
-                    placeholder={t('Book Title')}
-                    value={newBookTitle}
-                    onChange={(
-                      e: React.ChangeEvent<HTMLInputElement, HTMLInputElement>
-                    ): void => setNewBookTitle(e.target.value)}
-                    onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>): void => {
-                      if (e.key === 'Enter') {
-                        onBookCreate?.(newBookTitle);
-                        setNewBookTitle('');
-                        setIsCreatingBook(false);
-                      }
-                      if (e.key === 'Escape') setIsCreatingBook(false);
-                    }}
-                  />
-                  <div className="flex justify-end gap-2">
-                    <button
-                      type="button"
-                      aria-label={t('Cancel create book')}
-                      onClick={(): void => setIsCreatingBook(false)}
-                      className="text-xs opacity-50"
-                    >
-                      {t('Cancel')}
-                    </button>
-                    <button
-                      type="button"
-                      aria-label={t('Create book')}
-                      onClick={(): void => {
-                        onBookCreate?.(newBookTitle);
-                        setNewBookTitle('');
-                        setIsCreatingBook(false);
-                      }}
-                      className="text-xs font-bold text-brand-500"
-                    >
-                      {t('Create')}
-                    </button>
                   </div>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  aria-label={t('Start creating a new book')}
-                  onClick={(): void => setIsCreatingBook(true)}
-                  className={`w-full flex items-center justify-center gap-2 p-2 rounded border border-dashed text-sm opacity-60 hover:opacity-100 ${
-                    isLight ? 'border-brand-gray-300' : 'border-brand-gray-700'
-                  }`}
-                >
-                  <BookIcon size={16} /> <span>{t('Add Book')}</span>
-                </button>
-              )}
-            </div>
-          </div>
-        ) : (
-          // Non-series projects render as a flat chapter list.
-          <>
-            {displayChapters.map(renderChapter)}
-            {displayChapters.length === 0 && (
-              <div className="text-center py-10 text-brand-gray-500">
-                <FileText className="mx-auto mb-2 opacity-30" size={32} />
-                <p className="text-sm">{t('No chapters yet.')}</p>
+                ) : (
+                  <button
+                    type="button"
+                    aria-label={t('Start creating a new book')}
+                    onClick={(): void => setIsCreatingBook(true)}
+                    className={`w-full flex items-center justify-center gap-2 p-2 rounded border border-dashed text-sm opacity-60 hover:opacity-100 ${
+                      isLight ? 'border-brand-gray-300' : 'border-brand-gray-700'
+                    }`}
+                  >
+                    <BookIcon size={16} /> <span>{t('Add Book')}</span>
+                  </button>
+                )}
               </div>
-            )}
-          </>
-        )}
-      </div>
+            </div>
+          ) : (
+            // Non-series projects render as a flat chapter list.
+            <>
+              {displayChapters.map(renderChapter)}
+              {displayChapters.length === 0 && (
+                <div className="text-center py-10 text-brand-gray-500">
+                  <FileText className="mx-auto mb-2 opacity-30" size={32} />
+                  <p className="text-sm">{t('No chapters yet.')}</p>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

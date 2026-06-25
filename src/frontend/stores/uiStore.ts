@@ -89,6 +89,11 @@ export interface UIStoreState {
   };
   sceneSelectionChapterIds: ReadonlySet<string>;
   setSceneSelectionChapterIds: (chapterIds: ReadonlySet<string>) => void;
+  /** The primary (cursor-selected or clicked) scene ID.  Written by
+   *  ScenesPanelContainer and read by the left-pane SceneTreeView so
+   *  selection stays synchronised across both panes. */
+  sceneSelectionPrimaryId: SceneId | null;
+  setSceneSelectionPrimaryId: (id: SceneId | null) => void;
   setSceneLaneState: (
     state:
       | {
@@ -206,6 +211,11 @@ export const useUIStore = create<UIStoreState>()(
       setSceneSelectionChapterIds: (chapterIds: ReadonlySet<string>) =>
         set((s: UIStoreState): { sceneSelectionChapterIds: ReadonlySet<string> } => ({
           sceneSelectionChapterIds: chapterIds,
+        })),
+      sceneSelectionPrimaryId: null as SceneId | null,
+      setSceneSelectionPrimaryId: (id: SceneId | null) =>
+        set((): { sceneSelectionPrimaryId: SceneId | null } => ({
+          sceneSelectionPrimaryId: id,
         })),
 
       // ── Panel actions ────────────────────────────────────────────────────

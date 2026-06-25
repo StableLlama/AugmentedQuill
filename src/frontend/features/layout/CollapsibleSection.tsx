@@ -12,7 +12,13 @@
  */
 
 import React, { useState, useRef, useEffect, useCallback, useId } from 'react';
-import { ChevronDown, ChevronRight, GripHorizontal } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronRight,
+  GripHorizontal,
+  Maximize2,
+  Minimize2,
+} from 'lucide-react';
 
 export interface CollapsibleSectionProps {
   title: string;
@@ -29,6 +35,11 @@ export interface CollapsibleSectionProps {
   onDragResize?: (height: number) => void;
   isLast?: boolean;
   isLight?: boolean;
+  /** When provided, renders a maximize/focus icon in the header. */
+  onFocusSection?: () => void;
+  /** When provided alongside onFocusSection, renders a minimize/back button
+   *  above the content to exit the focused view. */
+  onUnfocusSection?: () => void;
 }
 
 export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
@@ -42,6 +53,8 @@ export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
   onDragResize,
   isLast,
   isLight,
+  onFocusSection,
+  onUnfocusSection,
 }: CollapsibleSectionProps) => {
   const {
     sectionRef,
@@ -80,17 +93,19 @@ export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
       className={`flex flex-col overflow-hidden ${isLast ? 'flex-1 shrink-0' : 'shrink-0'} ${!isLast ? `border-b ${borderClass}` : ''}`}
       style={!isLast && !isCollapsed && height ? { height: `${height}px` } : {}}
     >
-      <button
+      <div
         ref={headerRef}
-        id={`${sectionId}-header`}
-        type="button"
-        className={`flex items-center justify-between px-4 py-2 cursor-pointer select-none shrink-0 ${headerBg}`}
-        onClick={onToggle}
-        onKeyDown={handleHeaderKeyDown}
-        aria-expanded={!isCollapsed}
-        aria-controls={contentId}
+        className={`flex items-center justify-between px-4 py-2 shrink-0 ${headerBg}`}
       >
-        <div className="flex items-center gap-2">
+        <button
+          type="button"
+          id={`${sectionId}-header`}
+          className="flex items-center gap-2 cursor-pointer select-none"
+          onClick={onToggle}
+          onKeyDown={handleHeaderKeyDown}
+          aria-expanded={!isCollapsed}
+          aria-controls={contentId}
+        >
           {isCollapsed ? (
             <ChevronRight size={16} className={textColor} />
           ) : (
@@ -101,8 +116,26 @@ export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
           >
             {title}
           </h2>
-        </div>
-      </button>
+        </button>
+        {(onFocusSection || onUnfocusSection) && (
+          <button
+            type="button"
+            className={`p-0.5 rounded transition-colors ${textColor} hover:opacity-70`}
+            onClick={(e: React.MouseEvent): void => {
+              e.stopPropagation();
+              if (onUnfocusSection) {
+                onUnfocusSection();
+              } else {
+                onFocusSection?.();
+              }
+            }}
+            title={title}
+            aria-label={title}
+          >
+            {onUnfocusSection ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+          </button>
+        )}
+      </div>
       {!isCollapsed && (
         <div id={contentId} className="flex-1 overflow-y-auto flex flex-col">
           {children}
@@ -147,7 +180,7 @@ interface CollapsibleSectionResizeParams {
 
 interface CollapsibleSectionResizeResult {
   sectionRef: React.RefObject<HTMLDivElement | null>;
-  headerRef: React.RefObject<HTMLButtonElement | null>;
+  headerRef: React.RefObject<HTMLDivElement | null>;
   isResizing: boolean;
   minHeaderHeight: number;
   startResizing: (e: React.MouseEvent<HTMLButtonElement, MouseEvent>) => void;
@@ -164,7 +197,7 @@ function useCollapsibleSectionResize(
   const [isResizing, setIsResizing] = useState(false);
   const [minHeaderHeight, setMinHeaderHeight] = useState(50 + DRAG_HANDLE_HEIGHT);
   const sectionRef = useRef<HTMLDivElement>(null);
-  const headerRef = useRef<HTMLButtonElement>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
   const heightRef = useRef<number | undefined>(height);
   const startTopRef = useRef<number | null>(null);
   const rafRef = useRef<number | null>(null);
