@@ -289,7 +289,16 @@ export const useStoryStore = create<StoryStoreState>()(
       history: StoryHistoryEntry[];
       currentIndex: number;
       baselineState: StoryState;
-    }) => set({ story, history, currentIndex, baselineState }),
+    }) =>
+      set((state: StoryStoreState) => ({
+        story,
+        history,
+        currentIndex,
+        baselineState,
+        // Preserve currentChapterId across history pushes so the UI never
+        // flashes to a different chapter during debounced user edits.
+        currentChapterId: story.currentChapterId ?? state.currentChapterId ?? null,
+      })),
 
     jumpHistory: ({
       story,

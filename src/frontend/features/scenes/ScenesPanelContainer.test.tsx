@@ -38,6 +38,7 @@ import type { ProseBoundaryCallback } from '../editor/CodeMirrorEditor';
 var patchSceneMock: ReturnType<typeof vi.fn>;
 var recordHistoryEntryMock: ReturnType<typeof vi.fn>;
 var setStoryMock: ReturnType<typeof vi.fn>;
+var setBaselineStateMock: ReturnType<typeof vi.fn>;
 var useStoryStoreMock: ReturnType<typeof vi.fn>;
 
 type SceneLaneCaptureProps = {
@@ -76,6 +77,7 @@ const {
 } = vi.hoisted(() => {
   patchSceneMock = vi.fn();
   setStoryMock = vi.fn();
+  setBaselineStateMock = vi.fn();
   recordHistoryEntryMock = vi.fn();
   const useScenesMock = vi.fn(() => [] as Scene[]);
   const projectTypeState = {
@@ -138,20 +140,29 @@ const {
       selector: (state: {
         patchScene: unknown;
         setStory: unknown;
+        setBaselineState: unknown;
         story: { sourcebook: unknown[] };
       }) => unknown
     ) =>
       selector({
         patchScene: patchSceneMock,
         setStory: setStoryMock,
+        setBaselineState: setBaselineStateMock,
         story: storyState,
       })
   );
+
+  // Attach static getState for useStoryStore.getState() calls.
+  (useStoryStoreMock as unknown as Record<string, unknown>).getState = vi.fn(() => ({
+    story: storyState,
+    setBaselineState: setBaselineStateMock,
+  }));
 
   return {
     patchSceneMock,
     recordHistoryEntryMock,
     setStoryMock,
+    setBaselineStateMock,
     useScenesMock,
     projectTypeState,
     chaptersMetaMock,
@@ -171,6 +182,7 @@ vi.mock('../../stores/storyStore', () => ({
     selector: (state: {
       patchScene: unknown;
       setStory: unknown;
+      setBaselineState: unknown;
       story: { sourcebook: unknown[] };
     }) => unknown
   ) =>
@@ -179,6 +191,7 @@ vi.mock('../../stores/storyStore', () => ({
         innerSelector: (state: {
           patchScene: unknown;
           setStory: unknown;
+          setBaselineState: unknown;
           story: { sourcebook: unknown[] };
         }) => unknown
       ) => unknown
@@ -609,6 +622,32 @@ describe('handleSaveScene', () => {
       summary: 'Updated',
     });
     expect(patchSceneMock).toHaveBeenCalledWith(updatedScene);
+  });
+
+  it('advances baseline to current story after user save so edits are not shown as diff', async () => {
+    // SPEC: When the user saves a scene, the baseline must advance
+    // so that reopening the dialog does not show the user's own text
+    // as AI-introduced changes.
+    const scene = makeScene({ id: 'edit-2', summary: 'Original' });
+    const updatedScene = makeScene({ id: 'edit-2', summary: 'User edit' });
+    apiMock.scenes.update.mockResolvedValueOnce(updatedScene);
+
+    await renderAndOpenDialog([scene]);
+
+    await act(async () => {
+      await dlg().onSave({ summary: 'User edit' });
+    });
+
+    // Baseline must be advanced to include the updated scene.
+    expect(setBaselineStateMock).toHaveBeenCalledTimes(1);
+    const advancedState = setBaselineStateMock.mock.calls[0][0] as Record<
+      string,
+      unknown
+    >;
+    const advancedScenes = advancedState.scenes as Scene[];
+    expect(advancedScenes).toHaveLength(1);
+    expect(advancedScenes[0].id).toBe('edit-2');
+    expect(advancedScenes[0].summary).toBe('User edit');
   });
 });
 

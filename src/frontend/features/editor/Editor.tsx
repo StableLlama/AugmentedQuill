@@ -201,42 +201,51 @@ export const Editor = React.memo(
       // Track the diff baseline locally so we can clear it immediately when the
       // user types — preventing newly typed text from appearing as diff insertions.
       // Re-adopt the prop whenever a new non-undefined baseline arrives (AI write).
+      // Normalize empty string to undefined: an empty baseline means "no baseline
+      // to diff against", not "diff against the empty string".
+      const normalizeBaseline = (raw: string | undefined): string | undefined =>
+        raw && raw.length > 0 ? raw : undefined;
       const [localBaseline, setLocalBaseline] = useState<string | undefined>(
-        baselineContent
+        normalizeBaseline(baselineContent)
       );
-      const prevBaselineRef = useRef<string | undefined>(baselineContent);
+      const prevBaselineRef = useRef<string | undefined>(
+        normalizeBaseline(baselineContent)
+      );
       // Keep the last non-undefined baseline so undo can restore the diff view.
-      const savedBaselineRef = useRef<string | undefined>(baselineContent);
+      const savedBaselineRef = useRef<string | undefined>(
+        normalizeBaseline(baselineContent)
+      );
       const lastChapterIdRef = useRef(chapter.id);
       // Tracks the last full content (with markers) that was saved to the backend.
       // Used to re-inject markers after user edits strip them from the editor doc.
       const lastSavedFullContentRef = useRef(chapter.content);
 
       useEffect((): void => {
+        const normalized = normalizeBaseline(baselineContent);
         const isChapterSwitch = chapter.id !== lastChapterIdRef.current;
         if (isChapterSwitch) {
           lastChapterIdRef.current = chapter.id;
-          prevBaselineRef.current = baselineContent;
-          setLocalBaseline(baselineContent);
-          if (baselineContent !== undefined && baselineContent !== chapter.content) {
-            savedBaselineRef.current = baselineContent;
-          } else if (baselineContent === undefined) {
+          prevBaselineRef.current = normalized;
+          setLocalBaseline(normalized);
+          if (normalized !== undefined && normalized !== chapter.content) {
+            savedBaselineRef.current = normalized;
+          } else if (normalized === undefined) {
             savedBaselineRef.current = undefined;
           }
           return;
         }
 
-        if (baselineContent !== prevBaselineRef.current) {
-          prevBaselineRef.current = baselineContent;
-          setLocalBaseline(baselineContent);
+        if (normalized !== prevBaselineRef.current) {
+          prevBaselineRef.current = normalized;
+          setLocalBaseline(normalized);
           // Only preserve as the real AI baseline when baselineContent differs from
           // chapter.content. When isUserEdit=true, pushState sets baselineContent
           // equal to chapter.content (no diff), so we must not overwrite the saved
           // AI baseline with the user-edited value — otherwise Ctrl+Z would restore
           // that wrong baseline instead of the original AI-written baseline.
-          if (baselineContent !== undefined && baselineContent !== chapter.content) {
-            savedBaselineRef.current = baselineContent;
-          } else if (baselineContent === undefined) {
+          if (normalized !== undefined && normalized !== chapter.content) {
+            savedBaselineRef.current = normalized;
+          } else if (normalized === undefined) {
             savedBaselineRef.current = undefined;
           }
         }
@@ -1057,8 +1066,22 @@ export const Editor = React.memo(
                       showDiff={settings.showDiff}
                       streamingMode={streamingModeActive}
                       baselineValue={localBaseline}
+                      showDiffToolbar={
+                        localBaseline !== undefined && localBaseline !== chapter.content
+                      }
+                      onAcceptDiff={(): void => {
+                        setLocalBaseline(undefined);
+                      }}
+                      onRejectDiff={(): void => {
+                        if (savedBaselineRef.current !== undefined) {
+                          setLocalContent(savedBaselineRef.current);
+                          localContentRef.current = savedBaselineRef.current;
+                          setLocalBaseline(undefined);
+                        }
+                      }}
                       searchHighlightRanges={chapterSearchHighlightRanges}
                       enterBehavior="softbreak"
+                      isLight={settings.theme === 'light'}
                       selectionBg={selectionBg}
                       proseHighlightBg={proseHighlightBg}
                       hideSceneMarkers={true}

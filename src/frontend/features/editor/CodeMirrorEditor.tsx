@@ -54,6 +54,7 @@ import {
   stripInlineInternalMarkers,
 } from './internalTags';
 import { buildAnnotationExtensions } from './annotationPlugin';
+import { FloatingDiffToolbar } from './FloatingDiffToolbar';
 
 // ─── Prose-link highlight StateEffect / StateField ───────────────────────────
 // Exported so that EditorHandle.setProseHighlight can dispatch it directly on
@@ -574,6 +575,20 @@ export interface CodeMirrorEditorProps {
   onProseBoundaryChange?: ProseBoundaryCallback;
   /** When true, scene marker comments are hidden in the rendered editor view. */
   hideSceneMarkers?: boolean;
+  /**
+   * Called when the user accepts a diff via the floating toolbar.
+   * The parent should update the baseline to match the current content.
+   */
+  onAcceptDiff?: () => void;
+  /**
+   * Called when the user rejects a diff via the floating toolbar.
+   * The parent should revert content to the baseline.
+   */
+  onRejectDiff?: () => void;
+  /** Whether to show the floating diff accept/reject toolbar on hover. */
+  showDiffToolbar?: boolean;
+  /** Whether the current theme is light (used for diff toolbar styling). */
+  isLight?: boolean;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -606,6 +621,10 @@ export const CodeMirrorEditor = React.forwardRef<
       onDragStart,
       onProseBoundaryChange,
       hideSceneMarkers = false,
+      onAcceptDiff,
+      onRejectDiff,
+      showDiffToolbar = false,
+      isLight = true,
     }: CodeMirrorEditorProps,
     ref: React.ForwardedRef<EditorView | null>
   ) => {
@@ -907,6 +926,7 @@ export const CodeMirrorEditor = React.forwardRef<
     useEffect((): void => {
       viewRef.current?.dispatch({
         effects: languageCompartment.current.reconfigure(buildLanguageExtension(mode)),
+        annotations: Transaction.addToHistory.of(false),
       });
     }, [mode]);
 
@@ -915,6 +935,7 @@ export const CodeMirrorEditor = React.forwardRef<
         effects: mdDecorationCompartment.current.reconfigure(
           buildMdDecorationExtension(viewMode)
         ),
+        annotations: Transaction.addToHistory.of(false),
       });
     }, [viewMode]);
 
@@ -923,6 +944,7 @@ export const CodeMirrorEditor = React.forwardRef<
         effects: markerHideCompartment.current.reconfigure(
           buildSceneMarkerHideExtension()
         ),
+        annotations: Transaction.addToHistory.of(false),
       });
     }, [hideSceneMarkers]);
 
@@ -931,6 +953,7 @@ export const CodeMirrorEditor = React.forwardRef<
         effects: wsCompartment.current.reconfigure(
           buildWsExtension(showWhitespace, baselineValue, showDiff, streamingMode)
         ),
+        annotations: Transaction.addToHistory.of(false),
       });
     }, [showWhitespace, baselineValue, showDiff, streamingMode]);
 
@@ -939,6 +962,7 @@ export const CodeMirrorEditor = React.forwardRef<
         effects: enterCompartment.current.reconfigure(
           buildEnterExtension(enterBehavior)
         ),
+        annotations: Transaction.addToHistory.of(false),
       });
     }, [enterBehavior]);
 
@@ -947,6 +971,7 @@ export const CodeMirrorEditor = React.forwardRef<
         effects: selectionBgCompartment.current.reconfigure(
           buildSelectionBgExtension(selectionBg)
         ),
+        annotations: Transaction.addToHistory.of(false),
       });
     }, [selectionBg]);
 
@@ -955,6 +980,7 @@ export const CodeMirrorEditor = React.forwardRef<
         effects: proseHighlightBgCompartment.current.reconfigure(
           buildProseHighlightBgExtension(proseHighlightBg)
         ),
+        annotations: Transaction.addToHistory.of(false),
       });
     }, [proseHighlightBg]);
 
@@ -963,6 +989,7 @@ export const CodeMirrorEditor = React.forwardRef<
         effects: placeholderCompartment.current.reconfigure(
           buildPlaceholderExtension(placeholder)
         ),
+        annotations: Transaction.addToHistory.of(false),
       });
     }, [placeholder]);
 
@@ -971,6 +998,7 @@ export const CodeMirrorEditor = React.forwardRef<
         effects: attributesCompartment.current.reconfigure(
           buildAttributesExtension(language, spellCheck, placeholder)
         ),
+        annotations: Transaction.addToHistory.of(false),
       });
     }, [language, spellCheck, placeholder]);
 
@@ -985,6 +1013,7 @@ export const CodeMirrorEditor = React.forwardRef<
         effects: diffCompartment.current.reconfigure(
           buildDiffExtension(baselineValue, showDiff, streamingMode, showWhitespace)
         ),
+        annotations: Transaction.addToHistory.of(false),
       });
     }, [baselineValue, showDiff, streamingMode, showWhitespace]);
 
@@ -993,6 +1022,7 @@ export const CodeMirrorEditor = React.forwardRef<
         effects: searchHighlightCompartment.current.reconfigure(
           buildSearchHighlightExtension(searchHighlightRanges)
         ),
+        annotations: Transaction.addToHistory.of(false),
       });
     }, [searchHighlightRanges]);
 
@@ -1055,7 +1085,32 @@ export const CodeMirrorEditor = React.forwardRef<
     // handler on contentDOM has already run and set
     // `effectAllowed = "copyMove"`.  We can override that here because we
     // are still within the same dragstart event dispatch cycle.
-    return <div ref={containerRef} className={className} style={style} />;
+
+    // Ref for the FloatingDiffToolbar container — wraps the CM editor so
+    // the toolbar can detect hover over CM's diff decorations.
+    const toolbarContainerRef = useRef<HTMLDivElement>(null);
+
+    const toolbarEnabled =
+      showDiffToolbar &&
+      showDiff &&
+      !!baselineValue &&
+      !!onAcceptDiff &&
+      !!onRejectDiff;
+
+    return (
+      <div ref={toolbarContainerRef} className="relative">
+        <div ref={containerRef} className={className} style={style} />
+        {toolbarEnabled && (
+          <FloatingDiffToolbar
+            containerRef={toolbarContainerRef}
+            enabled={true}
+            isLight={isLight}
+            onAccept={(): void => onAcceptDiff?.()}
+            onReject={(): void => onRejectDiff?.()}
+          />
+        )}
+      </div>
+    );
   }
 );
 

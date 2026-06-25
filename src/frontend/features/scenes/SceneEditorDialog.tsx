@@ -14,6 +14,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { ChevronLeft, ChevronRight, Clock, MessageSquareDiff } from 'lucide-react';
+import { FloatingDiffToolbar } from '../editor/FloatingDiffToolbar';
 import type {
   Scene,
   SceneBeat,
@@ -434,6 +435,24 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
   const [showDiff, setShowDiff] = useState(
     Boolean(openedViaTrigger || defaultShowDiff)
   );
+  // Local baseline overrides: when the user accepts a diff section, we store
+  // the accepted value here so the diff for that section clears locally without
+  // needing a round-trip through the store.  On reject we revert the field.
+  type AcceptedBaseline = Partial<{
+    summary: string;
+    beats: SceneBeat[];
+    active_characters: string[];
+    passive_characters: string[];
+    sourcebook_entry_ids: string[];
+    scene_time: string | null;
+    timeline_id: string;
+    color_tag: string | null;
+    status: string;
+  }>;
+  const [acceptedBaseline, setAcceptedBaseline] = useState<AcceptedBaseline>({});
+  // Reset accepted baseline when the dialog opens for a different scene.
+  const acceptedBaselineRef = useRef(acceptedBaseline);
+  acceptedBaselineRef.current = acceptedBaseline;
   const [activeTokens, setActiveTokens] = useState<CharToken[]>(
     scene.active_characters.map((name: string, i: number): CharToken => {
       const dt = scene.tag_personal_datetimes?.find(
@@ -808,6 +827,11 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
 
   const initialSnapshotRef = useRef<DirtySnapshot | null>(null);
 
+  // Ref for the FloatingDiffToolbar — wraps the scrollable content area
+  // so the toolbar detects hover over both section-level data-diff markers
+  // and inline CodeMirror diff decorations.
+  const diffContainerRef = useRef<HTMLDivElement>(null);
+
   useEffect((): void => {
     if (!isOpen) {
       initializedSceneIdRef.current = null;
@@ -874,6 +898,7 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
     setPendingSourcebookEntryId(null);
     setHoveredEntry(null);
     setShowDiff(Boolean(openedViaTrigger || defaultShowDiff));
+    setAcceptedBaseline({});
 
     initialSnapshotRef.current = {
       summary: scene.summary,
@@ -1031,18 +1056,48 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
   }, [hoveredEntry, parsedSceneTime, normalizedSceneTimelineId]);
 
   const displayLocale = storyLanguage || i18n.resolvedLanguage || i18n.language;
-  const summaryBaseline = baselineScene?.summary ?? (openedViaTrigger ? '' : undefined);
-  const baselineBeats = baselineScene?.beats ?? [];
-  const baselineActiveCharacters = baselineScene?.active_characters ?? [];
-  const baselinePassiveCharacters = baselineScene?.passive_characters ?? [];
-  const baselineSourcebookIds = baselineScene?.sourcebook_entry_ids ?? [];
+
+  // Merge store baseline with locally accepted overrides so that
+  // accepting a section clears its diff without a store round-trip.
+  const effectiveBaselineSummary =
+    'summary' in acceptedBaseline
+      ? acceptedBaseline.summary
+      : (baselineScene?.summary ?? (openedViaTrigger ? '' : undefined));
+  const summaryBaseline = effectiveBaselineSummary;
+  const baselineBeats =
+    'beats' in acceptedBaseline
+      ? (acceptedBaseline.beats ?? [])
+      : (baselineScene?.beats ?? []);
+  const baselineActiveCharacters =
+    'active_characters' in acceptedBaseline
+      ? (acceptedBaseline.active_characters ?? [])
+      : (baselineScene?.active_characters ?? []);
+  const baselinePassiveCharacters =
+    'passive_characters' in acceptedBaseline
+      ? (acceptedBaseline.passive_characters ?? [])
+      : (baselineScene?.passive_characters ?? []);
+  const baselineSourcebookIds =
+    'sourcebook_entry_ids' in acceptedBaseline
+      ? (acceptedBaseline.sourcebook_entry_ids ?? [])
+      : (baselineScene?.sourcebook_entry_ids ?? []);
   const baselineSceneTimeValue =
-    baselineScene?.scene_time?.temporal_zoned_datetime ?? null;
-  const baselineTimelineId = baselineScene
-    ? normalizeTimelineId(baselineScene.timeline_id)
-    : null;
-  const baselineColorTag = baselineScene?.color_tag ?? null;
-  const baselineStatus = baselineScene?.status;
+    'scene_time' in acceptedBaseline
+      ? (acceptedBaseline.scene_time ?? null)
+      : (baselineScene?.scene_time?.temporal_zoned_datetime ?? null);
+  const baselineTimelineId =
+    'timeline_id' in acceptedBaseline
+      ? normalizeTimelineId(acceptedBaseline.timeline_id ?? 'main')
+      : baselineScene
+        ? normalizeTimelineId(baselineScene.timeline_id)
+        : null;
+  const baselineColorTag =
+    'color_tag' in acceptedBaseline
+      ? (acceptedBaseline.color_tag ?? null)
+      : (baselineScene?.color_tag ?? null);
+  const baselineStatus =
+    'status' in acceptedBaseline
+      ? (acceptedBaseline.status ?? undefined)
+      : baselineScene?.status;
   const hintedFields = useMemo(
     () =>
       new Set(
@@ -1056,7 +1111,9 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
     fields.some((field: string): boolean => hintedFields.has(field.toLowerCase()));
   const summaryChanged =
     showDiff &&
-    ((baselineScene ? summary !== (baselineScene.summary ?? '') : summary.length > 0) ||
+    ((summaryBaseline !== undefined
+      ? summary !== summaryBaseline
+      : summary.length > 0) ||
       hasFieldHint('summary', 'summary_patch'));
   const baselineProseLink = baselineScene?.prose_link ?? null;
   const linkedProseBaseline = useMemo((): string | undefined => {
@@ -1522,6 +1579,80 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
     setProseDirty(true);
   };
 
+  // ─── Diff accept / reject (unified — dispatched by element) ────────────
+
+  /** Determine which diff section an element belongs to and accept it. */
+  const handleDiffAccept = (el: HTMLElement): void => {
+    const section = el.closest('[data-diff="changed"]');
+    if (!section) {
+      // Hovering over an inline CodeMirror diff — accept all for the summary.
+      setAcceptedBaseline((prev: AcceptedBaseline) => ({ ...prev, summary }));
+      return;
+    }
+    // Section-level diff: find which section and accept it.
+    if (section.querySelector('.cm-content')) {
+      // Summary section (contains CodeMirror)
+      setAcceptedBaseline((prev: AcceptedBaseline) => ({ ...prev, summary }));
+    } else if (
+      section.textContent?.includes('Beats') ||
+      section.querySelector('textarea')
+    ) {
+      // Beats section
+      setAcceptedBaseline((prev: AcceptedBaseline) => ({
+        ...prev,
+        beats: [...beats],
+      }));
+    }
+  };
+
+  /** Determine which diff section an element belongs to and reject it. */
+  const handleDiffReject = (el: HTMLElement): void => {
+    const section = el.closest('[data-diff="changed"]');
+    if (!section) {
+      // Inline CodeMirror diff — revert summary to baseline.
+      const fallback = baselineScene?.summary ?? '';
+      setSummary(fallback);
+      setAcceptedBaseline((prev: AcceptedBaseline) => ({
+        ...prev,
+        summary: fallback,
+      }));
+      return;
+    }
+    if (section.querySelector('.cm-content')) {
+      const fallback = baselineScene?.summary ?? '';
+      setSummary(fallback);
+      setAcceptedBaseline((prev: AcceptedBaseline) => ({
+        ...prev,
+        summary: fallback,
+      }));
+    } else if (
+      section.textContent?.includes('Beats') ||
+      section.querySelector('textarea')
+    ) {
+      const fallback = baselineScene?.beats ?? [];
+      setBeats(fallback);
+      setAcceptedBaseline((prev: AcceptedBaseline) => ({
+        ...prev,
+        beats: fallback,
+      }));
+    }
+  };
+
+  // Accept ALL diffs in the dialog.
+  const handleDiffAcceptAll = (): void => {
+    setAcceptedBaseline({
+      summary,
+      beats: [...beats],
+      active_characters: activeTokens.map((t: CharToken) => t.name),
+      passive_characters: passiveTokens.map((t: CharToken) => t.name),
+      sourcebook_entry_ids: sourcebookTags.map((t: SourcebookTag) => t.id),
+      scene_time: sceneTimeValue,
+      timeline_id: timelineId,
+      color_tag: colorTag,
+      status,
+    });
+  };
+
   return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 pt-14"
@@ -1632,16 +1763,34 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
-          <div className={`${sectionCls} ${diffSectionCls(summaryChanged)}`}>
-            <label className={labelCls}>{t('Scene Summary')}</label>
+        <div
+          ref={diffContainerRef}
+          className="flex-1 overflow-y-auto px-5 py-4 space-y-4"
+        >
+          <div
+            className={`${sectionCls} ${diffSectionCls(summaryChanged)}`}
+            data-diff={summaryChanged ? 'changed' : undefined}
+          >
+            <div className="flex items-center justify-between">
+              <label className={labelCls}>{t('Scene Summary')}</label>
+            </div>
             <div
               className={`rounded-md border ${tc.border} ${tc.input} overflow-hidden`}
             >
               <CodeMirrorEditor
                 ref={summaryEditorRef}
                 value={summary}
-                onChange={setSummary}
+                onChange={(value: string): void => {
+                  setSummary(value);
+                  // Clear diff on user edit: typing in the summary is an
+                  // implicit acceptance of the automatic change.
+                  if (showDiff && summaryChanged) {
+                    setAcceptedBaseline((prev: AcceptedBaseline) => ({
+                      ...prev,
+                      summary: value,
+                    }));
+                  }
+                }}
                 baselineValue={summaryBaseline}
                 showDiff={showDiff}
                 searchHighlightRanges={[]}
@@ -1654,7 +1803,10 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
             </div>
           </div>
 
-          <div className={`${sectionCls} ${diffSectionCls(beatsChanged)}`}>
+          <div
+            className={`${sectionCls} ${diffSectionCls(beatsChanged)}`}
+            data-diff={beatsChanged ? 'changed' : undefined}
+          >
             <div className="flex items-center justify-between">
               <label className={labelCls}>{t('Beats')}</label>
               <button
@@ -2402,6 +2554,18 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
             </div>
           )}
         </div>
+
+        {showDiff && (
+          <FloatingDiffToolbar
+            containerRef={diffContainerRef}
+            enabled={true}
+            isLight={tc.isLight}
+            onAccept={handleDiffAccept}
+            onReject={handleDiffReject}
+            onAcceptAll={handleDiffAcceptAll}
+            showAcceptAll={true}
+          />
+        )}
 
         <div
           className={`flex items-center justify-between px-5 py-3 border-t ${tc.border} flex-shrink-0`}

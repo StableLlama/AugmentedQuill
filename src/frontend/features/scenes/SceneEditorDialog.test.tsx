@@ -2068,3 +2068,236 @@ describe('SceneEditorDialog age picker', () => {
     expect(aliceTag).toBeTruthy();
   });
 });
+
+// ─── Diff accept / reject ──────────────────────────────────────────────────
+
+describe('SceneEditorDialog diff accept / reject', () => {
+  it('marks summary section with data-diff when diff is visible', async () => {
+    baselineScenesState.push(
+      makeScene({
+        id: 'scene-1',
+        summary: 'Baseline summary',
+      })
+    );
+
+    const { container } = wrap(
+      <SceneEditorDialog
+        scene={makeScene({
+          id: 'scene-1',
+          summary: 'AI-updated summary',
+        })}
+        isOpen={true}
+        openedViaTrigger={true}
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+      />
+    );
+
+    // Wait for state to settle after effects.
+    await waitFor(() => {
+      const diffSection = document.body.querySelector('[data-diff="changed"]');
+      expect(diffSection).toBeTruthy();
+    });
+  });
+
+  it('does not mark sections with data-diff when no diff is visible', async () => {
+    const { container } = wrap(
+      <SceneEditorDialog
+        scene={makeScene({
+          id: 'scene-1',
+          summary: 'Same summary',
+        })}
+        isOpen={true}
+        openedViaTrigger={false}
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+      />
+    );
+
+    await waitFor(() => {
+      expect(document.body.querySelector('[data-diff="changed"]')).toBeNull();
+    });
+  });
+
+  it('clears data-diff from summary section after an external accept', async () => {
+    baselineScenesState.push(
+      makeScene({
+        id: 'scene-1',
+        summary: 'Baseline summary',
+      })
+    );
+
+    const { container, rerender } = wrap(
+      <SceneEditorDialog
+        scene={makeScene({
+          id: 'scene-1',
+          summary: 'AI-updated summary',
+        })}
+        isOpen={true}
+        openedViaTrigger={true}
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+      />
+    );
+
+    await waitFor(() => {
+      expect(document.body.querySelector('[data-diff="changed"]')).toBeTruthy();
+    });
+
+    // Simulate the parent updating baseline to match (accept via store)
+    baselineScenesState[0] = makeScene({
+      id: 'scene-1',
+      summary: 'AI-updated summary',
+    });
+
+    // Re-render with updated scene — diff should clear
+    rerender(
+      <I18nextProvider i18n={i18n}>
+        <SceneEditorDialog
+          scene={makeScene({
+            id: 'scene-1',
+            summary: 'AI-updated summary',
+          })}
+          isOpen={true}
+          openedViaTrigger={true}
+          onClose={NOOP_CLOSE}
+          onSave={NOOP_SAVE}
+          onDelete={NOOP_DELETE}
+        />
+      </I18nextProvider>
+    );
+
+    // After baseline update, no diff should remain
+    await waitFor(() => {
+      expect(document.body.querySelector('[data-diff="changed"]')).toBeNull();
+    });
+  });
+});
+
+// ─── Spec: diff only for automatic changes ──────────────────────────────────
+
+describe('Spec: SceneEditorDialog diff rules', () => {
+  it('shows NO data-diff when opened normally (not via AI trigger)', async () => {
+    // SPEC: User opens scene editor normally → NO diff.
+    baselineScenesState.push(
+      makeScene({
+        id: 'scene-1',
+        summary: 'Baseline summary that differs',
+      })
+    );
+
+    wrap(
+      <SceneEditorDialog
+        scene={makeScene({
+          id: 'scene-1',
+          summary: 'Current summary',
+        })}
+        isOpen={true}
+        openedViaTrigger={false}
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+      />
+    );
+
+    await waitFor(() => {
+      // Even though baseline and current differ, normal open means no diff.
+      expect(document.body.querySelector('[data-diff="changed"]')).toBeNull();
+    });
+  });
+
+  it('shows data-diff when opened via AI trigger with changed summary', async () => {
+    // SPEC: Scene editor opened via AI trigger notification → diff shown.
+    baselineScenesState.push(
+      makeScene({
+        id: 'scene-1',
+        summary: 'Old baseline summary',
+      })
+    );
+
+    wrap(
+      <SceneEditorDialog
+        scene={makeScene({
+          id: 'scene-1',
+          summary: 'New AI summary',
+        })}
+        isOpen={true}
+        openedViaTrigger={true}
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+      />
+    );
+
+    await waitFor(() => {
+      const diffSection = document.body.querySelector('[data-diff="changed"]');
+      expect(diffSection).toBeTruthy();
+    });
+  });
+
+  it('shows NO diff when opened normally with showDiff enabled and baseline already advanced', async () => {
+    // SPEC: User manually edited and saved → parent advanced baseline →
+    // reopening (even with showDiff enabled) should NOT show diff for
+    // the summary the user typed themselves.
+    baselineScenesState.push(
+      makeScene({
+        id: 'scene-1',
+        summary: 'User-typed summary',
+      })
+    );
+
+    wrap(
+      <SceneEditorDialog
+        scene={makeScene({
+          id: 'scene-1',
+          summary: 'User-typed summary',
+        })}
+        isOpen={true}
+        openedViaTrigger={false}
+        defaultShowDiff={true}
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+      />
+    );
+
+    await waitFor(() => {
+      // Baseline matches current → no diff, even with showDiff enabled.
+      expect(document.body.querySelector('[data-diff="changed"]')).toBeNull();
+    });
+  });
+
+  it('shows diff when opened normally with showDiff enabled and baseline differs from AI change', async () => {
+    // SPEC: User has AI changes they haven't reviewed → opening with
+    // showDiff enabled should still show the AI's diffs.
+    baselineScenesState.push(
+      makeScene({
+        id: 'scene-1',
+        summary: 'Old baseline',
+      })
+    );
+
+    wrap(
+      <SceneEditorDialog
+        scene={makeScene({
+          id: 'scene-1',
+          summary: 'AI-updated summary',
+        })}
+        isOpen={true}
+        openedViaTrigger={false}
+        defaultShowDiff={true}
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+      />
+    );
+
+    await waitFor(() => {
+      const diffSection = document.body.querySelector('[data-diff="changed"]');
+      expect(diffSection).toBeTruthy();
+    });
+  });
+});

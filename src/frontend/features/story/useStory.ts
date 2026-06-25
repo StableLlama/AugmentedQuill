@@ -169,10 +169,9 @@ export const useStory = (dialogs: StoryDialogs = defaultDialogs) => {
       const updatedState = {
         ...newState,
         lastUpdated: Date.now(),
-        currentChapterId:
-          newState.currentChapterId !== undefined
-            ? newState.currentChapterId
-            : selectedChapterId,
+        // Always preserve the store's currentChapterId — never let a stale
+        // ref value from latestStoryRef overwrite the real selection.
+        currentChapterId: selectedChapterId,
       };
       const currentEntry = history[currentIndex];
       if (
@@ -200,9 +199,8 @@ export const useStory = (dialogs: StoryDialogs = defaultDialogs) => {
         currentIndex: bounded.length - 1,
         baselineState: newBaseline,
       });
-      useStoryStore
-        .getState()
-        .setCurrentChapterId(updatedState.currentChapterId ?? null);
+      // pushHistoryState now preserves currentChapterId in a single set() call,
+      // avoiding a render flash between story update and chapter-id update.
       latestStoryRef.current = updatedState;
     },
     [] // empty – all state accessed via useStoryStore.getState()
@@ -970,7 +968,13 @@ export const useStory = (dialogs: StoryDialogs = defaultDialogs) => {
           baselineState: history[currentIndex].state,
         });
       });
-      latestStoryRef.current = prevState;
+      // jumpHistory preserves currentChapterId from the store, not from
+      // prevState.  Sync the ref so the next updateChapter reads the
+      // correct chapter — otherwise typing after undo switches chapters.
+      latestStoryRef.current = {
+        ...prevState,
+        currentChapterId: useStoryStore.getState().currentChapterId,
+      };
 
       for (const callback of callbacks) {
         await callback();
@@ -1003,7 +1007,10 @@ export const useStory = (dialogs: StoryDialogs = defaultDialogs) => {
           baselineState: history[currentIndex].state,
         });
       });
-      latestStoryRef.current = nextState;
+      latestStoryRef.current = {
+        ...nextState,
+        currentChapterId: useStoryStore.getState().currentChapterId,
+      };
 
       for (const callback of callbacks) {
         await callback();

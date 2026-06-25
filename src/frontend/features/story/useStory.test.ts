@@ -1799,3 +1799,140 @@ describe('fetchStory: scene loading on project open', () => {
     expect(result.current.story.scenes[1].id).toBe('scene-2');
   });
 });
+
+// ─── Spec: currentChapterId preserved across edits and undo/redo ────────────
+
+describe('Spec: currentChapterId stability', () => {
+  it('preserves currentChapterId when editing a non-first chapter', async () => {
+    const ch1 = buildChapter('1', 'First chapter content');
+    const ch2 = buildChapter('2', 'Second chapter content');
+    const { result } = await hookWithStory('test', [ch1, ch2]);
+
+    // Select chapter 2 (non-first)
+    await act(async () => {
+      result.current.selectChapter('2');
+    });
+    await act(async () => {});
+    expect(result.current.currentChapterId).toBe('2');
+
+    // Type some text in chapter 2
+    await act(async () => {
+      await result.current.updateChapter(
+        '2',
+        { content: 'Second chapter edited' },
+        false,
+        true,
+        true
+      );
+    });
+
+    // Chapter must NOT have switched
+    expect(result.current.currentChapterId).toBe('2');
+  });
+
+  it('preserves currentChapterId after edit + undo + edit cycle on non-first chapter', async () => {
+    const ch1 = buildChapter('1', 'Chapter one');
+    const ch2 = buildChapter('2', 'Chapter two original');
+    const { result } = await hookWithStory('test', [ch1, ch2]);
+
+    // Select chapter 2
+    await act(async () => {
+      result.current.selectChapter('2');
+    });
+    await act(async () => {});
+    expect(result.current.currentChapterId).toBe('2');
+
+    // First edit
+    await act(async () => {
+      await result.current.updateChapter(
+        '2',
+        { content: 'Chapter two edited v1' },
+        false,
+        true,
+        true
+      );
+    });
+    expect(result.current.currentChapterId).toBe('2');
+
+    // Undo
+    await act(async () => {
+      await result.current.undo();
+    });
+    expect(result.current.currentChapterId).toBe('2');
+
+    // Edit again (simulates typing after undo)
+    await act(async () => {
+      await result.current.updateChapter(
+        '2',
+        { content: 'Chapter two edited v2' },
+        false,
+        true,
+        true
+      );
+    });
+
+    // Chapter must still be 2
+    expect(result.current.currentChapterId).toBe('2');
+  });
+
+  it('preserves currentChapterId after multiple rapid edits on non-first chapter', async () => {
+    const ch1 = buildChapter('1', 'C1');
+    const ch2 = buildChapter('2', 'C2');
+    const ch3 = buildChapter('3', 'C3');
+    const { result } = await hookWithStory('test', [ch1, ch2, ch3]);
+
+    // Select chapter 3 (last chapter)
+    await act(async () => {
+      result.current.selectChapter('3');
+    });
+    await act(async () => {});
+    expect(result.current.currentChapterId).toBe('3');
+
+    // Simulate rapid typing: multiple updateChapter calls
+    for (const _content of ['C3 edit a', 'C3 edit ab', 'C3 edit abc']) {
+      await act(async () => {
+        await result.current.updateChapter(
+          '3',
+          { content: _content },
+          false,
+          true,
+          true
+        );
+      });
+      expect(result.current.currentChapterId).toBe('3');
+    }
+  });
+
+  it('currentChapterId survives pushHistoryState atomically', async () => {
+    // Direct store-level test: verify pushHistoryState preserves currentChapterId
+    const ch1 = buildChapter('1', 'Content 1');
+    const ch2 = buildChapter('2', 'Content 2');
+    const { result } = await hookWithStory('test', [ch1, ch2]);
+
+    await act(async () => {
+      result.current.selectChapter('2');
+    });
+
+    // Grab the store state directly
+    const store = useStoryStore.getState();
+    expect(store.currentChapterId).toBe('2');
+
+    // Simulate a pushHistoryState with a story that has NO currentChapterId
+    const storyWithoutChapterId = {
+      ...store.story,
+      currentChapterId: undefined as unknown as string | null,
+    };
+
+    act(() => {
+      store.pushHistoryState({
+        story: storyWithoutChapterId,
+        history: store.history,
+        currentIndex: store.currentIndex,
+        baselineState: store.baselineState,
+      });
+    });
+
+    // After push, currentChapterId must be preserved from the previous state
+    expect(useStoryStore.getState().currentChapterId).toBe('2');
+  });
+});

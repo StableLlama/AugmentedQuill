@@ -281,11 +281,6 @@ function mergeDiffZones(
   return merged;
 }
 
-/** Debounce delay before recomputing full diff decorations (ms). */
-const DIFF_DEBOUNCE_MS = 500;
-/** Documents smaller than this threshold are diffed immediately. */
-const DIFF_IMMEDIATE_THRESHOLD = 5000;
-
 /**
  * Return the number of leading characters that are identical in both strings.
  * Used for the streaming diff strategy which avoids LCS on partial content.
@@ -302,11 +297,100 @@ export const buildDiffPlugin = (
   baseline: string,
   streamingMode: boolean = false,
   showWhitespace: boolean = false
-): Extension =>
-  ViewPlugin.fromClass(
+): Extension => {
+  // Mutable baseline holder so the plugin can self-patch on user edits
+  // without waiting for a React re-render.  When the parent supplies a new
+  // baseline prop the compartment is reconfigured with a fresh instance.
+  const baselineRef = { current: baseline };
+
+  /**
+   * Map a document position to the corresponding baseline position, and
+   * collect any AI-inserted prefix/suffix text that the user kept.
+   *
+   * Returns:
+   *   baselinePos — the position in the baseline
+   *   prefix     — AI-inserted text between the last equal boundary and
+   *                docPos (only when docPos falls inside an INSERT region)
+   *   suffix     — AI-inserted text between docPos and the next equal
+   *                boundary (only when docPos falls inside an INSERT region)
+   */
+  function mapDocRangeToBaseline(
+    docFrom: number,
+    docTo: number,
+    diffs: import('diff-match-patch').Diff[]
+  ): { baselineFrom: number; baselineTo: number; prefix: string; suffix: string } {
+    let docCursor = 0;
+    let baselineCursor = 0;
+    let prefix = '';
+    let suffix = '';
+    let baselineFrom = 0;
+    let baselineTo = 0;
+    let fromMapped = false;
+
+    for (const [op, text] of diffs) {
+      if (op === 0) {
+        // EQUAL: both doc and baseline advance
+        const end = docCursor + text.length;
+        if (!fromMapped && docFrom < end) {
+          baselineFrom = baselineCursor + (docFrom - docCursor);
+          fromMapped = true;
+        }
+        if (fromMapped && docTo <= end) {
+          baselineTo = baselineCursor + (docTo - docCursor);
+          return { baselineFrom, baselineTo, prefix, suffix };
+        }
+        docCursor = end;
+        baselineCursor += text.length;
+      } else if (op === 1) {
+        // INSERT (in doc only, not in baseline)
+        const end = docCursor + text.length;
+        if (!fromMapped && docFrom < end) {
+          // User edited inside an AI insertion.
+          // The portion [docCursor .. docFrom] was AI-inserted and kept.
+          prefix = text.slice(0, docFrom - docCursor);
+          baselineFrom = baselineCursor;
+          fromMapped = true;
+        }
+        if (fromMapped && docTo <= end) {
+          // User edit ends inside this AI insertion.
+          // The portion [docTo .. end] was AI-inserted and kept.
+          suffix = text.slice(docTo - docCursor);
+          baselineTo = baselineCursor;
+          return { baselineFrom, baselineTo, prefix, suffix };
+        }
+        if (fromMapped) {
+          // User edit spans beyond this INSERT region.
+          // Collect any kept suffix so far and continue.
+          suffix = text.slice(Math.max(0, docTo - docCursor));
+        }
+        docCursor = end;
+      } else {
+        // DELETE (in baseline only, not in doc)
+        const end = baselineCursor + text.length;
+        if (!fromMapped && docFrom <= docCursor) {
+          // User edited at a position where baseline has deleted text.
+          baselineFrom = baselineCursor;
+          fromMapped = true;
+        }
+        if (fromMapped && docTo <= docCursor) {
+          baselineTo = end;
+          return { baselineFrom, baselineTo, prefix, suffix };
+        }
+        baselineCursor = end;
+      }
+    }
+
+    // If we exit the loop without setting baselineTo, clamp to end.
+    if (!fromMapped) {
+      baselineFrom = baselineCursor;
+    }
+    baselineTo = baselineCursor;
+    return { baselineFrom, baselineTo, prefix, suffix };
+  }
+
+  return ViewPlugin.fromClass(
     class {
       decorations: DecorationSet;
-      private pending: ReturnType<typeof setTimeout> | null = null;
       constructor(view: EditorView) {
         this.decorations = this.build(view);
       }
@@ -315,45 +399,59 @@ export const buildDiffPlugin = (
         if (!u.docChanged) return;
 
         // External value syncs (undo/redo, AI insertion, chapter switch)
-        // are single atomic replacements — compute immediately so the
-        // user sees the diff result without delay.
+        // are single atomic replacements — keep the baseline unchanged so
+        // the diff highlights what the automatic process changed.
         const isExternalSync = u.transactions.some(
           (tr: import('@codemirror/state').Transaction) =>
             tr.annotation(externalValueSyncAnnotation)
         );
 
-        // For small documents or external syncs, compute immediately.
-        if (u.state.doc.length < DIFF_IMMEDIATE_THRESHOLD || isExternalSync) {
-          this.cancelPending();
+        if (isExternalSync) {
           this.decorations = this.build(u.view);
           return;
         }
 
-        // For large documents during normal typing, remap existing
-        // decorations immediately so positions stay correct, then
-        // schedule a full diff rebuild after the user pauses typing.
-        this.decorations = this.decorations.map(u.changes);
-        this.scheduleBuild(u.view);
+        // User edit: patch the baseline with the same change so the
+        // user's own typing does NOT produce diff decorations.
+        // We compute the diff between baseline and the *old* document to
+        // build a position map, then apply the user's edit at the
+        // corresponding baseline positions.
+        const oldDoc = u.startState.doc.toString();
+        const strippedBaseline = stripInlineInternalMarkers(baselineRef.current);
+        const oldDiff = dmp.diff_main(strippedBaseline, oldDoc);
+        dmp.diff_cleanupSemantic(oldDiff);
+
+        let patchedBaseline = baselineRef.current;
+        u.changes.iterChanges(
+          (
+            fromA: number,
+            toA: number,
+            _fromB: number,
+            _toB: number,
+            inserted: import('@codemirror/state').Text
+          ): void => {
+            const { baselineFrom, baselineTo, prefix, suffix } = mapDocRangeToBaseline(
+              fromA,
+              toA,
+              oldDiff
+            );
+            patchedBaseline =
+              patchedBaseline.slice(0, baselineFrom) +
+              prefix +
+              inserted.toString() +
+              suffix +
+              patchedBaseline.slice(baselineTo);
+          }
+        );
+        baselineRef.current = patchedBaseline;
+
+        // Rebuild immediately so the user sees clean text for their own
+        // edits while AI diffs in untouched regions stay visible.
+        this.decorations = this.build(u.view);
       }
       /** Helper for the requested value. */
       destroy(): void {
-        this.cancelPending();
-      }
-      /** Helper for pending. */
-      private cancelPending(): void {
-        if (this.pending !== null) {
-          clearTimeout(this.pending);
-          this.pending = null;
-        }
-      }
-      /** Schedule build. */
-      private scheduleBuild(view: EditorView): void {
-        this.cancelPending();
-        this.pending = setTimeout((): void => {
-          this.pending = null;
-          this.decorations = this.build(view);
-          view.dispatch(); // trigger decoration update
-        }, DIFF_DEBOUNCE_MS);
+        // no-op — pending timer removed
       }
       /** Build the requested value. */
       build(view: EditorView): DecorationSet {
@@ -362,7 +460,7 @@ export const buildDiffPlugin = (
         // (hideSceneMarkers=true).  Strip the baseline too so that
         // marker-only differences (e.g. after creating an annotation)
         // don't produce a spurious diff.
-        const strippedBaseline = stripInlineInternalMarkers(baseline);
+        const strippedBaseline = stripInlineInternalMarkers(baselineRef.current);
         if (strippedBaseline === currentText) return Decoration.none;
 
         if (streamingMode) {
@@ -418,3 +516,4 @@ export const buildDiffPlugin = (
     },
     { decorations: (v: { decorations: DecorationSet }): DecorationSet => v.decorations }
   );
+};

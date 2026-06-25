@@ -279,6 +279,12 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
   const storyRef = React.useRef(story);
   storyRef.current = story;
 
+  // Subscribe to the store's setBaselineState action so we can advance the
+  // baseline after user-initiated scene saves.
+  const setBaselineState = useStoryStore(
+    (s: StoryStoreState): StoryStoreState['setBaselineState'] => s.setBaselineState
+  );
+
   const updateCurrentChapterContent = useCallback(
     (content: string): void => {
       if (!currentChapter) return;
@@ -516,10 +522,16 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
         editingSceneId,
         updates as SceneUpdatePayload
       );
+      const nextScenes = applyScenePatch(scenes, updated as Scene);
       patchScene(updated as Scene);
-      recordSceneHistory('Update scene', applyScenePatch(scenes, updated as Scene));
+      recordSceneHistory('Update scene', nextScenes);
+      // Advance the baseline so the user's own edits are not shown as diffs
+      // when the dialog reopens.  User saves implicitly accept all current
+      // changes.  Use the explicitly computed nextScenes so we don't depend
+      // on a React re-render having refreshed storyRef.current.
+      setBaselineState({ ...storyRef.current, scenes: nextScenes });
     },
-    [editingSceneId, patchScene, recordSceneHistory, scenes]
+    [editingSceneId, patchScene, recordSceneHistory, scenes, setBaselineState]
   );
 
   const handleAssignSceneTimeline = useCallback(
