@@ -195,6 +195,92 @@ function addDeletedDecorations(
   pushTextBuffer();
 }
 
+/**
+ * Maximum gap (equal-text chars) between changed segments that are still
+ * considered part of the same rewrite zone.  Gaps larger than this break
+ * the zone and are rendered as normal unchanged text.
+ */
+const ZONE_GAP_THRESHOLD = 20;
+
+/**
+ * Minimum total changed characters (inserted + deleted) required for a
+ * zone to be rendered as a block replacement instead of word-level inline.
+ */
+const ZONE_MIN_CHANGED = 80;
+
+/**
+ * Merge adjacent diff segments that belong to the same local rewrite
+ * zone into consolidated delete/insert pairs.  A zone is a run of
+ * changed segments separated only by tiny equal gaps (≤ gapThreshold).
+ * Zones with total changed text ≥ minZoneChars are rendered as block
+ * replacements (deleted-old + inserted-new); everything else stays as
+ * word-level inline diff.
+ *
+ * This is a LOCAL decision — a single-scene rewrite inside a long
+ * chapter produces one block-mode zone while the rest of the chapter
+ * renders as normal inline diff.
+ */
+function mergeDiffZones(
+  diffs: import('diff-match-patch').Diff[],
+  gapThreshold: number,
+  minZoneChars: number
+): import('diff-match-patch').Diff[] {
+  const merged: import('diff-match-patch').Diff[] = [];
+  let i = 0;
+
+  while (i < diffs.length) {
+    const [op, text] = diffs[i];
+
+    // Unchanged text — pass through unchanged.
+    if (op === 0) {
+      merged.push([op, text]);
+      i++;
+      continue;
+    }
+
+    // Start of a changed run — scan ahead to find the zone boundary.
+    let zoneDeleted = '';
+    let zoneInserted = '';
+    if (op === -1) zoneDeleted += text;
+    else zoneInserted += text;
+    let j = i + 1;
+
+    while (j < diffs.length) {
+      const [nextOp, nextText] = diffs[j];
+
+      if (nextOp === 0 && nextText.length <= gapThreshold) {
+        // Tiny equal gap — absorb into the zone (will be rendered as
+        // part of the deleted+inserted block).
+        zoneDeleted += nextText;
+        zoneInserted += nextText;
+        j++;
+      } else if (nextOp === -1 || nextOp === 1) {
+        // Adjacent changed segment — extend the zone.
+        if (nextOp === -1) zoneDeleted += nextText;
+        else zoneInserted += nextText;
+        j++;
+      } else {
+        // Large equal gap — end of zone.
+        break;
+      }
+    }
+
+    const totalChanged = zoneDeleted.length + zoneInserted.length;
+    if (totalChanged >= minZoneChars) {
+      // Large enough for block mode — emit as a single delete/insert pair.
+      if (zoneDeleted.length > 0) merged.push([-1, zoneDeleted]);
+      if (zoneInserted.length > 0) merged.push([1, zoneInserted]);
+    } else {
+      // Too small — keep the original segments for word-level inline diff.
+      for (let k = i; k < j; k++) merged.push(diffs[k]);
+    }
+
+    i = j;
+  }
+
+  return merged;
+}
+
 /** Debounce delay before recomputing full diff decorations (ms). */
 const DIFF_DEBOUNCE_MS = 500;
 /** Documents smaller than this threshold are diffed immediately. */
@@ -301,8 +387,14 @@ export const buildDiffPlugin = (
           return decs.length > 0 ? Decoration.set(decs, true) : Decoration.none;
         }
 
-        const diffs = dmp.diff_main(strippedBaseline, currentText);
-        dmp.diff_cleanupSemantic(diffs);
+        const rawDiffs = dmp.diff_main(strippedBaseline, currentText);
+        dmp.diff_cleanupSemantic(rawDiffs);
+
+        // Merge adjacent changed segments into block-mode zones when the
+        // change is locally substantial.  This is a local decision — a
+        // single-scene rewrite inside a long chapter produces one block
+        // zone while the rest of the chapter stays inline.
+        const diffs = mergeDiffZones(rawDiffs, ZONE_GAP_THRESHOLD, ZONE_MIN_CHANGED);
 
         const decs: Range<Decoration>[] = [];
         let pos = 0;

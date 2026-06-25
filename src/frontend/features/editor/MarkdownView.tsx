@@ -23,6 +23,66 @@ configureMarked();
 
 const dmp = new diff_match_patch();
 
+/** Threshold below which diffs render as block replacement instead of word-level inline. */
+const BLOCK_DIFF_SIMILARITY_THRESHOLD = 0.3;
+
+/** Compute similarity ratio (0–1) from a list of diffs. */
+function diffSimilarity(
+  diffs: import('diff-match-patch').Diff[],
+  maxLen: number
+): number {
+  if (maxLen <= 0) return 1;
+  let equalLen = 0;
+  for (const [op, text] of diffs) {
+    if (op === 0) equalLen += text.length;
+  }
+  return equalLen / maxLen;
+}
+
+/**
+ * Decide whether to use block mode (whole-text replacement view) instead of
+ * word-level inline diff.  Block mode is used when:
+ *   – Similarity is very low (< 0.3): texts are substantially different.
+ *   – Similarity is moderate (0.3–0.5) AND the diff is highly fragmented
+ *     (many short alternating equal/changed segments).
+ */
+function shouldUseBlockMode(
+  diffs: import('diff-match-patch').Diff[],
+  maxLen: number
+): boolean {
+  if (maxLen <= 0) return false;
+
+  const similarity = diffSimilarity(diffs, maxLen);
+  if (similarity < BLOCK_DIFF_SIMILARITY_THRESHOLD) return true;
+
+  if (similarity < 0.5) {
+    let equalCount = 0;
+    let totalEqualLen = 0;
+    for (const [op, text] of diffs) {
+      if (op === 0) {
+        equalCount++;
+        totalEqualLen += text.length;
+      }
+    }
+    const avgEqualLen = equalCount > 0 ? totalEqualLen / equalCount : 0;
+    if (avgEqualLen < 20 && diffs.length > 6) {
+      return true;
+    }
+  }
+
+  if (similarity < 0.75) {
+    const changedSegments: number = diffs.filter(
+      (d: import('diff-match-patch').Diff) => d[0] !== 0
+    ).length;
+    const changeRatio = diffs.length > 0 ? changedSegments / diffs.length : 0;
+    if (diffs.length > maxLen / 15 && changeRatio > 0.4) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 // Module-level HTML cache – shared across all MarkdownView instances for the browser
 // session. Eliminates redundant parsing when messages are re-rendered or sessions are
 // switched back to; populated lazily the first time each content string is seen.
@@ -84,6 +144,16 @@ const MarkdownViewComponent: React.FC<MarkdownViewProps> = ({
 
     const diffs = dmp.diff_main(baseline, safeContent);
     dmp.diff_cleanupSemantic(diffs);
+
+    // When texts are very dissimilar or the diff is highly fragmented,
+    // word-level inline diff is noisy.  Show the entire baseline as a
+    // deleted block and the entire new content as an inserted block instead.
+    const maxLen = Math.max(baseline.length, safeContent.length);
+    if (shouldUseBlockMode(diffs, maxLen)) {
+      const oldHtml = parseAndSanitize(baseline);
+      const newHtml = parseAndSanitize(safeContent);
+      return `<div class="diff-block-old">${oldHtml}</div><div class="diff-block-new">${newHtml}</div>`;
+    }
 
     // We need to be careful with HTML injection inside Markdown.
     // We use a custom escaping strategy for the diff segments.
@@ -147,10 +217,23 @@ const MarkdownViewComponent: React.FC<MarkdownViewProps> = ({
   const cleanHtml = hasDiff ? (diffHtml ?? '') : asyncHtml;
 
   // Diff pairs for simple (inline) rendering — computed only when needed.
-  const simpleDiff = useMemo(() => {
+  // Returns either a standard Diff[] or a block-mode marker.
+  const simpleDiff = useMemo<
+    | import('diff-match-patch').Diff[]
+    | { blockMode: true; baseline: string; content: string }
+    | null
+  >(() => {
     if (!simple || !baseline || baseline === safeContent) return null;
     const diffs = dmp.diff_main(baseline, safeContent);
     dmp.diff_cleanupSemantic(diffs);
+
+    // When texts are very dissimilar or the diff is highly fragmented,
+    // word-level inline diff is noisy.  Switch to block mode.
+    const maxLen = Math.max(baseline.length, safeContent.length);
+    if (shouldUseBlockMode(diffs, maxLen)) {
+      return { blockMode: true, baseline, content: safeContent };
+    }
+
     return diffs;
   }, [simple, baseline, safeContent]);
 
@@ -297,19 +380,36 @@ const MarkdownViewComponent: React.FC<MarkdownViewProps> = ({
     });
   };
 
+  const renderSimpleDiff = (): React.ReactNode => {
+    if (!simpleDiff) return null;
+
+    // Block mode: show entire baseline as deleted, entire new content as inserted
+    if ('blockMode' in simpleDiff) {
+      return (
+        <React.Fragment>
+          <div className="diff-block-old">{simpleDiff.baseline}</div>
+          <div className="diff-block-new">{simpleDiff.content}</div>
+        </React.Fragment>
+      );
+    }
+
+    // Word-level inline diff
+    return simpleDiff.map(([op, text]: import('diff-match-patch').Diff, i: number) => {
+      if (op === 0) return <React.Fragment key={i}>{text}</React.Fragment>;
+      if (op === 1)
+        return (
+          <span key={i} className="diff-inserted">
+            {text}
+          </span>
+        );
+      return null; // deletions: not shown
+    });
+  };
+
   return (
     <div className={className} lang={language}>
       {simpleDiff
-        ? simpleDiff.map(([op, text]: import('diff-match-patch').Diff, i: number) => {
-            if (op === 0) return <React.Fragment key={i}>{text}</React.Fragment>;
-            if (op === 1)
-              return (
-                <span key={i} className="diff-inserted">
-                  {text}
-                </span>
-              );
-            return null; // deletions: not shown
-          })
+        ? renderSimpleDiff()
         : safeContent.split('\n').map((line: string, i: number, _all: string[]) => {
             const lineStart = safeContent
               .split('\n')

@@ -25,6 +25,62 @@ import { useScenes } from '../../stores/storyStore';
 import { api } from '../../services/api';
 import { diff_match_patch } from 'diff-match-patch';
 import { normalizeChapterId } from '../scenes/sceneSortUtils';
+
+/** Threshold below which diffs render as block replacement instead of word-level inline. */
+const BLOCK_DIFF_SIMILARITY_THRESHOLD = 0.3;
+
+/** Compute similarity ratio (0–1) from a list of diffs. */
+function diffSimilarity(
+  diffs: import('diff-match-patch').Diff[],
+  maxLen: number
+): number {
+  if (maxLen <= 0) return 1;
+  let equalLen = 0;
+  for (const [op, text] of diffs) {
+    if (op === 0) equalLen += text.length;
+  }
+  return equalLen / maxLen;
+}
+
+/**
+ * Decide whether to use block mode instead of word-level inline diff.
+ */
+function shouldUseBlockMode(
+  diffs: import('diff-match-patch').Diff[],
+  maxLen: number
+): boolean {
+  if (maxLen <= 0) return false;
+
+  const similarity = diffSimilarity(diffs, maxLen);
+  if (similarity < BLOCK_DIFF_SIMILARITY_THRESHOLD) return true;
+
+  if (similarity < 0.5) {
+    let equalCount = 0;
+    let totalEqualLen = 0;
+    for (const [op, text] of diffs) {
+      if (op === 0) {
+        equalCount++;
+        totalEqualLen += text.length;
+      }
+    }
+    const avgEqualLen = equalCount > 0 ? totalEqualLen / equalCount : 0;
+    if (avgEqualLen < 20 && diffs.length > 6) {
+      return true;
+    }
+  }
+
+  if (similarity < 0.75) {
+    const changedSegments: number = diffs.filter(
+      (d: import('diff-match-patch').Diff) => d[0] !== 0
+    ).length;
+    const changeRatio = diffs.length > 0 ? changedSegments / diffs.length : 0;
+    if (diffs.length > maxLen / 15 && changeRatio > 0.4) {
+      return true;
+    }
+  }
+
+  return false;
+}
 import {
   Plus,
   Trash2,
@@ -546,8 +602,21 @@ function ChapterListInner({
         return <Fragment>{summary}</Fragment>;
       }
 
-      const diffs = new diff_match_patch().diff_main(baselineSummary, summary);
-      new diff_match_patch().diff_cleanupSemantic(diffs);
+      const dmpLocal = new diff_match_patch();
+      const diffs = dmpLocal.diff_main(baselineSummary, summary);
+      dmpLocal.diff_cleanupSemantic(diffs);
+
+      // When texts are very dissimilar or the diff is highly fragmented,
+      // word-level inline diff is noisy.  Switch to block mode.
+      const maxLen = Math.max(baselineSummary.length, summary.length);
+      if (shouldUseBlockMode(diffs, maxLen)) {
+        return (
+          <Fragment>
+            <div className="diff-block-old">{baselineSummary}</div>
+            <div className="diff-block-new">{summary}</div>
+          </Fragment>
+        );
+      }
 
       return diffs.map(([op, text]: import('diff-match-patch').Diff, i: number) => {
         if (op === 0) return <Fragment key={i}>{text}</Fragment>;
