@@ -58,6 +58,11 @@ beforeEach(() => {
   projectTypeState.value = 'novel';
   apiMock.chapters.get.mockReset();
   apiMock.chapters.get.mockResolvedValue({ content: '' });
+  // batchLinkProse is asserted precisely (exact returned/reconstructed
+  // content) by some tests; without resetting it here, an unconsumed
+  // `mockResolvedValueOnce` queued by an earlier test can silently leak
+  // into a later, unrelated test's call.
+  apiMock.scenes.batchLinkProse.mockReset();
 });
 
 // ---------------------------------------------------------------------------
@@ -2506,6 +2511,78 @@ describe('handleProseBoundaryChange', () => {
     expect(apiMock.scenes.batchLinkProse).toHaveBeenCalled();
     expect(patchSceneMock).toHaveBeenCalled();
   });
+
+  it('reconstructs chapter content from the just-updated offsets, not a stale pre-drag snapshot', async () => {
+    // Regression: reconstructContentFromOffsets was called with the
+    // `latestScenes` snapshot captured *before* this request (still holding
+    // the pre-drag end_offset), instead of `nextScenes` (patched with the
+    // batchLinkProse response). That made the locally-rebuilt editor content
+    // silently ignore every boundary drag: the markers would always be
+    // rebuilt at their OLD position, so the UI never visually reflected a
+    // successful drag until an unrelated refresh happened to occur.
+    const fullContent = 'AB<!--scene:a:start-->scene_a<!--scene:a:end-->CD';
+    const currentChapter: WritingUnit = {
+      ...CHAPTER,
+      id: '3',
+      content: fullContent,
+    };
+
+    const proseLink = makeProseLink({
+      scope_type: 'chapter',
+      chapter_id: '3',
+      start_offset: 22,
+      end_offset: 29,
+    });
+    const scene = makeScene({ id: 'a', prose_link: proseLink });
+    // Drag the end handle left by 2 raw chars: the backend confirms the
+    // scene now only owns "scene" instead of "scene_a".
+    const result = makeScene({
+      id: 'a',
+      prose_link: { ...proseLink, end_offset: 27 },
+    });
+    apiMock.scenes.batchLinkProse.mockResolvedValueOnce([result]);
+    useScenesMock.mockReturnValue([scene]);
+
+    storyState.chapters = [
+      {
+        id: '3',
+        scope: 'chapter',
+        title: 'Chapter 3',
+        summary: '',
+        content: fullContent,
+      },
+    ];
+
+    const { ref } = makeEditorRefWithBoundary();
+    const cb = await renderWithBoundary([scene], { editorRef: ref, currentChapter });
+
+    await act(async () => {
+      await cb('a', 'end', 7);
+    });
+
+    // With the fix, the rebuilt content moves the end marker to reflect the
+    // shrink: "scene" stays inside, "_a" moves outside the scene markers.
+    // The pre-fix (stale-snapshot) behavior would instead reproduce the
+    // original, unchanged fullContent verbatim.
+    expect(setStoryMock).toHaveBeenCalled();
+    const updater = setStoryMock.mock.calls[setStoryMock.mock.calls.length - 1]?.[0] as
+      | ((prev: typeof storyState) => typeof storyState)
+      | undefined;
+    expect(typeof updater).toBe('function');
+    const prevState = {
+      ...storyState,
+      chapters: storyState.chapters.map(
+        (chapter: (typeof storyState.chapters)[number]) => ({ ...chapter })
+      ),
+    };
+    const nextState = updater!(prevState);
+    const rewrittenChapter = nextState.chapters.find(
+      (chapter: (typeof storyState.chapters)[number]) => chapter.id === '3'
+    );
+    expect(rewrittenChapter?.content).toBe(
+      'AB<!--scene:a:start-->scene<!--scene:a:end-->_aCD'
+    );
+  });
 });
 
 // ============================================================================
@@ -4007,6 +4084,12 @@ describe('scene mutations record history entries', () => {
     const linkA = makeProseLink({ start_offset: 0, end_offset: 8 });
     const sceneA = makeScene({ id: 'a', prose_link: linkA });
     apiMock.scenes.linkProse.mockResolvedValueOnce([
+      makeScene({
+        id: 'a',
+        prose_link: makeProseLink({ start_offset: 0, end_offset: 10 }),
+      }),
+    ]);
+    apiMock.scenes.batchLinkProse.mockResolvedValueOnce([
       makeScene({
         id: 'a',
         prose_link: makeProseLink({ start_offset: 0, end_offset: 10 }),

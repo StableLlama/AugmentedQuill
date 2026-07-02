@@ -46,8 +46,10 @@ import { externalValueSyncAnnotation } from '../editor/codeMirrorDiffPlugin';
 import {
   getSceneMarkerSpanRange,
   hasInlineSceneMarkers,
+  MarkerIntegrityError,
   sceneMarkerTokenLength,
   stripInlineInternalMarkers,
+  validateMarkerIntegrity,
 } from '../editor/internalTags';
 import {
   getLinkedProseFromTextSource,
@@ -1200,16 +1202,31 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
         // Refresh stored chapter/story content so useSceneProseSync
         // recomputes visible ranges with correct marker positions.
         // Build the new content locally from prose_link offsets instead of
-        // relying on the API fetch (which may return stale content).
+        // relying on the API fetch (which may return stale content). Use
+        // `nextScenes` (the just-patched offsets from this response), not
+        // the pre-request `latestScenes` snapshot — reconstructing from
+        // stale offsets would render markers at their pre-drag positions.
         if (link.chapter_id) {
           try {
             const reconstructed = reconstructContentFromOffsets(
-              latestScenes,
+              nextScenes,
               latestChapter,
               link
             );
             if (reconstructed) {
-              updateCurrentChapterContent(reconstructed);
+              // Fail-safe: never apply locally-reconstructed content that
+              // would violate marker integrity (unbalanced or overlapping
+              // scene markers). Fall back to an authoritative API refetch
+              // instead of risking a corrupted/misrendered document.
+              try {
+                validateMarkerIntegrity(reconstructed);
+                updateCurrentChapterContent(reconstructed);
+              } catch (integrityErr) {
+                if (!(integrityErr instanceof MarkerIntegrityError)) throw integrityErr;
+                const ch = await api.chapters.get(Number(link.chapter_id));
+                if (seq !== boundaryDragSeqRef.current) return;
+                updateCurrentChapterContent(ch.content ?? '');
+              }
             } else {
               // Fallback: fetch from API
               const ch = await api.chapters.get(Number(link.chapter_id));

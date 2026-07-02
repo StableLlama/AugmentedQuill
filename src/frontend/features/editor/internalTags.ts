@@ -7,17 +7,52 @@
 
 /**
  * Purpose: Shared inline internal-tag grammar helpers used by editor and scene features.
+ *
+ * ─── Generalized marker-layer model ─────────────────────────────────────────
+ *
+ * Every kind of inline prose marker (scene, annotation, and any future kind)
+ * shares one grammar: `<!--<layer>:<id>:start-->` ... prose ...
+ * `<!--<layer>:<id>:end-->`.  A layer additionally declares whether its spans
+ * are *exclusive*:
+ *   - `scene`      is exclusive     -> any part of the prose belongs to at
+ *                                       most one scene.
+ *   - `annotation`  is non-exclusive -> any part of the prose may belong to
+ *                                       any number of annotations.
+ *
+ * This file is the single, small, encapsulated home for that grammar plus the
+ * only two primitives needed to translate between "full" content (markers
+ * present) and "visible" content (markers stripped): `toVisibleOffset` and
+ * `toOriginalOffset`.  All other modules (scene coordinate mapping, the
+ * annotation CodeMirror plugin, drag utilities, ...) must go through these
+ * functions rather than re-implementing marker-walking arithmetic themselves.
+ * `validateMarkerIntegrity` is the fail-safe gate that rejects corrupted or
+ * ambiguous marker content before it can be used to compute positions.
  */
 
 export type SceneMarkerEdge = 'start' | 'end';
+export type MarkerLayerName = 'scene' | 'annotation';
+
+/** Whether at most one span of a layer may cover any given prose position. */
+export const MARKER_LAYER_EXCLUSIVE: Readonly<Record<MarkerLayerName, boolean>> = {
+  scene: true,
+  annotation: false,
+};
 
 export const INLINE_SCENE_MARKER_REGEX = /<!--scene:[^:>]+:(?:start|end)-->/g;
 export const INLINE_ANNOTATION_MARKER_REGEX = /<!--annotation:[^:>]+:(?:start|end)-->/g;
 export const INLINE_INTERNAL_MARKER_REGEX =
   /<!--(?:scene|annotation):[^:>]+:(?:start|end)-->/g;
 
+/** Matches one internal marker token, capturing its layer, id, and edge. */
+const INTERNAL_MARKER_CAPTURE_REGEX = /<!--(scene|annotation):([^:>]+):(start|end)-->/g;
+
 export function hasInlineSceneMarkers(text: string): boolean {
   return /<!--scene:[^:>]+:(?:start|end)-->/.test(text);
+}
+
+/** True when *text* contains any internal marker of any layer (scene or annotation). */
+export function hasInlineInternalMarkers(text: string): boolean {
+  return /<!--(?:scene|annotation):[^:>]+:(?:start|end)-->/.test(text);
 }
 
 export function sceneMarkerToken(
@@ -34,12 +69,18 @@ export function sceneMarkerTokenLength(
   return sceneMarkerToken(sceneId, edge).length;
 }
 
-export function getSceneMarkerSpanRange(
+/**
+ * Generic marker-span lookup shared by every layer: finds the first
+ * `<!--layer:id:start-->...<!--layer:id:end-->` pair in *sourceText* and
+ * returns the prose range *between* the markers, or `null` when absent.
+ */
+function getMarkerSpanRange(
   sourceText: string,
-  sceneId: string | number
+  layer: MarkerLayerName,
+  markerId: string | number
 ): { from: number; to: number } | null {
-  const startToken = sceneMarkerToken(sceneId, 'start');
-  const endToken = sceneMarkerToken(sceneId, 'end');
+  const startToken = `<!--${layer}:${String(markerId)}:start-->`;
+  const endToken = `<!--${layer}:${String(markerId)}:end-->`;
   const markerStart = sourceText.indexOf(startToken);
   if (markerStart < 0) {
     return null;
@@ -50,6 +91,13 @@ export function getSceneMarkerSpanRange(
     return null;
   }
   return { from: contentStart, to: markerEnd };
+}
+
+export function getSceneMarkerSpanRange(
+  sourceText: string,
+  sceneId: string | number
+): { from: number; to: number } | null {
+  return getMarkerSpanRange(sourceText, 'scene', sceneId);
 }
 
 export function stripInlineInternalMarkers(text: string): string {
@@ -74,18 +122,7 @@ export function getAnnotationMarkerSpanRange(
   sourceText: string,
   annotationId: string
 ): { from: number; to: number } | null {
-  const startToken = annotationMarkerToken(annotationId, 'start');
-  const endToken = annotationMarkerToken(annotationId, 'end');
-  const markerStart = sourceText.indexOf(startToken);
-  if (markerStart < 0) {
-    return null;
-  }
-  const contentStart = markerStart + startToken.length;
-  const markerEnd = sourceText.indexOf(endToken, contentStart);
-  if (markerEnd < contentStart) {
-    return null;
-  }
-  return { from: contentStart, to: markerEnd };
+  return getMarkerSpanRange(sourceText, 'annotation', annotationId);
 }
 
 // ─── Marker transfer ───────────────────────────────────────────────────────
@@ -208,48 +245,173 @@ export function transferInternalMarkers(
   return result;
 }
 
-// ─── Stripped-to-full-content coordinate conversion ──────────────────────────
+// ─── Visible ↔ original coordinate conversion (the single canonical pair) ───
+//
+// The editor's *visible* document is the full raw content with every
+// internal marker token stripped out (see `stripInlineInternalMarkers`).
+// These two functions are the ONLY place in the codebase that convert
+// between visible-space offsets and original (full-content) offsets. They
+// are exact — they walk the real marker tokens in *fullContent* — and must
+// be used instead of any offset arithmetic derived from stored link/scope
+// metadata (which can go stale relative to the live document; see
+// `toVisibleLinkedOffset` in `proseLinkCoordinates.ts`, which delegates here).
 
 /**
- * Convert a stripped-space offset (editor document with markers removed) to
- * a full-content-space offset (raw file with markers present).
- *
- * The editor strips internal markers (``<!--scene:...-->``,
- * ``<!--annotation:...-->``) from the visible document.  Selection offsets
- * from ``getSelection()`` are therefore in stripped space.  When sending
- * offsets to the backend (which expects full-content coordinates), they must
- * be converted via this function.
- *
- * @param fullContent  The raw content string containing all internal markers.
- * @param strippedOffset  Offset in the stripped (marker-free) document.
- * @returns Equivalent offset in the full-content coordinate space, clamped to
- *   the length of *fullContent*.
+ * Convert an offset in the original (full, marker-inclusive) content to the
+ * corresponding offset in the visible (marker-stripped) content.
  */
-export function strippedToFullOffset(
-  fullContent: string,
-  strippedOffset: number
-): number {
-  let fullPos = 0;
-  let strippedPos = 0;
+export function toVisibleOffset(fullContent: string, originalOffset: number): number {
+  if (fullContent.length === 0) return Math.max(0, originalOffset);
 
-  // Walk over each internal marker token and advance the cursor past it.
+  let visibleCount = 0;
+  let lastIndex = 0;
   const regex = new RegExp(INLINE_INTERNAL_MARKER_REGEX.source, 'g');
   let match: RegExpExecArray | null;
   while ((match = regex.exec(fullContent)) !== null) {
-    const proseBeforeLen = match.index - fullPos;
-    if (strippedPos + proseBeforeLen > strippedOffset) {
-      // The target stripped offset falls inside the prose segment before
-      // this marker.
-      return fullPos + (strippedOffset - strippedPos);
+    const gap = match.index - lastIndex;
+    if (lastIndex + gap > originalOffset) {
+      return visibleCount + (originalOffset - lastIndex);
     }
-    strippedPos += proseBeforeLen;
-    fullPos = match.index + match[0].length;
+    visibleCount += gap;
+    if (
+      originalOffset >= match.index &&
+      originalOffset < match.index + match[0].length
+    ) {
+      return visibleCount;
+    }
+    lastIndex = match.index + match[0].length;
+  }
+  return visibleCount + Math.max(0, originalOffset - lastIndex);
+}
+
+/**
+ * Inverse of `toVisibleOffset`: given a visible (post-stripping) offset and
+ * the original full content (with markers), return the corresponding
+ * position in the original content.
+ *
+ * Walks through the full content character by character, skipping marker
+ * tokens, and counts visible characters until `visibleOffset` is reached.
+ * When the visible offset lands exactly at a trailing marker with no more
+ * visible text after it, the position right *before* that marker is
+ * returned (not after) so boundary handles never jump past adjacent markers.
+ */
+export function toOriginalOffset(fullContent: string, visibleOffset: number): number {
+  if (visibleOffset <= 0) return 0;
+  if (fullContent.length === 0) return 0;
+
+  let visibleCount = 0;
+  const markerRe = new RegExp(INLINE_INTERNAL_MARKER_REGEX.source, 'g');
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = markerRe.exec(fullContent)) !== null) {
+    const gap = match.index - lastIndex; // visible chars before this marker
+    if (visibleCount + gap > visibleOffset) {
+      // Target is inside this gap — return position within the gap
+      return lastIndex + (visibleOffset - visibleCount);
+    }
+    if (visibleCount + gap === visibleOffset) {
+      // Visible offset lands exactly at the start of this marker.  Check
+      // whether any non-marker text follows — if not, the offset points to
+      // the end of visible text right before this (trailing) marker.
+      const afterSlice = fullContent.slice(match.index + match[0].length);
+      const hasVisibleAfter =
+        afterSlice.replace(INLINE_INTERNAL_MARKER_REGEX, '').length > 0;
+      if (!hasVisibleAfter) {
+        // No visible text follows → the offset is right before this marker.
+        return match.index;
+      }
+      // Visible text follows → skip the marker and keep counting.
+    }
+    visibleCount += gap;
+    lastIndex = match.index + match[0].length;
   }
 
-  // After all markers: remaining prose (or clamp if strippedOffset exceeds
-  // the stripped content length).
-  return Math.min(
-    fullPos + Math.max(0, strippedOffset - strippedPos),
-    fullContent.length
-  );
+  // After all markers
+  const remaining = visibleOffset - visibleCount;
+  if (remaining >= 0) {
+    return Math.min(lastIndex + remaining, fullContent.length);
+  }
+  return lastIndex;
+}
+
+// ─── Marker integrity (fail-safe gate) ──────────────────────────────────────
+
+/** Thrown by `validateMarkerIntegrity` when *content* is unsafe to use. */
+export class MarkerIntegrityError extends Error {}
+
+/**
+ * Fail-safe gate mirroring the backend's `validate_marker_integrity`: raises
+ * `MarkerIntegrityError` if *content* violates any marker invariant.
+ *
+ * Enforced invariants (apply to every layer, so a future third layer gets
+ * the same guarantees automatically):
+ *   1. Balance — every start marker has exactly one matching end marker (no
+ *      unclosed starts, no orphaned ends, no duplicate opens for one id).
+ *   2. Exclusivity — layers with `MARKER_LAYER_EXCLUSIVE[layer] === true`
+ *      (`scene`) may never have two overlapping spans: any part of the prose
+ *      belongs to at most one scene. Non-exclusive layers (`annotation`) may
+ *      overlap arbitrarily by design.
+ *
+ * This is a client-side pre-flight check: it lets the UI reject a
+ * would-be-corrupting edit (e.g. a boundary drag) immediately, instead of
+ * only discovering the problem after a round trip to the backend (which
+ * enforces the same invariants server-side as the ultimate source of truth).
+ */
+export function validateMarkerIntegrity(content: string): void {
+  const openStarts = new Map<string, { layer: MarkerLayerName; pos: number }>();
+  const spansByLayer: Record<MarkerLayerName, Array<[number, number]>> = {
+    scene: [],
+    annotation: [],
+  };
+
+  const regex = new RegExp(INTERNAL_MARKER_CAPTURE_REGEX.source, 'g');
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(content)) !== null) {
+    const layer = match[1] as MarkerLayerName;
+    const id = match[2];
+    const edge = match[3];
+    const key = `${layer}:${id}`;
+    if (edge === 'start') {
+      if (openStarts.has(key)) {
+        throw new MarkerIntegrityError(
+          `Malformed ${layer} markers: ${layer} ${id} has two unmatched start markers.`
+        );
+      }
+      openStarts.set(key, { layer, pos: match.index + match[0].length });
+    } else {
+      const opened = openStarts.get(key);
+      if (!opened) {
+        throw new MarkerIntegrityError(
+          `Malformed ${layer} markers: orphaned end marker for ${layer} ${id}.`
+        );
+      }
+      openStarts.delete(key);
+      spansByLayer[layer].push([opened.pos, match.index]);
+    }
+  }
+
+  if (openStarts.size > 0) {
+    const unclosed = [...openStarts.keys()].sort().join(', ');
+    throw new MarkerIntegrityError(
+      `Malformed internal markers: unclosed start marker(s) for ${unclosed}.`
+    );
+  }
+
+  for (const layer of Object.keys(spansByLayer) as MarkerLayerName[]) {
+    if (!MARKER_LAYER_EXCLUSIVE[layer]) continue;
+    const ordered = [...spansByLayer[layer]].sort(
+      (a: [number, number], b: [number, number]): number => a[0] - b[0] || a[1] - b[1]
+    );
+    for (let i = 1; i < ordered.length; i++) {
+      const [, previousEnd] = ordered[i - 1];
+      const [currentStart] = ordered[i];
+      if (currentStart < previousEnd) {
+        throw new MarkerIntegrityError(
+          `Overlapping ${layer} spans detected: any part of the prose may ` +
+            `belong to at most one ${layer} (${ordered[i - 1]} overlaps ${ordered[i]}).`
+        );
+      }
+    }
+  }
 }

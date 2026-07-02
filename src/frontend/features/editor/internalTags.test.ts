@@ -9,131 +9,158 @@
  * Purpose: Tests for internal-tag grammar helpers.
  *
  * Covers:
- *   - strippedToFullOffset (stripped -> full-content coordinate conversion)
- *   - Other helpers as needed.
+ *   - toVisibleOffset / toOriginalOffset — the single canonical, exact
+ *     marker-walking coordinate conversion pair (replaces the former
+ *     duplicate `strippedToFullOffset`, which disagreed with
+ *     `proseLinkCoordinates.ts`'s `toOriginalOffset` on trailing-marker
+ *     semantics because nothing called it in production).
+ *   - validateMarkerIntegrity — the fail-safe gate for the generalized
+ *     scene/annotation marker system.
  */
 
 // @vitest-environment jsdom
 
 import { describe, expect, it } from 'vitest';
-import { strippedToFullOffset } from './internalTags';
+import {
+  MarkerIntegrityError,
+  stripInlineInternalMarkers,
+  toOriginalOffset,
+  toVisibleOffset,
+  validateMarkerIntegrity,
+} from './internalTags';
 
-describe('strippedToFullOffset', () => {
+describe('toOriginalOffset', () => {
   it('returns same offset when content has no markers', () => {
     const content = 'Hello World!';
-    expect(strippedToFullOffset(content, 0)).toBe(0);
-    expect(strippedToFullOffset(content, 6)).toBe(6);
-    expect(strippedToFullOffset(content, 11)).toBe(11);
+    expect(toOriginalOffset(content, 0)).toBe(0);
+    expect(toOriginalOffset(content, 6)).toBe(6);
+    expect(toOriginalOffset(content, 11)).toBe(11);
   });
 
-  it('skips scene markers before the stripped offset', () => {
+  it('returns position before a trailing scene end marker, not after it', () => {
+    // Regression: a naive stripped->full walk previously landed AFTER the
+    // trailing marker (content.length) instead of right before it. Landing
+    // after it would place a dragged boundary handle past the marker, into
+    // the next scene's territory.
     const content = '<!--scene:1:start-->Hello<!--scene:1:end-->';
-    // Stripped content: "Hello" (5 chars)
-    // Stripped offset 0 -> after start marker (length of start token)
-    // Stripped offset 5 -> end of stripped content -> end of full content
-    expect(strippedToFullOffset(content, 0)).toBe('<!--scene:1:start-->'.length);
-    expect(strippedToFullOffset(content, 5)).toBe(content.length);
+    const sceneStartLen = '<!--scene:1:start-->'.length;
+    expect(toOriginalOffset(content, 5)).toBe(sceneStartLen + 5);
   });
 
-  it('skips annotation markers before the stripped offset', () => {
+  it('returns position before a trailing annotation end marker, not after it', () => {
     const content = '<!--annotation:ann-1:start-->annotated<!--annotation:ann-1:end-->';
-    // Stripped: "annotated" (9 chars)
-    expect(strippedToFullOffset(content, 0)).toBe(
-      '<!--annotation:ann-1:start-->'.length
-    );
-    // Offset 9 is end of stripped content → end of full content
-    expect(strippedToFullOffset(content, 9)).toBe(content.length);
+    const annStartLen = '<!--annotation:ann-1:start-->'.length;
+    expect(toOriginalOffset(content, 9)).toBe(annStartLen + 9);
   });
 
-  it('skips multiple markers scattered in content', () => {
+  it('returns end of content when real prose follows the last marker', () => {
     const content =
       '<!--scene:1:start-->Hello<!--scene:1:end--> ' +
       '<!--annotation:a1:start-->World<!--annotation:a1:end-->!';
-    // Stripped: "Hello World!" (12 chars)
-    // stripped offset 12 = end of stripped content = end of full content
-    expect(strippedToFullOffset(content, 12)).toBe(content.length);
-  });
-
-  it('handles offset at stripped position 0 with leading markers', () => {
-    const content = '<!--scene:1:start-->Text';
-    expect(strippedToFullOffset(content, 0)).toBe('<!--scene:1:start-->'.length);
-  });
-
-  it('handles offset at stripped end-of-content', () => {
-    const content = '<!--scene:1:start-->Hello<!--scene:1:end-->';
-    const fullLen = content.length;
-    expect(strippedToFullOffset(content, 5)).toBe(fullLen);
+    // Stripped: "Hello World!" (12 chars) — the trailing "!" is real prose
+    // after the last marker, so offset 12 genuinely is end-of-content.
+    expect(toOriginalOffset(content, 12)).toBe(content.length);
   });
 
   it('handles empty content', () => {
-    expect(strippedToFullOffset('', 0)).toBe(0);
+    expect(toOriginalOffset('', 0)).toBe(0);
   });
 
-  it('handles content with only markers and no prose', () => {
+  it('maps to position 0 for marker-only (zero-prose) content', () => {
+    // With no visible prose at all, offset 0 is the only valid visible
+    // offset, and it must map back to position 0 (the start of content),
+    // matching toVisibleOffset's inverse for this same content.
     const content = '<!--scene:1:start--><!--scene:1:end-->';
-    // Stripped is empty. Any stripped offset maps to the end of content.
-    expect(strippedToFullOffset(content, 0)).toBe(content.length);
+    expect(toOriginalOffset(content, 0)).toBe(0);
   });
 
-  it('preserves offset when prose precedes any markers', () => {
-    const content = 'Preamble text<!--scene:1:start-->Body';
-    // Stripped: "Preamble textBody" (17 chars)
-    expect(strippedToFullOffset(content, 0)).toBe(0);
-    expect(strippedToFullOffset(content, 5)).toBe(5);
-    // Stripped offset 13 = character 'B' of 'Body'
-    // In full content: 13 prose chars + 20 marker chars → position 33
-    expect(strippedToFullOffset(content, 13)).toBe(13 + '<!--scene:1:start-->'.length);
-    // Stripped offset 17 = end of stripped content = end of full content
-    expect(strippedToFullOffset(content, 17)).toBe(content.length);
-  });
-
-  it('converts correctly with mixed scene and annotation markers', () => {
+  it('round-trips through toVisibleOffset for every visible position', () => {
     const content =
       '<!--scene:1:start-->' +
       'Hello <!--annotation:a1:start-->World<!--annotation:a1:end-->' +
       '<!--scene:1:end-->';
-    // Stripped: "Hello World" (11 chars)
-    // stripped offset 0 = after scene:1:start
-    const sceneStartLen = '<!--scene:1:start-->'.length;
-    expect(strippedToFullOffset(content, 0)).toBe(sceneStartLen);
+    const stripped = stripInlineInternalMarkers(content);
+    for (let v = 0; v <= stripped.length; v++) {
+      const original = toOriginalOffset(content, v);
+      expect(toVisibleOffset(content, original), `visible ${v}`).toBe(v);
+    }
+  });
+});
 
-    // stripped offset 6 = 'W' of 'World'
-    // After scene:1:start (20) + "Hello " (6) + annotation:a1:start (26) = 52
-    const annStartLen = '<!--annotation:a1:start-->'.length;
-    expect(strippedToFullOffset(content, 6)).toBe(sceneStartLen + 6 + annStartLen);
-
-    // stripped offset 11 (end of stripped content) = end of full content
-    expect(strippedToFullOffset(content, 11)).toBe(content.length);
+describe('toVisibleOffset', () => {
+  it('returns same offset when content has no markers', () => {
+    const content = 'Hello World!';
+    expect(toVisibleOffset(content, 0)).toBe(0);
+    expect(toVisibleOffset(content, 6)).toBe(6);
   });
 
-  it('converts correctly for real-world scene-marked prose', () => {
-    // Simulates: a chapter file with two scene markers and prose in between.
-    // The editor strips markers, user selects "jasmine".
+  it('skips scene and annotation markers before the offset', () => {
     const content =
-      '<!--scene:1:start-->The scent of jasmine filled the air' +
-      '<!--scene:1:end-->' +
-      '<!--scene:2:start-->She walked through the garden' +
+      '<!--scene:1:start-->The scent of jasmine filled the air<!--scene:1:end-->' +
+      '<!--scene:2:start-->She walked through the garden<!--scene:2:end-->';
+    const scene1StartLen = '<!--scene:1:start-->'.length;
+    // "jasmine" starts 14 prose chars into scene 1.
+    expect(toVisibleOffset(content, scene1StartLen + 14)).toBe(14);
+  });
+
+  it('returns identity when fullContent is empty', () => {
+    expect(toVisibleOffset('', 5)).toBe(5);
+  });
+});
+
+describe('validateMarkerIntegrity', () => {
+  it('accepts well-formed scene and annotation markers together', () => {
+    const content =
+      '<!--scene:1:start-->Hello <!--annotation:a1:start-->World' +
+      '<!--annotation:a1:end--><!--scene:1:end-->';
+    expect(() => validateMarkerIntegrity(content)).not.toThrow();
+  });
+
+  it('accepts any number of overlapping annotations (non-exclusive layer)', () => {
+    const content =
+      '<!--annotation:a1:start-->Hello ' +
+      '<!--annotation:a2:start-->World<!--annotation:a1:end-->' +
+      '<!--annotation:a2:end-->';
+    expect(() => validateMarkerIntegrity(content)).not.toThrow();
+  });
+
+  it('accepts an annotation that straddles a scene boundary', () => {
+    const content =
+      '<!--scene:1:start-->' +
+      '<!--annotation:a1:start-->Hello <!--scene:1:end-->' +
+      '<!--scene:2:start-->World<!--annotation:a1:end-->' +
       '<!--scene:2:end-->';
-    // Stripped: "The scent of jasmine filled the airShe walked through the garden"
-    // "jasmine" is at stripped positions 14-20
+    expect(() => validateMarkerIntegrity(content)).not.toThrow();
+  });
 
-    const scene1StartLen = '<!--scene:1:start-->'.length; // 20
-    const scene1EndLen = '<!--scene:1:end-->'.length; // 18
-    const scene2StartLen = '<!--scene:2:start-->'.length; // 20
+  it('rejects two overlapping scene spans (exclusive layer)', () => {
+    // scene:2 opens before scene:1 closes -> overlapping scene ownership.
+    const content =
+      '<!--scene:1:start-->Alpha<!--scene:2:start-->Bravo' +
+      '<!--scene:1:end-->Charlie<!--scene:2:end-->';
+    expect(() => validateMarkerIntegrity(content)).toThrow(MarkerIntegrityError);
+  });
 
-    // stripped 14 = 'j' (14 chars after stripping scene1 start)
-    // full: scene1Start (20) + 14 = 34
-    expect(strippedToFullOffset(content, 14)).toBe(scene1StartLen + 14);
+  it('rejects an unclosed scene start marker', () => {
+    const content = '<!--scene:1:start-->Hello';
+    expect(() => validateMarkerIntegrity(content)).toThrow(MarkerIntegrityError);
+  });
 
-    // stripped 21 = 'a' of "air" (end of "jasmine" + 1)
-    // full: scene1Start (20) + 21 = 41
-    expect(strippedToFullOffset(content, 21)).toBe(scene1StartLen + 21);
+  it('rejects an orphaned scene end marker', () => {
+    const content = 'Hello<!--scene:1:end-->';
+    expect(() => validateMarkerIntegrity(content)).toThrow(MarkerIntegrityError);
+  });
 
-    // stripped 37 = 'S' of "She" (after scene1 prose + scene1:end + scene2:start)
-    // The first prose segment ends at position 37 in stripped space.
-    // Full: scene1Start (20) + 37 + scene1End (18) + scene2Start (20) = 95
-    expect(strippedToFullOffset(content, 37)).toBe(
-      scene1StartLen + 37 + scene1EndLen + scene2StartLen
-    );
+  it('rejects two unmatched start markers for the same scene id', () => {
+    const content = '<!--scene:1:start--><!--scene:1:start-->Hello<!--scene:1:end-->';
+    expect(() => validateMarkerIntegrity(content)).toThrow(MarkerIntegrityError);
+  });
+
+  it('allows two scenes that only touch at a shared boundary', () => {
+    // Adjacent, non-overlapping scenes (end of one = start of next) are fine.
+    const content =
+      '<!--scene:1:start-->Alpha<!--scene:1:end-->' +
+      '<!--scene:2:start-->Bravo<!--scene:2:end-->';
+    expect(() => validateMarkerIntegrity(content)).not.toThrow();
   });
 });

@@ -40,10 +40,7 @@ import {
 import { useAnnotations } from '../annotations/useAnnotations';
 import { AnnotationSidebar } from '../annotations/AnnotationSidebar';
 import { AnnotationDialog } from '../annotations/AnnotationDialog';
-import {
-  getAnnotationMarkerSpanRange,
-  strippedToFullOffset,
-} from '../editor/internalTags';
+import { getAnnotationMarkerSpanRange, toOriginalOffset } from '../editor/internalTags';
 import {
   annotationsToRanges,
   adjustAnnotationRangesForStrippedMarkers,
@@ -421,8 +418,8 @@ export const AppMainLayout: React.FC<AppMainLayoutProps> = React.memo(
         // from the visible document, so getSelection() returns stripped
         // positions that must be mapped back to the raw file coordinates.
         const fullContent = currentChapter.content ?? '';
-        const fromFull = strippedToFullOffset(fullContent, pendingSelection.from);
-        const toFull = strippedToFullOffset(fullContent, pendingSelection.to);
+        const fromFull = toOriginalOffset(fullContent, pendingSelection.from);
+        const toFull = toOriginalOffset(fullContent, pendingSelection.to);
 
         const created = await createAnnotation({
           ...annotationScope,

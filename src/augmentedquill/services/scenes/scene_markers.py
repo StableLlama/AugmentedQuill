@@ -20,12 +20,59 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from typing import Callable
 
-_MARKER_RE = re.compile(r"<!--scene:(\d+):(start|end)-->")
-_ANNOTATION_MARKER_RE = re.compile(r"<!--annotation:([^:>]+):(start|end)-->")
-_INTERNAL_MARKER_RE = re.compile(
-    r"<!--(?:scene:(\d+)|annotation:([^:>]+)):(start|end)-->"
+# ─── Generalized marker-layer engine ────────────────────────────────────────
+#
+# Every kind of inline prose marker (scene, annotation, and any future kind)
+# shares one grammar:
+#
+#     <!--<layer>:<id>:start--> ... prose ... <!--<layer>:<id>:end-->
+#
+# A layer additionally declares whether its spans are *exclusive*:
+#   - ``scene``      is exclusive      -> any part of the prose belongs to at
+#                                          most one scene.
+#   - ``annotation``  is non-exclusive -> any part of the prose may belong to
+#                                          any number of annotations.
+#
+# `validate_marker_integrity()` is the single fail-safe choke point that
+# enforces these invariants for every registered layer at once, and
+# `inject_markers()` / `inject_annotation_markers()` call it on every result
+# before returning -- so no caller anywhere in the codebase can make marker
+# mutations reach disk in a corrupted or ambiguous state.  Introducing a new
+# marker kind in the future only requires adding one `MarkerLayer` entry to
+# `MARKER_LAYERS` plus thin public wrappers; the safety guarantees below are
+# inherited automatically.
+
+
+@dataclass(frozen=True)
+class MarkerLayer:
+    """Describes one inline-marker namespace (e.g. ``scene`` or ``annotation``)."""
+
+    name: str
+    id_pattern: str
+    exclusive: bool
+    parse_id: Callable[[str], object]
+
+
+SCENE_LAYER = MarkerLayer(name="scene", id_pattern=r"\d+", exclusive=True, parse_id=int)
+ANNOTATION_LAYER = MarkerLayer(
+    name="annotation", id_pattern=r"[^:>]+", exclusive=False, parse_id=str
 )
+
+# Every marker layer known to the system.  Order matters only for error
+# reporting determinism.
+MARKER_LAYERS: tuple[MarkerLayer, ...] = (SCENE_LAYER, ANNOTATION_LAYER)
+
+
+@dataclass(frozen=True)
+class MarkerSpan:
+    """Generic prose extent for one marker instance of any layer."""
+
+    layer: str
+    marker_id: object
+    start: int
+    end: int
 
 
 @dataclass(frozen=True)
@@ -54,58 +101,209 @@ class AnnotationSpan:
     end: int
 
 
+def _layer_marker_re(layer: MarkerLayer) -> re.Pattern[str]:
+    return re.compile(rf"<!--{layer.name}:({layer.id_pattern}):(start|end)-->")
+
+
+_MARKER_RE = _layer_marker_re(SCENE_LAYER)
+_ANNOTATION_MARKER_RE = _layer_marker_re(ANNOTATION_LAYER)
+_INTERNAL_MARKER_RE = re.compile(
+    r"<!--(?:scene:(\d+)|annotation:([^:>]+)):(start|end)-->"
+)
+
+
+def _marker_token(layer: MarkerLayer, marker_id: object, edge: str) -> str:
+    return f"<!--{layer.name}:{marker_id}:{edge}-->"
+
+
+def _parse_layer_spans(content: str, layer: MarkerLayer) -> list[MarkerSpan]:
+    """Return all spans for *layer* parsed from *content*, sorted by start.
+
+    This permissive parse silently ignores unclosed start markers and
+    orphaned end markers -- it is meant for read paths that must keep working
+    against whatever spans *are* well-formed.  Callers that mutate content
+    must instead go through :func:`inject_markers` /
+    :func:`inject_annotation_markers`, which reject malformed results via
+    :func:`validate_marker_integrity` before ever returning them.
+    """
+    open_starts: dict[str, int] = {}
+    spans: list[MarkerSpan] = []
+    for match in _layer_marker_re(layer).finditer(content):
+        raw_id = match.group(1)
+        kind = match.group(2)
+        if kind == "start":
+            open_starts[raw_id] = match.end()
+        elif kind == "end" and raw_id in open_starts:
+            spans.append(
+                MarkerSpan(
+                    layer=layer.name,
+                    marker_id=layer.parse_id(raw_id),
+                    start=open_starts.pop(raw_id),
+                    end=match.start(),
+                )
+            )
+    return sorted(spans, key=lambda s: s.start)
+
+
+def _inject_layer_spans(
+    content: str,
+    layer: MarkerLayer,
+    assignments: list[tuple[object, int, int]],
+) -> str:
+    """Insert *layer* markers into *content* for each ``(id, start, end)``.
+
+    ``start``/``end`` are offsets in the original *content*.  Assignments
+    must not overlap each other; overlap raises ``ValueError`` immediately.
+    Overlap with markers already present in *content* (from a different,
+    unrelated span) is caught by the caller via :func:`validate_marker_integrity`.
+    """
+    sorted_assignments = sorted(assignments, key=lambda a: a[1])
+    parts: list[str] = []
+    cursor = 0
+    for marker_id, start, end in sorted_assignments:
+        if start < cursor:
+            raise ValueError(
+                f"Overlapping {layer.name} assignments: {layer.name} {marker_id} "
+                f"starts at {start} but cursor is already at {cursor}."
+            )
+        parts.append(content[cursor:start])
+        parts.append(_marker_token(layer, marker_id, "start"))
+        parts.append(content[start:end])
+        parts.append(_marker_token(layer, marker_id, "end"))
+        cursor = end
+    parts.append(content[cursor:])
+    return "".join(parts)
+
+
+def _remove_layer_markers(
+    content: str,
+    layer: MarkerLayer,
+    ids: set[object] | None = None,
+) -> str:
+    if ids is None:
+        return _layer_marker_re(layer).sub("", content)
+    if not ids:
+        return content
+    ids_pattern = "|".join(
+        re.escape(str(marker_id)) for marker_id in sorted(map(str, ids))
+    )
+    pattern = re.compile(rf"<!--{layer.name}:(?:{ids_pattern}):(?:start|end)-->")
+    return pattern.sub("", content)
+
+
+def _layer_block_bounds(
+    content: str, layer: MarkerLayer, marker_id: object
+) -> tuple[int, int] | None:
+    for span in _parse_layer_spans(content, layer):
+        if span.marker_id != marker_id:
+            continue
+        start_token = _marker_token(layer, marker_id, "start")
+        end_token = _marker_token(layer, marker_id, "end")
+        start_index = content.rfind(start_token, 0, span.start)
+        if start_index < 0:
+            return None
+        end_index = content.find(end_token, span.end)
+        if end_index < 0:
+            return None
+        return start_index, end_index + len(end_token)
+    return None
+
+
+def validate_marker_integrity(content: str) -> None:
+    """Fail-safe gate: raise ``ValueError`` if *content* violates any marker
+    invariant.
+
+    This is the single choke point that guarantees the two independent
+    marker layers can never corrupt the prose or each other, and that any
+    future layer added to :data:`MARKER_LAYERS` gets the same guarantees for
+    free.  Enforced invariants:
+
+    1. Token shape -- every marker-like ``<!--...-->`` fragment is a
+       syntactically complete, canonical token (delegates to
+       :func:`validate_internal_marker_tokens`).
+    2. Balance -- every start marker has exactly one matching end marker; no
+       unclosed starts, no orphaned ends, no duplicate opens for the same id.
+    3. Exclusivity -- for layers with ``exclusive=True`` (``scene``), no two
+       spans of that layer may overlap: any part of the prose belongs to at
+       most one scene.  Non-exclusive layers (``annotation``) may overlap
+       arbitrarily by design.
+
+    :func:`inject_markers` and :func:`inject_annotation_markers` call this on
+    every result before returning it, so callers only ever need to invoke
+    those functions to get an integrity guarantee -- no call site elsewhere
+    in the codebase needs to remember to validate anything itself.
+    """
+    validate_internal_marker_tokens(content)
+
+    for layer in MARKER_LAYERS:
+        pattern = _layer_marker_re(layer)
+        open_starts: dict[str, int] = {}
+        spans: list[tuple[int, int]] = []
+        for match in pattern.finditer(content):
+            raw_id = match.group(1)
+            kind = match.group(2)
+            if kind == "start":
+                if raw_id in open_starts:
+                    raise ValueError(
+                        f"Malformed {layer.name} markers: {layer.name} "
+                        f"{raw_id!r} has two unmatched start markers."
+                    )
+                open_starts[raw_id] = match.end()
+            else:
+                start = open_starts.pop(raw_id, None)
+                if start is None:
+                    raise ValueError(
+                        f"Malformed {layer.name} markers: orphaned end marker "
+                        f"for {layer.name} {raw_id!r}."
+                    )
+                spans.append((start, match.start()))
+
+        if open_starts:
+            unclosed = ", ".join(repr(k) for k in sorted(open_starts))
+            raise ValueError(
+                f"Malformed {layer.name} markers: unclosed start marker(s) for "
+                f"{layer.name} {unclosed}."
+            )
+
+        if layer.exclusive:
+            ordered = sorted(spans)
+            for previous, current in zip(ordered, ordered[1:]):
+                if current[0] < previous[1]:
+                    raise ValueError(
+                        f"Overlapping {layer.name} spans detected: any part of "
+                        f"the prose may belong to at most one {layer.name} "
+                        f"({previous} overlaps {current})."
+                    )
+
+
 def parse_scene_spans(content: str) -> list[SceneSpan]:
     """Return all scene spans parsed from *content*, sorted by start offset.
 
     Unclosed start markers (no matching end) and orphaned end markers are
     silently ignored.
     """
-    open_starts: dict[int, int] = {}
-    spans: list[SceneSpan] = []
-    for match in _MARKER_RE.finditer(content):
-        scene_id = int(match.group(1))
-        kind = match.group(2)
-        if kind == "start":
-            open_starts[scene_id] = match.end()
-        elif kind == "end" and scene_id in open_starts:
-            spans.append(
-                SceneSpan(
-                    scene_id=scene_id,
-                    start=open_starts.pop(scene_id),
-                    end=match.start(),
-                )
-            )
-    return sorted(spans, key=lambda s: s.start)
+    return [
+        SceneSpan(scene_id=span.marker_id, start=span.start, end=span.end)  # type: ignore[arg-type]
+        for span in _parse_layer_spans(content, SCENE_LAYER)
+    ]
 
 
 def parse_annotation_spans(content: str) -> list[AnnotationSpan]:
     """Return all annotation spans parsed from *content*, sorted by start."""
-    open_starts: dict[str, int] = {}
-    spans: list[AnnotationSpan] = []
-    for match in _ANNOTATION_MARKER_RE.finditer(content):
-        annotation_id = match.group(1)
-        kind = match.group(2)
-        if kind == "start":
-            open_starts[annotation_id] = match.end()
-        elif kind == "end" and annotation_id in open_starts:
-            spans.append(
-                AnnotationSpan(
-                    annotation_id=annotation_id,
-                    start=open_starts.pop(annotation_id),
-                    end=match.start(),
-                )
-            )
-    return sorted(spans, key=lambda s: s.start)
+    return [
+        AnnotationSpan(annotation_id=span.marker_id, start=span.start, end=span.end)  # type: ignore[arg-type]
+        for span in _parse_layer_spans(content, ANNOTATION_LAYER)
+    ]
 
 
 def scene_marker_token(scene_id: int, edge: str) -> str:
     """Return canonical scene marker token for *scene_id* and *edge*."""
-    return f"<!--scene:{scene_id}:{edge}-->"
+    return _marker_token(SCENE_LAYER, scene_id, edge)
 
 
 def annotation_marker_token(annotation_id: str, edge: str) -> str:
     """Return canonical annotation marker token for *annotation_id* and *edge*."""
-    return f"<!--annotation:{annotation_id}:{edge}-->"
+    return _marker_token(ANNOTATION_LAYER, annotation_id, edge)
 
 
 def find_scene_marker_span(content: str, scene_id: int) -> SceneSpan | None:
@@ -123,38 +321,12 @@ def scene_block_bounds(content: str, scene_id: int) -> tuple[int, int] | None:
     points at the first character of ``<!--scene:N:start-->`` and
     ``block_end`` points after the final character of ``<!--scene:N:end-->``.
     """
-    span = find_scene_marker_span(content, scene_id)
-    if span is None:
-        return None
-
-    start_token = scene_marker_token(scene_id, "start")
-    end_token = scene_marker_token(scene_id, "end")
-
-    start_index = content.rfind(start_token, 0, span.start)
-    if start_index < 0:
-        return None
-    end_index = content.find(end_token, span.end)
-    if end_index < 0:
-        return None
-
-    return start_index, end_index + len(end_token)
+    return _layer_block_bounds(content, SCENE_LAYER, scene_id)
 
 
 def annotation_block_bounds(content: str, annotation_id: str) -> tuple[int, int] | None:
     """Return marker-inclusive block bounds for *annotation_id*."""
-    for span in parse_annotation_spans(content):
-        if span.annotation_id != annotation_id:
-            continue
-        start_token = annotation_marker_token(annotation_id, "start")
-        end_token = annotation_marker_token(annotation_id, "end")
-        start_index = content.rfind(start_token, 0, span.start)
-        if start_index < 0:
-            return None
-        end_index = content.find(end_token, span.end)
-        if end_index < 0:
-            return None
-        return start_index, end_index + len(end_token)
-    return None
+    return _layer_block_bounds(content, ANNOTATION_LAYER, annotation_id)
 
 
 def inject_annotation_markers(
@@ -164,24 +336,17 @@ def inject_annotation_markers(
     """Insert annotation markers into *content*.
 
     The semantics mirror :func:`inject_markers`, but use string annotation IDs
-    instead of integer scene IDs.
+    instead of integer scene IDs, and annotations are non-exclusive: they may
+    overlap each other and may straddle scene boundaries.
+
+    Raises ``ValueError`` (via :func:`validate_marker_integrity`) instead of
+    ever returning corrupted marker content.
     """
-    sorted_assignments = sorted(assignments, key=lambda a: a[1])
-    parts: list[str] = []
-    cursor = 0
-    for annotation_id, start, end in sorted_assignments:
-        if start < cursor:
-            raise ValueError(
-                f"Overlapping annotation assignments: annotation {annotation_id} "
-                f"starts at {start} but cursor is already at {cursor}."
-            )
-        parts.append(content[cursor:start])
-        parts.append(annotation_marker_token(annotation_id, "start"))
-        parts.append(content[start:end])
-        parts.append(annotation_marker_token(annotation_id, "end"))
-        cursor = end
-    parts.append(content[cursor:])
-    return "".join(parts)
+    result = _inject_layer_spans(
+        content, ANNOTATION_LAYER, list(assignments)  # type: ignore[arg-type]
+    )
+    validate_marker_integrity(result)
+    return result
 
 
 def remove_annotation_markers(
@@ -189,15 +354,7 @@ def remove_annotation_markers(
     annotation_ids: set[str] | None = None,
 ) -> str:
     """Strip annotation markers from *content*."""
-    if annotation_ids is None:
-        return _ANNOTATION_MARKER_RE.sub("", content)
-    if not annotation_ids:
-        return content
-    ids_pattern = "|".join(
-        re.escape(annotation_id) for annotation_id in sorted(annotation_ids)
-    )
-    pattern = re.compile(rf"<!--annotation:(?:{ids_pattern}):(?:start|end)-->")
-    return pattern.sub("", content)
+    return _remove_layer_markers(content, ANNOTATION_LAYER, annotation_ids)  # type: ignore[arg-type]
 
 
 def inject_markers(
@@ -208,27 +365,19 @@ def inject_markers(
 
     *assignments* is a list of ``(scene_id, start, end)`` tuples where
     ``start`` and ``end`` are character offsets in the *original* content
-    (without any markers being inserted).  Assignments must not overlap;
-    passing overlapping ranges raises ``ValueError``.
+    (without any markers being inserted).  Assignments must not overlap each
+    other; passing overlapping ranges raises ``ValueError``.
 
-    Returns the modified content string with all markers embedded.
+    The result is additionally required to satisfy scene exclusivity against
+    *any* scene markers already present in *content* (not just the new
+    assignments) and to keep every marker (scene and annotation) balanced and
+    well-formed -- see :func:`validate_marker_integrity`.  This makes the
+    function fail-closed: it either returns content that is guaranteed safe
+    to persist, or raises ``ValueError`` and returns nothing.
     """
-    sorted_assignments = sorted(assignments, key=lambda a: a[1])
-    parts: list[str] = []
-    cursor = 0
-    for scene_id, start, end in sorted_assignments:
-        if start < cursor:
-            raise ValueError(
-                f"Overlapping scene assignments: scene {scene_id} "
-                f"starts at {start} but cursor is already at {cursor}."
-            )
-        parts.append(content[cursor:start])
-        parts.append(f"<!--scene:{scene_id}:start-->")
-        parts.append(content[start:end])
-        parts.append(f"<!--scene:{scene_id}:end-->")
-        cursor = end
-    parts.append(content[cursor:])
-    return "".join(parts)
+    result = _inject_layer_spans(content, SCENE_LAYER, list(assignments))  # type: ignore[arg-type]
+    validate_marker_integrity(result)
+    return result
 
 
 def remove_markers(
@@ -240,13 +389,7 @@ def remove_markers(
     If *scene_ids* is ``None``, all scene markers are removed; otherwise only
     markers for the specified scene IDs are removed.
     """
-    if scene_ids is None:
-        return _MARKER_RE.sub("", content)
-    if not scene_ids:
-        return content
-    ids_pattern = "|".join(re.escape(str(sid)) for sid in sorted(scene_ids))
-    pattern = re.compile(rf"<!--scene:(?:{ids_pattern}):(?:start|end)-->")
-    return pattern.sub("", content)
+    return _remove_layer_markers(content, SCENE_LAYER, scene_ids)  # type: ignore[arg-type]
 
 
 def remap_offset_after_marker_removal(

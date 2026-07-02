@@ -5,6 +5,12 @@ export default defineConfig({
   timeout: 30000,
   retries: 1,
   outputDir: './tests/e2e/.test-artifacts',
+  webServer: {
+    command: 'npm run test:e2e:fixture',
+    url: 'http://127.0.0.1:5199',
+    reuseExistingServer: !process.env.CI,
+    timeout: 30000,
+  },
   use: {
     headless: true,
     viewport: { width: 1280, height: 720 },

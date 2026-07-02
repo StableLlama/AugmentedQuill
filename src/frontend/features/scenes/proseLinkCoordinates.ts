@@ -7,16 +7,25 @@
 
 /**
  * Purpose: Canonical scene prose-link coordinate mapping for visible editor ranges.
+ *
+ * All original-content ↔ visible-content offset conversion here delegates to
+ * the exact, marker-walking primitives in `../editor/internalTags`
+ * (`toVisibleOffset` / `toOriginalOffset`). There is intentionally no
+ * separate approximate/heuristic offset math in this file: whenever the raw
+ * content with markers is available, the exact walk is used; stale
+ * `prose_link` offsets can never cause a different (wrong) answer than the
+ * live document.
  */
 
 import type { Scene, SceneId, SceneProseLink } from '../../types';
 import type { WritingUnit } from '../../types/domain';
 import {
   getSceneMarkerSpanRange,
+  hasInlineInternalMarkers,
   hasInlineSceneMarkers,
   sceneMarkerTokenLength,
-  INLINE_INTERNAL_MARKER_REGEX,
-  INLINE_ANNOTATION_MARKER_REGEX,
+  toOriginalOffset as toOriginalOffsetCore,
+  toVisibleOffset,
 } from '../editor/internalTags';
 import { normalizeChapterId } from './sceneSortUtils';
 
@@ -60,6 +69,27 @@ function shouldAdjustOffsets(unit: WritingUnit, scenes: readonly Scene[]): boole
   );
 }
 
+/**
+ * Convert an original-content offset to the visible-content offset.
+ *
+ * `unit`/`scenes` are only used (via `shouldAdjustOffsets`) to decide whether
+ * an adjustment is needed at all when `loose` is false. The conversion
+ * itself picks exactly one of two unambiguous methods, based on what
+ * *actually* describes the offset's coordinate space — never a blended
+ * "approximation":
+ *
+ *   1. `fullContent` contains real internal markers -> it is the live,
+ *      authoritative source of truth, so the offset is converted with the
+ *      exact marker walk (`toVisibleOffset`). This is what prevents drift
+ *      when a scene's stored `prose_link` offsets go stale relative to the
+ *      live document (e.g. after the user edits text between markers).
+ *   2. `fullContent` has no markers (already-stripped representation, or
+ *      unavailable) -> the only remaining information is each scene's own
+ *      marker-inclusive `prose_link` boundaries, so the (fixed, known)
+ *      marker token lengths are subtracted for every scene whose boundary
+ *      lies at-or-before `offset`. This is exact for that representation,
+ *      not an approximation — there is nothing else to walk.
+ */
 export function toVisibleLinkedOffset(
   offset: number,
   unit: WritingUnit,
@@ -71,124 +101,35 @@ export function toVisibleLinkedOffset(
     return offset;
   }
 
-  // Hybrid approach immune to stale scene marker positions in fullContent:
-  // 1. Count annotation markers from fullContent (always correct positions)
-  // 2. Subtract scene marker lengths using prose_link offsets (always current)
-  // Falls back to fullContent walking when no scene data is available.
-
-  // Check if we have scene data for the approximation
-  const hasSceneData = scenes.some((s: Scene) => {
-    const link = s.prose_link;
-    return link != null && linkMatchesUnit(link, unit);
-  });
-
-  if (hasSceneData) {
-    // Step 1: Count annotation markers from fullContent
-    let annotationRemoved = 0;
-    if (fullContent !== undefined && fullContent.length > 0) {
-      const annRegex = new RegExp(INLINE_ANNOTATION_MARKER_REGEX.source, 'g');
-      let match: RegExpExecArray | null;
-      while ((match = annRegex.exec(fullContent)) !== null) {
-        if (match.index + match[0].length <= offset) {
-          annotationRemoved += match[0].length;
-        } else if (match.index < offset) {
-          annotationRemoved += offset - match.index;
-          break;
-        } else {
-          break;
-        }
-      }
-    }
-
-    // Step 2: Subtract scene marker lengths using prose_link offsets
-    let sceneRemoved = 0;
-    for (const scene of scenes) {
-      const link = scene.prose_link;
-      if (!link || !linkMatchesUnit(link, unit)) {
-        continue;
-      }
-      if (link.start_offset <= offset) {
-        sceneRemoved += sceneMarkerTokenLength(scene.id, 'start');
-      }
-      if (link.end_offset != null && link.end_offset < offset) {
-        sceneRemoved += sceneMarkerTokenLength(scene.id, 'end');
-      }
-    }
-
-    return Math.max(0, offset - annotationRemoved - sceneRemoved);
+  if (fullContent !== undefined && hasInlineInternalMarkers(fullContent)) {
+    return toVisibleOffset(fullContent, offset);
   }
 
-  // Fallback: fullContent walking for ALL markers (scene + annotation).
-  // Used when no scene prose_link data is available (e.g. in tests or
-  // when the scenes array is empty).
-  if (fullContent !== undefined && fullContent.length > 0) {
-    let visibleCount = 0;
-    let lastIndex = 0;
-    const regex = new RegExp(INLINE_INTERNAL_MARKER_REGEX.source, 'g');
-    let match: RegExpExecArray | null;
-    while ((match = regex.exec(fullContent)) !== null) {
-      const gap = match.index - lastIndex;
-      if (lastIndex + gap > offset) {
-        return visibleCount + (offset - lastIndex);
-      }
-      visibleCount += gap;
-      if (offset >= match.index && offset < match.index + match[0].length) {
-        return visibleCount;
-      }
-      lastIndex = match.index + match[0].length;
+  let removed = 0;
+  for (const scene of scenes) {
+    const link = scene.prose_link;
+    if (!link || !linkMatchesUnit(link, unit)) {
+      continue;
     }
-    return visibleCount + Math.max(0, offset - lastIndex);
+    if (link.start_offset <= offset) {
+      removed += sceneMarkerTokenLength(scene.id, 'start');
+    }
+    if (link.end_offset != null && link.end_offset < offset) {
+      removed += sceneMarkerTokenLength(scene.id, 'end');
+    }
   }
-
-  return offset;
+  return Math.max(0, offset - removed);
 }
 
 /**
  * Inverse of `toVisibleLinkedOffset`: given a visible (post-stripping) offset
  * and the original full content (with markers), return the corresponding
- * position in the original content.
- *
- * Walks through the full content character by character, skipping marker
- * tokens, and counts visible characters until `visibleOffset` is reached.
+ * position in the original content.  Thin re-export (with the historical
+ * argument order used across this codebase) of the canonical exact
+ * implementation in `internalTags.ts`.
  */
 export function toOriginalOffset(visibleOffset: number, fullContent: string): number {
-  if (visibleOffset <= 0) return 0;
-  if (fullContent.length === 0) return 0;
-
-  let visibleCount = 0;
-  const markerRe = new RegExp(INLINE_INTERNAL_MARKER_REGEX.source, 'g');
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-
-  while ((match = markerRe.exec(fullContent)) !== null) {
-    const gap = match.index - lastIndex; // visible chars before this marker
-    if (visibleCount + gap > visibleOffset) {
-      // Target is inside this gap — return position within the gap
-      return lastIndex + (visibleOffset - visibleCount);
-    }
-    if (visibleCount + gap === visibleOffset) {
-      // Visible offset lands exactly at the start of this marker.  Check
-      // whether any non-marker text follows — if not, the offset points to
-      // the end of visible text right before this (trailing) marker.
-      const afterSlice = fullContent.slice(match.index + match[0].length);
-      const hasVisibleAfter =
-        afterSlice.replace(INLINE_INTERNAL_MARKER_REGEX, '').length > 0;
-      if (!hasVisibleAfter) {
-        // No visible text follows → the offset is right before this marker.
-        return match.index;
-      }
-      // Visible text follows → skip the marker and keep counting.
-    }
-    visibleCount += gap;
-    lastIndex = match.index + match[0].length;
-  }
-
-  // After all markers
-  const remaining = visibleOffset - visibleCount;
-  if (remaining >= 0) {
-    return Math.min(lastIndex + remaining, fullContent.length);
-  }
-  return lastIndex;
+  return toOriginalOffsetCore(fullContent, visibleOffset);
 }
 
 export function toVisibleRange(
@@ -231,30 +172,6 @@ export function toVisibleRange(
     (link.scope_type === 'chapter' &&
       (rawFrom > unit.content.length || rawTo > unit.content.length));
 
-  // DEBUG
-  if (typeof window !== 'undefined' && window.__AQ_DEBUG_RANGES) {
-    const fcPreview = hasFullContent
-      ? fullContent!.slice(0, 80).replace(/\n/g, '\\n')
-      : '(none)';
-    console.group(`[AQ:toVisibleRange] scene=${scene.id} raw=[${rawFrom},${rawTo})`);
-    console.log('identity:', identity);
-    console.log('adjusted:', adjusted);
-    console.log('mustAdjust:', mustAdjust, 'hasFullContent:', hasFullContent);
-    console.log('unit.content length:', unit.content.length);
-    console.log('fullContent preview:', fcPreview);
-    console.log(
-      'result:',
-      mustAdjust
-        ? adjustedValid
-          ? adjusted
-          : identity
-        : identityValid
-          ? identity
-          : null
-    );
-    console.groupEnd();
-  }
-
   if (mustAdjust) {
     if (adjustedValid) {
       return adjusted;
@@ -291,19 +208,13 @@ export function getLinkedProseFromTextSource(
     return rawText;
   }
 
-  const from = toVisibleLinkedOffset(rawFrom, unit, scenes, true);
-  const end = toVisibleLinkedOffset(rawEnd, unit, scenes, true);
-  let boundedFrom = Math.min(Math.max(from, 0), sourceText.length);
-  let boundedEnd = Math.min(Math.max(end, boundedFrom), sourceText.length);
-  let adjustedText = sourceText.slice(boundedFrom, boundedEnd);
-
-  if (adjustedText.length === 0) {
-    const looseFrom = toVisibleLinkedOffset(rawFrom, unit, scenes, true);
-    const looseEnd = toVisibleLinkedOffset(rawEnd, unit, scenes, true);
-    boundedFrom = Math.min(Math.max(looseFrom, 0), sourceText.length);
-    boundedEnd = Math.min(Math.max(looseEnd, boundedFrom), sourceText.length);
-    adjustedText = sourceText.slice(boundedFrom, boundedEnd);
-  }
-
-  return adjustedText;
+  // sourceText is the best available raw-content signal here (editor
+  // document / stored chapter or story content) — pass it through as
+  // fullContent so the conversion is the exact marker walk rather than any
+  // approximation.
+  const from = toVisibleLinkedOffset(rawFrom, unit, scenes, true, sourceText);
+  const end = toVisibleLinkedOffset(rawEnd, unit, scenes, true, sourceText);
+  const boundedFrom = Math.min(Math.max(from, 0), sourceText.length);
+  const boundedEnd = Math.min(Math.max(end, boundedFrom), sourceText.length);
+  return sourceText.slice(boundedFrom, boundedEnd);
 }

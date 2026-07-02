@@ -76,3 +76,26 @@ jobs:
       run: |
         cd src/frontend
         npm audit --audit-level=high
+
+  frontend-e2e-checks:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+    - name: Set up Node.js
+      uses: actions/setup-node@v6
+      with:
+        node-version: '24'
+        cache: 'npm'
+        cache-dependency-path: src/frontend/package-lock.json
+    - name: Install dependencies
+      run: |
+        cd src/frontend
+        npm ci --legacy-peer-deps
+    - name: Install Playwright browsers
+      run: |
+        cd src/frontend
+        npx playwright install --with-deps chromium
+    - name: Run E2E cursor/caret regression tests
+      run: |
+        cd src/frontend
+        npm run test:e2e
