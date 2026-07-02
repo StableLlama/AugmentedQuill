@@ -477,6 +477,21 @@ class SceneLinkProseRequest(BaseModel):
     end_offset: int
 
 
+class SceneBatchLinkProseRequest(BaseModel):
+    """Batch variant: atomically unlink and relink multiple scenes in one scope.
+
+    ``assignments`` are processed together with ``relink_scope_prose`` so
+    touching boundaries are never replayed through sequential single-scene
+    edits that can split freshly inserted markers.
+    """
+
+    scope_type: str = "story"
+    chapter_id: Optional[str] = None
+    book_id: Optional[str] = None
+    assignments: list[SceneBoundaryAssignment] = Field(default_factory=list)
+    unlink_ids: list[SceneId] = Field(default_factory=list)
+
+
 class SceneReorderProseRequest(BaseModel):
     """Payload for reordering scenes within a linked prose scope."""
 

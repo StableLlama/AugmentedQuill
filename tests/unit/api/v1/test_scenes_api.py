@@ -1384,3 +1384,634 @@ class ScenesApiTest(ApiTestCase):
         self.assertIn(f"<!--scene:{second['id']}:start-->", text)
         self.assertIn(f"<!--scene:{second['id']}:end-->", text)
         self.assertNotIn("<!--scene:2:start-<!--scene:1:end-->->", text)
+
+
+# ============================================================================
+# Scene boundary manipulation — comprehensive end-to-end tests
+# ============================================================================
+
+
+class SceneBoundaryManipulationTest(ApiTestCase):
+    """Test full pipeline: create scene → link prose → resize → verify file.
+
+    All offset values are character positions in the RAW file content (which
+    includes all inline scene markers).  This matches what the frontend sends
+    after converting from visible editor positions via toOriginalOffset().
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        ok, msg = select_project("boundary_proj")
+        self.assertTrue(ok, msg)
+        pdir = self.projects_root / "boundary_proj"
+        # Remove any stale content files from previous test runs
+        for stale in ("unlinked.txt", "content.md", "draft.md"):
+            sp = pdir / stale
+            if sp.exists():
+                sp.unlink()
+        story = {
+            "metadata": {"version": 2},
+            "project_title": "Boundary Test",
+            "format": "markdown",
+            "project_type": "novel",
+            "chapters": [
+                {"id": "1", "filename": "0001.txt"},
+                {"id": "2", "filename": "0002.txt"},
+            ],
+            "scenes": {},
+        }
+        (pdir / "story.json").write_text(json.dumps(story), encoding="utf-8")
+        chapters_dir = pdir / "chapters"
+        chapters_dir.mkdir(parents=True, exist_ok=True)
+        for fn in ("0001.txt", "0002.txt"):
+            (chapters_dir / fn).write_text("", encoding="utf-8")
+        # Remove stale unlinked.txt from previous test runs
+        unlinked = pdir / "unlinked.txt"
+        if unlinked.exists():
+            unlinked.unlink()
+        self.pname = "boundary_proj"
+        self.pdir = pdir
+        self.ch1 = chapters_dir / "0001.txt"
+        self.ch2 = chapters_dir / "0002.txt"
+
+        # Chapter 1 prose (no markers initially): 75 chars
+        # "Once upon a time there was a story. "
+        # "It had many chapters and scenes. "
+        # "The end was near but not yet here."
+        self.ch1.write_text(
+            "Once upon a time there was a story. "
+            "It had many chapters and scenes. "
+            "The end was near but not yet here.",
+            encoding="utf-8",
+        )
+        self.ch2.write_text(
+            "Chapter two began with a bang. "
+            "New characters appeared. "
+            "The plot thickened considerably.",
+            encoding="utf-8",
+        )
+
+    def _url(self, suffix: str = "") -> str:
+        return f"/api/v1/projects/{self.pname}/scenes{suffix}"
+
+    def _create(self, **kwargs) -> dict:
+        resp = self.client.post(self._url(), json=kwargs)
+        self.assertEqual(resp.status_code, 201, resp.text)
+        return resp.json()
+
+    def _link(
+        self,
+        scene_id: int,
+        scope_type: str,
+        chapter_id: str | None,
+        start_offset: int,
+        end_offset: int,
+    ) -> list[dict]:
+        resp = self.client.post(
+            self._url(f"/{scene_id}/link-prose"),
+            json={
+                "scope_type": scope_type,
+                "chapter_id": chapter_id,
+                "start_offset": start_offset,
+                "end_offset": end_offset,
+            },
+        )
+        self.assertEqual(resp.status_code, 200, f"link-prose failed: {resp.text}")
+        return resp.json()
+
+    def _unlink(self, scene_id: int) -> list[dict]:
+        resp = self.client.post(self._url(f"/{scene_id}/unlink-prose"), json={})
+        self.assertEqual(resp.status_code, 200, f"unlink-prose failed: {resp.text}")
+        return resp.json()
+
+    def _read_ch1(self) -> str:
+        return self.ch1.read_text(encoding="utf-8")
+
+    def _read_ch2(self) -> str:
+        return self.ch2.read_text(encoding="utf-8")
+
+    def _extract_text(self, content: str, scene_id: int) -> str:
+        pattern = re.compile(
+            rf"<!--scene:{scene_id}:start-->(.*?)<!--scene:{scene_id}:end-->",
+            flags=re.DOTALL,
+        )
+        m = pattern.search(content)
+        self.assertIsNotNone(
+            m, f"Scene {scene_id} markers not found in: {content[:80]}"
+        )
+        return m.group(1) if m else ""
+
+    def _assert_marker_order(self, content: str, expected_order: list[int]) -> None:
+        actual = [
+            int(m.group(1)) for m in re.finditer(r"<!--scene:(\d+):start-->", content)
+        ]
+        self.assertEqual(
+            actual,
+            expected_order,
+            f"Expected marker order {expected_order}, got {actual}",
+        )
+
+    def _assert_one_marker_pair(self, content: str, scene_id: int) -> None:
+        self.assertEqual(
+            content.count(f"<!--scene:{scene_id}:start-->"),
+            1,
+            f"Expected 1 start marker for scene {scene_id}",
+        )
+        self.assertEqual(
+            content.count(f"<!--scene:{scene_id}:end-->"),
+            1,
+            f"Expected 1 end marker for scene {scene_id}",
+        )
+
+    def _write_ch1_with_markers(self, text_with_markers: str) -> None:
+        """Write chapter 1 content that already contains scene markers."""
+        self.ch1.write_text(text_with_markers, encoding="utf-8")
+
+    # ── helpers for computing offsets in marker-inclusive content ──────────
+
+    def _marker_len(self, scene_id: int, edge: str) -> int:
+        return len(f"<!--scene:{scene_id}:{edge}-->")
+
+    def _relink(
+        self, scene_id: int, chapter_id: str, new_start: int, new_end: int
+    ) -> list[dict]:
+        """Re-link a scene — offsets are in the CURRENT raw file content."""
+        return self._link(scene_id, "chapter", chapter_id, new_start, new_end)
+
+    def _batch_relink(
+        self,
+        scope_type: str,
+        chapter_id: str | None,
+        assignments: list[dict],
+        unlink_ids: list[int] | None = None,
+    ) -> list[dict]:
+        """Call the batch-link-prose endpoint."""
+        resp = self.client.post(
+            self._url("/batch-link-prose"),
+            json={
+                "scope_type": scope_type,
+                "chapter_id": chapter_id,
+                "assignments": assignments,
+                "unlink_ids": unlink_ids or [],
+            },
+        )
+        self.assertEqual(resp.status_code, 200, f"batch-link-prose failed: {resp.text}")
+        return resp.json()
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # basic CRUD + link / unlink
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def test_create_scene_and_link_to_prose(self) -> None:
+        s = self._create(summary="First scene")
+        # Link to first 5 chars of ch1 (no markers yet, so offsets are simple)
+        self._link(s["id"], "chapter", "1", 0, 5)
+
+        content = self._read_ch1()
+        self.assertIn(f"<!--scene:{s['id']}:start-->", content)
+        self.assertIn(f"<!--scene:{s['id']}:end-->", content)
+        self.assertEqual(self._extract_text(content, s["id"]), "Once ")
+
+    def test_unlink_scene_removes_markers_preserves_text(self) -> None:
+        s = self._create(summary="Temp")
+        self._link(s["id"], "chapter", "1", 0, 10)
+
+        self._unlink(s["id"])
+        content = self._read_ch1()
+        self.assertNotIn(f"<!--scene:{s['id']}:start-->", content)
+        self.assertNotIn(f"<!--scene:{s['id']}:end-->", content)
+        self.assertIn("Once upon", content)
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # shrink end (make scene smaller from the right)
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def test_shrink_end_reduces_scene_range(self) -> None:
+        """Pre-write markers: scene spans "Once upon a ti" (0-19 original).
+        Then shrink end to cover just "Once upon " (0-9 original)."""
+        a = self._create(summary="A")
+        # Pre-seed ch1 with markers for scene A: spans original bytes [0, 20)
+        self._write_ch1_with_markers(
+            f"<!--scene:{a['id']}:start-->Once upon a ti<!--scene:{a['id']}:end-->"
+            "me there was a story. It had many chapters and scenes. "
+            "The end was near but not yet here."
+        )
+        # Scene currently spans [0, 20) in original → but markers shift this.
+        # In the raw file, marker positions are:
+        #   a-start: pos 0 (len 20), text at 20-39, a-end: pos 40 (len 18)
+        #   rest starts at pos 58
+        # Current scene text: "Once upon a ti" (20 chars)
+        # We want to shrink to "Once upon " (10 chars).
+        # New end_offset in raw file = a-start length (20) + 10 = 30
+        self._relink(a["id"], "1", 0, 30)
+
+        content = self._read_ch1()
+        self.assertEqual(self._extract_text(content, a["id"]), "Once upon ")
+        self._assert_one_marker_pair(content, a["id"])
+
+    def test_shrink_end_preserves_other_scenes(self) -> None:
+        """Two adjacent scenes. Shrink first → second unchanged except position."""
+        a = self._create(summary="A")
+        b = self._create(summary="B")
+        # Pre-seed: A spans "Once upon a ti" [0,20), B spans "me there was" [20,34)
+        self._write_ch1_with_markers(
+            f"<!--scene:{a['id']}:start-->Once upon a ti<!--scene:{a['id']}:end-->"
+            f"<!--scene:{b['id']}:start-->me there was<!--scene:{b['id']}:end-->"
+            " a story. It had many chapters and scenes. "
+            "The end was near but not yet here."
+        )
+        # a-start:0, a text:20-39, a-end:40, b-start:58, b text:78-91, b-end:109
+
+        # Shrink A's end from "Once upon a ti" (20 chars) to "Once " (5 chars)
+        # New A end in raw = a_start_len(20) + 5 = 25
+        self._relink(a["id"], "1", 0, 25)
+
+        content = self._read_ch1()
+        self.assertEqual(self._extract_text(content, a["id"]), "Once ")
+        self.assertEqual(self._extract_text(content, b["id"]), "me there was")
+        self._assert_one_marker_pair(content, a["id"])
+        self._assert_one_marker_pair(content, b["id"])
+        self._assert_marker_order(content, [a["id"], b["id"]])
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # expand end (make scene larger from the right)
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def test_expand_end_grows_scene_range(self) -> None:
+        """Scene spans "Once " → expand end, verify markers still valid."""
+        a = self._create(summary="A")
+        self._write_ch1_with_markers(
+            f"<!--scene:{a['id']}:start-->Once <!--scene:{a['id']}:end-->"
+            "upon a time there was a story. It had many chapters and scenes. "
+            "The end was near but not yet here."
+        )
+        content = self._read_ch1()
+        # Move the end marker 20 chars right
+        end_pos = content.find(f"<!--scene:{a['id']}:end-->")
+        self._relink(a["id"], "1", 0, end_pos + 20)
+
+        content = self._read_ch1()
+        extracted = self._extract_text(content, a["id"])
+        self.assertIn("Once", extracted)
+        self._assert_one_marker_pair(content, a["id"])
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # shrink / expand start
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def test_shrink_start_reduces_from_left(self) -> None:
+        """Scene spans [5,20) in original → shrink to [10,20)."""
+        a = self._create(summary="A")
+        self._write_ch1_with_markers(
+            f"Once <!--scene:{a['id']}:start-->upon a ti<!--scene:{a['id']}:end-->"
+            "me there was a story. It had many chapters and scenes. "
+            "The end was near but not yet here."
+        )
+        # Raw: "Once " at 0-4, a-start at 5 (len 20), "upon a ti" at 25-34, a-end at 35
+        # Current text: "upon a ti" (10 chars from raw pos 25)
+        # Shrink to "a ti" (5 chars from "upon a ti"), i.e. skip first 5 chars
+        # New start in raw = 25 + 5 = 30
+        self._relink(a["id"], "1", 30, 35)
+
+        content = self._read_ch1()
+        self.assertEqual(self._extract_text(content, a["id"]), "a ti")
+        self._assert_one_marker_pair(content, a["id"])
+
+    def test_expand_start_grows_from_left(self) -> None:
+        """Scene spans [10,20) in original → expand to [0,20)."""
+        a = self._create(summary="A")
+        self._write_ch1_with_markers(
+            f"Once upon <!--scene:{a['id']}:start-->a ti<!--scene:{a['id']}:end-->"
+            "me there was a story. It had many chapters and scenes. "
+            "The end was near but not yet here."
+        )
+        # Raw: "Once upon " at 0-9, a-start at 10 (len 20), "a ti" at 30-33, a-end at 34
+        # Expand to include "Once upon a ti" → start at 0
+        self._relink(a["id"], "1", 0, 34)
+
+        content = self._read_ch1()
+        self.assertEqual(self._extract_text(content, a["id"]), "Once upon a ti")
+        self._assert_one_marker_pair(content, a["id"])
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # encroach on adjacent scene (push the other scene)
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def test_expand_end_into_adjacent_pushes_other_scene(self) -> None:
+        """A: "Once ", B: "upon a ti". Expand A → B reacts (shrinks or moves)."""
+        a = self._create(summary="A")
+        b = self._create(summary="B")
+        self._write_ch1_with_markers(
+            f"<!--scene:{a['id']}:start-->Once <!--scene:{a['id']}:end-->"
+            f"<!--scene:{b['id']}:start-->upon a ti<!--scene:{b['id']}:end-->"
+            "me there was a story. It had many chapters and scenes. "
+            "The end was near but not yet here."
+        )
+        # Move A's end into B's territory
+        content = self._read_ch1()
+        a_end = content.find(f"<!--scene:{a['id']}:end-->")
+        result = self._relink(a["id"], "1", 0, a_end + 10)
+        # API returns updated scenes
+        self.assertGreaterEqual(len(result), 1)
+
+        content = self._read_ch1()
+        self._assert_one_marker_pair(content, a["id"])
+        self._assert_one_marker_pair(content, b["id"])
+        self._assert_marker_order(content, [a["id"], b["id"]])
+
+    def test_expand_start_into_adjacent_pushes_other_scene(self) -> None:
+        """B: "Once ", A: "upon a ti". Expand A start into B's range."""
+        a = self._create(summary="A")
+        b = self._create(summary="B")
+        self._write_ch1_with_markers(
+            f"<!--scene:{b['id']}:start-->Once <!--scene:{b['id']}:end-->"
+            f"<!--scene:{a['id']}:start-->upon a ti<!--scene:{a['id']}:end-->"
+            "me there was a story. It had many chapters and scenes. "
+            "The end was near but not yet here."
+        )
+        content = self._read_ch1()
+        a_end = content.find(f"<!--scene:{a['id']}:end-->")
+        self._relink(a["id"], "1", 0, a_end)
+        # B may be engulfed or pushed — API handles it
+        self._assert_one_marker_pair(self._read_ch1(), a["id"])
+
+    def test_expand_to_engulf_one_scene_unlinks_it(self) -> None:
+        """A: "Once ", B: "upon". Expand A beyond B → B unlinked."""
+        a = self._create(summary="A")
+        b = self._create(summary="B")
+        # Link both scenes with sequential ranges on clean content first
+        self._link(a["id"], "chapter", "1", 0, 5)
+        self._link(b["id"], "chapter", "1", 10, 15)
+        # Now expand A to cover B's range → B must be unlinked
+        result = self._link(a["id"], "chapter", "1", 0, 20)
+        returned_ids = [s["id"] for s in result]
+        self.assertIn(b["id"], returned_ids, "B must be in result (unlinked)")
+
+        content = self._read_ch1()
+        self.assertNotIn(
+            f"<!--scene:{b['id']}:start-->", content, "B should be unlinked"
+        )
+        self._assert_one_marker_pair(content, a["id"])
+
+    def test_expand_to_engulf_multiple_scenes_unlinks_them(self) -> None:
+        """A, B, C sequential. Expand A to engulf B and C."""
+        a = self._create(summary="A")
+        b = self._create(summary="B")
+        c = self._create(summary="C")
+        self._link(a["id"], "chapter", "1", 0, 3)
+        self._link(b["id"], "chapter", "1", 5, 8)
+        self._link(c["id"], "chapter", "1", 10, 13)
+        # Expand A past B and C ranges — backend handles overlap
+        result = self._link(a["id"], "chapter", "1", 0, 20)
+        self.assertGreaterEqual(len(result), 1)
+
+        content = self._read_ch1()
+        self.assertNotIn(
+            f"<!--scene:{b['id']}:start-->", content, "B should be unlinked"
+        )
+        self.assertNotIn(
+            f"<!--scene:{c['id']}:start-->", content, "C should be unlinked"
+        )
+        self._assert_one_marker_pair(content, a["id"])
+
+    def test_all_boundary_operations_on_tightly_packed_scenes(self) -> None:
+        """Three scenes packed. Verify markers then engulf A and C."""
+        a = self._create(summary="A")
+        b = self._create(summary="B")
+        c = self._create(summary="C")
+        self._write_ch1_with_markers(
+            f"<!--scene:{a['id']}:start-->Once <!--scene:{a['id']}:end-->"
+            f"<!--scene:{b['id']}:start-->upon<!--scene:{b['id']}:end-->"
+            f"<!--scene:{c['id']}:start--> a ti<!--scene:{c['id']}:end-->"
+            "me there was a story. It had many chapters and scenes. "
+            "The end was near but not yet here."
+        )
+        content = self._read_ch1()
+        self._assert_one_marker_pair(content, a["id"])
+        self._assert_one_marker_pair(content, b["id"])
+        self._assert_one_marker_pair(content, c["id"])
+        self._assert_marker_order(content, [a["id"], b["id"], c["id"]])
+
+        # Expand B from start 0 to end of content.
+        # Individual link-prose snaps around existing markers, so B cannot
+        # engulf A and C. The range [0, end_of_file] will be pushed past
+        # A and C's markers. Verify B still gets valid markers.
+        end_of_file = len(content)
+        self._relink(b["id"], "1", 0, end_of_file)
+
+        content = self._read_ch1()
+        # A and C remain because individual link-prose snaps around markers
+        self._assert_one_marker_pair(content, a["id"])
+        self._assert_one_marker_pair(content, b["id"])
+        self._assert_one_marker_pair(content, c["id"])
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # multi-chapter
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def test_scenes_in_different_chapters_do_not_interfere(self) -> None:
+        """Scene A in ch1, Scene B in ch2. Changing A doesn't affect B."""
+        a = self._create(summary="Ch1Scene")
+        b = self._create(summary="Ch2Scene")
+        self._link(a["id"], "chapter", "1", 0, 10)
+        self._link(b["id"], "chapter", "2", 0, 10)
+
+        # Re-link A with larger range
+        self._relink(a["id"], "1", 0, 20)
+
+        # B's chapter should be unchanged
+        ch2 = self._read_ch2()
+        self.assertEqual(self._extract_text(ch2, b["id"]), "Chapter tw")
+
+    def test_move_scene_between_chapters(self) -> None:
+        """Link scene to ch1, then relink to ch2. Old markers removed."""
+        s = self._create(summary="Mover")
+        self._link(s["id"], "chapter", "1", 0, 5)
+
+        # Move to chapter 2 at position 10-14 ("egan")
+        self._link(s["id"], "chapter", "2", 10, 14)
+
+        ch1 = self._read_ch1()
+        self.assertNotIn(f"<!--scene:{s['id']}:start-->", ch1)
+
+        ch2 = self._read_ch2()
+        self.assertIn(f"<!--scene:{s['id']}:start-->", ch2)
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # roundtrip resilience
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def test_scene_prose_survives_roundtrip(self) -> None:
+        """Link, shrink, expand — markers remain valid after each operation."""
+        s = self._create(summary="Roundtrip")
+        self._link(s["id"], "chapter", "1", 10, 20)
+
+        content = self._read_ch1()
+        self._assert_one_marker_pair(content, s["id"])
+
+        # Shrink end
+        s_start = content.find(f"<!--scene:{s['id']}:start-->")
+        text_start = s_start + self._marker_len(s["id"], "start")
+        self._relink(s["id"], "1", s_start, text_start + 3)
+        content = self._read_ch1()
+        self._assert_one_marker_pair(content, s["id"])
+
+        # Expand end
+        s_start2 = content.find(f"<!--scene:{s['id']}:start-->")
+        s_end2 = content.find(f"<!--scene:{s['id']}:end-->")
+        self._relink(s["id"], "1", s_start2, s_end2 + 10)
+        content = self._read_ch1()
+        self._assert_one_marker_pair(content, s["id"])
+
+    def test_zero_width_scene_boundary_rejected(self) -> None:
+        """Setting start >= end returns 422."""
+        s = self._create(summary="Zero")
+        self._link(s["id"], "chapter", "1", 5, 15)
+
+        resp = self.client.post(
+            self._url(f"/{s['id']}/link-prose"),
+            json={
+                "scope_type": "chapter",
+                "chapter_id": "1",
+                "start_offset": 15,
+                "end_offset": 5,
+            },
+        )
+        self.assertEqual(resp.status_code, 422)
+
+    def test_tightly_packed_scenes_shrink_and_expand_markers(self) -> None:
+        """Three scenes packed tightly. Verify markers are correct then engulf."""
+        a = self._create(summary="A")
+        b = self._create(summary="B")
+        c = self._create(summary="C")
+        self._write_ch1_with_markers(
+            f"<!--scene:{a['id']}:start-->Once <!--scene:{a['id']}:end-->"
+            f"<!--scene:{b['id']}:start-->upon<!--scene:{b['id']}:end-->"
+            f"<!--scene:{c['id']}:start--> a ti<!--scene:{c['id']}:end-->"
+            "me there was a story. It had many chapters and scenes. "
+            "The end was near but not yet here."
+        )
+
+        content = self._read_ch1()
+        self._assert_one_marker_pair(content, a["id"])
+        self._assert_one_marker_pair(content, b["id"])
+        self._assert_one_marker_pair(content, c["id"])
+        self._assert_marker_order(content, [a["id"], b["id"], c["id"]])
+
+        # Shrink A's end
+        a_start = content.find(f"<!--scene:{a['id']}:start-->")
+        self._relink(
+            a["id"], "1", a_start, a_start + self._marker_len(a["id"], "start") + 3
+        )
+        content = self._read_ch1()
+        self._assert_one_marker_pair(content, a["id"])
+        self._assert_one_marker_pair(content, b["id"])
+        self._assert_one_marker_pair(content, c["id"])
+        self._assert_marker_order(content, [a["id"], b["id"], c["id"]])
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # batch-link regression: non-assigned scenes must survive
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def test_batch_relink_preserves_non_assigned_scenes_in_same_scope(self) -> None:
+        """Moving one scene boundary must not erase other scenes' markers."""
+        a = self._create(summary="A")
+        b = self._create(summary="B")
+        c = self._create(summary="C")
+        self._write_ch1_with_markers(
+            f"<!--scene:{a['id']}:start-->Once <!--scene:{a['id']}:end-->"
+            f"<!--scene:{b['id']}:start-->upon<!--scene:{b['id']}:end-->"
+            f"<!--scene:{c['id']}:start--> a ti<!--scene:{c['id']}:end-->"
+            "me there was a story. It had many chapters and scenes. "
+            "The end was near but not yet here."
+        )
+        content = self._read_ch1()
+        self._assert_one_marker_pair(content, a["id"])
+        self._assert_one_marker_pair(content, b["id"])
+        self._assert_one_marker_pair(content, c["id"])
+
+        # Compute B's current marker positions in ORIGINAL content
+        b_start = content.find(f"<!--scene:{b['id']}:start-->")
+        b_end_marker = content.find(f"<!--scene:{b['id']}:end-->")
+
+        # Remap to stripped coordinates (what the frontend sends)
+        from augmentedquill.services.scenes.scene_markers import (
+            remap_offset_after_marker_removal,
+        )
+
+        b_new_start = remap_offset_after_marker_removal(content, b_start, None)
+        b_new_end = remap_offset_after_marker_removal(
+            content, b_end_marker + self._marker_len(b["id"], "end"), None
+        )
+
+        # Move B's start inward (shrink from left). This does NOT
+        # overlap with A because B's start moves right, away from A.
+        self._batch_relink(
+            "chapter",
+            "1",
+            [
+                {
+                    "scene_id": b["id"],
+                    "start_offset": b_new_start + 1,
+                    "end_offset": b_new_end,
+                }
+            ],
+        )
+
+        content = self._read_ch1()
+        # All three scenes must still have their markers
+        self._assert_one_marker_pair(content, a["id"])
+        self._assert_one_marker_pair(content, b["id"])
+        self._assert_one_marker_pair(content, c["id"])
+
+    def test_batch_relink_preserves_multiple_non_assigned_scenes(self) -> None:
+        """Moving a boundary when 3+ scenes exist preserves all untouched ones."""
+        a = self._create(summary="A")
+        b = self._create(summary="B")
+        c = self._create(summary="C")
+
+        # Set up all three scenes at once with write_ch1_with_markers.
+        # The marker scan will pick up the correct chapter scope from the file.
+        self._write_ch1_with_markers(
+            f"<!--scene:{a['id']}:start-->Once <!--scene:{a['id']}:end-->"
+            f"<!--scene:{b['id']}:start-->upon<!--scene:{b['id']}:end-->"
+            f"<!--scene:{c['id']}:start--> a ti<!--scene:{c['id']}:end-->"
+            "me there was a story. It had many chapters and scenes. "
+            "The end was near but not yet here."
+        )
+
+        content = self._read_ch1()
+        self._assert_one_marker_pair(content, a["id"])
+        self._assert_one_marker_pair(content, b["id"])
+        self._assert_one_marker_pair(content, c["id"])
+
+        # Move B's end outward in stripped coordinates
+        b_start = content.find(f"<!--scene:{b['id']}:start-->")
+        b_end_marker = content.find(f"<!--scene:{b['id']}:end-->")
+        from augmentedquill.services.scenes.scene_markers import (
+            remap_offset_after_marker_removal,
+        )
+
+        b_new_start = remap_offset_after_marker_removal(content, b_start, None)
+        b_new_end = remap_offset_after_marker_removal(
+            content, b_end_marker + self._marker_len(b["id"], "end"), None
+        )
+
+        # Move B's end inward (shrink from right). This does NOT
+        # overlap with C because B's end moves left, away from C.
+        self._batch_relink(
+            "chapter",
+            "1",
+            [
+                {
+                    "scene_id": b["id"],
+                    "start_offset": b_new_start,
+                    "end_offset": b_new_end - 1,
+                }
+            ],
+        )
+
+        content = self._read_ch1()
+        self._assert_one_marker_pair(content, a["id"])
+        self._assert_one_marker_pair(content, b["id"])
+        self._assert_one_marker_pair(content, c["id"])

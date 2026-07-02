@@ -159,6 +159,11 @@ class ProseHandleWidget extends WidgetType {
       const onUp = (): void => {
         document.removeEventListener('mousemove', onMove);
         document.removeEventListener('mouseup', onUp);
+        if (typeof window !== 'undefined' && window.__AQ_DEBUG_RANGES) {
+          console.log(
+            `[AQ:ProseHandleWidget] mouseup, sceneId=${sceneId} edge=${edge} currentOffset=${currentOffset}`
+          );
+        }
         callbackRef.current?.(sceneId, edge, currentOffset);
       };
       document.addEventListener('mousemove', onMove);

@@ -78,6 +78,13 @@ export function useSceneProseSync(
         return;
       }
 
+      if (typeof window !== 'undefined' && window.__AQ_DEBUG_RANGES) {
+        console.log(
+          '[AQ:useSceneProseSync] CURSOR CHANGE callback firing, head:',
+          head
+        );
+      }
+
       const strippedChapter: WritingUnit = {
         ...chapter,
         content: stripInlineInternalMarkers(chapter.content),
@@ -86,8 +93,6 @@ export function useSceneProseSync(
       const cursor = head;
       const fullContent = chapter.content;
       const found = scenesRef.current.find((s: Scene): boolean => {
-        const link: SceneProseLink | null | undefined = s.prose_link;
-        if (!link) return false;
         const visibleRange = toVisibleRange(
           s,
           strippedChapter,
@@ -131,6 +136,18 @@ export function useSceneProseSync(
       return;
     }
 
+    if (typeof window !== 'undefined' && window.__AQ_DEBUG_RANGES) {
+      console.log('[AQ:useSceneProseSync] HIGHLIGHT EFFECT FIRING');
+      console.log(
+        '  currentChapter.content length:',
+        currentChapter.content?.length ?? 0
+      );
+      console.log(
+        '  currentChapter.content starts with:',
+        currentChapter.content?.slice(0, 60)
+      );
+    }
+
     const strippedChapter: WritingUnit = {
       ...currentChapter,
       content: stripInlineInternalMarkers(currentChapter.content),
@@ -149,6 +166,14 @@ export function useSceneProseSync(
       );
       if (!visibleRange) continue;
       entries.push({ sceneId, from: visibleRange.from, to: visibleRange.to });
+    }
+
+    if (typeof window !== 'undefined' && window.__AQ_DEBUG_RANGES) {
+      console.log('[AQ:useSceneProseSync] setting highlights:', entries);
+      console.log('  highlightSceneIds:', [...highlightSceneIds]);
+      console.log('  fullContent length:', fullContent.length);
+      console.log('  strippedContent length:', strippedChapter.content.length);
+      console.log('  scenes count:', scenesRef.current.length);
     }
 
     if (entries.length === 0) {

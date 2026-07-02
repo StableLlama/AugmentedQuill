@@ -982,4 +982,85 @@ describe('useSceneProseSync', () => {
       { sceneId: 'sc1', from: expectedStart, to: expectedEnd },
     ] as ProseHighlightRange[]);
   });
+
+  // -------------------------------------------------------------------------
+  // Boundary drag roundtrip: after relinking, prose_link offsets must
+  // produce correct visible positions
+  // -------------------------------------------------------------------------
+
+  it('renders correct visible positions after dragging scene 2 start into scene 1', () => {
+    // Simulates the content after dragging scene 2's start marker left
+    // by 2 visible chars into scene 1's territory.
+    // Uses numeric scene IDs (like the real backend does).
+    const newContent =
+      '<!--scene:1:start-->Alp<!--scene:1:end-->' +
+      '<!--scene:2:start-->ha Bravo<!--scene:2:end-->';
+    // Positions: scene1:start 0-19, "Alp" 20-22, scene1:end 23-40,
+    // scene2:start 41-60, "ha Bravo" 61-68, scene2:end 69-86
+
+    const chapterWithMarkers: WritingUnit = {
+      ...chapterUnit,
+      content: newContent,
+    };
+
+    // Original offsets from new content
+    const aStart = 20; // after <!--scene:1:start-->
+    const aEnd = 23; // before <!--scene:1:end-->
+    const bStart = 61; // after <!--scene:2:start-->
+    const bEnd = 69; // before <!--scene:2:end-->
+
+    const sceneA: Scene = {
+      ...sceneWithChapterLink,
+      id: 1,
+      prose_link: {
+        scope_type: 'chapter',
+        chapter_id: 'ch1',
+        start_offset: aStart,
+        end_offset: aEnd,
+        content_hash: 'h1',
+      },
+    };
+    const sceneB: Scene = {
+      ...sceneWithChapterLink,
+      id: 2,
+      prose_link: {
+        scope_type: 'chapter',
+        chapter_id: 'ch1',
+        start_offset: bStart,
+        end_offset: bEnd,
+        content_hash: 'h2',
+      },
+    };
+
+    const ref = makeRef(editor.handle);
+    const { result } = renderHook(() =>
+      useSceneProseSync([sceneA, sceneB], chapterWithMarkers, ref)
+    );
+
+    act(() => {
+      result.current.handleMultipleSelectScenes(new Set([1, 2]));
+    });
+
+    // Scene-based approximation with numeric IDs (matching markers):
+    // Scene 1: start_offset=20, end_offset=23
+    //   toVisibleLinkedOffset(20): start marker len(<!--scene:1:start-->) = 20, 20-20=0
+    //   toVisibleLinkedOffset(23): start marker len = 20, 23-20=3
+    //   → {from: 0, to: 3} = "Alp" ✓
+    // Scene 2: start_offset=61, end_offset=69
+    //   toVisibleLinkedOffset(61): s1 start(20) + s1 end(18) + s2 start(20) = 58, 61-58=3
+    //   toVisibleLinkedOffset(69): 58, 69-58=11
+    //   → {from: 3, to: 11} = "ha Bravo" ✓
+
+    const expectedAFrom = 0;
+    const expectedATo = 3;
+    const expectedBFrom = 3;
+    const expectedBTo = 11;
+
+    expect(editor.setProseHighlights).toHaveBeenLastCalledWith(
+      expect.arrayContaining([
+        { sceneId: 1, from: expectedAFrom, to: expectedATo },
+        { sceneId: 2, from: expectedBFrom, to: expectedBTo },
+      ] as ProseHighlightRange[])
+    );
+  });
 });

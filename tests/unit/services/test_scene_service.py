@@ -8,6 +8,7 @@
 """Marker-oriented unit tests for the scene service."""
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -26,6 +27,7 @@ from augmentedquill.services.scenes.scene_service import (
     get_scene,
     link_prose,
     list_scenes,
+    relink_scope_prose,
     reorder_scope_scenes,
     reorder_scene_prose,
     unlink_prose,
@@ -1680,3 +1682,477 @@ def test_reorder_scene_prose_preserves_existing_scene_prose_text(
     spans = {span.scene_id: span for span in parse_scene_spans(chapter2_text)}
     source_span = spans[source["id"]]
     assert chapter2_text[source_span.start : source_span.end] == "PreserveThisSceneText"
+
+
+# ---------------------------------------------------------------------------
+# relink_scope_prose – atomic batch boundary drag roundtrip tests
+# ---------------------------------------------------------------------------
+
+
+def _link_two_adjacent_scenes(project_dir: Path) -> tuple[dict, dict]:
+    """Create and link two adjacent story-scope scenes: A covers 'Alpha',
+    B covers 'Bravo'.  Returns (scene_a, scene_b)."""
+    a = create_scene(project_dir, SceneCreateRequest(summary="A"))
+    b = create_scene(project_dir, SceneCreateRequest(summary="B"))
+
+    # Link A to cover "Alpha" (first 5 chars of default content)
+    link_prose(
+        project_dir,
+        a["id"],
+        SceneLinkProseRequest(scope_type="story", start_offset=0, end_offset=5),
+    )
+    current = (project_dir / "content.md").read_text(encoding="utf-8")
+    bravo_start = current.index("Bravo")
+    bravo_end = bravo_start + len("Bravo")
+    link_prose(
+        project_dir,
+        b["id"],
+        SceneLinkProseRequest(
+            scope_type="story",
+            start_offset=bravo_start,
+            end_offset=bravo_end,
+        ),
+    )
+    return a, b
+
+
+_MARKER_PATTERN = re.compile(r"<!--scene:\d+:(?:start|end)-->")
+
+
+def _visible_offsets_from_original(
+    full_content: str, orig_start: int, orig_end: int
+) -> tuple[int, int]:
+    """Convert original (marker-inclusive) offsets to visible (stripped) offsets
+    using the same algorithm as the frontend ``toVisibleLinkedOffset``."""
+    vis_start = _remap_single_offset(full_content, orig_start)
+    vis_end = _remap_single_offset(full_content, orig_end)
+    return vis_start, vis_end
+
+
+def _remap_single_offset(content: str, offset: int) -> int:
+    """Map an original offset to a visible offset by skipping marker tokens."""
+    visible_count = 0
+    last_index = 0
+    for match in _MARKER_PATTERN.finditer(content):
+        gap = match.start() - last_index
+        if last_index + gap > offset:
+            return visible_count + (offset - last_index)
+        visible_count += gap
+        if match.start() <= offset < match.end():
+            return visible_count
+        last_index = match.end()
+    return visible_count + max(0, offset - last_index)
+
+
+def _original_offsets_from_visible(
+    full_content: str, vis_start: int, vis_end: int
+) -> tuple[int, int]:
+    """Convert visible offsets back to original offsets (inverse of _remap_single_offset)."""
+    orig_start = _remap_visible_to_original(full_content, vis_start)
+    orig_end = _remap_visible_to_original(full_content, vis_end)
+    return orig_start, orig_end
+
+
+def _remap_visible_to_original(content: str, visible_offset: int) -> int:
+    """Map a visible offset back to an original offset."""
+    if visible_offset <= 0:
+        return 0
+    visible_count = 0
+    last_index = 0
+    for match in _MARKER_PATTERN.finditer(content):
+        gap = match.start() - last_index
+        if visible_count + gap > visible_offset:
+            return last_index + (visible_offset - visible_count)
+        if visible_count + gap == visible_offset:
+            after = content[match.end() :]
+            if _MARKER_PATTERN.sub("", after):
+                pass  # has visible text after, so skip marker
+            else:
+                return match.start()
+        visible_count += gap
+        last_index = match.end()
+    remaining = visible_offset - visible_count
+    if remaining >= 0:
+        return min(last_index + remaining, len(content))
+    return last_index
+
+
+class TestRelinkScopeProse:
+    """Tests for atomic batch prose relinking (boundary drag roundtrip)."""
+
+    def test_relink_preserves_unchanged_scene_offsets(self, project_dir: Path) -> None:
+        """When only one scene's boundary is adjusted, the other scene's
+        prose offsets must remain unchanged after roundtrip."""
+        a, b = _link_two_adjacent_scenes(project_dir)
+
+        # Capture pre-relink state
+        a_before = get_scene(project_dir, a["id"])
+        b_before = get_scene(project_dir, b["id"])
+        assert a_before is not None and b_before is not None
+        a_link = a_before["prose_link"]
+        b_link = b_before["prose_link"]
+        assert a_link is not None and b_link is not None
+
+        content_before = (project_dir / "content.md").read_text(encoding="utf-8")
+
+        # Convert A's original offsets to visible (stripped) for relink_scope_prose
+        vis_a_start, vis_a_end = _visible_offsets_from_original(
+            content_before, int(a_link["start_offset"]), int(a_link["end_offset"])
+        )
+        vis_b_start, vis_b_end = _visible_offsets_from_original(
+            content_before, int(b_link["start_offset"]), int(b_link["end_offset"])
+        )
+
+        # Simulate dragging A's start marker forward by 2 visible chars
+        new_vis_a_start = vis_a_start + 2
+        if new_vis_a_start >= vis_a_end:
+            pytest.skip("Drag would zero-size the scene – not this test's scenario")
+
+        # Call relink_scope_prose with A's adjusted start and B unchanged
+        relink_scope_prose(
+            project_dir,
+            scope_type="story",
+            chapter_id=None,
+            book_id=None,
+            assignments=[
+                (a["id"], new_vis_a_start, vis_a_end),
+                (b["id"], vis_b_start, vis_b_end),
+            ],
+        )
+
+        # Read back
+        a_after = get_scene(project_dir, a["id"])
+        b_after = get_scene(project_dir, b["id"])
+        assert a_after is not None and b_after is not None
+
+        # B's prose text must be unchanged
+        content_after = (project_dir / "content.md").read_text(encoding="utf-8")
+        b_span = parse_scene_spans(content_after)
+        b_span_dict = {s.scene_id: s for s in b_span}
+        assert b["id"] in b_span_dict
+        b_text = content_after[b_span_dict[b["id"]].start : b_span_dict[b["id"]].end]
+        assert b_text == "Bravo", f"B's text changed: {b_text!r}"
+
+        # A's remaining text should be what was after the new start position
+        a_span = b_span_dict[a["id"]]
+        a_text = content_after[a_span.start : a_span.end]
+        # A originally covered "Alpha" (5 chars), start moved forward by 2
+        expected_a_visible = "Alpha"[2:]  # "pha"
+        assert (
+            a_text == expected_a_visible
+        ), f"A's text: {a_text!r}, expected: {expected_a_visible!r}"
+
+    def test_relink_drag_start_into_adjacent_scene_three_way(
+        self, project_dir: Path
+    ) -> None:
+        """Simulate dragging scene 2's start marker left into scene 1's area.
+        Scene 1 should shrink, scene 2 should expand, scene 3 unchanged."""
+        a, b = _link_two_adjacent_scenes(project_dir)
+        c = create_scene(project_dir, SceneCreateRequest(summary="C"))
+
+        current = (project_dir / "content.md").read_text(encoding="utf-8")
+        charlie_start = current.index("Charlie")
+        charlie_end = charlie_start + len("Charlie")
+        link_prose(
+            project_dir,
+            c["id"],
+            SceneLinkProseRequest(
+                scope_type="story",
+                start_offset=charlie_start,
+                end_offset=charlie_end,
+            ),
+        )
+
+        # Get pre-relink state
+        content_before = (project_dir / "content.md").read_text(encoding="utf-8")
+        spans_before = {s.scene_id: s for s in parse_scene_spans(content_before)}
+
+        # Convert to visible offsets
+        vis_a = _visible_offsets_from_original(
+            content_before, spans_before[a["id"]].start, spans_before[a["id"]].end
+        )
+        vis_b = _visible_offsets_from_original(
+            content_before, spans_before[b["id"]].start, spans_before[b["id"]].end
+        )
+        vis_c = _visible_offsets_from_original(
+            content_before, spans_before[c["id"]].start, spans_before[c["id"]].end
+        )
+
+        # Drag B's start left by 2 visible chars (into A's area)
+        new_vis_b_start = max(0, vis_b[0] - 2)
+        # A's end becomes B's new start
+        new_vis_a_end = new_vis_b_start
+
+        if new_vis_a_end <= vis_a[0]:
+            pytest.skip("Drag would zero-size scene A")
+
+        relink_scope_prose(
+            project_dir,
+            scope_type="story",
+            chapter_id=None,
+            book_id=None,
+            assignments=[
+                (a["id"], vis_a[0], new_vis_a_end),
+                (b["id"], new_vis_b_start, vis_b[1]),
+                (c["id"], vis_c[0], vis_c[1]),
+            ],
+        )
+
+        content_after = (project_dir / "content.md").read_text(encoding="utf-8")
+        spans_after = {s.scene_id: s for s in parse_scene_spans(content_after)}
+
+        # Verify each scene's text
+        a_text = content_after[spans_after[a["id"]].start : spans_after[a["id"]].end]
+        b_text = content_after[spans_after[b["id"]].start : spans_after[b["id"]].end]
+        c_text = content_after[spans_after[c["id"]].start : spans_after[c["id"]].end]
+
+        # A should have shrunk
+        expected_a = "Alpha"[: new_vis_a_end - vis_a[0]]
+        assert a_text == expected_a, f"A: {a_text!r} != {expected_a!r}"
+
+        # B should have expanded to include what A lost, plus any text between
+        a_lost = "Alpha"[new_vis_a_end - vis_a[0] :]
+        # The visible text between A's old end and B's start is included
+        stripped = _MARKER_PATTERN.sub("", content_before)
+        between = stripped[vis_a[1] : vis_b[0]]
+        expected_b = a_lost + between + "Bravo"
+        assert b_text == expected_b, f"B: {b_text!r} != {expected_b!r}"
+
+        # C should be unchanged
+        assert c_text == "Charlie", f"C: {c_text!r} != 'Charlie'"
+
+    def test_relink_roundtrip_offsets_are_consistent(self, project_dir: Path) -> None:
+        """After relink_scope_prose, reading back the scenes and converting
+        prose_link offsets to visible should match the original input."""
+        a, b = _link_two_adjacent_scenes(project_dir)
+
+        content_before = (project_dir / "content.md").read_text(encoding="utf-8")
+        spans_before = {s.scene_id: s for s in parse_scene_spans(content_before)}
+
+        vis_a = _visible_offsets_from_original(
+            content_before, spans_before[a["id"]].start, spans_before[a["id"]].end
+        )
+        vis_b = _visible_offsets_from_original(
+            content_before, spans_before[b["id"]].start, spans_before[b["id"]].end
+        )
+
+        # Pass all scenes through relink_scope_prose with their current visible offsets
+        relink_scope_prose(
+            project_dir,
+            scope_type="story",
+            chapter_id=None,
+            book_id=None,
+            assignments=[
+                (a["id"], vis_a[0], vis_a[1]),
+                (b["id"], vis_b[0], vis_b[1]),
+            ],
+        )
+
+        # Read back: the prose_link offsets (original) should convert back
+        # to the same visible offsets we sent
+        content_after = (project_dir / "content.md").read_text(encoding="utf-8")
+        a_after = get_scene(project_dir, a["id"])
+        b_after = get_scene(project_dir, b["id"])
+        assert a_after is not None and b_after is not None
+
+        a_link = a_after["prose_link"]
+        b_link = b_after["prose_link"]
+        assert a_link is not None and b_link is not None
+
+        roundtrip_vis_a = _visible_offsets_from_original(
+            content_after, int(a_link["start_offset"]), int(a_link["end_offset"])
+        )
+        roundtrip_vis_b = _visible_offsets_from_original(
+            content_after, int(b_link["start_offset"]), int(b_link["end_offset"])
+        )
+
+        assert roundtrip_vis_a == vis_a, f"A roundtrip: {roundtrip_vis_a} != {vis_a}"
+        assert roundtrip_vis_b == vis_b, f"B roundtrip: {roundtrip_vis_b} != {vis_b}"
+
+    def test_relink_start_boundary_into_other_scene_unlinks_engulfed(
+        self, project_dir: Path
+    ) -> None:
+        """When scene 1's start marker is dragged past its end (into scene 2's
+        area), the scene should be omitted from assignments.  Scene 2's range
+        should be preserved."""
+        a, b = _link_two_adjacent_scenes(project_dir)
+
+        # Unlink A first (as the frontend would when start crosses end)
+        unlink_prose(project_dir, a["id"])
+
+        # Now relink only B – A is no longer in scope
+        content_after_unlink = (project_dir / "content.md").read_text(encoding="utf-8")
+        spans_after = {s.scene_id: s for s in parse_scene_spans(content_after_unlink)}
+
+        if b["id"] not in spans_after:
+            # B may also have been unlinked – re-link it
+            link_prose(
+                project_dir,
+                b["id"],
+                SceneLinkProseRequest(scope_type="story", start_offset=0, end_offset=5),
+            )
+            content_after_unlink = (project_dir / "content.md").read_text(
+                encoding="utf-8"
+            )
+            spans_after = {
+                s.scene_id: s for s in parse_scene_spans(content_after_unlink)
+            }
+
+        vis_b_after = _visible_offsets_from_original(
+            content_after_unlink,
+            spans_after[b["id"]].start,
+            spans_after[b["id"]].end,
+        )
+
+        relink_scope_prose(
+            project_dir,
+            scope_type="story",
+            chapter_id=None,
+            book_id=None,
+            assignments=[(b["id"], vis_b_after[0], vis_b_after[1])],
+        )
+
+        content_final = (project_dir / "content.md").read_text(encoding="utf-8")
+        spans_final = {s.scene_id: s for s in parse_scene_spans(content_final)}
+
+        # B should still have its text
+        assert b["id"] in spans_final
+        b_text = content_final[spans_final[b["id"]].start : spans_final[b["id"]].end]
+        assert b_text == "Bravo", f"B text: {b_text!r}"
+
+    def test_remap_matches_frontend_to_visible_linked_offset(
+        self, project_dir: Path
+    ) -> None:
+        """Verify that the backend remap_offset_after_marker_removal produces
+        the same results as the frontend's toVisibleLinkedOffset for every
+        original offset in the content."""
+        from augmentedquill.services.scenes.scene_markers import (
+            remap_offset_after_marker_removal,
+        )
+
+        a, b = _link_two_adjacent_scenes(project_dir)
+        content = (project_dir / "content.md").read_text(encoding="utf-8")
+
+        for offset in range(len(content) + 1):
+            backend_result = remap_offset_after_marker_removal(content, offset, None)
+            frontend_result = _remap_single_offset(content, offset)
+            assert (
+                backend_result == frontend_result
+            ), f"Offset {offset}: backend={backend_result}, frontend={frontend_result}"
+
+    def test_visible_original_roundtrip_is_identity(self, project_dir: Path) -> None:
+        """toVisibleLinkedOffset ∘ toOriginalOffset must be identity for
+        every visible position.  This is the composition used in
+        handleProseBoundaryChange."""
+        a, b = _link_two_adjacent_scenes(project_dir)
+        content = (project_dir / "content.md").read_text(encoding="utf-8")
+        stripped = _MARKER_PATTERN.sub("", content)
+
+        for vis in range(len(stripped) + 1):
+            # visible → original
+            orig = _remap_visible_to_original(content, vis)
+            # original → visible
+            back = _remap_single_offset(content, orig)
+            assert (
+                back == vis
+            ), f"Visible {vis}: original={orig}, roundtrip back to visible={back}"
+
+    def test_two_scenes_start_boundary_drag_via_relink(self, project_dir: Path) -> None:
+        """Full simulation of dragging scene 2's start marker left by 2 chars
+        (enough to cross the space between scenes and shrink scene 1).
+        Uses stripped (visible) offsets as the frontend does."""
+        a, b = _link_two_adjacent_scenes(project_dir)
+
+        content_before = (project_dir / "content.md").read_text(encoding="utf-8")
+        spans_before = {s.scene_id: s for s in parse_scene_spans(content_before)}
+
+        vis_a = _visible_offsets_from_original(
+            content_before, spans_before[a["id"]].start, spans_before[a["id"]].end
+        )
+        vis_b = _visible_offsets_from_original(
+            content_before, spans_before[b["id"]].start, spans_before[b["id"]].end
+        )
+
+        # Drag B's start left by 2 visible chars (crosses into A's text)
+        new_vis_b_start = vis_b[0] - 2
+        new_vis_a_end = new_vis_b_start
+
+        relink_scope_prose(
+            project_dir,
+            scope_type="story",
+            chapter_id=None,
+            book_id=None,
+            assignments=[
+                (a["id"], vis_a[0], new_vis_a_end),
+                (b["id"], new_vis_b_start, vis_b[1]),
+            ],
+        )
+
+        content_after = (project_dir / "content.md").read_text(encoding="utf-8")
+        spans_after = {s.scene_id: s for s in parse_scene_spans(content_after)}
+
+        a_text = content_after[spans_after[a["id"]].start : spans_after[a["id"]].end]
+        b_text = content_after[spans_after[b["id"]].start : spans_after[b["id"]].end]
+
+        # Verify content is continuous (no gaps or overlaps)
+        visible_content = _MARKER_PATTERN.sub("", content_after)
+        assert (
+            visible_content == "Alpha Bravo Charlie Delta"
+        ), f"Content changed: {visible_content!r}"
+
+        # A shrunk by 1 (lost 'a'), B grew by 2 (gained 'a' and the space)
+        assert a_text == "Alph", f"A: {a_text!r}"
+        assert b_text == "a Bravo", f"B: {b_text!r}"
+
+    def test_marker_positions_read_back_match_assigned_visible_offsets(
+        self, project_dir: Path
+    ) -> None:
+        """After relink_scope_prose, converting the returned prose_link
+        offsets to visible MUST match the visible offsets we assigned."""
+        a, b = _link_two_adjacent_scenes(project_dir)
+
+        content_before = (project_dir / "content.md").read_text(encoding="utf-8")
+        spans_before = {s.scene_id: s for s in parse_scene_spans(content_before)}
+        vis_a = _visible_offsets_from_original(
+            content_before, spans_before[a["id"]].start, spans_before[a["id"]].end
+        )
+        vis_b = _visible_offsets_from_original(
+            content_before, spans_before[b["id"]].start, spans_before[b["id"]].end
+        )
+
+        # Swap: B moves before A in visible space
+        relink_scope_prose(
+            project_dir,
+            scope_type="story",
+            chapter_id=None,
+            book_id=None,
+            assignments=[
+                (b["id"], vis_a[0], vis_a[0] + (vis_b[1] - vis_b[0])),
+                (
+                    a["id"],
+                    vis_a[0] + (vis_b[1] - vis_b[0]),
+                    vis_a[0] + (vis_b[1] - vis_b[0]) + (vis_a[1] - vis_a[0]),
+                ),
+            ],
+        )
+
+        content_after = (project_dir / "content.md").read_text(encoding="utf-8")
+        spans_after = {s.scene_id: s for s in parse_scene_spans(content_after)}
+
+        # Convert returned original offsets back to visible
+        for sid, expected_start, expected_end in [
+            (b["id"], vis_a[0], vis_a[0] + (vis_b[1] - vis_b[0])),
+            (
+                a["id"],
+                vis_a[0] + (vis_b[1] - vis_b[0]),
+                vis_a[0] + (vis_b[1] - vis_b[0]) + (vis_a[1] - vis_a[0]),
+            ),
+        ]:
+            span = spans_after[sid]
+            actual_vis = _visible_offsets_from_original(
+                content_after, span.start, span.end
+            )
+            assert actual_vis == (
+                expected_start,
+                expected_end,
+            ), f"Scene {sid}: visible {actual_vis} != expected {(expected_start, expected_end)}"

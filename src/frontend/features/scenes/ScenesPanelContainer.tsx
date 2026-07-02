@@ -10,7 +10,7 @@
  * Handles API calls, store updates, and renders the toolbar + active view.
  */
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Plus } from 'lucide-react';
 import type { EditorView } from '@codemirror/view';
@@ -47,8 +47,13 @@ import {
   getSceneMarkerSpanRange,
   hasInlineSceneMarkers,
   sceneMarkerTokenLength,
+  stripInlineInternalMarkers,
 } from '../editor/internalTags';
-import { getLinkedProseFromTextSource } from './proseLinkCoordinates';
+import {
+  getLinkedProseFromTextSource,
+  toOriginalOffset,
+  toVisibleLinkedOffset,
+} from './proseLinkCoordinates';
 
 type ViewMode = 'pinboard' | 'narrative' | 'chronological' | 'convergence-map';
 
@@ -74,6 +79,61 @@ type BoundaryAdjustment = {
   newEnd: number;
 };
 
+/**
+ * Reconstruct full content with markers from prose_link offsets.
+ * Used instead of fetching chapter from API (which may return stale data).
+ */
+function reconstructContentFromOffsets(
+  allScenes: Scene[],
+  chapter: WritingUnit | null | undefined,
+  scopeLink: SceneProseLink
+): string | null {
+  if (!chapter?.content) return null;
+  const stripped = stripInlineInternalMarkers(chapter.content);
+
+  // Build assignments from all scenes in the same scope
+  const assignments: { id: SceneId; visStart: number; visEnd: number }[] = [];
+  for (const scene of allScenes) {
+    const link = scene.prose_link;
+    if (!link) continue;
+    if (link.scope_type !== scopeLink.scope_type) continue;
+    if (scopeLink.scope_type === 'chapter' && link.chapter_id !== scopeLink.chapter_id)
+      continue;
+    if (link.end_offset == null) continue;
+
+    // Convert original offsets to visible using scene-based approximation
+    // (which doesn't depend on fullContent having correct markers)
+    const visStart = toVisibleLinkedOffset(link.start_offset, chapter, allScenes, true);
+    const visEnd = toVisibleLinkedOffset(link.end_offset, chapter, allScenes, true);
+    if (visStart >= visEnd) continue;
+    assignments.push({ id: scene.id, visStart, visEnd });
+  }
+
+  if (assignments.length === 0) return null;
+
+  // Sort by start position
+  assignments.sort(
+    (
+      a: { id: SceneId; visStart: number; visEnd: number },
+      b: { id: SceneId; visStart: number; visEnd: number }
+    ) => a.visStart - b.visStart
+  );
+
+  // Inject markers
+  let result = '';
+  let cursor = 0;
+  for (const a of assignments) {
+    const start = Math.max(cursor, a.visStart);
+    result += stripped.slice(cursor, start);
+    result += `<!--scene:${a.id}:start-->`;
+    result += stripped.slice(start, a.visEnd);
+    result += `<!--scene:${a.id}:end-->`;
+    cursor = a.visEnd;
+  }
+  result += stripped.slice(cursor);
+  return result;
+}
+
 function collectBoundaryAdjustments(
   scenes: Scene[],
   sceneId: SceneId,
@@ -81,8 +141,9 @@ function collectBoundaryAdjustments(
   edge: 'start' | 'end',
   startOffset: number,
   endOffset: number
-): BoundaryAdjustment[] {
+): { toAdjust: BoundaryAdjustment[]; toUnlink: SceneId[] } {
   const toAdjust: BoundaryAdjustment[] = [];
+  const toUnlink: SceneId[] = [];
   for (const other of scenes) {
     if (other.id === sceneId || !other.prose_link) continue;
     const ol = other.prose_link;
@@ -102,9 +163,14 @@ function collectBoundaryAdjustments(
         newStart: newOtherStart,
         newEnd: newOtherEnd,
       });
+    } else {
+      // Engulfed: the other scene's entire range falls inside the dragged
+      // scene's new range ('zero-width' or inverted).  Unlink it so it
+      // does not persist as an overlapping ghost range.
+      toUnlink.push(other.id);
     }
   }
-  return toAdjust;
+  return { toAdjust, toUnlink };
 }
 
 function linkMatchesCurrentChapter(
@@ -279,6 +345,16 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
   const storyRef = React.useRef(story);
   storyRef.current = story;
 
+  // Refs that always hold the latest React state so async operations
+  // (like handleProseBoundaryChange) never read stale closures.
+  const scenesRef = React.useRef(scenes);
+  scenesRef.current = scenes;
+  const currentChapterRef = React.useRef(currentChapter);
+  currentChapterRef.current = currentChapter;
+  // Sequence counter: incremented on each boundary drag start so stale
+  // API responses from superseded drags are silently discarded.
+  const boundaryDragSeqRef = React.useRef(0);
+
   // Subscribe to the store's setBaselineState action so we can advance the
   // baseline after user-initiated scene saves.
   const setBaselineState = useStoryStore(
@@ -288,6 +364,24 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
   const updateCurrentChapterContent = useCallback(
     (content: string): void => {
       if (!currentChapter) return;
+      if (typeof window !== 'undefined' && window.__AQ_DEBUG_RANGES) {
+        console.log('[AQ:updateCurrentChapterContent] BEFORE setStory');
+        console.log(
+          '  currentChapter.id:',
+          currentChapter.id,
+          'scope:',
+          currentChapter.scope
+        );
+        console.log('  new content length:', content.length);
+        console.log(
+          '  new content has scene:13:end?',
+          content.includes('<!--scene:13:end-->')
+        );
+        console.log(
+          '  new content has scene:14:start?',
+          content.includes('<!--scene:14:start-->')
+        );
+      }
       setStory((prev: StoryState) => {
         if (currentChapter.scope === 'story') {
           return {
@@ -313,9 +407,17 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
       if (!recordHistoryEntry) {
         return;
       }
+      // Use the actual current chapter ID (from the ref) instead of
+      // storyRef.current.currentChapterId, which can be stale because
+      // setCurrentChapterId only updates the top-level store field, not
+      // the nested story.currentChapterId.
+      const currentId =
+        currentChapterRef.current?.scope === 'chapter'
+          ? currentChapterRef.current.id
+          : storyRef.current.currentChapterId;
       recordHistoryEntry({
         label,
-        state: { ...storyRef.current, scenes: nextScenes },
+        state: { ...storyRef.current, scenes: nextScenes, currentChapterId: currentId },
         forceNewHistory: true,
       });
     },
@@ -949,31 +1051,52 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
   // ---- Prose-link boundary drag (update start/end offset) ----
   const handleProseBoundaryChange = useCallback(
     async (sceneId: SceneId, edge: 'start' | 'end', offset: number): Promise<void> => {
-      const scene = scenes.find((s: Scene): boolean => s.id === sceneId);
+      // Serialize boundary drags so rapid consecutive drags are processed
+      // in order and stale closures cannot produce overlapping ranges.
+      const seq = ++boundaryDragSeqRef.current;
+
+      // Read the latest state from refs so the async body never uses a
+      // stale React render snapshot.
+      const latestScenes = scenesRef.current;
+      const latestChapter = currentChapterRef.current;
+
+      const scene = latestScenes.find((s: Scene): boolean => s.id === sceneId);
       if (!scene?.prose_link) return;
       const link = scene.prose_link;
+
+      // The drag offset is in VISIBLE (marker-stripped) coordinates because
+      // the CodeMirror editor strips <!--scene:...--> tokens when
+      // hideSceneMarkers=true.  Convert back to ORIGINAL (marker-inclusive)
+      // coordinates before persisting, so the backend stores offsets that
+      // match the full content (with markers).
+      const fullContent = latestChapter?.content ?? '';
+      const originalOffset =
+        fullContent.length > 0 ? toOriginalOffset(offset, fullContent) : offset;
+
       const currentStart = Number(link.start_offset ?? 0);
       const currentEnd = Number(link.end_offset ?? currentStart);
-      const startOffset = edge === 'start' ? offset : currentStart;
-      const endOffset = edge === 'end' ? offset : currentEnd;
+      const startOffset = edge === 'start' ? originalOffset : currentStart;
+      const endOffset = edge === 'end' ? originalOffset : currentEnd;
 
       // If the drag would trim the scene to zero-size, unlink it instead
       if (startOffset >= endOffset) {
         try {
           const updated = await api.scenes.unlinkProse(sceneId);
+          if (seq !== boundaryDragSeqRef.current) return; // superseded
           updated.forEach((s: Scene) => patchScene(s));
           recordSceneHistory(
             'Unlink prose (boundary drag)',
-            applyScenePatches(scenes, updated)
+            applyScenePatches(latestScenes, updated)
           );
         } catch (err) {
+          if (seq !== boundaryDragSeqRef.current) return;
           notifyError(t('Unlink prose'), err);
         }
         return;
       }
 
-      const toAdjust = collectBoundaryAdjustments(
-        scenes,
+      const { toAdjust, toUnlink } = collectBoundaryAdjustments(
+        latestScenes,
         sceneId,
         link,
         edge,
@@ -982,44 +1105,152 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
       );
 
       try {
-        let nextScenes = scenes;
-        // Adjust neighbours first so the backend does not see transient overlaps.
+        // Build batch payload: convert all original offsets to stripped
+        // (marker-free) positions so relink_scope_prose can inject all
+        // markers atomically without corrupting adjacent marker tokens.
+        const fullContent = latestChapter?.content ?? '';
+        const batchAssignments: SceneBoundaryAssignment[] = [];
         for (const adj of toAdjust) {
-          const modified = await api.scenes.linkProse(adj.id, {
-            scope_type: adj.link.scope_type,
-            chapter_id: adj.link.chapter_id ?? null,
-            book_id: adj.link.book_id ?? null,
-            start_offset: adj.newStart,
-            end_offset: adj.newEnd,
+          batchAssignments.push({
+            scene_id: adj.id,
+            start_offset: fullContent
+              ? toVisibleLinkedOffset(
+                  adj.newStart,
+                  null as unknown as never,
+                  [],
+                  true,
+                  fullContent
+                )
+              : adj.newStart,
+            end_offset: fullContent
+              ? toVisibleLinkedOffset(
+                  adj.newEnd,
+                  null as unknown as never,
+                  [],
+                  true,
+                  fullContent
+                )
+              : adj.newEnd,
           });
-          modified.forEach((s: Scene) => patchScene(s));
-          nextScenes = applyScenePatches(nextScenes, modified);
         }
-        const modified = await api.scenes.linkProse(sceneId, {
+        batchAssignments.push({
+          scene_id: sceneId,
+          start_offset: fullContent
+            ? toVisibleLinkedOffset(
+                startOffset,
+                null as unknown as never,
+                [],
+                true,
+                fullContent
+              )
+            : startOffset,
+          end_offset: fullContent
+            ? toVisibleLinkedOffset(
+                endOffset,
+                null as unknown as never,
+                [],
+                true,
+                fullContent
+              )
+            : endOffset,
+        });
+
+        if (typeof window !== 'undefined' && window.__AQ_DEBUG_RANGES) {
+          console.log(
+            '[AQ:handleProseBoundaryChange] batch assignments:',
+            batchAssignments
+          );
+          console.log('  sceneId:', sceneId, 'edge:', edge);
+          console.log('  visible offset from drag:', offset);
+          console.log('  original offset:', originalOffset);
+          console.log('  fullContent length:', fullContent.length);
+          console.log('  toAdjust:', toAdjust);
+          console.log('  toUnlink:', toUnlink);
+        }
+
+        const modified = await api.scenes.batchLinkProse({
           scope_type: link.scope_type,
           chapter_id: link.chapter_id ?? null,
           book_id: link.book_id ?? null,
-          start_offset: startOffset,
-          end_offset: endOffset,
+          assignments: batchAssignments,
+          unlink_ids: toUnlink,
         });
+        if (seq !== boundaryDragSeqRef.current) return; // superseded
+        let nextScenes = latestScenes;
         modified.forEach((s: Scene) => patchScene(s));
         nextScenes = applyScenePatches(nextScenes, modified);
+
+        if (typeof window !== 'undefined' && window.__AQ_DEBUG_RANGES) {
+          console.log(
+            '[AQ:handleProseBoundaryChange] API response scenes:',
+            modified.map((s: Scene) => ({
+              id: s.id,
+              prose_link: s.prose_link
+                ? {
+                    start: s.prose_link.start_offset,
+                    end: s.prose_link.end_offset,
+                    scope: s.prose_link.scope_type,
+                    chap: s.prose_link.chapter_id,
+                  }
+                : null,
+            }))
+          );
+        }
+
+        // Refresh stored chapter/story content so useSceneProseSync
+        // recomputes visible ranges with correct marker positions.
+        // Build the new content locally from prose_link offsets instead of
+        // relying on the API fetch (which may return stale content).
+        if (link.chapter_id) {
+          try {
+            const reconstructed = reconstructContentFromOffsets(
+              latestScenes,
+              latestChapter,
+              link
+            );
+            if (reconstructed) {
+              updateCurrentChapterContent(reconstructed);
+            } else {
+              // Fallback: fetch from API
+              const ch = await api.chapters.get(Number(link.chapter_id));
+              if (seq !== boundaryDragSeqRef.current) return;
+              updateCurrentChapterContent(ch.content ?? '');
+            }
+          } catch {
+            /* non-critical */
+          }
+        } else {
+          // Story-scope: refresh content.md so marker positions match new offsets
+          try {
+            const storyContent = await api.story.getContent();
+            if (seq !== boundaryDragSeqRef.current) return;
+            if (storyContent.ok) {
+              updateCurrentChapterContent(storyContent.content);
+            }
+          } catch {
+            /* non-critical */
+          }
+        }
+
         recordSceneHistory('Adjust scene prose boundary', nextScenes);
       } catch (err) {
+        if (seq !== boundaryDragSeqRef.current) return;
         notifyError(t('Update prose link'), err);
       }
     },
-    [scenes, patchScene, recordSceneHistory, t]
+    [patchScene, recordSceneHistory, t, updateCurrentChapterContent]
   );
 
-  // Register the boundary-change handler on the editor handle so the callback
-  // is always current without re-running the mount effect.
-  useEffect((): (() => void) => {
+  // Register the boundary-change handler on the editor handle.
+  // Uses useLayoutEffect (no deps) so it fires every render — this ensures
+  // the callback is registered as soon as editorRef.current is populated,
+  // regardless of sibling render order between ScenesPanelContainer and Editor.
+  useLayoutEffect((): (() => void) => {
     editorRef?.current?.setOnProseBoundaryChange(handleProseBoundaryChange);
     return (): void => {
       editorRef?.current?.setOnProseBoundaryChange(null);
     };
-  }, [editorRef, handleProseBoundaryChange]);
+  });
 
   // ---- Get linked prose text from editor content ----
   const getLinkedProseText = useCallback(

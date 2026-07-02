@@ -74,6 +74,14 @@ export interface SceneBoundaryAssignment {
   end_offset: number;
 }
 
+export interface BatchLinkProsePayload {
+  scope_type: string;
+  chapter_id?: string | null;
+  book_id?: string | null;
+  assignments: SceneBoundaryAssignment[];
+  unlink_ids?: SceneId[];
+}
+
 export interface DetectBoundariesPayload {
   scope_type: 'story' | 'chapter' | 'unlinked';
   chapter_id?: string | null;
@@ -128,6 +136,7 @@ export interface ScenesApi {
   delete: (sceneId: SceneId) => Promise<void>;
   linkProse: (sceneId: SceneId, payload: LinkProsePayload) => Promise<Scene[]>;
   unlinkProse: (sceneId: SceneId) => Promise<Scene[]>;
+  batchLinkProse: (payload: BatchLinkProsePayload) => Promise<Scene[]>;
   reorderProse: (payload: ReorderProsePayload) => Promise<ReorderProseResponse>;
   updateProseContent: (sceneId: SceneId, text: string) => Promise<Scene>;
   detectBoundaries: (
@@ -171,6 +180,13 @@ export const createScenesApi = (projectName: string): ScenesApi => {
         `${base}/${sceneId}/unlink-prose`,
         {},
         'Failed to unlink prose'
+      ),
+
+    batchLinkProse: (payload: BatchLinkProsePayload): Promise<Scene[]> =>
+      postJson<Scene[]>(
+        `${base}/batch-link-prose`,
+        payload,
+        'Failed to batch link prose'
       ),
 
     reorderProse: (payload: ReorderProsePayload): Promise<ReorderProseResponse> =>

@@ -18,6 +18,7 @@ from fastapi import APIRouter, HTTPException
 from augmentedquill.api.v1.dependencies import ProjectDep
 from augmentedquill.models.scene import (
     Scene,
+    SceneBatchLinkProseRequest,
     SceneCreateRequest,
     SceneDetectBoundariesRequest,
     SceneDetectBoundariesResponse,
@@ -36,6 +37,7 @@ from augmentedquill.services.scenes.scene_service import (
     get_scene,
     link_prose,
     list_scenes,
+    relink_scope_prose,
     reorder_scene_prose,
     unlink_prose,
     update_prose_content,
@@ -122,6 +124,38 @@ async def link_scene_prose(
         raise HTTPException(status_code=404, detail=f"Scene '{scene_id}' not found")
     try:
         updated = link_prose(project_dir, scene_id, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return [Scene(**s) for s in updated]
+
+
+@router.post("/scenes/batch-link-prose", response_model=List[Scene])
+async def batch_link_scene_prose(
+    project_dir: ProjectDep,
+    payload: SceneBatchLinkProseRequest,
+) -> List[Scene]:
+    """Atomically unlink and relink multiple scenes in one scope.
+
+    All assignments are processed in a single pass so touching boundaries
+    do not get replayed through repeated single-scene edits that can split
+    freshly inserted markers.
+    """
+    # Unlink requested scenes first
+    for sid in payload.unlink_ids:
+        unlink_prose(project_dir, sid)
+
+    # Relink all assigned scenes atomically
+    assignments = [
+        (a.scene_id, a.start_offset, a.end_offset) for a in payload.assignments
+    ]
+    try:
+        updated = relink_scope_prose(
+            project_dir,
+            payload.scope_type,
+            payload.chapter_id,
+            payload.book_id,
+            assignments,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return [Scene(**s) for s in updated]

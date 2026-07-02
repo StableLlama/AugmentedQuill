@@ -58,6 +58,11 @@ _MARKER_LOCATIONS_CACHE: dict[
 ] = {}
 
 
+def _invalidate_marker_cache(project_dir: Path) -> None:
+    """Clear the marker-locations cache so the next read gets fresh data."""
+    _MARKER_LOCATIONS_CACHE.pop(project_dir, None)
+
+
 def _migrate_project_latest(project_dir: Path) -> None:
     """Apply all chainable story migrations required by the scene service."""
     migrate_project_v3(project_dir)
@@ -101,7 +106,6 @@ def _scope_candidates(project_dir: Path) -> list[tuple[dict[str, Any], Path]]:
         candidates.append((link, path))
 
     _add({"scope_type": "story", "chapter_id": None, "book_id": None})
-    _add({"scope_type": UNLINKED_SCOPE_TYPE, "chapter_id": None, "book_id": None})
 
     chapters = story.get("chapters")
     if isinstance(chapters, list):
@@ -179,6 +183,10 @@ def _scope_candidates(project_dir: Path) -> list[tuple[dict[str, Any], Path]]:
                         "book_id": book_dir.name,
                     }
                 )
+
+    # Unlinked scope last — its zero-width markers for all scenes
+    # must not shadow chapter/story/book markers.
+    _add({"scope_type": UNLINKED_SCOPE_TYPE, "chapter_id": None, "book_id": None})
 
     return candidates
 
@@ -862,6 +870,7 @@ def link_prose(
             mapped_end = 0
     linked = inject_markers(stripped, [(target_scene_id, mapped_start, mapped_end)])
     _write_text_atomic(content_path, linked)
+    _invalidate_marker_cache(project_dir)
 
     for sid in unlinked_ids:
         if sid in scenes_dict:
@@ -917,6 +926,10 @@ def relink_scope_prose(
     This is used by scope-wide auto-linking so touching scene boundaries do not
     get replayed through repeated single-scene edits that can split freshly
     inserted markers.
+
+    Scenes in the same scope that are *not* listed in ``assignments`` are
+    preserved: their marker positions are remapped from original (marker-
+    inclusive) to stripped (marker-free) coordinates and re-injected.
     """
     _migrate_project_latest(project_dir)
     _assert_scope_marker_tokens_valid(project_dir)
@@ -938,27 +951,50 @@ def relink_scope_prose(
         content_path.write_text("", encoding="utf-8")
 
     content = _read_validated_marker_content(content_path)
-    stripped = remove_markers(content)
-    linked = inject_markers(stripped, assignments)
-    _write_text_atomic(content_path, linked)
+
+    # Capture original spans for every scene BEFORE stripping markers.
+    original_spans: dict[SceneId, SceneSpan] = {}
+    for span in parse_scene_spans(content):
+        original_spans[span.scene_id] = span
 
     assigned_ids = {scene_id for scene_id, _, _ in assignments}
-    cleared_ids: set[SceneId] = set()
+
+    # Build the complete injection list: assigned scenes use their
+    # provided (already stripped-coordinate) offsets; non-assigned
+    # scenes from the same scope have their original offsets remapped
+    # to stripped-coordinate space.
+    stripped = remove_markers(content)
+    all_assignments: list[tuple[SceneId, int, int]] = list(assignments)
+
     for scene_id, scene_data in scenes_dict.items():
+        if scene_id in assigned_ids:
+            continue
         link = scene_data.get("prose_link")
         if not isinstance(link, dict):
             continue
         if not _same_prose_scope(_strip_link_computed_fields(link), scope_link):
             continue
-        if scene_id in assigned_ids:
+        span = original_spans.get(scene_id)
+        if span is None:
             continue
-        scenes_dict[scene_id] = {**scene_data, "prose_link": None}
-        cleared_ids.add(scene_id)
+        remapped_start = remap_offset_after_marker_removal(content, span.start, None)
+        remapped_end = remap_offset_after_marker_removal(content, span.end, None)
+        if remapped_start >= remapped_end:
+            continue
+        all_assignments.append((scene_id, remapped_start, remapped_end))
 
+    linked = inject_markers(stripped, all_assignments)
+    _write_text_atomic(content_path, linked)
+    _invalidate_marker_cache(project_dir)
+
+    # Update story.json: assigned scenes get the scope_link; preserved
+    # scenes keep their existing link (unchanged).
     for scene_id in assigned_ids:
-        if scene_id not in scenes_dict:
-            continue
-        scenes_dict[scene_id] = {**scenes_dict[scene_id], "prose_link": scope_link}
+        if scene_id in scenes_dict:
+            scenes_dict[scene_id] = {
+                **scenes_dict[scene_id],
+                "prose_link": scope_link,
+            }
 
     new_spans = {span.scene_id: span for span in parse_scene_spans(linked)}
     links_by_scene = _marker_locations_by_scene(project_dir)
@@ -974,9 +1010,10 @@ def relink_scope_prose(
     story["scenes"] = _drop_prose_links_for_persistence(scenes_dict)
     save_story_config(story_path, story)
 
-    affected_ids = cleared_ids | assigned_ids
+    # Return all scenes that appear in the new marker set.
+    all_ids = {sid for sid, _, _ in all_assignments}
     result: list[dict[str, Any]] = []
-    for scene_id in affected_ids:
+    for scene_id in all_ids:
         if scene_id not in scenes_dict:
             continue
         scene = _normalise_scene({"id": scene_id, **scenes_dict[scene_id]})

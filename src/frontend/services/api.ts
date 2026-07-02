@@ -264,6 +264,9 @@ export const api = {
       currentProjectApi().scenes.delete(...args),
     linkProse: (...args: Parameters<ProjectApiClients['scenes']['linkProse']>) =>
       currentProjectApi().scenes.linkProse(...args),
+    batchLinkProse: (
+      ...args: Parameters<ProjectApiClients['scenes']['batchLinkProse']>
+    ) => currentProjectApi().scenes.batchLinkProse(...args),
     unlinkProse: (...args: Parameters<ProjectApiClients['scenes']['unlinkProse']>) =>
       currentProjectApi().scenes.unlinkProse(...args),
     reorderProse: (...args: Parameters<ProjectApiClients['scenes']['reorderProse']>) =>

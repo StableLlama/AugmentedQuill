@@ -1641,6 +1641,30 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/projects/{project_name}/scenes/batch-link-prose': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Batch Link Scene Prose
+     * @description Atomically unlink and relink multiple scenes in one scope.
+     *
+     *     All assignments are processed in a single pass so touching boundaries
+     *     do not get replayed through repeated single-scene edits that can split
+     *     freshly inserted markers.
+     */
+    post: operations['batch_link_scene_prose_api_v1_projects__project_name__scenes_batch_link_prose_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/projects/{project_name}/scenes/{scene_id}/unlink-prose': {
     parameters: {
       query?: never;
@@ -3045,6 +3069,29 @@ export interface components {
        * @description Book ID when scope_type='chapter' and the chapter is nested.
        */
       book_id?: string | null;
+    };
+    /**
+     * SceneBatchLinkProseRequest
+     * @description Batch variant: atomically unlink and relink multiple scenes in one scope.
+     *
+     *     ``assignments`` are processed together with ``relink_scope_prose`` so
+     *     touching boundaries are never replayed through sequential single-scene
+     *     edits that can split freshly inserted markers.
+     */
+    SceneBatchLinkProseRequest: {
+      /**
+       * Scope Type
+       * @default story
+       */
+      scope_type: string;
+      /** Chapter Id */
+      chapter_id?: string | null;
+      /** Book Id */
+      book_id?: string | null;
+      /** Assignments */
+      assignments?: components['schemas']['SceneBoundaryAssignment'][];
+      /** Unlink Ids */
+      unlink_ids?: number[];
     };
     /**
      * SceneBeat
@@ -6794,6 +6841,42 @@ export interface operations {
     requestBody: {
       content: {
         'application/json': components['schemas']['SceneLinkProseRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Scene'][];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  batch_link_scene_prose_api_v1_projects__project_name__scenes_batch_link_prose_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Directory name of the project */
+        project_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SceneBatchLinkProseRequest'];
       };
     };
     responses: {

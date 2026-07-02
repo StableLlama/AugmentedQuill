@@ -3883,6 +3883,63 @@
         }
       }
     },
+    "/api/v1/projects/{project_name}/scenes/batch-link-prose": {
+      "post": {
+        "tags": ["Scenes"],
+        "summary": "Batch Link Scene Prose",
+        "description": "Atomically unlink and relink multiple scenes in one scope.\n\nAll assignments are processed in a single pass so touching boundaries\ndo not get replayed through repeated single-scene edits that can split\nfreshly inserted markers.",
+        "operationId": "batch_link_scene_prose_api_v1_projects__project_name__scenes_batch_link_prose_post",
+        "parameters": [
+          {
+            "name": "project_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Directory name of the project",
+              "title": "Project Name"
+            },
+            "description": "Directory name of the project"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SceneBatchLinkProseRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Scene"
+                  },
+                  "title": "Response Batch Link Scene Prose Api V1 Projects  Project Name  Scenes Batch Link Prose Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_name}/scenes/{scene_id}/unlink-prose": {
       "post": {
         "tags": ["Scenes"],
@@ -7459,6 +7516,54 @@
         "required": ["id", "comment"],
         "title": "SceneAnnotation",
         "description": "Inline annotation metadata mirrored from prose markers."
+      },
+      "SceneBatchLinkProseRequest": {
+        "properties": {
+          "scope_type": {
+            "type": "string",
+            "title": "Scope Type",
+            "default": "story"
+          },
+          "chapter_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chapter Id"
+          },
+          "book_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Book Id"
+          },
+          "assignments": {
+            "items": {
+              "$ref": "#/components/schemas/SceneBoundaryAssignment"
+            },
+            "type": "array",
+            "title": "Assignments"
+          },
+          "unlink_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Unlink Ids"
+          }
+        },
+        "type": "object",
+        "title": "SceneBatchLinkProseRequest",
+        "description": "Batch variant: atomically unlink and relink multiple scenes in one scope.\n\n``assignments`` are processed together with ``relink_scope_prose`` so\ntouching boundaries are never replayed through sequential single-scene\nedits that can split freshly inserted markers."
       },
       "SceneBeat": {
         "properties": {
