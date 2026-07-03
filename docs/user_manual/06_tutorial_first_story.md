@@ -102,7 +102,7 @@ The suggestion cards appear — click any card to insert that text, or press `Es
 
 Visual references help both you and the AI stay consistent with how characters and places look.
 
-1. Click the <img src="assets/eye.svg" alt="Image icon" width="16" height="16" style="vertical-align:text-bottom;" /> **Images** icon in the header to open the [Project Images](06_project_images.md) dialog.
+1. Click the <img src="assets/eye.svg" alt="Image icon" width="16" height="16" style="vertical-align:text-bottom;" /> **Images** icon in the header to open the [Project Images](09_project_images.md) dialog.
 2. Click **Create Placeholder** and name it "Elara — character portrait".
 3. Fill in the **Description** field with a text description: "A cautious young librarian with dark eyes, ink-stained fingers, and reading glasses perched on her nose."
 4. Click **Create prompt** (<img src="assets/sparkles.svg" alt="Sparkles icon" width="16" height="16" style="vertical-align:text-bottom;" />) to have the AI generate an image-generation prompt you can use in an external art tool.
@@ -130,7 +130,7 @@ Before your next long writing session, take a moment to tune the appearance to y
 1. Click the <img src="assets/type.svg" alt="Type icon" width="16" height="16" style="vertical-align:text-bottom;" /> **Appearance** button in the header.
 2. Try **Mixed** or **Dark** design mode if you prefer less eye strain.
 3. Adjust **Font Size** and **Line Width** until the page feels comfortable for a long session.
-4. See [Appearance and Display](08_appearance_and_display.md) for all available settings.
+4. See [Appearance and Display](10_appearance_and_display.md) for all available settings.
 
 ---
 

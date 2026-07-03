@@ -226,4 +226,4 @@ Writing a novel is a big commitment. These percentages are rough estimates of **
 
 ---
 
-Next up: Plan advanced story structure in [Scenes, Annotations, and Structural Improvements](13_scenes_and_annotations.md).
+Next up: Plan advanced story structure in [Scenes, Annotations, and Structural Improvements](12_scenes_and_annotations.md).

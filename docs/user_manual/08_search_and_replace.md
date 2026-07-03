@@ -141,3 +141,7 @@ The tool runs a global replace and reports how many occurrences were changed and
 | Find name variants of Elara                | Phonetic enabled, All scope     | `Elara`             |
 | Rename a character across all chapters     | Replace All, All Chapters scope | old name → new name |
 | Check if any chapter summary lacks a date  | Metadata scope                  | `[0-9]{4}`          |
+
+---
+
+Next up: Manage your project's visual assets in [Project Images](09_project_images.md).

@@ -65,12 +65,12 @@ Clicking the Chat Settings button reveals a panel below the header where you can
 
 At the bottom of the chat panel is a two-part composer area:
 
-| Element                                                                                                                                                           | Description                                                                                                                                         |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Message textarea**                                                                                                                                              | Auto-growing text input. Press **Enter** to send, **Shift+Enter** to insert a newline without sending.                                              |
-| **Send** button (round, <img src="assets/send.svg" alt="Send icon" width="16" height="16" style="vertical-align:text-bottom;" />)                                 | Submits the message. Disabled while the AI is generating a response.                                                                                |
-| **Stop generation** (red <img src="assets/x.svg" alt="Close icon" width="16" height="16" style="vertical-align:text-bottom;" />, dashed border)                   | Appears while the AI is generating. Click it to immediately abort the streaming response. The partial response remains visible in the message list. |
-| **Regenerate last response** (<img src="assets/edit-2.svg" alt="Refresh icon" width="16" height="16" style="vertical-align:text-bottom;" /> dashed border button) | Re-runs the last AI request from scratch and replaces the previous response. Useful when the output was unsatisfactory.                             |
+| Element                                                                                                                                                               | Description                                                                                                                                         |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Message textarea**                                                                                                                                                  | Auto-growing text input. Press **Enter** to send, **Shift+Enter** to insert a newline without sending.                                              |
+| **Send** button (round, <img src="assets/send.svg" alt="Send icon" width="16" height="16" style="vertical-align:text-bottom;" />)                                     | Submits the message. Disabled while the AI is generating a response.                                                                                |
+| **Stop generation** (red <img src="assets/x.svg" alt="Close icon" width="16" height="16" style="vertical-align:text-bottom;" />, dashed border)                       | Appears while the AI is generating. Click it to immediately abort the streaming response. The partial response remains visible in the message list. |
+| **Regenerate last response** (<img src="assets/refresh-cw.svg" alt="Refresh icon" width="16" height="16" style="vertical-align:text-bottom;" /> dashed border button) | Re-runs the last AI request from scratch and replaces the previous response. Useful when the output was unsatisfactory.                             |
 
 ---
 
@@ -210,4 +210,4 @@ When those actions involve prose, CHAT should orchestrate them instead of writin
 
 ---
 
-Next up: Customize the look and feel in [Appearance and Display](08_appearance_and_display.md).
+Next up: Find and replace text across your project in [Search and Replace](08_search_and_replace.md).

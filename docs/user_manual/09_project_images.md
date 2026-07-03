@@ -94,4 +94,4 @@ Paste the copied prompt into your preferred image generation tool (Stable Diffus
 
 ---
 
-Next up: Customize the look and feel in [Appearance and Display](08_appearance_and_display.md).
+Next up: Customize the look and feel in [Appearance and Display](10_appearance_and_display.md).

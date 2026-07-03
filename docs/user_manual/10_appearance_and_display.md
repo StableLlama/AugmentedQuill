@@ -94,4 +94,4 @@ JSON objects and arrays are collapsible — click the chevron next to any key to
 
 ---
 
-Next up: Read a strategic overview of the writing process in [Writing Your Story: A Practical Roadmap](10_writing_a_story.md).
+Next up: Read a strategic overview of the writing process in [Writing Your Story: A Practical Roadmap](11_writing_a_story.md).

@@ -93,7 +93,7 @@ The Image Picker is a sub-modal that appears when you click **Manage Images** in
 - A count below the grid shows how many images are currently selected.
 - Click **Done** (✓) to close the picker and apply the selection to the entry.
 
-Images shown here are managed in the [Project Images](06_project_images.md) dialog. You can upload new images there and they will appear in this picker immediately.
+Images shown here are managed in the [Project Images](09_project_images.md) dialog. You can upload new images there and they will appear in this picker immediately.
 
 ---
 
@@ -118,4 +118,4 @@ Mouse-over tooltips on the **Auto** control, spinner, and disabled checkboxes ex
 
 ---
 
-Next up: Manage your project's visual assets in [Project Images](06_project_images.md).
+Next up: Apply everything you've learned in the [Tutorial: Writing Your First Story](06_tutorial_first_story.md).
