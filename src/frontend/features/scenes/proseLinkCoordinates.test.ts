@@ -191,10 +191,10 @@ describe('toOriginalOffset', () => {
     expect(toOriginalOffset(0, fullContent)).toBe(0);
     expect(toOriginalOffset(1, fullContent)).toBe(1);
     expect(toOriginalOffset(2, fullContent)).toBe(2);
-    expect(toOriginalOffset(3, fullContent)).toBe(23); // first B after start marker
+    expect(toOriginalOffset(3, fullContent)).toBe(3); // at start marker boundary
     expect(toOriginalOffset(4, fullContent)).toBe(24);
     expect(toOriginalOffset(5, fullContent)).toBe(25); // last B
-    expect(toOriginalOffset(6, fullContent)).toBe(44); // first C after end marker
+    expect(toOriginalOffset(6, fullContent)).toBe(26); // at end marker boundary
     expect(toOriginalOffset(7, fullContent)).toBe(45);
     expect(toOriginalOffset(8, fullContent)).toBe(46); // last C
   });
@@ -248,11 +248,11 @@ describe('toOriginalOffset', () => {
     // stripped: PreAMidBPost  (11 chars)
     expect(toOriginalOffset(0, fullContent)).toBe(0); // P
     expect(toOriginalOffset(2, fullContent)).toBe(2); // e
-    expect(toOriginalOffset(3, fullContent)).toBe(23); // A after first marker
-    expect(toOriginalOffset(4, fullContent)).toBe(42); // M (in Mid)
+    expect(toOriginalOffset(3, fullContent)).toBe(3); // at a:start marker
+    expect(toOriginalOffset(4, fullContent)).toBe(24); // at a:end marker
     expect(toOriginalOffset(6, fullContent)).toBe(44); // d (in Mid)
-    expect(toOriginalOffset(7, fullContent)).toBe(65); // B after second marker
-    expect(toOriginalOffset(8, fullContent)).toBe(84); // P (in Post)
+    expect(toOriginalOffset(7, fullContent)).toBe(45); // at b:start marker
+    expect(toOriginalOffset(8, fullContent)).toBe(66); // at b:end marker
     expect(toOriginalOffset(10, fullContent)).toBe(86); // t (in Post) — 11 chars
   });
 
@@ -297,9 +297,9 @@ describe('toOriginalOffset', () => {
       'X<!--scene:a:start-->Y<!--scene:a:end-->Z<!--scene:b:start-->W<!--scene:b:end-->';
     // stripped: XYZW  (4 chars)
     expect(toOriginalOffset(0, fullContent)).toBe(0);
-    expect(toOriginalOffset(1, fullContent)).toBe(21); // Y after a's start marker
-    expect(toOriginalOffset(2, fullContent)).toBe(40); // Z after a's end marker
-    expect(toOriginalOffset(3, fullContent)).toBe(61); // W after b's start marker
+    expect(toOriginalOffset(1, fullContent)).toBe(1); // at a:start marker
+    expect(toOriginalOffset(2, fullContent)).toBe(22); // at a:end marker
+    expect(toOriginalOffset(3, fullContent)).toBe(41); // at b:start marker
   });
 });
 
@@ -888,7 +888,7 @@ describe('prose boundary drag roundtrip (old content with new offsets)', () => {
     const s1TagLen = '<!--scene:1:start-->'.length;
     const s1EndTagLen = '<!--scene:1:end-->'.length;
     const s2TagLen = '<!--scene:2:start-->'.length;
-    const s2EndTagLen = '<!--scene:2:end-->'.length;
+    const _s2EndTagLen = '<!--scene:2:end-->'.length;
 
     const newS1Start = s1TagLen; // right after <!--scene:1:start-->
     const newS1End = newContent.indexOf('<!--scene:1:end-->');
@@ -968,5 +968,372 @@ describe('prose boundary drag roundtrip (old content with new offsets)', () => {
       mismatchS1 || mismatchS2,
       'BUG: rendering new offsets with old content should produce wrong visible ranges'
     ).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TDD: approximation path must match exact path for reconstruction
+// ---------------------------------------------------------------------------
+
+describe('toVisibleLinkedOffset approximation vs exact', () => {
+  // The approximation path (no fullContent) is used by reconstructContentFromOffsets
+  // to convert backend-returned original offsets to visible.  It MUST give the
+  // same result as the exact walk on a well-formed marker-inclusive content
+  // string for every prose_link boundary offset.
+
+  function makeMarker(id: number | string, edge: 'start' | 'end'): string {
+    return `<!--scene:${id}:${edge}-->`;
+  }
+
+  function buildContent(scenes: Array<{ id: number; text: string }>): string {
+    let result = '';
+    for (const s of scenes) {
+      result += makeMarker(s.id, 'start') + s.text + makeMarker(s.id, 'end');
+    }
+    return result;
+  }
+
+  function extractOffsets(
+    content: string
+  ): Array<{ id: number; start: number; end: number }> {
+    const result: Array<{ id: number; start: number; end: number }> = [];
+    const regex = /<!--scene:(\d+):(start|end)-->/g;
+    const openStarts = new Map<number, number>();
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(content)) !== null) {
+      const id = parseInt(match[1], 10);
+      const edge = match[2];
+      if (edge === 'start') {
+        openStarts.set(id, match.index + match[0].length);
+      } else {
+        const start = openStarts.get(id);
+        if (start !== undefined) {
+          result.push({ id, start, end: match.index });
+          openStarts.delete(id);
+        }
+      }
+    }
+    return result.sort(
+      (
+        a: { id: number; start: number; end: number },
+        b: { id: number; start: number; end: number }
+      ) => a.start - b.start
+    );
+  }
+
+  const testCases = [
+    {
+      label: 'two adjacent scenes with same-length IDs',
+      content: buildContent([
+        { id: 1, text: 'AAA' },
+        { id: 2, text: 'BBB' },
+      ]),
+    },
+    {
+      label: 'two adjacent scenes with different-length IDs (1-digit vs 2-digit)',
+      content: buildContent([
+        { id: 1, text: 'Hello' },
+        { id: 13, text: 'World' },
+      ]),
+    },
+    {
+      label: 'three adjacent scenes with mixed ID lengths',
+      content: buildContent([
+        { id: 9, text: 'A' },
+        { id: 10, text: 'BB' },
+        { id: 99, text: 'CCC' },
+      ]),
+    },
+    {
+      label: 'two scenes with text between markers (gap)',
+      content:
+        makeMarker(1, 'start') +
+        'Alpha' +
+        makeMarker(1, 'end') +
+        '  gap  ' +
+        makeMarker(2, 'start') +
+        'Beta' +
+        makeMarker(2, 'end'),
+    },
+    {
+      label: 'single scene with text on both sides',
+      content:
+        'PREFIX' + makeMarker(5, 'start') + 'MIDDLE' + makeMarker(5, 'end') + 'SUFFIX',
+    },
+    {
+      label: 'five sequential scenes',
+      content: buildContent([
+        { id: 1, text: 'A' },
+        { id: 2, text: 'BB' },
+        { id: 3, text: 'CCC' },
+        { id: 4, text: 'DDDD' },
+        { id: 5, text: 'EEEEE' },
+      ]),
+    },
+  ];
+
+  for (const { label, content } of testCases) {
+    it(`approximation matches exact for all prose_link offsets: ${label}`, () => {
+      const offsets = extractOffsets(content);
+
+      // Build a mock scenes array for the approximation path
+      const mockScenes = offsets.map(
+        (o: { id: number; start: number; end: number }) => ({
+          id: o.id,
+          prose_link: {
+            scope_type: 'chapter' as const,
+            chapter_id: '1',
+            start_offset: o.start,
+            end_offset: o.end,
+          },
+        })
+      );
+
+      const mockChapter = {
+        id: '1',
+        scope: 'chapter' as const,
+        title: 'Ch1',
+        content,
+      };
+
+      for (const { id, start, end } of offsets) {
+        // Exact path: use fullContent with markers
+        const exactStart = toVisibleLinkedOffset(
+          start,
+          null as unknown as never,
+          [],
+          true,
+          content
+        );
+        const exactEnd = toVisibleLinkedOffset(
+          end,
+          null as unknown as never,
+          [],
+          true,
+          content
+        );
+
+        // Approximation path: no fullContent, use scenes + unit
+        const approxStart = toVisibleLinkedOffset(
+          start,
+          mockChapter as Parameters<typeof toVisibleLinkedOffset>[1],
+          mockScenes as Parameters<typeof toVisibleLinkedOffset>[2],
+          true
+        );
+        const approxEnd = toVisibleLinkedOffset(
+          end,
+          mockChapter as Parameters<typeof toVisibleLinkedOffset>[1],
+          mockScenes as Parameters<typeof toVisibleLinkedOffset>[2],
+          true
+        );
+
+        expect(
+          approxStart,
+          `${label} scene ${id}: start — exact=${exactStart} approx=${approxStart}`
+        ).toBe(exactStart);
+        expect(
+          approxEnd,
+          `${label} scene ${id}: end — exact=${exactEnd} approx=${approxEnd}`
+        ).toBe(exactEnd);
+      }
+    });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// TDD: multi-scene partial overlap — drag start of scene n+1 into scene n
+// ---------------------------------------------------------------------------
+
+describe('multi-scene boundary drag (real-world two-digit IDs)', () => {
+  function marker(id: number, edge: 'start' | 'end'): string {
+    return `<!--scene:${id}:${edge}-->`;
+  }
+
+  function extractOffsets(
+    content: string
+  ): Map<number, { start: number; end: number }> {
+    const result = new Map<number, { start: number; end: number }>();
+    const regex = /<!--scene:(\d+):(start|end)-->/g;
+    const openStarts = new Map<number, number>();
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(content)) !== null) {
+      const id = parseInt(match[1], 10);
+      if (match[2] === 'start') {
+        openStarts.set(id, match.index + match[0].length);
+      } else {
+        const start = openStarts.get(id);
+        if (start !== undefined) result.set(id, { start, end: match.index });
+      }
+    }
+    return result;
+  }
+
+  // Realistic scene IDs from actual user content: 13, 14, 16, 20, 21
+  const sceneDefs = [
+    { id: 13, text: 'Para1_' },
+    { id: 14, text: 'Para2_' },
+    { id: 16, text: 'Para3_' },
+    { id: 20, text: 'Para4_' },
+    { id: 21, text: 'Para5_' },
+  ];
+
+  const oldContent = sceneDefs
+    .map(
+      (s: { id: number; text: string }) =>
+        marker(s.id, 'start') + s.text + marker(s.id, 'end')
+    )
+    .join('');
+
+  const oldOffsets = extractOffsets(oldContent);
+
+  it('old content has correct visible text for each scene', () => {
+    const stripped = stripInlineInternalMarkers(oldContent);
+    expect(stripped).toBe(
+      sceneDefs.map((s: { id: number; text: string }) => s.text).join('')
+    );
+
+    for (const s of sceneDefs as Array<{ id: number; text: string }>) {
+      const off = oldOffsets.get(s.id)!;
+      const visStart = toVisibleLinkedOffset(
+        off.start,
+        null as unknown as never,
+        [],
+        true,
+        oldContent
+      );
+      const visEnd = toVisibleLinkedOffset(
+        off.end,
+        null as unknown as never,
+        [],
+        true,
+        oldContent
+      );
+      expect(stripped.slice(visStart, visEnd), `scene ${s.id}`).toBe(s.text);
+    }
+  });
+
+  it('dragging scene 16 start into scene 14 computes correct visible offset for API', () => {
+    // Scene 14 starts at visible position 6 (after "Para1_")
+    const scene14Off = oldOffsets.get(14)!;
+    const scene14VisStart = toVisibleLinkedOffset(
+      scene14Off.start,
+      null as unknown as never,
+      [],
+      true,
+      oldContent
+    );
+    expect(scene14VisStart).toBe(6);
+
+    // Drag scene 16's start to visible position 6 (engulfing scene 14).
+    // toOriginalOffset must return the position of scene 13's end marker
+    // (the boundary between scene 13 and scene 14), NOT past it.
+    const dragOrig = toOriginalOffset(6, oldContent);
+
+    // After the fix, dragOrig is at scene 13's end marker position.
+    const scene13End = oldOffsets.get(13)!.end;
+    expect(dragOrig).toBe(scene13End);
+
+    // Round-trip back to visible
+    const apiVisible = toVisibleLinkedOffset(
+      dragOrig,
+      null as unknown as never,
+      [],
+      true,
+      oldContent
+    );
+    expect(apiVisible).toBe(6);
+  });
+
+  it('after roundtrip with scene 14 unlinked, all remaining scenes have correct visible ranges', () => {
+    // After dragging scene 16 start to engulf scene 14:
+    // scene 13: "Para1_" (unchanged)
+    // scene 14: UNLINKED
+    // scene 16: "Para2_Para3_" (expanded to include scene 14's old text)
+    // scene 20: "Para4_" (unchanged)
+    // scene 21: "Para5_" (unchanged)
+    const newContent =
+      marker(13, 'start') +
+      'Para1_' +
+      marker(13, 'end') +
+      marker(16, 'start') +
+      'Para2_Para3_' +
+      marker(16, 'end') +
+      marker(20, 'start') +
+      'Para4_' +
+      marker(20, 'end') +
+      marker(21, 'start') +
+      'Para5_' +
+      marker(21, 'end');
+
+    const newOffsets = extractOffsets(newContent);
+    const stripped = stripInlineInternalMarkers(newContent);
+
+    // Build mock for approximation path (used by reconstructContentFromOffsets)
+    const mockScenes: Array<{
+      id: number;
+      prose_link: {
+        scope_type: 'chapter';
+        chapter_id: string;
+        start_offset: number;
+        end_offset: number;
+      };
+    }> = [];
+    for (const [id, off] of newOffsets) {
+      mockScenes.push({
+        id,
+        prose_link: {
+          scope_type: 'chapter',
+          chapter_id: '1',
+          start_offset: off.start,
+          end_offset: off.end,
+        },
+      });
+    }
+    const mockChapter = {
+      id: '1',
+      scope: 'chapter' as const,
+      title: 'Ch1',
+      content: newContent,
+    };
+
+    // Verify each scene's visible range via BOTH paths
+    for (const [id, off] of newOffsets) {
+      const approxStart = toVisibleLinkedOffset(
+        off.start,
+        mockChapter as never,
+        mockScenes as never,
+        true
+      );
+      const approxEnd = toVisibleLinkedOffset(
+        off.end,
+        mockChapter as never,
+        mockScenes as never,
+        true
+      );
+      const exactStart = toVisibleLinkedOffset(
+        off.start,
+        null as unknown as never,
+        [],
+        true,
+        newContent
+      );
+      const exactEnd = toVisibleLinkedOffset(
+        off.end,
+        null as unknown as never,
+        [],
+        true,
+        newContent
+      );
+
+      expect(approxStart, `scene ${id} start: approx vs exact`).toBe(exactStart);
+      expect(approxEnd, `scene ${id} end: approx vs exact`).toBe(exactEnd);
+
+      const visText = stripped.slice(exactStart, exactEnd);
+      const origText = newContent.slice(off.start, off.end);
+      expect(visText, `scene ${id} visible text`).toBe(origText);
+    }
+
+    // Verify scene 14 is NOT in the new content
+    expect(newContent).not.toContain('<!--scene:14:');
   });
 });

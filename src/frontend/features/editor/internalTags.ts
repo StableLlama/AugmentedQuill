@@ -311,17 +311,12 @@ export function toOriginalOffset(fullContent: string, visibleOffset: number): nu
       return lastIndex + (visibleOffset - visibleCount);
     }
     if (visibleCount + gap === visibleOffset) {
-      // Visible offset lands exactly at the start of this marker.  Check
-      // whether any non-marker text follows — if not, the offset points to
-      // the end of visible text right before this (trailing) marker.
-      const afterSlice = fullContent.slice(match.index + match[0].length);
-      const hasVisibleAfter =
-        afterSlice.replace(INLINE_INTERNAL_MARKER_REGEX, '').length > 0;
-      if (!hasVisibleAfter) {
-        // No visible text follows → the offset is right before this marker.
-        return match.index;
-      }
-      // Visible text follows → skip the marker and keep counting.
+      // Visible offset lands exactly at the start of this marker.  For
+      // boundary drags the correct original offset is always the marker
+      // position itself — never past it.  Even when visible text follows
+      // the marker (adjacent scenes), the boundary between the two scenes
+      // is at the marker, not after it.
+      return match.index;
     }
     visibleCount += gap;
     lastIndex = match.index + match[0].length;

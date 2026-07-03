@@ -46,10 +46,7 @@ import { externalValueSyncAnnotation } from '../editor/codeMirrorDiffPlugin';
 import {
   getSceneMarkerSpanRange,
   hasInlineSceneMarkers,
-  MarkerIntegrityError,
   sceneMarkerTokenLength,
-  stripInlineInternalMarkers,
-  validateMarkerIntegrity,
 } from '../editor/internalTags';
 import {
   getLinkedProseFromTextSource,
@@ -80,61 +77,6 @@ type BoundaryAdjustment = {
   newStart: number;
   newEnd: number;
 };
-
-/**
- * Reconstruct full content with markers from prose_link offsets.
- * Used instead of fetching chapter from API (which may return stale data).
- */
-function reconstructContentFromOffsets(
-  allScenes: Scene[],
-  chapter: WritingUnit | null | undefined,
-  scopeLink: SceneProseLink
-): string | null {
-  if (!chapter?.content) return null;
-  const stripped = stripInlineInternalMarkers(chapter.content);
-
-  // Build assignments from all scenes in the same scope
-  const assignments: { id: SceneId; visStart: number; visEnd: number }[] = [];
-  for (const scene of allScenes) {
-    const link = scene.prose_link;
-    if (!link) continue;
-    if (link.scope_type !== scopeLink.scope_type) continue;
-    if (scopeLink.scope_type === 'chapter' && link.chapter_id !== scopeLink.chapter_id)
-      continue;
-    if (link.end_offset == null) continue;
-
-    // Convert original offsets to visible using scene-based approximation
-    // (which doesn't depend on fullContent having correct markers)
-    const visStart = toVisibleLinkedOffset(link.start_offset, chapter, allScenes, true);
-    const visEnd = toVisibleLinkedOffset(link.end_offset, chapter, allScenes, true);
-    if (visStart >= visEnd) continue;
-    assignments.push({ id: scene.id, visStart, visEnd });
-  }
-
-  if (assignments.length === 0) return null;
-
-  // Sort by start position
-  assignments.sort(
-    (
-      a: { id: SceneId; visStart: number; visEnd: number },
-      b: { id: SceneId; visStart: number; visEnd: number }
-    ) => a.visStart - b.visStart
-  );
-
-  // Inject markers
-  let result = '';
-  let cursor = 0;
-  for (const a of assignments) {
-    const start = Math.max(cursor, a.visStart);
-    result += stripped.slice(cursor, start);
-    result += `<!--scene:${a.id}:start-->`;
-    result += stripped.slice(start, a.visEnd);
-    result += `<!--scene:${a.id}:end-->`;
-    cursor = a.visEnd;
-  }
-  result += stripped.slice(cursor);
-  return result;
-}
 
 function collectBoundaryAdjustments(
   scenes: Scene[],
@@ -1182,6 +1124,20 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
         modified.forEach((s: Scene) => patchScene(s));
         nextScenes = applyScenePatches(nextScenes, modified);
 
+        // Unlink engulfed scenes in the frontend store.  The API response
+        // does not include unlinked scenes, so without explicitly setting
+        // prose_link=null here the visible-offset calculation would
+        // incorrectly subtract marker token lengths for scenes whose
+        // markers have already been removed from the file — producing
+        // wrong visible offsets and "too short" scene display.
+        for (const unlinkedId of toUnlink) {
+          const unlinked = nextScenes.find((s: Scene): boolean => s.id === unlinkedId);
+          if (unlinked) {
+            patchScene({ ...unlinked, prose_link: null });
+            nextScenes = applyScenePatch(nextScenes, { ...unlinked, prose_link: null });
+          }
+        }
+
         if (typeof window !== 'undefined' && window.__AQ_DEBUG_RANGES) {
           console.log(
             '[AQ:handleProseBoundaryChange] API response scenes:',
@@ -1201,55 +1157,26 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
 
         // Refresh stored chapter/story content so useSceneProseSync
         // recomputes visible ranges with correct marker positions.
-        // Build the new content locally from prose_link offsets instead of
-        // relying on the API fetch (which may return stale content). Use
-        // `nextScenes` (the just-patched offsets from this response), not
-        // the pre-request `latestScenes` snapshot — reconstructing from
-        // stale offsets would render markers at their pre-drag positions.
+        // Fetch fresh content from the API — the backend has already
+        // written updated markers to disk.
         if (link.chapter_id) {
-          try {
-            const reconstructed = reconstructContentFromOffsets(
-              nextScenes,
-              latestChapter,
-              link
-            );
-            if (reconstructed) {
-              // Fail-safe: never apply locally-reconstructed content that
-              // would violate marker integrity (unbalanced or overlapping
-              // scene markers). Fall back to an authoritative API refetch
-              // instead of risking a corrupted/misrendered document.
-              try {
-                validateMarkerIntegrity(reconstructed);
-                updateCurrentChapterContent(reconstructed);
-              } catch (integrityErr) {
-                if (!(integrityErr instanceof MarkerIntegrityError)) throw integrityErr;
-                const ch = await api.chapters.get(Number(link.chapter_id));
-                if (seq !== boundaryDragSeqRef.current) return;
-                updateCurrentChapterContent(ch.content ?? '');
-              }
-            } else {
-              // Fallback: fetch from API
-              const ch = await api.chapters.get(Number(link.chapter_id));
-              if (seq !== boundaryDragSeqRef.current) return;
-              updateCurrentChapterContent(ch.content ?? '');
-            }
-          } catch {
-            /* non-critical */
-          }
+          const ch = await api.chapters.get(Number(link.chapter_id));
+          if (seq !== boundaryDragSeqRef.current) return;
+          recordSceneHistory('Adjust scene prose boundary', nextScenes);
+          updateCurrentChapterContent(ch.content ?? '');
         } else {
-          // Story-scope: refresh content.md so marker positions match new offsets
+          // Story-scope: refresh content.md
           try {
             const storyContent = await api.story.getContent();
             if (seq !== boundaryDragSeqRef.current) return;
             if (storyContent.ok) {
+              recordSceneHistory('Adjust scene prose boundary', nextScenes);
               updateCurrentChapterContent(storyContent.content);
             }
           } catch {
             /* non-critical */
           }
         }
-
-        recordSceneHistory('Adjust scene prose boundary', nextScenes);
       } catch (err) {
         if (seq !== boundaryDragSeqRef.current) return;
         notifyError(t('Update prose link'), err);

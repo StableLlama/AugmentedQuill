@@ -23,7 +23,6 @@ import {
   DecorationSet,
   drawSelection,
   WidgetType,
-  MatchDecorator,
 } from '@codemirror/view';
 import {
   EditorState,
@@ -49,10 +48,7 @@ import { buildClipboardExtension } from './clipboardExtension';
 import { buildDiffPlugin, externalValueSyncAnnotation } from './codeMirrorDiffPlugin';
 import { buildWhitespacePlugin } from './codeMirrorWhitespacePlugin';
 import { buildEnterExtension, buildTabExtension } from './codeMirrorKeymap';
-import {
-  INLINE_INTERNAL_MARKER_REGEX,
-  stripInlineInternalMarkers,
-} from './internalTags';
+import { stripInlineInternalMarkers } from './internalTags';
 import { buildAnnotationExtensions } from './annotationPlugin';
 import { FloatingDiffToolbar } from './FloatingDiffToolbar';
 
@@ -120,6 +116,7 @@ class ProseHandleWidget extends WidgetType {
     const el = document.createElement('span');
     el.className = `cm-prose-handle cm-prose-handle-${this.edge}`;
     el.setAttribute('aria-hidden', 'true');
+    el.setAttribute('data-testid', `handle-${this.edge}-${this.sceneId}`);
     el.title =
       this.edge === 'start' ? 'Drag to move scene start' : 'Drag to move scene end';
     const { view, sceneId, edge, callbackRef } = this;

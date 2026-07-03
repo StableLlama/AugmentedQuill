@@ -34,6 +34,8 @@ import type { Scene, SceneProseLink, SceneId } from '../../types';
 import type { WritingUnit, Chapter, Book } from '../../types/domain';
 import type { EditorHandle } from '../editor/Editor';
 import type { ProseBoundaryCallback } from '../editor/CodeMirrorEditor';
+import { stripInlineInternalMarkers } from '../editor/internalTags';
+import { toVisibleRange } from './proseLinkCoordinates';
 
 var patchSceneMock: ReturnType<typeof vi.fn>;
 var recordHistoryEntryMock: ReturnType<typeof vi.fn>;
@@ -105,6 +107,9 @@ const {
       refreshHash: vi.fn(),
       updateProseContent: vi.fn(),
       writeScene: vi.fn(),
+    },
+    story: {
+      getContent: vi.fn(),
     },
   };
   // Mutable holder — spy stubs close over this object; tests read from it.
@@ -2403,9 +2408,9 @@ describe('handleProseBoundaryChange', () => {
     const cb = await renderWithBoundary([sceneA, sceneB], { editorRef: ref });
 
     // Start the first drag (do NOT await it)
-    let drag1Done = false;
+    let _drag1Done = false;
     const drag1 = cb('a', 'end', 70).then(() => {
-      drag1Done = true;
+      _drag1Done = true;
     });
 
     // Wait for the first batch call to be made
@@ -2541,6 +2546,9 @@ describe('handleProseBoundaryChange', () => {
       prose_link: { ...proseLink, end_offset: 27 },
     });
     apiMock.scenes.batchLinkProse.mockResolvedValueOnce([result]);
+    apiMock.chapters.get.mockResolvedValueOnce({
+      content: 'AB<!--scene:a:start-->scene<!--scene:a:end-->_aCD',
+    });
     useScenesMock.mockReturnValue([scene]);
 
     storyState.chapters = [
@@ -2582,6 +2590,1447 @@ describe('handleProseBoundaryChange', () => {
     expect(rewrittenChapter?.content).toBe(
       'AB<!--scene:a:start-->scene<!--scene:a:end-->_aCD'
     );
+  });
+
+  it('unlinks engulfed scenes in the store so reconstruction excludes their marker tokens', async () => {
+    // Regression: when a boundary drag engulfs another scene, the API
+    // unlinks it on the backend but the response does NOT include the
+    // unlinked scene.  Without manually unlinking it in the frontend
+    // store, reconstructContentFromOffsets subtracts marker token
+    // lengths for the now-unlinked scene, producing wrong visible offsets
+    // and causing the remaining scenes to be displayed "too short".
+
+    // Full content: two adjacent scenes A and B
+    // <!--scene:a:start-->AAA<!--scene:a:end--><!--scene:b:start-->BBB<!--scene:b:end-->
+    // marker lengths: a-start=20, a-end=18, b-start=20, b-end=18
+    const fullContent =
+      '<!--scene:a:start-->AAA<!--scene:a:end-->' +
+      '<!--scene:b:start-->BBB<!--scene:b:end-->';
+    const currentChapter: WritingUnit = {
+      ...CHAPTER,
+      id: '3',
+      content: fullContent,
+    };
+
+    // Scene A: original [20, 23) — "AAA"
+    // Scene B: original [61, 64) — "BBB"
+    const linkA = makeProseLink({
+      scope_type: 'chapter',
+      chapter_id: '3',
+      start_offset: 20,
+      end_offset: 23,
+    });
+    const linkB = makeProseLink({
+      scope_type: 'chapter',
+      chapter_id: '3',
+      start_offset: 61,
+      end_offset: 64,
+    });
+    const sceneA = makeScene({ id: 'a', prose_link: linkA });
+    const sceneB = makeScene({ id: 'b', prose_link: linkB });
+
+    // Drag A's end to visible position 6 (end of "AAABBB", completely engulfing B)
+    // B should be unlinked because A's new range [20, 78) covers B [61, 64)
+    // After engulfing B, only A remains with the full "AAABBB" content.
+    const updatedA = makeScene({
+      id: 'a',
+      prose_link: { ...linkA, end_offset: 78 },
+    });
+    // Backend returns only A; B is unlinked and NOT in the response.
+    apiMock.scenes.batchLinkProse.mockResolvedValueOnce([updatedA]);
+    apiMock.chapters.get.mockResolvedValueOnce({
+      content: '<!--scene:a:start-->AAABBB<!--scene:a:end-->',
+    });
+    useScenesMock.mockReturnValue([sceneA, sceneB]);
+
+    storyState.chapters = [
+      {
+        id: '3',
+        scope: 'chapter',
+        title: 'Chapter 3',
+        summary: '',
+        content: fullContent,
+      },
+    ];
+
+    const { ref } = makeEditorRefWithBoundary();
+    const cb = await renderWithBoundary([sceneA, sceneB], {
+      editorRef: ref,
+      currentChapter,
+    });
+
+    await act(async () => {
+      await cb('a', 'end', 6);
+    });
+
+    // Verify the API call includes unlink_ids for the engulfed scene
+    expect(apiMock.scenes.batchLinkProse).toHaveBeenCalled();
+    const callArgs = apiMock.scenes.batchLinkProse.mock.calls[0]?.[0];
+    expect(callArgs.unlink_ids).toContain('b');
+
+    // BUG: patchScene is NOT called for scene B (unlinked scene not in response)
+    // This means nextScenes still has scene B with its old prose_link.
+    // reconstructContentFromOffsets then subtracts B's marker tokens from
+    // the approximation, causing wrong visible positions.
+
+    // Verify setStory was called with reconstructed content
+    expect(setStoryMock).toHaveBeenCalled();
+    const updater = setStoryMock.mock.calls[setStoryMock.mock.calls.length - 1]?.[0] as
+      | ((prev: typeof storyState) => typeof storyState)
+      | undefined;
+    expect(typeof updater).toBe('function');
+    const prevState = {
+      ...storyState,
+      chapters: storyState.chapters.map(
+        (chapter: (typeof storyState.chapters)[number]) => ({ ...chapter })
+      ),
+    };
+    const nextState = updater!(prevState);
+    const rewrittenChapter = nextState.chapters.find(
+      (chapter: (typeof storyState.chapters)[number]) => chapter.id === '3'
+    );
+
+    // The reconstructed content should contain ONLY scene A's markers
+    // covering the full visible text "AAABBB" (6 chars).
+    // Without the fix, the approximation would subtract B's marker tokens
+    // (even though B no longer has markers), producing wrong positions.
+    expect(rewrittenChapter?.content).toBe(
+      '<!--scene:a:start-->AAABBB<!--scene:a:end-->'
+    );
+  });
+
+  it('unlinks engulfed scenes on START boundary drag so reconstruction excludes their marker tokens', async () => {
+    // Regression: same as the end-boundary engulfment test, but dragging
+    // the START handle left to engulf a scene that sits before it.
+
+    // Full content: two adjacent scenes B then A
+    // <!--scene:b:start-->BBB<!--scene:b:end--><!--scene:a:start-->AAA<!--scene:a:end-->
+    const fullContent =
+      '<!--scene:b:start-->BBB<!--scene:b:end-->' +
+      '<!--scene:a:start-->AAA<!--scene:a:end-->';
+    const currentChapter: WritingUnit = {
+      ...CHAPTER,
+      id: '3',
+      content: fullContent,
+    };
+
+    // Scene B: original [20, 23) — "BBB"  (first in file)
+    // Scene A: original [61, 64) — "AAA"  (after B)
+    const linkA = makeProseLink({
+      scope_type: 'chapter',
+      chapter_id: '3',
+      start_offset: 61,
+      end_offset: 64,
+    });
+    const linkB = makeProseLink({
+      scope_type: 'chapter',
+      chapter_id: '3',
+      start_offset: 20,
+      end_offset: 23,
+    });
+    const sceneA = makeScene({ id: 'a', prose_link: linkA });
+    const sceneB = makeScene({ id: 'b', prose_link: linkB });
+
+    // Drag A's START left to visible position 0, completely engulfing B
+    // toOriginalOffset(0, fullContent) → 0
+    // A becomes [0, 64) in original, covering B [20, 23) entirely → B unlinked
+    const updatedA = makeScene({
+      id: 'a',
+      prose_link: { ...linkA, start_offset: 0 },
+    });
+    // Backend returns only A; B is unlinked and NOT in the response.
+    apiMock.scenes.batchLinkProse.mockResolvedValueOnce([updatedA]);
+    apiMock.chapters.get.mockResolvedValueOnce({
+      content: '<!--scene:a:start-->BBBAAA<!--scene:a:end-->',
+    });
+    useScenesMock.mockReturnValue([sceneA, sceneB]);
+
+    storyState.chapters = [
+      {
+        id: '3',
+        scope: 'chapter',
+        title: 'Chapter 3',
+        summary: '',
+        content: fullContent,
+      },
+    ];
+
+    const { ref } = makeEditorRefWithBoundary();
+    const cb = await renderWithBoundary([sceneA, sceneB], {
+      editorRef: ref,
+      currentChapter,
+    });
+
+    await act(async () => {
+      await cb('a', 'start', 0);
+    });
+
+    // Verify the API call includes unlink_ids for the engulfed scene
+    expect(apiMock.scenes.batchLinkProse).toHaveBeenCalled();
+    const callArgs = apiMock.scenes.batchLinkProse.mock.calls[0]?.[0];
+    expect(callArgs.unlink_ids).toContain('b');
+
+    // Verify setStory was called with reconstructed content
+    expect(setStoryMock).toHaveBeenCalled();
+    const updater = setStoryMock.mock.calls[setStoryMock.mock.calls.length - 1]?.[0] as
+      | ((prev: typeof storyState) => typeof storyState)
+      | undefined;
+    expect(typeof updater).toBe('function');
+    const prevState = {
+      ...storyState,
+      chapters: storyState.chapters.map(
+        (chapter: (typeof storyState.chapters)[number]) => ({ ...chapter })
+      ),
+    };
+    const nextState = updater!(prevState);
+    const rewrittenChapter = nextState.chapters.find(
+      (chapter: (typeof storyState.chapters)[number]) => chapter.id === '3'
+    );
+
+    // The reconstructed content should contain ONLY scene A's markers
+    // covering the full visible text "BBBAAA" (6 chars).
+    // Without the fix, the approximation would subtract B's marker tokens
+    // (even though B no longer has markers), producing wrong positions.
+    expect(rewrittenChapter?.content).toBe(
+      '<!--scene:a:start-->BBBAAA<!--scene:a:end-->'
+    );
+  });
+
+  it('correctly adjusts adjacent scene when dragging start left into its prose (partial overlap)', async () => {
+    // Regression: dragging scene 2's start handle left into scene 1's text
+    // should shrink scene 1 and expand scene 2.  The API must receive
+    // adjusted offsets for BOTH scenes, not just the dragged one.
+    // After the roundtrip, scene 2's visible start must be at the dragged
+    // position, not "jumped back" by the marker overhead.
+
+    // Full content: two adjacent scenes with numeric IDs
+    // <!--scene:1:start-->AAA<!--scene:1:end--><!--scene:2:start-->BBB<!--scene:2:end-->
+    // marker lengths: 1-start=20, 1-end=18, 2-start=20, 2-end=18
+    const fullContent =
+      '<!--scene:1:start-->AAA<!--scene:1:end-->' +
+      '<!--scene:2:start-->BBB<!--scene:2:end-->';
+    const currentChapter: WritingUnit = {
+      ...CHAPTER,
+      id: '3',
+      content: fullContent,
+    };
+
+    // Scene 1: original [20, 23) — "AAA"
+    // Scene 2: original [61, 64) — "BBB"
+    const link1 = makeProseLink({
+      scope_type: 'chapter',
+      chapter_id: '3',
+      start_offset: 20,
+      end_offset: 23,
+    });
+    const link2 = makeProseLink({
+      scope_type: 'chapter',
+      chapter_id: '3',
+      start_offset: 61,
+      end_offset: 64,
+    });
+    const scene1 = makeScene({ id: '1', prose_link: link1 });
+    const scene2 = makeScene({ id: '2', prose_link: link2 });
+
+    // Drag scene 2's start LEFT to visible position 1 (one char into "AAA")
+    // This shrinks scene 1 to [20, 21), expands scene 2 to [21, 64).
+    // Backend receives: scene1 [0,1), scene2 [1,5) in stripped "AAABBB"
+    // Backend writes: <!--scene:1:start-->A<!--scene:1:end--><!--scene:2:start-->AABB<!--scene:2:end-->B
+    // Backend returns new original offsets from the new content:
+    //   Scene 1: start=20, end=21  (A at 20, end marker at 21)
+    //   Scene 2: start=59, end=63  (AABB at 59-62, end marker at 63)
+    const updated1 = makeScene({
+      id: '1',
+      prose_link: { ...link1, end_offset: 21 },
+    });
+    const updated2 = makeScene({
+      id: '2',
+      prose_link: { ...link2, start_offset: 59, end_offset: 63 },
+    });
+    apiMock.scenes.batchLinkProse.mockResolvedValueOnce([updated1, updated2]);
+    apiMock.chapters.get.mockResolvedValueOnce({
+      content:
+        '<!--scene:1:start-->A<!--scene:1:end-->' +
+        '<!--scene:2:start-->AABB<!--scene:2:end-->B',
+    });
+    useScenesMock.mockReturnValue([scene1, scene2]);
+
+    storyState.chapters = [
+      {
+        id: '3',
+        scope: 'chapter',
+        title: 'Chapter 3',
+        summary: '',
+        content: fullContent,
+      },
+    ];
+
+    const { ref } = makeEditorRefWithBoundary();
+    const cb = await renderWithBoundary([scene1, scene2], {
+      editorRef: ref,
+      currentChapter,
+    });
+
+    await act(async () => {
+      await cb('2', 'start', 1);
+    });
+
+    // Verify the API call includes adjusted offsets for BOTH scenes
+    expect(apiMock.scenes.batchLinkProse).toHaveBeenCalled();
+    const callArgs = apiMock.scenes.batchLinkProse.mock.calls[0]?.[0];
+
+    // Both scenes should be in the assignments
+    const sceneIds = callArgs.assignments.map(
+      (a: { scene_id: number | string }) => a.scene_id
+    );
+    expect(sceneIds).toContain('1');
+    expect(sceneIds).toContain('2');
+
+    // Scene 1's visible end should be 1 (after first "A")
+    const s1Assignment = callArgs.assignments.find(
+      (a: { scene_id: number | string }) => String(a.scene_id) === '1'
+    );
+    expect(s1Assignment?.end_offset).toBe(1);
+
+    // Scene 2's visible start should be 1 (at the same position)
+    const s2Assignment = callArgs.assignments.find(
+      (a: { scene_id: number | string }) => String(a.scene_id) === '2'
+    );
+    expect(s2Assignment?.start_offset).toBe(1);
+
+    // Verify setStory was called with correct reconstructed content
+    expect(setStoryMock).toHaveBeenCalled();
+    const updater = setStoryMock.mock.calls[setStoryMock.mock.calls.length - 1]?.[0] as
+      | ((prev: typeof storyState) => typeof storyState)
+      | undefined;
+    expect(typeof updater).toBe('function');
+    const prevState = {
+      ...storyState,
+      chapters: storyState.chapters.map(
+        (chapter: (typeof storyState.chapters)[number]) => ({ ...chapter })
+      ),
+    };
+    const nextState = updater!(prevState);
+    const rewrittenChapter = nextState.chapters.find(
+      (chapter: (typeof storyState.chapters)[number]) => chapter.id === '3'
+    );
+
+    // The reconstructed content: scene 1 covers "A", scene 2 covers "AABB"
+    // Trailing "B" is outside both scenes
+    expect(rewrittenChapter?.content).toBe(
+      '<!--scene:1:start-->A<!--scene:1:end-->' +
+        '<!--scene:2:start-->AABB<!--scene:2:end-->B'
+    );
+  });
+
+  it('with many scenes, dragging scene n+1 start into scene n correctly handles engulfment and partial overlap', async () => {
+    // Real-world scenario: 5 scenes with two-digit IDs (13, 14, 16, 20, 21),
+    // dragging scene 16's start left one paragraph into scene 14's text
+    // (engulfing scene 14).  Scene 14 is unlinked.  Scene 16 expands.
+    // After the roundtrip, all visible ranges must be correct.
+
+    function marker(id: number, edge: 'start' | 'end'): string {
+      return `<!--scene:${id}:${edge}-->`;
+    }
+
+    const fullContent =
+      marker(13, 'start') +
+      'Para1_' +
+      marker(13, 'end') +
+      marker(14, 'start') +
+      'Para2_' +
+      marker(14, 'end') +
+      marker(16, 'start') +
+      'Para3_' +
+      marker(16, 'end') +
+      marker(20, 'start') +
+      'Para4_' +
+      marker(20, 'end') +
+      marker(21, 'start') +
+      'Para5_' +
+      marker(21, 'end');
+
+    const currentChapter: WritingUnit = {
+      ...CHAPTER,
+      id: '3',
+      content: fullContent,
+    };
+
+    // Compute original offsets from the content
+    function extractOffsets(
+      content: string
+    ): Map<number, { start: number; end: number }> {
+      const result = new Map<number, { start: number; end: number }>();
+      const regex = /<!--scene:(\d+):(start|end)-->/g;
+      const openStarts = new Map<number, number>();
+      let match: RegExpExecArray | null;
+      while ((match = regex.exec(content)) !== null) {
+        const id = parseInt(match[1], 10);
+        if (match[2] === 'start') {
+          openStarts.set(id, match.index + match[0].length);
+        } else {
+          const s = openStarts.get(id);
+          if (s !== undefined) result.set(id, { start: s, end: match.index });
+        }
+      }
+      return result;
+    }
+
+    const origOffsets = extractOffsets(fullContent);
+
+    const link13 = makeProseLink({
+      scope_type: 'chapter',
+      chapter_id: '3',
+      start_offset: origOffsets.get(13)!.start,
+      end_offset: origOffsets.get(13)!.end,
+    });
+    const link14 = makeProseLink({
+      scope_type: 'chapter',
+      chapter_id: '3',
+      start_offset: origOffsets.get(14)!.start,
+      end_offset: origOffsets.get(14)!.end,
+    });
+    const link16 = makeProseLink({
+      scope_type: 'chapter',
+      chapter_id: '3',
+      start_offset: origOffsets.get(16)!.start,
+      end_offset: origOffsets.get(16)!.end,
+    });
+    const link20 = makeProseLink({
+      scope_type: 'chapter',
+      chapter_id: '3',
+      start_offset: origOffsets.get(20)!.start,
+      end_offset: origOffsets.get(20)!.end,
+    });
+    const link21 = makeProseLink({
+      scope_type: 'chapter',
+      chapter_id: '3',
+      start_offset: origOffsets.get(21)!.start,
+      end_offset: origOffsets.get(21)!.end,
+    });
+
+    const scene13 = makeScene({ id: '13', prose_link: link13 });
+    const scene14 = makeScene({ id: '14', prose_link: link14 });
+    const scene16 = makeScene({ id: '16', prose_link: link16 });
+    const scene20 = makeScene({ id: '20', prose_link: link20 });
+    const scene21 = makeScene({ id: '21', prose_link: link21 });
+
+    // Drag scene 16's start to visible position 6 (= end of scene 13's "Para1_")
+    // Scene 14 is completely engulfed → unlinked
+    // Scene 16 expands to cover scene 14's old text
+    // After the fix, toOriginalOffset(6, fullContent) returns the position
+    // of scene 13's end marker (the correct boundary), not past it.
+
+    // Backend response: scene 14 unlinked (not in response),
+    // scene 13 unchanged, scene 16 expanded, scenes 20/21 unchanged
+    const newOffsets = extractOffsets(
+      marker(13, 'start') +
+        'Para1_' +
+        marker(13, 'end') +
+        marker(16, 'start') +
+        'Para2_Para3_' +
+        marker(16, 'end') +
+        marker(20, 'start') +
+        'Para4_' +
+        marker(20, 'end') +
+        marker(21, 'start') +
+        'Para5_' +
+        marker(21, 'end')
+    );
+
+    const updated13 = makeScene({
+      id: '13',
+      prose_link: {
+        ...link13,
+        start_offset: newOffsets.get(13)!.start,
+        end_offset: newOffsets.get(13)!.end,
+      },
+    });
+    const updated16 = makeScene({
+      id: '16',
+      prose_link: {
+        ...link16,
+        start_offset: newOffsets.get(16)!.start,
+        end_offset: newOffsets.get(16)!.end,
+      },
+    });
+    const updated20 = makeScene({
+      id: '20',
+      prose_link: {
+        ...link20,
+        start_offset: newOffsets.get(20)!.start,
+        end_offset: newOffsets.get(20)!.end,
+      },
+    });
+    const updated21 = makeScene({
+      id: '21',
+      prose_link: {
+        ...link21,
+        start_offset: newOffsets.get(21)!.start,
+        end_offset: newOffsets.get(21)!.end,
+      },
+    });
+
+    apiMock.scenes.batchLinkProse.mockResolvedValueOnce([
+      updated13,
+      updated16,
+      updated20,
+      updated21,
+    ]);
+    apiMock.chapters.get.mockResolvedValueOnce({
+      content:
+        '<!--scene:13:start-->Para1_<!--scene:13:end-->' +
+        '<!--scene:16:start-->Para2_Para3_<!--scene:16:end-->' +
+        '<!--scene:20:start-->Para4_<!--scene:20:end-->' +
+        '<!--scene:21:start-->Para5_<!--scene:21:end-->',
+    });
+    useScenesMock.mockReturnValue([scene13, scene14, scene16, scene20, scene21]);
+
+    storyState.chapters = [
+      {
+        id: '3',
+        scope: 'chapter',
+        title: 'Chapter 3',
+        summary: '',
+        content: fullContent,
+      },
+    ];
+
+    const { ref } = makeEditorRefWithBoundary();
+    const cb = await renderWithBoundary([scene13, scene14, scene16, scene20, scene21], {
+      editorRef: ref,
+      currentChapter,
+    });
+
+    await act(async () => {
+      await cb('16', 'start', 6);
+    });
+
+    // Verify API call includes unlink_ids for engulfed scene 14
+    expect(apiMock.scenes.batchLinkProse).toHaveBeenCalled();
+    const callArgs = apiMock.scenes.batchLinkProse.mock.calls[0]?.[0];
+    expect(callArgs.unlink_ids).toContain('14');
+
+    // Verify setStory was called with correct reconstructed content
+    expect(setStoryMock).toHaveBeenCalled();
+    const updater = setStoryMock.mock.calls[setStoryMock.mock.calls.length - 1]?.[0] as
+      | ((prev: typeof storyState) => typeof storyState)
+      | undefined;
+    const prevState = {
+      ...storyState,
+      chapters: storyState.chapters.map((c: Chapter) => ({ ...c })),
+    };
+    const nextState = updater!(prevState);
+    const rewrittenChapter = nextState.chapters.find((c: Chapter) => c.id === '3');
+
+    // Scene 14 is unlinked — must NOT appear in the reconstructed content
+    expect(rewrittenChapter?.content).not.toContain('<!--scene:14:');
+    // All other scenes must be present
+    expect(rewrittenChapter?.content).toContain('<!--scene:13:');
+    expect(rewrittenChapter?.content).toContain('<!--scene:16:');
+    expect(rewrittenChapter?.content).toContain('<!--scene:20:');
+    expect(rewrittenChapter?.content).toContain('<!--scene:21:');
+
+    // Verify the visible text for each remaining scene is correct
+    const stripped = stripInlineInternalMarkers(rewrittenChapter!.content);
+    // Scene 13: "Para1_" (6 chars at start)
+    expect(stripped.indexOf('Para1_')).toBe(0);
+    // Scene 16: "Para2_Para3_" (should follow scene 13)
+    expect(stripped.indexOf('Para2_Para3_')).toBe(6);
+
+    // ===== UX verification: toVisibleRange after store update =====
+    // This is the critical test: after the full handler flow completes,
+    // toVisibleRange must return correct visible positions for each scene.
+    // If it doesn't, the editor highlights will be at wrong positions.
+    //
+    // Build the final scenes from patchSceneMock calls (the store mock
+    // doesn't maintain state — we need to manually apply patches).
+    let finalScenes = [scene13, scene14, scene16, scene20, scene21];
+    for (const call of patchSceneMock.mock.calls) {
+      const patched: Scene | null = call[0];
+      const removeId: SceneId | undefined = call[1];
+      if (patched === null && removeId !== undefined) {
+        finalScenes = finalScenes.filter((s: Scene) => s.id !== removeId);
+      } else if (patched) {
+        const idx = finalScenes.findIndex((s: Scene) => s.id === patched.id);
+        if (idx >= 0) {
+          finalScenes[idx] = patched;
+        } else {
+          finalScenes.push(patched);
+        }
+      }
+    }
+
+    const finalContent = rewrittenChapter!.content;
+    const finalUnit: WritingUnit = {
+      id: '3',
+      scope: 'chapter',
+      title: 'Chapter 3',
+      content: stripInlineInternalMarkers(finalContent),
+    };
+
+    for (const sceneId of ['13', '16', '20', '21']) {
+      const scene = finalScenes.find((s: Scene) => String(s.id) === sceneId);
+      expect(scene, `scene ${sceneId} must exist in store`).toBeDefined();
+      expect(scene!.prose_link, `scene ${sceneId} must have prose_link`).toBeDefined();
+
+      const visible = toVisibleRange(scene!, finalUnit, finalScenes, finalContent);
+      expect(visible, `scene ${sceneId} must have a visible range`).not.toBeNull();
+
+      // Verify the visible range matches the actual prose text
+      const expectedText = finalContent.slice(
+        scene!.prose_link!.start_offset,
+        scene!.prose_link!.end_offset!
+      );
+      const visibleText = stripInlineInternalMarkers(finalContent).slice(
+        visible!.from,
+        visible!.to
+      );
+      expect(visibleText, `scene ${sceneId} visible text mismatch`).toBe(expectedText);
+    }
+
+    // Scene 14 must NOT have a prose_link (it was unlinked)
+    const scene14After = finalScenes.find((s: Scene) => String(s.id) === '14');
+    expect(scene14After?.prose_link, 'scene 14 must be unlinked').toBeFalsy();
+  });
+
+  it('dragging scene end right into adjacent scene — full backend roundtrip simulation', async () => {
+    // This test simulates the ACTUAL backend relink_scope_prose behavior
+    // instead of mocking with hardcoded offsets.  The backend:
+    //   1. Strips ALL markers from the file content
+    //   2. Injects markers at the provided visible (stripped) positions
+    //   3. Re-parses the new content to get updated offsets
+    //   4. Returns those offsets (NOT our mock's pre-computed ones)
+    //
+    // If the frontend sends wrong visible offsets, the backend-returned
+    // offsets will be wrong, and toVisibleRange will produce wrong results.
+
+    function marker(id: number, edge: 'start' | 'end'): string {
+      return `<!--scene:${id}:${edge}-->`;
+    }
+
+    // ── Backend simulation helpers ────────────────────────────────────
+    const SCENE_MARKER_RE = /<!--scene:\d+:(?:start|end)-->/g;
+
+    function backendRemoveAllMarkers(content: string): string {
+      return content.replace(SCENE_MARKER_RE, '');
+    }
+
+    function backendInjectMarkers(
+      stripped: string,
+      assignments: Array<[number, number, number]>
+    ): string {
+      const sorted = [...assignments].sort(
+        (a: [number, number, number], b: [number, number, number]) => a[1] - b[1]
+      );
+      let result = '';
+      let cursor = 0;
+      for (const [id, start, end] of sorted) {
+        result += stripped.slice(cursor, start);
+        result += `<!--scene:${id}:start-->`;
+        result += stripped.slice(start, end);
+        result += `<!--scene:${id}:end-->`;
+        cursor = end;
+      }
+      result += stripped.slice(cursor);
+      return result;
+    }
+
+    function backendRemapOffsetAfterMarkerRemoval(
+      content: string,
+      offset: number
+    ): number {
+      const clamped = Math.max(0, Math.min(offset, content.length));
+      let removed = 0;
+      const regex = new RegExp(SCENE_MARKER_RE.source, 'g');
+      let match: RegExpExecArray | null;
+      while ((match = regex.exec(content)) !== null) {
+        const markerStart = match.index;
+        const markerEnd = markerStart + match[0].length;
+        if (markerEnd <= clamped) {
+          removed += match[0].length;
+          continue;
+        }
+        if (markerStart < clamped) {
+          removed += clamped - markerStart;
+        }
+        break;
+      }
+      return clamped - removed;
+    }
+
+    function backendParseSpans(
+      content: string
+    ): Map<number, { start: number; end: number }> {
+      const result = new Map<number, { start: number; end: number }>();
+      const regex = /<!--scene:(\d+):(start|end)-->/g;
+      const openStarts = new Map<number, number>();
+      let match: RegExpExecArray | null;
+      while ((match = regex.exec(content)) !== null) {
+        const id = parseInt(match[1], 10);
+        if (match[2] === 'start') {
+          openStarts.set(id, match.index + match[0].length);
+        } else {
+          const s = openStarts.get(id);
+          if (s !== undefined) result.set(id, { start: s, end: match.index });
+        }
+      }
+      return result;
+    }
+
+    /**
+     * Full backend relink_scope_prose simulation:
+     * Takes old file content + frontend batch assignments,
+     * returns the new content and updated scene offsets.
+     */
+    function simulateBackendRelink(
+      oldContent: string,
+      batchAssignments: Array<{
+        scene_id: number;
+        start_offset: number;
+        end_offset: number;
+      }>,
+      unlinkIds: number[]
+    ): {
+      newContent: string;
+      updatedScenes: Array<{ id: number; start_offset: number; end_offset: number }>;
+    } {
+      // 1. Capture original spans BEFORE stripping
+      const originalSpans = backendParseSpans(oldContent);
+      const assignedIds = new Set(
+        batchAssignments.map(
+          (a: { scene_id: number; start_offset: number; end_offset: number }) =>
+            Number(a.scene_id)
+        )
+      );
+
+      // 2. Remove markers of unlinked scenes
+      let content = oldContent;
+      for (const uid of unlinkIds) {
+        const re = new RegExp(`<!--scene:${uid}:(?:start|end)-->`, 'g');
+        content = content.replace(re, '');
+      }
+
+      // 3. Strip all remaining markers
+      const stripped = backendRemoveAllMarkers(content);
+
+      // 4. Assigned scenes use provided stripped offsets directly
+      const allAssignments: Array<[number, number, number]> = batchAssignments.map(
+        (a: { scene_id: number; start_offset: number; end_offset: number }) => [
+          Number(a.scene_id),
+          a.start_offset,
+          a.end_offset,
+        ]
+      );
+
+      // 5. Remap non-assigned, non-unlinked scenes
+      for (const [id, span] of originalSpans) {
+        if (assignedIds.has(id)) continue;
+        if (unlinkIds.includes(id)) continue;
+        const remappedStart = backendRemapOffsetAfterMarkerRemoval(content, span.start);
+        const remappedEnd = backendRemapOffsetAfterMarkerRemoval(content, span.end);
+        if (remappedStart >= remappedEnd) continue;
+        allAssignments.push([id, remappedStart, remappedEnd]);
+      }
+
+      // 6. Inject markers
+      const newContent = backendInjectMarkers(stripped, allAssignments);
+
+      // 7. Parse new spans
+      const newSpans = backendParseSpans(newContent);
+
+      // 8. Return updated scenes
+      const updatedScenes: Array<{
+        id: number;
+        start_offset: number;
+        end_offset: number;
+      }> = [];
+      for (const [id, span] of newSpans) {
+        updatedScenes.push({ id, start_offset: span.start, end_offset: span.end });
+      }
+      return { newContent, updatedScenes };
+    }
+    // ── End backend simulation ────────────────────────────────────────
+
+    // Actual test scenario: two adjacent scenes
+    const fullContent =
+      marker(20, 'start') +
+      'Para4_' +
+      marker(20, 'end') +
+      marker(21, 'start') +
+      'Para5_' +
+      marker(21, 'end');
+
+    const currentChapter: WritingUnit = {
+      ...CHAPTER,
+      id: '3',
+      content: fullContent,
+    };
+
+    // Original offsets
+    // 20-start(0-20) Para4_(21-26) 20-end(27-45) 21-start(46-66) Para5_(67-72) 21-end(73-91)
+    const link20 = makeProseLink({
+      scope_type: 'chapter',
+      chapter_id: '3',
+      start_offset: 21,
+      end_offset: 27,
+    });
+    const link21 = makeProseLink({
+      scope_type: 'chapter',
+      chapter_id: '3',
+      start_offset: 67,
+      end_offset: 73,
+    });
+    const scene20 = makeScene({ id: '20', prose_link: link20 });
+    const scene21 = makeScene({ id: '21', prose_link: link21 });
+
+    // Instead of hardcoding the API response, compute it using the
+    // same logic the backend would use.  The mock captures the
+    // frontend's batchAssignments, feeds them through the simulation,
+    // and returns the computed offsets.
+    apiMock.scenes.batchLinkProse.mockImplementation(
+      async (payload: {
+        scope_type: string;
+        chapter_id?: string | null;
+        assignments: Array<{
+          scene_id: number;
+          start_offset: number;
+          end_offset: number;
+        }>;
+        unlink_ids?: number[];
+      }) => {
+        const { newContent, updatedScenes } = simulateBackendRelink(
+          fullContent,
+          payload.assignments.map(
+            (a: { scene_id: number; start_offset: number; end_offset: number }) => ({
+              scene_id: a.scene_id,
+              start_offset: a.start_offset,
+              end_offset: a.end_offset,
+            })
+          ),
+          (payload.unlink_ids || []) as number[]
+        );
+        // Also mock the chapter get to return the updated content
+        apiMock.chapters.get.mockResolvedValueOnce({ content: newContent });
+        return updatedScenes.map(
+          (s: { id: number; start_offset: number; end_offset: number }) =>
+            makeScene({
+              id: String(s.id),
+              prose_link: {
+                scope_type: 'chapter',
+                chapter_id: '3',
+                start_offset: s.start_offset,
+                end_offset: s.end_offset,
+              },
+            })
+        ) as Scene[];
+      }
+    );
+    useScenesMock.mockReturnValue([scene20, scene21]);
+
+    storyState.chapters = [
+      {
+        id: '3',
+        scope: 'chapter',
+        title: 'Chapter 3',
+        summary: '',
+        content: fullContent,
+      },
+    ];
+
+    const { ref } = makeEditorRefWithBoundary();
+    const cb = await renderWithBoundary([scene20, scene21], {
+      editorRef: ref,
+      currentChapter,
+    });
+
+    // Drag scene 20's end RIGHT to visible position 8 (2 chars into "Para5_")
+    await act(async () => {
+      await cb('20', 'end', 8);
+    });
+
+    // Verify the API was called
+    expect(apiMock.scenes.batchLinkProse).toHaveBeenCalled();
+
+    // Verify setStory was called with reconstructed content
+    expect(setStoryMock).toHaveBeenCalled();
+    const updater = setStoryMock.mock.calls[setStoryMock.mock.calls.length - 1]?.[0] as
+      | ((prev: typeof storyState) => typeof storyState)
+      | undefined;
+    expect(typeof updater).toBe('function');
+    const prevState = {
+      ...storyState,
+      chapters: storyState.chapters.map((c: Chapter) => ({ ...c })),
+    };
+    const nextState = updater!(prevState);
+    const rewrittenChapter = nextState.chapters.find((c: Chapter) => c.id === '3');
+    expect(rewrittenChapter?.content).toBeTruthy();
+
+    // Build final scenes from patchSceneMock calls
+    let finalScenes = [scene20, scene21];
+    for (const call of patchSceneMock.mock.calls) {
+      const patched: Scene | null = call[0];
+      if (patched) {
+        const idx = finalScenes.findIndex((s: Scene) => s.id === patched.id);
+        if (idx >= 0) finalScenes[idx] = patched;
+        else finalScenes.push(patched);
+      }
+    }
+
+    const finalContent = rewrittenChapter!.content;
+    const finalUnit: WritingUnit = {
+      id: '3',
+      scope: 'chapter',
+      title: 'Chapter 3',
+      content: stripInlineInternalMarkers(finalContent),
+    };
+
+    // ===== THE CRITICAL CHECK =====
+    // After the full roundtrip (frontend → simulated backend → frontend),
+    // both scenes' visible ranges must match what the user expects.
+    // Scene 20 should cover "Para4_Pa" (8 chars), scene 21 "ra5_" (4 chars).
+
+    const s20 = finalScenes.find((s: Scene) => String(s.id) === '20');
+    expect(s20?.prose_link, 'scene 20 must have prose_link').toBeDefined();
+    const s20Vis = toVisibleRange(s20!, finalUnit, finalScenes, finalContent);
+    expect(s20Vis, 'scene 20 range').toEqual({ from: 0, to: 8 });
+
+    const s21 = finalScenes.find((s: Scene) => String(s.id) === '21');
+    expect(s21?.prose_link, 'scene 21 must have prose_link').toBeDefined();
+    const s21Vis = toVisibleRange(s21!, finalUnit, finalScenes, finalContent);
+    expect(s21Vis, 'scene 21 range').toEqual({ from: 8, to: 12 });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Backend roundtrip simulation helpers (shared by all 6 UX tests)
+  // ═══════════════════════════════════════════════════════════════════
+
+  /** Returns a marker token string for a given scene id and edge. */
+  function m(id: number, edge: 'start' | 'end'): string {
+    return `<!--scene:${id}:${edge}-->`;
+  }
+
+  /** Builds full content with markers for a list of {id, text} scenes. */
+  function buildContent(scenes: Array<{ id: number; text: string }>): string {
+    return scenes
+      .map(
+        (s: { id: number; text: string }) => m(s.id, 'start') + s.text + m(s.id, 'end')
+      )
+      .join('');
+  }
+
+  /** Regex that matches any scene marker token. */
+  const SCENE_MARKER_RE = /<!--scene:\d+:(?:start|end)-->/g;
+
+  function backendStripMarkers(content: string): string {
+    return content.replace(SCENE_MARKER_RE, '');
+  }
+
+  function backendInjectMarkers(
+    stripped: string,
+    assignments: Array<[number, number, number]>
+  ): string {
+    const sorted = [...assignments].sort(
+      (a: [number, number, number], b: [number, number, number]) => a[1] - b[1]
+    );
+    let result = '';
+    let cursor = 0;
+    for (const [id, start, end] of sorted) {
+      result += stripped.slice(cursor, start);
+      result += m(id, 'start');
+      result += stripped.slice(start, end);
+      result += m(id, 'end');
+      cursor = end;
+    }
+    result += stripped.slice(cursor);
+    return result;
+  }
+
+  function backendRemapOffset(content: string, offset: number): number {
+    const clamped = Math.max(0, Math.min(offset, content.length));
+    let removed = 0;
+    const regex = new RegExp(SCENE_MARKER_RE.source, 'g');
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(content)) !== null) {
+      const ms = match.index;
+      const me = ms + match[0].length;
+      if (me <= clamped) {
+        removed += match[0].length;
+        continue;
+      }
+      if (ms < clamped) {
+        removed += clamped - ms;
+      }
+      break;
+    }
+    return clamped - removed;
+  }
+
+  function backendParseSpans(
+    content: string
+  ): Map<number, { start: number; end: number }> {
+    const r = new Map<number, { start: number; end: number }>();
+    const open = new Map<number, number>();
+    const re = /<!--scene:(\d+):(start|end)-->/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(content)) !== null) {
+      const id = parseInt(m[1], 10);
+      if (m[2] === 'start') open.set(id, m.index + m[0].length);
+      else {
+        const s = open.get(id);
+        if (s !== undefined) r.set(id, { start: s, end: m.index });
+      }
+    }
+    return r;
+  }
+
+  /** Full backend relink_scope_prose simulation. */
+  function simulateBackend(
+    oldContent: string,
+    batchAssignments: Array<{
+      scene_id: number;
+      start_offset: number;
+      end_offset: number;
+    }>,
+    unlinkIds: number[]
+  ): {
+    updatedScenes: Array<{ id: number; start_offset: number; end_offset: number }>;
+    newContent: string;
+  } {
+    const originalSpans = backendParseSpans(oldContent);
+    const assignedIds = new Set(
+      batchAssignments.map(
+        (a: { scene_id: number; start_offset: number; end_offset: number }) =>
+          Number(a.scene_id)
+      )
+    );
+
+    let content = oldContent;
+    for (const uid of unlinkIds) {
+      content = content.replace(
+        new RegExp(`<!--scene:${uid}:(?:start|end)-->`, 'g'),
+        ''
+      );
+    }
+    const stripped = backendStripMarkers(content);
+
+    const allAssignments: Array<[number, number, number]> = batchAssignments.map(
+      (a: { scene_id: number; start_offset: number; end_offset: number }) => [
+        Number(a.scene_id),
+        a.start_offset,
+        a.end_offset,
+      ]
+    );
+    for (const [id, span] of originalSpans) {
+      if (assignedIds.has(id)) continue;
+      if (unlinkIds.includes(id)) continue;
+      const rs = backendRemapOffset(content, span.start);
+      const re = backendRemapOffset(content, span.end);
+      if (rs >= re) continue;
+      allAssignments.push([id, rs, re]);
+    }
+    const newContent = backendInjectMarkers(stripped, allAssignments);
+    const newSpans = backendParseSpans(newContent);
+    return {
+      updatedScenes: [...newSpans].map(
+        ([id, s]: [number, { start: number; end: number }]) => ({
+          id,
+          start_offset: s.start,
+          end_offset: s.end,
+        })
+      ),
+      newContent,
+    };
+  }
+
+  /** Wires up the mock API to use simulateBackend, runs a drag, and returns the final state. */
+  async function runDragAndVerify(
+    chapterContent: string,
+    initialScenes: Scene[],
+    currentChapter: WritingUnit,
+    dragSceneId: string,
+    dragEdge: 'start' | 'end',
+    dragOffset: number,
+    expectedRanges: Record<string, { from: number; to: number }>
+  ): Promise<void> {
+    apiMock.scenes.batchLinkProse.mockImplementation(
+      async (payload: {
+        assignments: Array<{
+          scene_id: number;
+          start_offset: number;
+          end_offset: number;
+        }>;
+        unlink_ids?: number[];
+      }) => {
+        const { updatedScenes, newContent } = simulateBackend(
+          chapterContent,
+          payload.assignments.map(
+            (a: { scene_id: number; start_offset: number; end_offset: number }) => ({
+              scene_id: a.scene_id,
+              start_offset: a.start_offset,
+              end_offset: a.end_offset,
+            })
+          ),
+          (payload.unlink_ids || []) as number[]
+        );
+        // Also mock the chapter get to return the updated content
+        apiMock.chapters.get.mockResolvedValueOnce({ content: newContent });
+        return updatedScenes.map(
+          (s: { id: number; start_offset: number; end_offset: number }) =>
+            makeScene({
+              id: String(s.id),
+              prose_link: {
+                scope_type: 'chapter',
+                chapter_id: currentChapter.id,
+                start_offset: s.start_offset,
+                end_offset: s.end_offset,
+              },
+            })
+        ) as Scene[];
+      }
+    );
+    useScenesMock.mockReturnValue(initialScenes);
+    storyState.chapters = [
+      {
+        id: currentChapter.id,
+        scope: 'chapter',
+        title: currentChapter.title,
+        summary: '',
+        content: chapterContent,
+      },
+    ];
+
+    const { ref } = makeEditorRefWithBoundary();
+    const cb = await renderWithBoundary(initialScenes, {
+      editorRef: ref,
+      currentChapter,
+    });
+    await act(async () => {
+      await cb(dragSceneId, dragEdge, dragOffset);
+    });
+
+    expect(setStoryMock).toHaveBeenCalled();
+    const updater = setStoryMock.mock.calls[setStoryMock.mock.calls.length - 1]?.[0] as
+      | ((prev: typeof storyState) => typeof storyState)
+      | undefined;
+    const prevState = {
+      ...storyState,
+      chapters: storyState.chapters.map((c: Chapter) => ({ ...c })),
+    };
+    const nextState = updater!(prevState);
+    const rewritten = nextState.chapters.find(
+      (c: Chapter) => c.id === currentChapter.id
+    );
+    expect(rewritten?.content).toBeTruthy();
+
+    // Build final scenes from patchSceneMock calls
+    let finalScenes = [...initialScenes];
+    for (const call of patchSceneMock.mock.calls) {
+      const p: Scene | null = call[0];
+      if (!p) continue;
+      const idx = finalScenes.findIndex((s: Scene) => s.id === p.id);
+      if (idx >= 0) finalScenes[idx] = p;
+      else finalScenes.push(p);
+    }
+
+    const finalContent = rewritten!.content;
+    const finalUnit: WritingUnit = {
+      id: currentChapter.id,
+      scope: 'chapter',
+      title: currentChapter.title,
+      content: backendStripMarkers(finalContent),
+    };
+
+    for (const [sceneId, expected] of Object.entries(expectedRanges)) {
+      const scene = finalScenes.find((s: Scene) => String(s.id) === sceneId);
+      expect(scene, `scene ${sceneId} must exist`).toBeDefined();
+      if (expected.from < 0) {
+        // Negative from means "expect no prose_link" (unlinked)
+        expect(scene!.prose_link, `scene ${sceneId} must be unlinked`).toBeFalsy();
+      } else {
+        expect(
+          scene!.prose_link,
+          `scene ${sceneId} must have prose_link`
+        ).toBeDefined();
+        const vis = toVisibleRange(scene!, finalUnit, finalScenes, finalContent);
+        expect(vis, `scene ${sceneId} range`).toEqual(expected);
+      }
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // START boundary drags (3 scenarios)
+  // ═══════════════════════════════════════════════════════════════════
+
+  it('START: shrink scene 14 within its own text', async () => {
+    // 3 scenes: 13="Para1_", 14="Para2_", 16="Para3_"
+    // Drag scene 14 start RIGHT from visible 6 to visible 8
+    const content = buildContent([
+      { id: 13, text: 'Para1_' },
+      { id: 14, text: 'Para2_' },
+      { id: 16, text: 'Para3_' },
+    ]);
+    const ch: WritingUnit = { ...CHAPTER, id: '3', content };
+    const off = backendParseSpans(content);
+    const s13 = makeScene({
+      id: '13',
+      prose_link: makeProseLink({
+        scope_type: 'chapter',
+        chapter_id: '3',
+        start_offset: off.get(13)!.start,
+        end_offset: off.get(13)!.end,
+      }),
+    });
+    const s14 = makeScene({
+      id: '14',
+      prose_link: makeProseLink({
+        scope_type: 'chapter',
+        chapter_id: '3',
+        start_offset: off.get(14)!.start,
+        end_offset: off.get(14)!.end,
+      }),
+    });
+    const s16 = makeScene({
+      id: '16',
+      prose_link: makeProseLink({
+        scope_type: 'chapter',
+        chapter_id: '3',
+        start_offset: off.get(16)!.start,
+        end_offset: off.get(16)!.end,
+      }),
+    });
+
+    await runDragAndVerify(content, [s13, s14, s16], ch, '14', 'start', 8, {
+      '13': { from: 0, to: 6 }, // "Para1_" unchanged
+      '14': { from: 8, to: 12 }, // "ra2_" (last 4 chars)
+      '16': { from: 12, to: 18 }, // "Para3_" unchanged
+    });
+  });
+
+  it('START: drag scene 14 start left into scene 13 (partial overlap)', async () => {
+    // Drag scene 14 start LEFT from visible 6 to visible 3
+    const content = buildContent([
+      { id: 13, text: 'Para1_' },
+      { id: 14, text: 'Para2_' },
+      { id: 16, text: 'Para3_' },
+    ]);
+    const ch: WritingUnit = { ...CHAPTER, id: '3', content };
+    const off = backendParseSpans(content);
+    const s13 = makeScene({
+      id: '13',
+      prose_link: makeProseLink({
+        scope_type: 'chapter',
+        chapter_id: '3',
+        start_offset: off.get(13)!.start,
+        end_offset: off.get(13)!.end,
+      }),
+    });
+    const s14 = makeScene({
+      id: '14',
+      prose_link: makeProseLink({
+        scope_type: 'chapter',
+        chapter_id: '3',
+        start_offset: off.get(14)!.start,
+        end_offset: off.get(14)!.end,
+      }),
+    });
+    const s16 = makeScene({
+      id: '16',
+      prose_link: makeProseLink({
+        scope_type: 'chapter',
+        chapter_id: '3',
+        start_offset: off.get(16)!.start,
+        end_offset: off.get(16)!.end,
+      }),
+    });
+
+    await runDragAndVerify(content, [s13, s14, s16], ch, '14', 'start', 3, {
+      '13': { from: 0, to: 3 }, // "Par" (shrunk)
+      '14': { from: 3, to: 12 }, // "a1_Para2_" (expanded)
+      '16': { from: 12, to: 18 }, // "Para3_" unchanged
+    });
+  });
+
+  it('START: drag scene 16 start left past scene 14 (engulfment)', async () => {
+    // Drag scene 16 start LEFT from visible 12 all the way to visible 3,
+    // completely engulfing scene 14 (which gets unlinked).
+    const content = buildContent([
+      { id: 13, text: 'Para1_' },
+      { id: 14, text: 'Para2_' },
+      { id: 16, text: 'Para3_' },
+    ]);
+    const ch: WritingUnit = { ...CHAPTER, id: '3', content };
+    const off = backendParseSpans(content);
+    const s13 = makeScene({
+      id: '13',
+      prose_link: makeProseLink({
+        scope_type: 'chapter',
+        chapter_id: '3',
+        start_offset: off.get(13)!.start,
+        end_offset: off.get(13)!.end,
+      }),
+    });
+    const s14 = makeScene({
+      id: '14',
+      prose_link: makeProseLink({
+        scope_type: 'chapter',
+        chapter_id: '3',
+        start_offset: off.get(14)!.start,
+        end_offset: off.get(14)!.end,
+      }),
+    });
+    const s16 = makeScene({
+      id: '16',
+      prose_link: makeProseLink({
+        scope_type: 'chapter',
+        chapter_id: '3',
+        start_offset: off.get(16)!.start,
+        end_offset: off.get(16)!.end,
+      }),
+    });
+
+    await runDragAndVerify(content, [s13, s14, s16], ch, '16', 'start', 3, {
+      '13': { from: 0, to: 3 }, // "Par" (shrunk by scene 16's expansion)
+      '14': { from: -1, to: -1 }, // UNLINKED
+      '16': { from: 3, to: 18 }, // "a1_Para2_Para3_" (expanded to cover 14 + own text)
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════
+  // END boundary drags (3 scenarios)
+  // ═══════════════════════════════════════════════════════════════════
+
+  it('END: shrink scene 14 within its own text', async () => {
+    // Drag scene 14 end LEFT from visible 12 to visible 10
+    const content = buildContent([
+      { id: 13, text: 'Para1_' },
+      { id: 14, text: 'Para2_' },
+      { id: 16, text: 'Para3_' },
+    ]);
+    const ch: WritingUnit = { ...CHAPTER, id: '3', content };
+    const off = backendParseSpans(content);
+    const s13 = makeScene({
+      id: '13',
+      prose_link: makeProseLink({
+        scope_type: 'chapter',
+        chapter_id: '3',
+        start_offset: off.get(13)!.start,
+        end_offset: off.get(13)!.end,
+      }),
+    });
+    const s14 = makeScene({
+      id: '14',
+      prose_link: makeProseLink({
+        scope_type: 'chapter',
+        chapter_id: '3',
+        start_offset: off.get(14)!.start,
+        end_offset: off.get(14)!.end,
+      }),
+    });
+    const s16 = makeScene({
+      id: '16',
+      prose_link: makeProseLink({
+        scope_type: 'chapter',
+        chapter_id: '3',
+        start_offset: off.get(16)!.start,
+        end_offset: off.get(16)!.end,
+      }),
+    });
+
+    await runDragAndVerify(content, [s13, s14, s16], ch, '14', 'end', 10, {
+      '13': { from: 0, to: 6 }, // "Para1_" unchanged
+      '14': { from: 6, to: 10 }, // "Para" (shrunk, 4 chars)
+      '16': { from: 12, to: 18 }, // "Para3_" (unchanged, gap text "2_" at 10-12 unowned)
+    });
+  });
+
+  it('END: drag scene 14 end right into scene 16 (partial overlap)', async () => {
+    // Drag scene 14 end RIGHT from visible 12 to visible 15
+    const content = buildContent([
+      { id: 13, text: 'Para1_' },
+      { id: 14, text: 'Para2_' },
+      { id: 16, text: 'Para3_' },
+    ]);
+    const ch: WritingUnit = { ...CHAPTER, id: '3', content };
+    const off = backendParseSpans(content);
+    const s13 = makeScene({
+      id: '13',
+      prose_link: makeProseLink({
+        scope_type: 'chapter',
+        chapter_id: '3',
+        start_offset: off.get(13)!.start,
+        end_offset: off.get(13)!.end,
+      }),
+    });
+    const s14 = makeScene({
+      id: '14',
+      prose_link: makeProseLink({
+        scope_type: 'chapter',
+        chapter_id: '3',
+        start_offset: off.get(14)!.start,
+        end_offset: off.get(14)!.end,
+      }),
+    });
+    const s16 = makeScene({
+      id: '16',
+      prose_link: makeProseLink({
+        scope_type: 'chapter',
+        chapter_id: '3',
+        start_offset: off.get(16)!.start,
+        end_offset: off.get(16)!.end,
+      }),
+    });
+
+    await runDragAndVerify(content, [s13, s14, s16], ch, '14', 'end', 15, {
+      '13': { from: 0, to: 6 }, // "Para1_" unchanged
+      '14': { from: 6, to: 15 }, // "Para2_Par" (expanded)
+      '16': { from: 15, to: 18 }, // "a3_" (shrunk)
+    });
+  });
+
+  it('END: drag scene 13 end right past scene 14 (engulfment)', async () => {
+    // Drag scene 13 end RIGHT from visible 6 all the way to visible 15,
+    // completely engulfing scene 14 (which gets unlinked).
+    const content = buildContent([
+      { id: 13, text: 'Para1_' },
+      { id: 14, text: 'Para2_' },
+      { id: 16, text: 'Para3_' },
+    ]);
+    const ch: WritingUnit = { ...CHAPTER, id: '3', content };
+    const off = backendParseSpans(content);
+    const s13 = makeScene({
+      id: '13',
+      prose_link: makeProseLink({
+        scope_type: 'chapter',
+        chapter_id: '3',
+        start_offset: off.get(13)!.start,
+        end_offset: off.get(13)!.end,
+      }),
+    });
+    const s14 = makeScene({
+      id: '14',
+      prose_link: makeProseLink({
+        scope_type: 'chapter',
+        chapter_id: '3',
+        start_offset: off.get(14)!.start,
+        end_offset: off.get(14)!.end,
+      }),
+    });
+    const s16 = makeScene({
+      id: '16',
+      prose_link: makeProseLink({
+        scope_type: 'chapter',
+        chapter_id: '3',
+        start_offset: off.get(16)!.start,
+        end_offset: off.get(16)!.end,
+      }),
+    });
+
+    await runDragAndVerify(content, [s13, s14, s16], ch, '13', 'end', 15, {
+      '13': { from: 0, to: 15 }, // "Para1_Para2_Par" (expanded, engulfing 14)
+      '14': { from: -1, to: -1 }, // UNLINKED
+      '16': { from: 15, to: 18 }, // "a3_" (shrunk by scene 13's expansion)
+    });
   });
 });
 
@@ -3338,7 +4787,7 @@ describe('handleNarrativeReorder (drag-reorder user interaction)', () => {
       await nv().onDropScenesOnChapter?.(['u'], '3');
     });
 
-    const chapterDetailLength = 'Longer content from chapter detail endpoint.'.length;
+    const _chapterDetailLength = 'Longer content from chapter detail endpoint.'.length;
     expect(apiMock.chapters.get).toHaveBeenCalled();
     expect(apiMock.scenes.linkProse).toHaveBeenCalled();
   });
@@ -4095,6 +5544,14 @@ describe('scene mutations record history entries', () => {
         prose_link: makeProseLink({ start_offset: 0, end_offset: 10 }),
       }),
     ]);
+    apiMock.chapters.get.mockResolvedValueOnce({
+      content: '<!--scene:a:start-->Scene A.<!--scene:a:end-->',
+    });
+    // Also need the story-scope fallback for story-scoped prose links
+    apiMock.story.getContent.mockResolvedValueOnce({
+      ok: true,
+      content: '<!--scene:a:start-->Scene A.<!--scene:a:end-->',
+    });
 
     const { ref } = makeEditorRefWithBoundary('Scene A.');
     useScenesMock.mockReturnValue([sceneA]);
