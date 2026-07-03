@@ -18,8 +18,8 @@
  *   deselects the card.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Scene, SceneId, SceneProseLink } from '../../types';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { Scene, SceneId } from '../../types';
 import type { WritingUnit } from '../../types/domain';
 import type { EditorHandle } from '../editor/Editor';
 import type { ProseHighlightRange } from '../editor/CodeMirrorEditor';
@@ -58,6 +58,21 @@ export function useSceneProseSync(
   scenesRef.current = scenes;
   const currentChapterRef = useRef(currentChapter);
   currentChapterRef.current = currentChapter;
+
+  // Track when the editor handle becomes available.  React ref.current
+  // changes do not trigger re-renders, so we poll via useLayoutEffect
+  // (which runs after every render) to detect the transition.  Once
+  // detected we set a state flag so the cursor-callback effect below
+  // re-runs and registers the callback even when editorRef.current was
+  // null on the initial mount (e.g. because the Editor component is
+  // conditionally rendered behind currentChapter).
+  const [editorAttached, setEditorAttached] = useState(false);
+  useLayoutEffect((): void => {
+    const hasEditor = !!editorRef?.current;
+    if (hasEditor !== editorAttached) {
+      setEditorAttached(hasEditor);
+    }
+  });
 
   // Subscribe to editor cursor changes.  When the cursor moves into a linked
   // prose range we select the owning scene card and highlight the prose.
@@ -123,7 +138,7 @@ export function useSceneProseSync(
     return (): void => {
       editor.setOnCursorChange(null);
     };
-  }, [editorRef]);
+  }, [editorRef, editorAttached]);
 
   // When the set of highlighted scenes changes, rebuild the decoration list
   // and push it to the editor so all selected cards are simultaneously lit.

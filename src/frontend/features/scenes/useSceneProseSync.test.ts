@@ -1063,4 +1063,70 @@ describe('useSceneProseSync', () => {
       ] as ProseHighlightRange[])
     );
   });
+
+  // -------------------------------------------------------------------------
+  // Editor ref lifecycle — null on mount, attached later
+  // -------------------------------------------------------------------------
+
+  it('registers cursor callback when editor ref becomes available after mount', () => {
+    // Simulates the real app scenario: editorRef.current is null on mount
+    // because the Editor component is conditionally rendered behind
+    // currentChapter.  The hook must detect the delayed attachment and
+    // register the cursor callback once the handle becomes available.
+    const deferredRef: React.RefObject<EditorHandle | null> = { current: null };
+    const { result, rerender } = renderHook(() =>
+      useSceneProseSync([sceneWithChapterLink], chapterUnit, deferredRef)
+    );
+
+    // Before attachment: cursor change should NOT be registered
+    expect(editor.handle.setOnCursorChange).not.toHaveBeenCalled();
+
+    // Attach the editor handle to the ref (simulates Editor mounting later)
+    deferredRef.current = editor.handle;
+
+    // Re-render so useLayoutEffect detects the new ref.current value
+    rerender();
+
+    // After attachment + re-render: cursor callback should be registered
+    expect(editor.handle.setOnCursorChange).toHaveBeenCalled();
+
+    // Verify the callback works: moving cursor into linked range selects scene
+    act(() => {
+      editor.triggerCursorChange(5, 7);
+    });
+
+    expect(result.current.selectedSceneId).toBe('scene-a');
+  });
+
+  it('registers cursor callback when editor ref is available from the start', () => {
+    // Verify the existing behavior still works: when editorRef.current is
+    // populated on mount, the callback is registered immediately.
+    const ref = makeRef(editor.handle);
+    renderHook(() => useSceneProseSync([sceneWithChapterLink], chapterUnit, ref));
+
+    expect(editor.handle.setOnCursorChange).toHaveBeenCalled();
+  });
+
+  it('clears selection when editor detaches and cursor callback was registered', () => {
+    // When the editor handle becomes null after being set (e.g. workspace
+    // mode switch unmounts the Editor), the hook should clean up.
+    const deferredRef: React.RefObject<EditorHandle | null> = { current: null };
+    const { rerender } = renderHook(() =>
+      useSceneProseSync([sceneWithChapterLink], chapterUnit, deferredRef)
+    );
+
+    // Attach
+    deferredRef.current = editor.handle;
+    rerender();
+    expect(editor.handle.setOnCursorChange).toHaveBeenCalled();
+
+    // Detach
+    editor.handle.setOnCursorChange.mockClear();
+    deferredRef.current = null;
+    rerender();
+
+    // The cleanup from the previous effect run should have called
+    // setOnCursorChange(null)
+    expect(editor.handle.setOnCursorChange).toHaveBeenCalledWith(null);
+  });
 });
