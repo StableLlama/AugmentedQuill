@@ -362,7 +362,11 @@ async def import_project_response(file: UploadFile) -> ProjectMutationResponse:
         return ProjectMutationResponse(
             ok=True,
             message=f"Imported as {final_name}",
-            registry={"current": normalized_reg["current"], "recent": normalized_reg["recent"], "available": available},  # type: ignore[arg-type]
+            registry={
+                "current": normalized_reg["current"],
+                "recent": normalized_reg["recent"],
+                "available": available,
+            },  # type: ignore[arg-type]
         )
     except Exception as e:
         if temp_dir.exists():

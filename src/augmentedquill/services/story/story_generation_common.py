@@ -839,7 +839,7 @@ def gather_writing_context(
                     continue
                 seen.add(eid)
                 desc = entry.get("description", "")
-                lines.append(f"[{entry.get('name', eid)}]\n" f"{desc}\n")
+                lines.append(f"[{entry.get('name', eid)}]\n{desc}\n")
 
         # include any explicitly checked entries passed by the client
         checked = (payload or {}).get("checked_sourcebook") or []
@@ -854,7 +854,7 @@ def gather_writing_context(
                     if eid and eid not in seen:
                         seen.add(eid)
                         desc = entry.get("description", "")
-                        lines.append(f"[{entry.get('name', eid)}]\n" f"{desc}\n")
+                        lines.append(f"[{entry.get('name', eid)}]\n{desc}\n")
 
         background = normalize_included_markdown_headings("\n".join(lines))
     except Exception:

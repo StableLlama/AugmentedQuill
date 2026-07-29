@@ -310,10 +310,9 @@ def test_split_straddling_annotations_start_inside_keeps_in_markers_inside_block
         f"-in:start ({in_start_pos}) must be inside scene 1 block "
         f"[{re_start}, {re_end})"
     )
-    assert re_start <= in_end_pos < re_end, (
-        f"-in:end ({in_end_pos}) must be inside scene 1 block "
-        f"[{re_start}, {re_end})"
-    )
+    assert (
+        re_start <= in_end_pos < re_end
+    ), f"-in:end ({in_end_pos}) must be inside scene 1 block [{re_start}, {re_end})"
     # -in:start must come before -in:end
     assert in_start_pos < in_end_pos, "-in:start must precede -in:end"
 
@@ -379,10 +378,9 @@ def test_split_straddling_annotations_start_outside_keeps_in_markers_inside_bloc
         f"-in:start ({in_start_pos}) must be inside scene 2 block "
         f"[{re_start}, {re_end})"
     )
-    assert re_start <= in_end_pos < re_end, (
-        f"-in:end ({in_end_pos}) must be inside scene 2 block "
-        f"[{re_start}, {re_end})"
-    )
+    assert (
+        re_start <= in_end_pos < re_end
+    ), f"-in:end ({in_end_pos}) must be inside scene 2 block [{re_start}, {re_end})"
     assert in_start_pos < in_end_pos, "-in:start must precede -in:end"
 
     # ---- -out markers must be OUTSIDE scene 2's block ----

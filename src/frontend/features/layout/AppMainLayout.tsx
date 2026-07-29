@@ -347,17 +347,28 @@ export const AppMainLayout: React.FC<AppMainLayoutProps> = React.memo(
 
     const openAnnotationDialogFromSelection = useCallback((): void => {
       if (!currentChapter || !annotationScope) return;
+
+      // When called from the context menu, the selection may have been
+      // cleared by the menu click.  Use the stored pendingSelection if
+      // getSelection() returns null or empty.
       const sel = editorRef.current?.getSelection();
-      if (!sel) return;
-      const from = Math.min(sel.anchor, sel.head);
-      const to = Math.max(sel.anchor, sel.head);
-      if (from === to) return;
-      // Store editor-space (stripped) offsets.  Full-content conversion
-      // happens at API-call time in handleCreateAnnotation.
-      setPendingSelection({ from, to });
-      setAnnotationMenu({ open: false, x: 0, y: 0 });
-      setIsAnnotationDialogOpen(true);
-    }, [annotationScope, currentChapter, editorRef]);
+      if (sel) {
+        const from = Math.min(sel.anchor, sel.head);
+        const to = Math.max(sel.anchor, sel.head);
+        if (from < to) {
+          setPendingSelection({ from, to });
+          setAnnotationMenu({ open: false, x: 0, y: 0 });
+          setIsAnnotationDialogOpen(true);
+          return;
+        }
+      }
+      // Fallback: use the selection stored by the context menu handler
+      if (pendingSelection && pendingSelection.from < pendingSelection.to) {
+        setAnnotationMenu({ open: false, x: 0, y: 0 });
+        setIsAnnotationDialogOpen(true);
+        return;
+      }
+    }, [annotationScope, currentChapter, editorRef, pendingSelection]);
 
     useEffect((): (() => void) => {
       const handleContextMenu = (e: MouseEvent): void => {
@@ -418,8 +429,12 @@ export const AppMainLayout: React.FC<AppMainLayoutProps> = React.memo(
         // from the visible document, so getSelection() returns stripped
         // positions that must be mapped back to the raw file coordinates.
         const fullContent = currentChapter.content ?? '';
-        const fromFull = toOriginalOffset(fullContent, pendingSelection.from);
-        const toFull = toOriginalOffset(fullContent, pendingSelection.to);
+        const fromFull = toOriginalOffset(fullContent, pendingSelection.from, {
+          snapPastMarkers: true,
+        });
+        const toFull = toOriginalOffset(fullContent, pendingSelection.to, {
+          snapPastMarkers: true,
+        });
 
         const created = await createAnnotation({
           ...annotationScope,

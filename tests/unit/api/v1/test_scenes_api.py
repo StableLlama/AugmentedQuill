@@ -483,8 +483,7 @@ class ScenesApiTest(ApiTestCase):
             self.assertLess(
                 start_pos,
                 end_pos,
-                f"Annotation {aid} start ({start_pos}) must precede "
-                f"end ({end_pos})",
+                f"Annotation {aid} start ({start_pos}) must precede end ({end_pos})",
             )
 
         # --- INVARIANT 3: -in markers move WITH the scene block ---

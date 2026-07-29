@@ -133,8 +133,7 @@ def test_inject_markers_wraps_ranges_in_order() -> None:
 
 def test_remove_markers_strips_selected_scene_only() -> None:
     text = (
-        "<!--scene:1:start-->A<!--scene:1:end-->"
-        "<!--scene:2:start-->B<!--scene:2:end-->"
+        "<!--scene:1:start-->A<!--scene:1:end--><!--scene:2:start-->B<!--scene:2:end-->"
     )
     cleaned = remove_markers(text, {1})
     assert cleaned == "A<!--scene:2:start-->B<!--scene:2:end-->"
@@ -256,11 +255,7 @@ def test_snap_range_outside_markers_in_marker_only_content_returns_empty_boundar
 def test_migrate_project_v9_initializes_annotations_collection(tmp_path) -> None:
     story_path = tmp_path / "story.json"
     story_path.write_text(
-        "{"
-        '"metadata": {"version": 8},'
-        '"project_title": "Test",'
-        '"format": "markdown"'
-        "}",
+        '{"metadata": {"version": 8},"project_title": "Test","format": "markdown"}',
         encoding="utf-8",
     )
 
@@ -285,7 +280,7 @@ def test_parse_annotation_spans_with_scene_markers_inside_annotation() -> None:
     span = spans[0]
     assert span.annotation_id == "ann-1"
     assert text[span.start : span.end] == (
-        "annotated text " "<!--scene:3:end--><!--scene:5:start-->" "more annotated text"
+        "annotated text <!--scene:3:end--><!--scene:5:start-->more annotated text"
     )
     assert text[span.start] == "a"
     assert text[span.end : span.end + 15] == "<!--annotation:"
@@ -412,3 +407,104 @@ def test_inject_annotation_markers_rejects_malformed_result() -> None:
     except ValueError:
         return
     raise AssertionError("Expected malformed pre-existing markers to raise ValueError")
+
+
+# ─── inject_annotation_markers: overlapping (non-exclusive) assignments ────
+
+
+def test_inject_annotation_markers_accepts_overlapping_assignments() -> None:
+    """Annotations are non-exclusive: overlapping assignments are valid."""
+    text = "0123456789"
+    # Annotation A spans [0, 6], annotation B spans [3, 9] — they overlap
+    output = inject_annotation_markers(text, [("a1", 0, 6), ("a2", 3, 9)])
+    # Validate integrity
+    validate_marker_integrity(output)
+    # Both markers must be present
+    assert "<!--annotation:a1:start-->" in output
+    assert "<!--annotation:a1:end-->" in output
+    assert "<!--annotation:a2:start-->" in output
+    assert "<!--annotation:a2:end-->" in output
+    # Removing all annotation markers must restore the original text
+    cleaned = remove_annotation_markers(output)
+    assert cleaned == text
+    # Parse back: each annotation's text excluding OTHER annotations' markers
+    spans = {s.annotation_id: s for s in parse_annotation_spans(output)}
+    a1_raw = output[spans["a1"].start : spans["a1"].end]
+    assert remove_annotation_markers(a1_raw) == "012345"
+    a2_raw = output[spans["a2"].start : spans["a2"].end]
+    assert remove_annotation_markers(a2_raw) == "345678"
+
+
+def test_inject_annotation_markers_accepts_nested_assignments() -> None:
+    """Annotations may be fully nested: A contains B."""
+    text = "ABCDEFGHIJ"
+    # A spans [1, 9], B spans [3, 7] — B is nested inside A
+    output = inject_annotation_markers(text, [("outer", 1, 9), ("inner", 3, 7)])
+    validate_marker_integrity(output)
+    spans = {s.annotation_id: s for s in parse_annotation_spans(output)}
+    # Outer span includes inner markers naturally
+    outer_raw = output[spans["outer"].start : spans["outer"].end]
+    assert remove_annotation_markers(outer_raw) == "BCDEFGHI"
+    # Inner span is just the inner text
+    inner_raw = output[spans["inner"].start : spans["inner"].end]
+    assert inner_raw == "DEFG"
+    # Removing all markers restores original
+    assert remove_annotation_markers(output) == text
+
+
+def test_inject_annotation_markers_handles_adjacent_boundaries() -> None:
+    """Adjacent annotations (end of A = start of B) must not overlap."""
+    text = "HELLOWORLD"
+    # A: [0, 5] "HELLO", B: [5, 10] "WORLD" — touching at boundary
+    output = inject_annotation_markers(text, [("a1", 0, 5), ("a2", 5, 10)])
+    validate_marker_integrity(output)
+    spans = {s.annotation_id: s for s in parse_annotation_spans(output)}
+    assert output[spans["a1"].start : spans["a1"].end] == "HELLO"
+    assert output[spans["a2"].start : spans["a2"].end] == "WORLD"
+    # End of a1 and start of a2 should be adjacent, not overlapping
+    assert "<!--annotation:a1:end--><!--annotation:a2:start-->" in output
+
+
+def test_inject_annotation_markers_handles_three_way_overlap() -> None:
+    """Three annotations with complex overlapping pattern."""
+    text = "ABCDEFGHIJKLMNO"
+    # A: [0, 10], B: [4, 14], C: [7, 12] — all overlapping
+    output = inject_annotation_markers(
+        text,
+        [("a", 0, 10), ("b", 4, 14), ("c", 7, 12)],
+    )
+    validate_marker_integrity(output)
+    spans = {s.annotation_id: s for s in parse_annotation_spans(output)}
+    # Each annotation's text, excluding other annotations' markers
+    a_raw = output[spans["a"].start : spans["a"].end]
+    assert remove_annotation_markers(a_raw) == "ABCDEFGHIJ"
+    b_raw = output[spans["b"].start : spans["b"].end]
+    assert remove_annotation_markers(b_raw) == "EFGHIJKLMN"
+    c_raw = output[spans["c"].start : spans["c"].end]
+    assert remove_annotation_markers(c_raw) == "HIJKL"
+    assert remove_annotation_markers(output) == text
+
+
+def test_inject_annotation_markers_preserves_unannotated_text() -> None:
+    """Overlapping annotations must not corrupt text between/around them."""
+    text = "pre mid post"
+    # Two overlapping annotations on "mid": a1 [4, 7] "mid", a2 [5, 8] "id "
+    output = inject_annotation_markers(text, [("a1", 4, 7), ("a2", 5, 8)])
+    validate_marker_integrity(output)
+    # Reconstruct: remove all markers → should equal original
+    cleaned = remove_annotation_markers(output)
+    assert cleaned == text
+
+
+def test_inject_annotation_markers_handles_zero_width_gracefully() -> None:
+    """Zero-width assignments (start == end) should not break injection."""
+    text = "ABCDEF"
+    output = inject_annotation_markers(
+        text, [("a1", 0, 3), ("zero", 3, 3), ("a2", 3, 6)]
+    )
+    validate_marker_integrity(output)
+    spans = {s.annotation_id: s for s in parse_annotation_spans(output)}
+    assert "a1" in spans
+    assert "a2" in spans
+    assert output[spans["a1"].start : spans["a1"].end] == "ABC"
+    assert output[spans["a2"].start : spans["a2"].end] == "DEF"

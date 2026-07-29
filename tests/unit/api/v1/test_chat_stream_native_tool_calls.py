@@ -83,52 +83,69 @@ class TestChatStreamNativeToolCalls(ChatStreamTestBase):
         mock_client_instance.stream.return_value = mock_stream_ctx
 
         async def fake_aiter_lines():
-            yield "data: " + json.dumps(
-                {"choices": [{"delta": {"content": "Thinking about it..."}}]}
-            ) + "\n\n"
+            yield (
+                "data: "
+                + json.dumps(
+                    {"choices": [{"delta": {"content": "Thinking about it..."}}]}
+                )
+                + "\n\n"
+            )
 
-            yield "data: " + json.dumps(
-                {
-                    "choices": [
-                        {
-                            "delta": {
-                                "tool_calls": [
-                                    {
-                                        "index": 0,
-                                        "id": "call_123",
-                                        "type": "function",
-                                        "function": {"name": "list_", "arguments": ""},
-                                    }
-                                ]
+            yield (
+                "data: "
+                + json.dumps(
+                    {
+                        "choices": [
+                            {
+                                "delta": {
+                                    "tool_calls": [
+                                        {
+                                            "index": 0,
+                                            "id": "call_123",
+                                            "type": "function",
+                                            "function": {
+                                                "name": "list_",
+                                                "arguments": "",
+                                            },
+                                        }
+                                    ]
+                                }
                             }
-                        }
-                    ]
-                }
-            ) + "\n\n"
+                        ]
+                    }
+                )
+                + "\n\n"
+            )
 
-            yield "data: " + json.dumps(
-                {
-                    "choices": [
-                        {
-                            "delta": {
-                                "tool_calls": [
-                                    {
-                                        "index": 0,
-                                        "function": {
-                                            "name": "images",
-                                            "arguments": "{}",
-                                        },
-                                    }
-                                ]
+            yield (
+                "data: "
+                + json.dumps(
+                    {
+                        "choices": [
+                            {
+                                "delta": {
+                                    "tool_calls": [
+                                        {
+                                            "index": 0,
+                                            "function": {
+                                                "name": "images",
+                                                "arguments": "{}",
+                                            },
+                                        }
+                                    ]
+                                }
                             }
-                        }
-                    ]
-                }
-            ) + "\n\n"
+                        ]
+                    }
+                )
+                + "\n\n"
+            )
 
-            yield "data: " + json.dumps(
-                {"choices": [{"delta": {"content": "Done."}}]}
-            ) + "\n\n"
+            yield (
+                "data: "
+                + json.dumps({"choices": [{"delta": {"content": "Done."}}]})
+                + "\n\n"
+            )
             yield "data: [DONE]\n\n"
 
         mock_response.aiter_lines.side_effect = fake_aiter_lines
@@ -250,9 +267,11 @@ class TestChatStreamNativeToolCalls(ChatStreamTestBase):
                 "\n</function>",
                 "\n</tool_call>",
             ]:
-                yield "data: " + json.dumps(
-                    {"choices": [{"delta": {"reasoning_content": piece}}]}
-                ) + "\n\n"
+                yield (
+                    "data: "
+                    + json.dumps({"choices": [{"delta": {"reasoning_content": piece}}]})
+                    + "\n\n"
+                )
             yield "data: [DONE]\n\n"
 
         mock_response.aiter_lines.side_effect = fake_aiter_lines
@@ -391,9 +410,11 @@ class TestChatStreamNativeToolCalls(ChatStreamTestBase):
                 "\n\n",
                 "Paragraph two.",
             ]:
-                yield "data: " + json.dumps(
-                    {"choices": [{"delta": {"content": piece}}]}
-                ) + "\n\n"
+                yield (
+                    "data: "
+                    + json.dumps({"choices": [{"delta": {"content": piece}}]})
+                    + "\n\n"
+                )
             yield "data: [DONE]\n\n"
 
         mock_response.aiter_lines.side_effect = fake_aiter_lines
@@ -444,9 +465,11 @@ class TestChatStreamNativeToolCalls(ChatStreamTestBase):
                 "\n\n",
                 "Paragraph two.",
             ]:
-                yield "data: " + json.dumps(
-                    {"choices": [{"delta": {"content": piece}}]}
-                ) + "\n\n"
+                yield (
+                    "data: "
+                    + json.dumps({"choices": [{"delta": {"content": piece}}]})
+                    + "\n\n"
+                )
             yield "data: [DONE]\n\n"
 
         mock_response.aiter_lines.side_effect = fake_aiter_lines
@@ -490,25 +513,45 @@ class TestChatStreamNativeToolCalls(ChatStreamTestBase):
 
         async def fake_aiter_lines():
             # Explicit thinking stream should remain separate.
-            yield "data: " + json.dumps(
-                {"choices": [{"delta": {"reasoning_content": "silent thinking"}}]}
-            ) + "\n\n"
+            yield (
+                "data: "
+                + json.dumps(
+                    {"choices": [{"delta": {"reasoning_content": "silent thinking"}}]}
+                )
+                + "\n\n"
+            )
 
             # Model switches channels using malformed markers.
-            yield "data: " + json.dumps(
-                {"choices": [{"delta": {"content": "<|channel>thought\n<channel|>"}}]}
-            ) + "\n\n"
-            yield "data: " + json.dumps(
-                {"choices": [{"delta": {"content": "<|channel>final\n<channel|>"}}]}
-            ) + "\n\n"
+            yield (
+                "data: "
+                + json.dumps(
+                    {
+                        "choices": [
+                            {"delta": {"content": "<|channel>thought\n<channel|>"}}
+                        ]
+                    }
+                )
+                + "\n\n"
+            )
+            yield (
+                "data: "
+                + json.dumps(
+                    {"choices": [{"delta": {"content": "<|channel>final\n<channel|>"}}]}
+                )
+                + "\n\n"
+            )
 
             # Final prose must stream chunk-by-chunk, not only at [DONE].
-            yield "data: " + json.dumps(
-                {"choices": [{"delta": {"content": "Hello "}}]}
-            ) + "\n\n"
-            yield "data: " + json.dumps(
-                {"choices": [{"delta": {"content": "world"}}]}
-            ) + "\n\n"
+            yield (
+                "data: "
+                + json.dumps({"choices": [{"delta": {"content": "Hello "}}]})
+                + "\n\n"
+            )
+            yield (
+                "data: "
+                + json.dumps({"choices": [{"delta": {"content": "world"}}]})
+                + "\n\n"
+            )
             yield "data: [DONE]\n\n"
 
         mock_response.aiter_lines.side_effect = fake_aiter_lines

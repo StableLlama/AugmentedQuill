@@ -25,6 +25,45 @@ const PROJECT = 'e2e-boundary-test';
 // Scene 16: "SceneSixteen_" = 13 chars.  Total visible: 39 chars.
 const FULL_CONTENT = 'SceneThirteenSceneFourteenSceneSixteen_';
 
+// ---------------------------------------------------------------------------
+// Console error tracking
+// ---------------------------------------------------------------------------
+
+function installConsoleErrorCollector(page: Page): () => string[] {
+  const errors: string[] = [];
+  const handler = (msg: { type: () => string; text: () => string }): void => {
+    if (msg.type() === 'error') {
+      errors.push(msg.text());
+    }
+  };
+  page.on('console', handler);
+  return (): string[] => {
+    page.removeListener('console', handler);
+    const result = [...errors];
+    errors.length = 0;
+    return result;
+  };
+}
+
+async function assertNoConsoleErrors(
+  getErrors: () => string[],
+  page: Page
+): Promise<void> {
+  const errors = getErrors();
+  const realErrors = errors.filter(
+    (e: string) =>
+      !e.includes('Failed to fetch') &&
+      !e.includes('unable to load instruction languages')
+  );
+  if (realErrors.length > 0) {
+    await page.screenshot({
+      path: `/tmp/console-error-drag-${Date.now()}.png`,
+      fullPage: true,
+    });
+    expect(realErrors).toEqual([]);
+  }
+}
+
 /**
  * Navigate to the app, switch to Split Mode, select a scene to show handles,
  * and verify handles are visible.
@@ -171,7 +210,10 @@ async function selectScene(page: Page, sceneNum: number): Promise<void> {
 // ═══════════════════════════════════════════════════════════
 
 test.describe('Scene boundary drag — browser UX', () => {
+  let getErrors: () => string[];
+
   test.beforeEach(async ({ page }: { page: Page }) => {
+    getErrors = installConsoleErrorCollector(page);
     // Ensure a large viewport so the responsive Split button is visible
     await page.setViewportSize({ width: 1920, height: 1080 });
 
@@ -188,6 +230,10 @@ test.describe('Scene boundary drag — browser UX', () => {
     // Reload so the app picks up the selected project
     await page.goto(`${FRONTEND}`);
     await page.waitForTimeout(2000);
+  });
+
+  test.afterEach(async ({ page }: { page: Page }) => {
+    await assertNoConsoleErrors(getErrors, page);
   });
 
   test('START: shrink scene 14 within its own text', async ({

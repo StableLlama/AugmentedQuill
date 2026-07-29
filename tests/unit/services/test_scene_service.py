@@ -1594,8 +1594,7 @@ def test_reorder_scene_prose_handles_empty_scene_blocks_without_content_loss(
     chapter_text = chapter1.read_text(encoding="utf-8")
     unlinked_text = (project_dir / "unlinked.txt").read_text(encoding="utf-8")
     empty_block = (
-        f"<!--scene:{empty_scene['id']}:start-->"
-        f"<!--scene:{empty_scene['id']}:end-->"
+        f"<!--scene:{empty_scene['id']}:start--><!--scene:{empty_scene['id']}:end-->"
     )
 
     assert empty_block in chapter_text
@@ -2156,3 +2155,287 @@ class TestRelinkScopeProse:
                 expected_start,
                 expected_end,
             ), f"Scene {sid}: visible {actual_vis} != expected {(expected_start, expected_end)}"
+
+    def test_relink_with_annotation_markers_preserves_integrity(
+        self, project_dir: Path
+    ) -> None:
+        """Relinking a scene boundary when annotation markers are present
+        must not corrupt the content.  The frontend sends offsets in the
+        fully-stripped coordinate space (all internal markers removed),
+        so the backend must also compute in the fully-stripped space."""
+        from augmentedquill.services.scenes.scene_markers import (
+            annotation_marker_token,
+            validate_internal_marker_tokens,
+        )
+
+        a, b = _link_two_adjacent_scenes(project_dir)
+        content_path = project_dir / "content.md"
+        content_before = content_path.read_text(encoding="utf-8")
+
+        spans_before = {s.scene_id: s for s in parse_scene_spans(content_before)}
+        a_span = spans_before[a["id"]]
+
+        # Add an annotation marker INSIDE scene A's prose ("Alpha" → put
+        # annotation on "lph" = chars 1-3 of the 5-char word)
+        a_start_token = annotation_marker_token("test-anno-1", "start")
+        a_end_token = annotation_marker_token("test-anno-1", "end")
+        a_text_start = a_span.start
+
+        # Annotate characters 1-3 of scene A's prose ("lph")
+        ann_start = a_text_start + 1
+        ann_end = a_text_start + 4
+
+        annotated = (
+            content_before[:ann_start]
+            + a_start_token
+            + content_before[ann_start:ann_end]
+            + a_end_token
+            + content_before[ann_end:]
+        )
+        content_path.write_text(annotated, encoding="utf-8")
+
+        # Add annotation metadata to story.json
+        story_path = project_dir / "story.json"
+        story = json.loads(story_path.read_text(encoding="utf-8"))
+        story.setdefault("annotations", []).append(
+            {
+                "id": "test-anno-1",
+                "comment": "Test annotation inside scene A",
+                "scope_type": "story",
+                "chapter_id": None,
+                "book_id": None,
+            }
+        )
+        story_path.write_text(json.dumps(story), encoding="utf-8")
+
+        # Verify the annotated content is valid
+        content_with_anno = content_path.read_text(encoding="utf-8")
+        validate_internal_marker_tokens(content_with_anno)
+
+        # Now simulate dragging scene B's start left by 2 visible chars.
+        # This requires computing visible offsets from the content that
+        # has BOTH scene and annotation markers.
+        spans_after_anno = {s.scene_id: s for s in parse_scene_spans(content_with_anno)}
+        a_span2 = spans_after_anno[a["id"]]
+        b_span2 = spans_after_anno[b["id"]]
+
+        # Use _ALL_MARKER_PATTERN (scene + annotation) for frontend-equivalent
+        # visible offset calculation
+        _ALL_MARKER_PATTERN = re.compile(
+            r"<!--(?:scene:\d+|annotation:[^:>]+):(?:start|end)-->"
+        )
+
+        def vis_offset_all(content: str, offset: int) -> int:
+            """Strip ALL internal markers (scene + annotation) — matches
+            the frontend's toVisibleOffset behavior."""
+            visible_count = 0
+            last_index = 0
+            for match in _ALL_MARKER_PATTERN.finditer(content):
+                if match.start() >= offset:
+                    break
+                gap = match.start() - last_index
+                visible_count += gap
+                last_index = match.end()
+            if last_index < offset:
+                visible_count += offset - last_index
+            return visible_count
+
+        vis_a_start = vis_offset_all(content_with_anno, a_span2.start)
+        vis_b_start = vis_offset_all(content_with_anno, b_span2.start)
+        vis_b_end = vis_offset_all(content_with_anno, b_span2.end)
+
+        # Drag scene B's start left by 1 visible char (inside A's text)
+        new_vis_b_start = vis_b_start - 1
+        new_vis_a_end = new_vis_b_start
+
+        # Call relink_scope_prose — this should succeed WITHOUT
+        # corrupting the annotation markers
+        relink_scope_prose(
+            project_dir,
+            scope_type="story",
+            chapter_id=None,
+            book_id=None,
+            assignments=[
+                (a["id"], vis_a_start, new_vis_a_end),
+                (b["id"], new_vis_b_start, vis_b_end),
+            ],
+        )
+
+        content_after = content_path.read_text(encoding="utf-8")
+
+        # Must be valid
+        validate_internal_marker_tokens(content_after)
+
+        # Annotation marker must still be present and well-formed
+        assert a_start_token in content_after, "Annotation start marker lost"
+        assert a_end_token in content_after, "Annotation end marker lost"
+
+        # The annotation span must still be intact
+        ann_start_after = content_after.index(a_start_token) + len(a_start_token)
+        ann_end_after = content_after.index(a_end_token)
+        ann_text = content_after[ann_start_after:ann_end_after]
+        assert ann_text == "lph", f"Annotation text changed: {ann_text!r}"
+
+        # Scene A and B prose must contain the expected text.
+        # Annotation markers that fall inside a scene's span are part of
+        # that scene's content — they appear as inline markers.
+        spans_after = {s.scene_id: s for s in parse_scene_spans(content_after)}
+        a_full = content_after[spans_after[a["id"]].start : spans_after[a["id"]].end]
+        b_full = content_after[spans_after[b["id"]].start : spans_after[b["id"]].end]
+
+        # Scene A should start with "A" (the first char of "Alpha")
+        assert a_full.startswith("A"), f"Scene A text: {a_full!r}"
+
+        # Scene B should contain "Bravo"
+        assert "Bravo" in b_full, f"Scene B missing 'Bravo': {b_full!r}"
+
+        # The annotation markers should appear in exactly one of the scenes
+        anno_in_a = a_start_token in a_full
+        anno_in_b = a_start_token in b_full
+        assert anno_in_a or anno_in_b, "Annotation markers lost from both scenes"
+        assert not (anno_in_a and anno_in_b), "Annotation markers duplicated"
+
+    def test_relink_with_overlapping_annotations_preserves_integrity(
+        self, project_dir: Path
+    ) -> None:
+        """Relinking a scene boundary when multiple annotations overlap must
+        not fail with 'Overlapping annotation assignments'.
+
+        This reproduces the bug where dragging a scene boundary fails
+        with HTTP 422 because _inject_layer_spans rejected overlapping
+        (but valid) annotation spans during re-injection."""
+        from augmentedquill.services.scenes.scene_markers import (
+            annotation_marker_token,
+            remove_markers,
+            validate_internal_marker_tokens,
+        )
+
+        a, b = _link_two_adjacent_scenes(project_dir)
+        content_path = project_dir / "content.md"
+        content_before = content_path.read_text(encoding="utf-8")
+
+        spans_before = {s.scene_id: s for s in parse_scene_spans(content_before)}
+        a_span = spans_before[a["id"]]
+        b_span = spans_before[b["id"]]
+
+        a_start_token = annotation_marker_token("anno-a", "start")
+        a_end_token = annotation_marker_token("anno-a", "end")
+        b_anno_start = annotation_marker_token("anno-b", "start")
+        b_anno_end = annotation_marker_token("anno-b", "end")
+
+        # Annotate characters 1-4 of scene A's prose ("lph" in "Alpha")
+        ann_a_start = a_span.start + 1
+        ann_a_end = a_span.start + 5
+
+        # Annotate characters 0-3 of scene B's prose ("Bra" in "Bravo")
+        ann_b_start = b_span.start
+        ann_b_end = b_span.start + 3
+
+        # Insert annotations into content
+        annotated = (
+            content_before[:ann_a_start]
+            + a_start_token
+            + content_before[ann_a_start:ann_a_end]
+            + a_end_token
+            + content_before[ann_a_end:ann_b_start]
+            + b_anno_start
+            + content_before[ann_b_start:ann_b_end]
+            + b_anno_end
+            + content_before[ann_b_end:]
+        )
+        content_path.write_text(annotated, encoding="utf-8")
+
+        # Add annotation metadata to story.json
+        story_path = project_dir / "story.json"
+        story = json.loads(story_path.read_text(encoding="utf-8"))
+        story.setdefault("annotations", []).extend(
+            [
+                {
+                    "id": "anno-a",
+                    "comment": "Annotation inside scene A",
+                    "scope_type": "story",
+                    "chapter_id": None,
+                    "book_id": None,
+                },
+                {
+                    "id": "anno-b",
+                    "comment": "Annotation inside scene B",
+                    "scope_type": "story",
+                    "chapter_id": None,
+                    "book_id": None,
+                },
+            ]
+        )
+        story_path.write_text(json.dumps(story), encoding="utf-8")
+
+        content_with_anno = content_path.read_text(encoding="utf-8")
+        validate_internal_marker_tokens(content_with_anno)
+
+        # Calculate visible offsets (stripping ALL internal markers)
+        _ALL_MARKER_PATTERN = re.compile(
+            r"<!--(?:scene:\d+|annotation:[^:>]+):(?:start|end)-->"
+        )
+
+        def vis_offset_all(content: str, offset: int) -> int:
+            visible_count = 0
+            last_index = 0
+            for match in _ALL_MARKER_PATTERN.finditer(content):
+                if match.start() >= offset:
+                    break
+                gap = match.start() - last_index
+                visible_count += gap
+                last_index = match.end()
+            if last_index < offset:
+                visible_count += offset - last_index
+            return visible_count
+
+        spans_after_anno = {s.scene_id: s for s in parse_scene_spans(content_with_anno)}
+        a_span2 = spans_after_anno[a["id"]]
+        b_span2 = spans_after_anno[b["id"]]
+
+        vis_a_start = vis_offset_all(content_with_anno, a_span2.start)
+        vis_a_end = vis_offset_all(content_with_anno, a_span2.end)  # noqa: F841
+        vis_b_start = vis_offset_all(content_with_anno, b_span2.start)
+        vis_b_end = vis_offset_all(content_with_anno, b_span2.end)
+
+        # Drag scene B's start left by 1 visible char (into A's text)
+        new_vis_b_start = vis_b_start - 1
+        new_vis_a_end = new_vis_b_start
+
+        # This must NOT raise "Overlapping annotation assignments"
+        relink_scope_prose(
+            project_dir,
+            scope_type="story",
+            chapter_id=None,
+            book_id=None,
+            assignments=[
+                (a["id"], vis_a_start, new_vis_a_end),
+                (b["id"], new_vis_b_start, vis_b_end),
+            ],
+        )
+
+        content_after = content_path.read_text(encoding="utf-8")
+        validate_internal_marker_tokens(content_after)
+
+        # Both annotations must survive
+        assert a_start_token in content_after, "Annotation A start marker lost"
+        assert a_end_token in content_after, "Annotation A end marker lost"
+        assert b_anno_start in content_after, "Annotation B start marker lost"
+        assert b_anno_end in content_after, "Annotation B end marker lost"
+
+        # Annotation text must be preserved (after removing scene markers
+        # that may now appear inside the annotation span due to the
+        # shifted scene boundary)
+        ann_a_text = content_after[
+            content_after.index(a_start_token)
+            + len(a_start_token) : content_after.index(a_end_token)
+        ]
+        ann_b_text = content_after[
+            content_after.index(b_anno_start)
+            + len(b_anno_start) : content_after.index(b_anno_end)
+        ]
+        # Strip scene markers that may appear inside annotation spans
+        ann_a_clean = remove_markers(ann_a_text)
+        ann_b_clean = remove_markers(ann_b_text)
+        assert ann_a_clean == "lpha", f"Annotation A text changed: {ann_a_clean!r}"
+        assert ann_b_clean == "Bra", f"Annotation B text changed: {ann_b_clean!r}"

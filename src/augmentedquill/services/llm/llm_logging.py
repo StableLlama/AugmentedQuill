@@ -223,7 +223,6 @@ def add_llm_log(log_entry: Dict[str, Any]) -> Any:
                 and isinstance(processed_entry["request"]["body"], dict)
                 and "tools" in processed_entry["request"]["body"]
             ):
-
                 tools = processed_entry["request"]["body"]["tools"]
                 if isinstance(tools, list):
                     for tool in tools:

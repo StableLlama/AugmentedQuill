@@ -34,22 +34,34 @@ class TestChatStreamRoleAndSanitization(ChatStreamTestBase):
         mock_client_instance.stream.return_value = mock_stream_ctx
 
         async def fake_aiter_lines():
-            yield "data: " + json.dumps(
-                {"choices": [{"delta": {"content": "Let me check."}}]}
-            ) + "\n\n"
-            yield "data: " + json.dumps(
-                {"choices": [{"delta": {"content": " [TOOL_CALL]manage_"}}]}
-            ) + "\n\n"
-            yield "data: " + json.dumps(
-                {
-                    "choices": [
-                        {"delta": {"content": 'images(action="list")[/TOOL_CALL] '}}
-                    ]
-                }
-            ) + "\n\n"
-            yield "data: " + json.dumps(
-                {"choices": [{"delta": {"content": "Done."}}]}
-            ) + "\n\n"
+            yield (
+                "data: "
+                + json.dumps({"choices": [{"delta": {"content": "Let me check."}}]})
+                + "\n\n"
+            )
+            yield (
+                "data: "
+                + json.dumps(
+                    {"choices": [{"delta": {"content": " [TOOL_CALL]manage_"}}]}
+                )
+                + "\n\n"
+            )
+            yield (
+                "data: "
+                + json.dumps(
+                    {
+                        "choices": [
+                            {"delta": {"content": 'images(action="list")[/TOOL_CALL] '}}
+                        ]
+                    }
+                )
+                + "\n\n"
+            )
+            yield (
+                "data: "
+                + json.dumps({"choices": [{"delta": {"content": "Done."}}]})
+                + "\n\n"
+            )
             yield "data: [DONE]\n\n"
 
         mock_response.aiter_lines.side_effect = fake_aiter_lines
@@ -210,23 +222,31 @@ class TestChatStreamRoleAndSanitization(ChatStreamTestBase):
         mock_client_instance.stream.return_value = mock_stream_ctx
 
         async def fake_aiter_lines():
-            yield "data: " + json.dumps(
-                {"choices": [{"delta": {"content": "Edit start "}}]}
-            ) + "\n\n"
-            yield "data: " + json.dumps(
-                {
-                    "choices": [
-                        {
-                            "delta": {
-                                "content": '[TOOL_CALL]manage_images(action="list")[/TOOL_CALL]'
+            yield (
+                "data: "
+                + json.dumps({"choices": [{"delta": {"content": "Edit start "}}]})
+                + "\n\n"
+            )
+            yield (
+                "data: "
+                + json.dumps(
+                    {
+                        "choices": [
+                            {
+                                "delta": {
+                                    "content": '[TOOL_CALL]manage_images(action="list")[/TOOL_CALL]'
+                                }
                             }
-                        }
-                    ]
-                }
-            ) + "\n\n"
-            yield "data: " + json.dumps(
-                {"choices": [{"delta": {"content": " Edit end"}}]}
-            ) + "\n\n"
+                        ]
+                    }
+                )
+                + "\n\n"
+            )
+            yield (
+                "data: "
+                + json.dumps({"choices": [{"delta": {"content": " Edit end"}}]})
+                + "\n\n"
+            )
             yield "data: [DONE]\n\n"
 
         mock_response.aiter_lines.side_effect = fake_aiter_lines
@@ -272,28 +292,36 @@ class TestChatStreamRoleAndSanitization(ChatStreamTestBase):
         mock_client_instance.stream.return_value = mock_stream_ctx
 
         async def fake_aiter_lines():
-            yield "data: " + json.dumps(
-                {
-                    "choices": [
-                        {
-                            "delta": {
-                                "content": "<|channel|>analysis<|message|>We need to get metadata."  # noqa: E501
+            yield (
+                "data: "
+                + json.dumps(
+                    {
+                        "choices": [
+                            {
+                                "delta": {
+                                    "content": "<|channel|>analysis<|message|>We need to get metadata."  # noqa: E501
+                                }
                             }
-                        }
-                    ]
-                }
-            ) + "\n\n"
-            yield "data: " + json.dumps(
-                {
-                    "choices": [
-                        {
-                            "delta": {
-                                "content": '<|end|><|start|>assistant<|channel|>commentary to=functions.get_chapter_metadata <|constrain|>json<|message|>{\\"chap_id\\": 2}'
+                        ]
+                    }
+                )
+                + "\n\n"
+            )
+            yield (
+                "data: "
+                + json.dumps(
+                    {
+                        "choices": [
+                            {
+                                "delta": {
+                                    "content": '<|end|><|start|>assistant<|channel|>commentary to=functions.get_chapter_metadata <|constrain|>json<|message|>{\\"chap_id\\": 2}'
+                                }
                             }
-                        }
-                    ]
-                }
-            ) + "\n\n"
+                        ]
+                    }
+                )
+                + "\n\n"
+            )
             yield "data: [DONE]\n\n"
 
         mock_response.aiter_lines.side_effect = fake_aiter_lines

@@ -289,13 +289,24 @@ export function toVisibleOffset(fullContent: string, originalOffset: number): nu
  * the original full content (with markers), return the corresponding
  * position in the original content.
  *
+ * When `snapPastMarkers` is false (default, used by scene boundary drags),
+ * a visible offset that lands at a marker boundary returns the marker
+ * position itself.  When `snapPastMarkers` is true (used by annotation
+ * creation), the offset is snapped past the marker to the first prose
+ * position after it.
+ *
  * Walks through the full content character by character, skipping marker
  * tokens, and counts visible characters until `visibleOffset` is reached.
  * When the visible offset lands exactly at a trailing marker with no more
  * visible text after it, the position right *before* that marker is
  * returned (not after) so boundary handles never jump past adjacent markers.
  */
-export function toOriginalOffset(fullContent: string, visibleOffset: number): number {
+export function toOriginalOffset(
+  fullContent: string,
+  visibleOffset: number,
+  opts?: { snapPastMarkers?: boolean }
+): number {
+  const snapPastMarkers = opts?.snapPastMarkers === true;
   if (visibleOffset <= 0) return 0;
   if (fullContent.length === 0) return 0;
 
@@ -311,11 +322,16 @@ export function toOriginalOffset(fullContent: string, visibleOffset: number): nu
       return lastIndex + (visibleOffset - visibleCount);
     }
     if (visibleCount + gap === visibleOffset) {
-      // Visible offset lands exactly at the start of this marker.  For
-      // boundary drags the correct original offset is always the marker
-      // position itself — never past it.  Even when visible text follows
-      // the marker (adjacent scenes), the boundary between the two scenes
-      // is at the marker, not after it.
+      // Visible offset lands exactly at the start of this marker.
+      // For scene boundary drags: return the marker position.
+      // For annotation creation: snap past the marker to prose position.
+      if (snapPastMarkers) {
+        // Skip the marker entirely — visible offset maps to first
+        // prose character after the marker.
+        visibleCount += gap;
+        lastIndex = match.index + match[0].length;
+        continue;
+      }
       return match.index;
     }
     visibleCount += gap;

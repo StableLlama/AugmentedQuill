@@ -145,6 +145,53 @@ def _parse_layer_spans(content: str, layer: MarkerLayer) -> list[MarkerSpan]:
     return sorted(spans, key=lambda s: s.start)
 
 
+def _inject_non_exclusive_spans(
+    content: str,
+    layer: MarkerLayer,
+    assignments: list[tuple[object, int, int]],
+) -> str:
+    """Inject markers for a non-exclusive layer where spans may overlap.
+
+    Uses an event-based approach: all start/end edges are collected,
+    sorted by position (end before start at the same position), and
+    marker tokens are emitted at each edge boundary.  This naturally
+    handles interleaved/nested overlapping spans.
+    """
+    if not assignments:
+        return content
+
+    events: list[tuple[int, object, str]] = []
+    for marker_id, start, end in assignments:
+        if start < end:
+            events.append((start, marker_id, "start"))
+            events.append((end, marker_id, "end"))
+
+    if not events:
+        return content
+
+    # Sort by position; at same position, 'end' before 'start' so
+    # adjacent spans don't inadvertently overlap at the boundary.
+    events.sort(key=lambda e: (e[0], 0 if e[2] == "end" else 1))
+
+    parts: list[str] = []
+    cursor = 0
+    i = 0
+    while i < len(events):
+        pos = events[i][0]
+        if pos > cursor:
+            parts.append(content[cursor:pos])
+            cursor = pos
+        # Emit all marker tokens at this position
+        while i < len(events) and events[i][0] == pos:
+            _, marker_id, kind = events[i]
+            parts.append(_marker_token(layer, marker_id, kind))
+            i += 1
+
+    if cursor < len(content):
+        parts.append(content[cursor:])
+    return "".join(parts)
+
+
 def _inject_layer_spans(
     content: str,
     layer: MarkerLayer,
@@ -152,11 +199,21 @@ def _inject_layer_spans(
 ) -> str:
     """Insert *layer* markers into *content* for each ``(id, start, end)``.
 
-    ``start``/``end`` are offsets in the original *content*.  Assignments
-    must not overlap each other; overlap raises ``ValueError`` immediately.
+    ``start``/``end`` are offsets in the original *content*.
+
+    For *exclusive* layers (``scene``) assignments must not overlap each other;
+    overlap raises ``ValueError`` immediately.
+
+    For *non-exclusive* layers (``annotation``) overlapping assignments are
+    handled via an event-based injection that interleaves start/end markers
+    naturally.
+
     Overlap with markers already present in *content* (from a different,
     unrelated span) is caught by the caller via :func:`validate_marker_integrity`.
     """
+    if not layer.exclusive:
+        return _inject_non_exclusive_spans(content, layer, assignments)
+
     sorted_assignments = sorted(assignments, key=lambda a: a[1])
     parts: list[str] = []
     cursor = 0
@@ -343,7 +400,9 @@ def inject_annotation_markers(
     ever returning corrupted marker content.
     """
     result = _inject_layer_spans(
-        content, ANNOTATION_LAYER, list(assignments)  # type: ignore[arg-type]
+        content,
+        ANNOTATION_LAYER,
+        list(assignments),  # type: ignore[arg-type]
     )
     validate_marker_integrity(result)
     return result

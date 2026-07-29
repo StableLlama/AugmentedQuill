@@ -70,8 +70,7 @@ class TextPatch(ToolModel):
         if self.operation in ("replace", "append", "prepend"):
             if self.value is None:
                 raise ValueError(
-                    "missing required key(s): value for operation "
-                    f"'{self.operation}'"
+                    f"missing required key(s): value for operation '{self.operation}'"
                 )
         if self.operation == "replace_text":
             missing_keys: list[str] = []
@@ -132,7 +131,7 @@ class IntListPatch(ToolModel):
     remove: list[int] | None = Field(
         None,
         description=(
-            "Integer scene IDs to remove from the current list. " "Example: [1, 2]."
+            "Integer scene IDs to remove from the current list. Example: [1, 2]."
         ),
         json_schema_extra={"examples": [[1, 2]]},
     )

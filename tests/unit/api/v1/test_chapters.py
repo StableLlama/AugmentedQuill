@@ -15,7 +15,6 @@ from tests.unit.api.v1.api_test_case import ApiTestCase
 
 
 class ChaptersApiTest(ApiTestCase):
-
     def _make_project_with_chapters(self, name: str = "novel") -> Path:
         ok, msg = select_project(name)
         self.assertTrue(ok, msg)

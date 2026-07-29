@@ -252,7 +252,6 @@ async def unified_chat_stream(
                 body=current_body,
                 timeout=httpx.Timeout(float(timeout_s or 60)),
             ) as (resp, request_log_entry):
-
                 if resp.status_code >= 400:
                     error_content = await resp.aread()
                     if not is_fallback and supports_function_calling:

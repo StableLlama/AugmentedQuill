@@ -141,9 +141,11 @@ class ModelRoutingTest(TestCase):
         mock_instance.stream.return_value = mock_stream_ctx
 
         async def fake_aiter_lines():
-            yield "data: " + json.dumps(
-                {"choices": [{"delta": {"content": "Test\n"}}]}
-            ) + "\n\n"
+            yield (
+                "data: "
+                + json.dumps({"choices": [{"delta": {"content": "Test\n"}}]})
+                + "\n\n"
+            )
 
         mock_resp.aiter_lines = fake_aiter_lines
 
@@ -185,9 +187,11 @@ class ModelRoutingTest(TestCase):
             mock_instance.stream.return_value = mock_stream_ctx
 
             async def fake_aiter_lines():
-                yield "data: " + json.dumps(
-                    {"choices": [{"delta": {"content": "Test\n"}}]}
-                ) + "\n\n"
+                yield (
+                    "data: "
+                    + json.dumps({"choices": [{"delta": {"content": "Test\n"}}]})
+                    + "\n\n"
+                )
 
             mock_resp.aiter_lines = fake_aiter_lines
 
@@ -275,9 +279,11 @@ class ModelRoutingTest(TestCase):
         mock_instance.stream.return_value = mock_stream_ctx
 
         async def fake_aiter_lines():
-            yield "data: " + json.dumps(
-                {"choices": [{"delta": {"content": "Test\n"}}]}
-            ) + "\n\n"
+            yield (
+                "data: "
+                + json.dumps({"choices": [{"delta": {"content": "Test\n"}}]})
+                + "\n\n"
+            )
 
         mock_resp.aiter_lines = fake_aiter_lines
 
@@ -336,9 +342,11 @@ class ModelRoutingTest(TestCase):
         mock_instance.stream.return_value = mock_stream_ctx
 
         async def fake_aiter_lines():
-            yield "data: " + json.dumps(
-                {"choices": [{"delta": {"content": "Test chat"}}]}
-            ) + "\n\n"
+            yield (
+                "data: "
+                + json.dumps({"choices": [{"delta": {"content": "Test chat"}}]})
+                + "\n\n"
+            )
 
         mock_resp.aiter_lines = fake_aiter_lines
 

@@ -34,6 +34,15 @@ function marker(id: number, edge: 'start' | 'end'): string {
   return `<!--scene:${id}:${edge}-->`;
 }
 
+// Pre-existing annotation IDs for E2E tests.
+const ANNO_1 = 'e2e-anno-1';
+const ANNO_2 = 'e2e-anno-2';
+const ANNO_3 = 'e2e-anno-3';
+
+function annoMarker(id: string, edge: 'start' | 'end'): string {
+  return `<!--annotation:${id}:${edge}-->`;
+}
+
 fs.writeFileSync(
   path.join(projectDir, 'story.json'),
   JSON.stringify(
@@ -43,6 +52,29 @@ fs.writeFileSync(
       format: 'markdown',
       project_type: 'novel',
       chapters: [{ id: 1, title: 'Chapter 1', summary: '', filename: '0001.txt' }],
+      annotations: [
+        {
+          id: ANNO_1,
+          comment: 'Annotation on "Scene" at start of scene 13',
+          scope_type: 'chapter',
+          chapter_id: '1',
+          book_id: null,
+        },
+        {
+          id: ANNO_2,
+          comment: 'Annotation on "teen" at end of scene 13',
+          scope_type: 'chapter',
+          chapter_id: '1',
+          book_id: null,
+        },
+        {
+          id: ANNO_3,
+          comment: 'Annotation on "Sixteen_" inside scene 16',
+          scope_type: 'chapter',
+          chapter_id: '1',
+          book_id: null,
+        },
+      ],
       scenes: {
         13: {
           id: 13,
@@ -84,15 +116,30 @@ fs.writeFileSync(
   )
 );
 
+// Chapter content: original visible text is preserved as
+// "SceneThirteenSceneFourteenSceneSixteen_" (39 chars).
+// Annotation markers are embedded within the existing prose:
+//   e2e-anno-1 wraps "Scene"   (first 5 chars of scene 13, visible offsets 0-4)
+//   e2e-anno-2 wraps "teen"    (last 4 chars of scene 13, visible offsets 9-12)
+//   e2e-anno-3 wraps "Sixteen_" (all of scene 16 text, visible offsets 26-38)
 const chapterContent =
   marker(13, 'start') +
-  'SceneThirteen' +
+  annoMarker(ANNO_1, 'start') +
+  'Scene' +
+  annoMarker(ANNO_1, 'end') +
+  'Thir' +
+  annoMarker(ANNO_2, 'start') +
+  'teen' +
+  annoMarker(ANNO_2, 'end') +
   marker(13, 'end') +
   marker(14, 'start') +
   'SceneFourteen' +
   marker(14, 'end') +
   marker(16, 'start') +
-  'SceneSixteen_' +
+  'Scene' +
+  annoMarker(ANNO_3, 'start') +
+  'Sixteen_' +
+  annoMarker(ANNO_3, 'end') +
   marker(16, 'end');
 fs.writeFileSync(path.join(chaptersDir, '0001.txt'), chapterContent);
 

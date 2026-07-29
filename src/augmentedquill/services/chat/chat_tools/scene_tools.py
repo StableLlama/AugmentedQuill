@@ -303,7 +303,9 @@ def _scene_payload_for_llm(
     )
 
 
-def _chapter_number_maps_for_llm(story: dict[str, Any]) -> tuple[
+def _chapter_number_maps_for_llm(
+    story: dict[str, Any],
+) -> tuple[
     dict[str, int],
     dict[str, int],
     dict[tuple[str, str], int],

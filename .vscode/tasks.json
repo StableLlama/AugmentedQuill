@@ -53,6 +53,83 @@
       "label": "frontend: prepare",
       "dependsOn": ["frontend: install", "frontend: generate-types"],
       "dependsOrder": "sequence"
+    },
+    {
+      "label": "backend: ruff fix",
+      "type": "shell",
+      "command": "${workspaceFolder}/venv/bin/ruff",
+      "args": ["check", "--fix", "."],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always"
+      }
+    },
+    {
+      "label": "backend: ruff format",
+      "type": "shell",
+      "command": "${workspaceFolder}/venv/bin/ruff",
+      "args": ["format", "."],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always"
+      }
+    },
+    {
+      "label": "backend: black",
+      "type": "shell",
+      "command": "${workspaceFolder}/venv/bin/black",
+      "args": ["."],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always"
+      }
+    },
+    {
+      "label": "frontend: eslint fix",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "lint", "--", "--fix"],
+      "options": {
+        "cwd": "${workspaceFolder}/src/frontend"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always"
+      }
+    },
+    {
+      "label": "frontend: prettier",
+      "type": "shell",
+      "command": "npx",
+      "args": ["prettier", "--write", "src/**/*.{ts,tsx,js,jsx,css}"],
+      "options": {
+        "cwd": "${workspaceFolder}/src/frontend"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always"
+      }
+    },
+    {
+      "label": "fix: all",
+      "type": "shell",
+      "command": "${workspaceFolder}/venv/bin/ruff check --fix . ; ${workspaceFolder}/venv/bin/ruff format . ; cd ${workspaceFolder}/src/frontend && npm run lint -- --fix ; npx prettier --write '**/*.{ts,tsx,js,jsx,css}'",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always"
+      }
     }
   ]
 }

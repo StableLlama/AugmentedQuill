@@ -34,9 +34,12 @@ from augmentedquill.models.scene import (
 )
 from augmentedquill.services.scenes.scene_markers import (
     SceneSpan,
+    inject_annotation_markers,
     inject_markers,
+    parse_annotation_spans,
     parse_scene_spans,
     remap_offset_after_marker_removal,
+    remove_annotation_markers,
     remove_markers,
     scene_block_bounds,
     snap_range_outside_markers,
@@ -957,6 +960,42 @@ def relink_scope_prose(
     for span in parse_scene_spans(content):
         original_spans[span.scene_id] = span
 
+    # Capture annotation spans before stripping so they can be
+    # re-injected after scene markers are placed.  The frontend sends
+    # offsets in the fully-stripped coordinate space (all internal
+    # markers removed), so we must also strip annotation markers
+    # before injecting scene markers, then re-inject annotations at
+    # positions computed from the fully-stripped space.
+    from augmentedquill.services.scenes.scene_markers import (
+        _INTERNAL_MARKER_RE as _ALL_MARKERS_RE,
+    )
+
+    annotation_spans = list(parse_annotation_spans(content))
+    annotation_stripped_positions: list[tuple[str, int, int]] = []
+
+    def _to_fully_stripped(offset: int) -> int:
+        """Map a raw-content offset to the fully-stripped coordinate space
+        where ALL internal markers (scene + annotation) are removed."""
+        clamped = max(0, min(offset, len(content)))
+        removed_before = 0
+        for m in _ALL_MARKERS_RE.finditer(content):
+            if m.end() <= clamped:
+                removed_before += m.end() - m.start()
+            elif m.start() < clamped:
+                removed_before += clamped - m.start()
+                break
+            else:
+                break
+        return clamped - removed_before
+
+    for ann_span in annotation_spans:
+        ann_start_stripped = _to_fully_stripped(ann_span.start)
+        ann_end_stripped = _to_fully_stripped(ann_span.end)
+        if ann_start_stripped < ann_end_stripped:
+            annotation_stripped_positions.append(
+                (ann_span.annotation_id, ann_start_stripped, ann_end_stripped)
+            )
+
     assigned_ids = {scene_id for scene_id, _, _ in assignments}
 
     # Build the complete injection list: assigned scenes use their
@@ -964,6 +1003,9 @@ def relink_scope_prose(
     # scenes from the same scope have their original offsets remapped
     # to stripped-coordinate space.
     stripped = remove_markers(content)
+    # Also strip annotation markers so scene injection positions match
+    # the fully-stripped coordinate space.
+    stripped = remove_annotation_markers(stripped)
     all_assignments: list[tuple[SceneId, int, int]] = list(assignments)
 
     for scene_id, scene_data in scenes_dict.items():
@@ -977,13 +1019,76 @@ def relink_scope_prose(
         span = original_spans.get(scene_id)
         if span is None:
             continue
-        remapped_start = remap_offset_after_marker_removal(content, span.start, None)
-        remapped_end = remap_offset_after_marker_removal(content, span.end, None)
+        remapped_start = _to_fully_stripped(span.start)
+        remapped_end = _to_fully_stripped(span.end)
         if remapped_start >= remapped_end:
             continue
         all_assignments.append((scene_id, remapped_start, remapped_end))
 
     linked = inject_markers(stripped, all_assignments)
+
+    # Re-inject annotation markers.  Positions are computed from the
+    # fully-stripped coordinate space and remapped to the linked
+    # (scene-injected) space by accounting for the scene marker tokens
+    # that were inserted before each annotation position.
+    if annotation_stripped_positions:
+        # Precompute the total shift at each scene assignment boundary
+        # so we can map any stripped position to the linked position.
+        # Each scene assignment contributes two marker tokens (start + end).
+        marker_lengths: dict[SceneId, tuple[int, int]] = {}
+        for sid in {sid for sid, _, _ in all_assignments}:
+            from augmentedquill.services.scenes.scene_markers import (
+                _marker_token,
+                SCENE_LAYER,
+            )
+
+            start_tok = _marker_token(SCENE_LAYER, sid, "start")
+            end_tok = _marker_token(SCENE_LAYER, sid, "end")
+            marker_lengths[sid] = (len(start_tok), len(end_tok))
+
+        # Build a sorted list of injection points: (stripped_pos, delta_len)
+        # where delta_len is the number of bytes added at that point.
+        injection_points: list[tuple[int, int]] = []
+        for sid, start, end in all_assignments:
+            slen, elen = marker_lengths.get(sid, (0, 0))
+            injection_points.append((start, slen))
+            injection_points.append((end, elen))
+        injection_points.sort(key=lambda x: x[0])
+
+        def _map_to_linked(stripped_pos: int) -> int:
+            """Map a position in the fully-stripped space to the linked
+            (scene-injected) content space."""
+            result = stripped_pos
+            for pt, delta in injection_points:
+                if pt <= stripped_pos:
+                    result += delta
+                else:
+                    break
+            return result
+
+        snapped_assignments: list[tuple[str, int, int]] = []
+        for (
+            ann_id,
+            ann_start_stripped,
+            ann_end_stripped,
+        ) in annotation_stripped_positions:
+            ann_start = _map_to_linked(ann_start_stripped)
+            ann_end = _map_to_linked(ann_end_stripped)
+
+            # Snap outside any internal marker tokens in the linked content
+            safe_start = ann_start
+            safe_end = ann_end
+            for m in _ALL_MARKERS_RE.finditer(linked):
+                if m.start() < safe_start < m.end():
+                    safe_start = m.end()
+                if m.start() < safe_end < m.end():
+                    safe_end = m.end()
+            if safe_start < safe_end:
+                snapped_assignments.append((ann_id, safe_start, safe_end))
+
+        if snapped_assignments:
+            linked = inject_annotation_markers(linked, snapped_assignments)
+
     _write_text_atomic(content_path, linked)
     _invalidate_marker_cache(project_dir)
 

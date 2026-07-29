@@ -64,7 +64,6 @@ async def test_stream_unified_chat_content_multi_round():
             "augmentedquill.services.story.story_api_stream_ops.execute_registered_tool"
         ) as mock_exec,
     ):
-
         # Configure mock stream to return chunks for two rounds
         async def side_effect(*args, **kwargs):
             messages = kwargs.get("messages", [])

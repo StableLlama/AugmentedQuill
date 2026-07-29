@@ -102,7 +102,11 @@ def delete_project_response(name: str) -> ProjectMutationResponse:
     return ProjectMutationResponse(
         ok=True,
         message=msg,
-        registry={"current": normalized_reg["current"], "recent": normalized_reg["recent"], "available": available},  # type: ignore[arg-type]
+        registry={
+            "current": normalized_reg["current"],
+            "recent": normalized_reg["recent"],
+            "available": available,
+        },  # type: ignore[arg-type]
     )
 
 
@@ -123,7 +127,10 @@ def select_project_response(name: str) -> ProjectSelectResponse:
             return ProjectSelectResponse(
                 ok=True,
                 message=msg,
-                registry={"current": normalized_reg["current"], "recent": normalized_reg["recent"]},  # type: ignore[arg-type]
+                registry={
+                    "current": normalized_reg["current"],
+                    "recent": normalized_reg["recent"],
+                },  # type: ignore[arg-type]
                 story=None,
                 error="invalid_config",
                 error_message=error_msg,
@@ -136,18 +143,24 @@ def select_project_response(name: str) -> ProjectSelectResponse:
         return ProjectSelectResponse(
             ok=True,
             message=msg,
-            registry={"current": normalized_reg["current"], "recent": normalized_reg["recent"]},  # type: ignore[arg-type]
+            registry={
+                "current": normalized_reg["current"],
+                "recent": normalized_reg["recent"],
+            },  # type: ignore[arg-type]
             story=None,
             error="invalid_config",
             error_message=(
-                "Story config does not match schema requirements: " f"{e.errors()}"
+                f"Story config does not match schema requirements: {e.errors()}"
             ),
         )
 
     return ProjectSelectResponse(
         ok=True,
         message=msg,
-        registry={"current": normalized_reg["current"], "recent": normalized_reg["recent"]},  # type: ignore[arg-type]
+        registry={
+            "current": normalized_reg["current"],
+            "recent": normalized_reg["recent"],
+        },  # type: ignore[arg-type]
         story=story_payload,
     )
 
@@ -167,7 +180,10 @@ def create_project_response(
     return ProjectMutationResponse(
         ok=True,
         message=msg,
-        registry={"current": normalized_reg["current"], "recent": normalized_reg["recent"]},  # type: ignore[arg-type]
+        registry={
+            "current": normalized_reg["current"],
+            "recent": normalized_reg["recent"],
+        },  # type: ignore[arg-type]
         story=StoryPayload(**normalize_story_for_frontend(story)),
     )
 

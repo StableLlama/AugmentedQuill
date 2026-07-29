@@ -108,7 +108,6 @@ class MetadataEndpointsTest(ApiTestCase):
         self.assertEqual(entry["conflicts"][0]["description"], "New Conflict")
 
     def test_update_story_metadata(self):
-
         payload = {
             "title": "New Title",
             "summary": "Main story summary",

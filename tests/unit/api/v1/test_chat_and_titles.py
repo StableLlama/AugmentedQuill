@@ -13,7 +13,6 @@ from tests.unit.api.v1.api_test_case import ApiTestCase
 
 
 class ChatAndTitlesTest(ApiTestCase):
-
     def test_api_chat_coerces_invalid_selected_and_lists_models(self):
         # Patch load_machine_config to return models with an invalid selected name
         orig_lmc = augmentedquill.api.v1.chat.load_machine_config

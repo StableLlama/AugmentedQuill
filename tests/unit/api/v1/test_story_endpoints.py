@@ -17,7 +17,6 @@ from tests.unit.api.v1.api_test_case import ApiTestCase
 
 
 class StoryEndpointsTest(ApiTestCase):
-
     def _make_project(
         self,
         name: str = "novel",

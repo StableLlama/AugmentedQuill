@@ -12,7 +12,6 @@ from tests.unit.api.v1.api_test_case import ApiTestCase
 
 
 class SmokeWorkflowTest(ApiTestCase):
-
     def test_smoke_project_chapter_chat_checkpoint_workflow(self):
         # 1) Create and select a project.
         r_create = self.client.post(
