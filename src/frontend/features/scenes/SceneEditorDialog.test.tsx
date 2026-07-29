@@ -344,6 +344,119 @@ describe('SceneEditorDialog rendering', () => {
     expect(diffButton.getAttribute('aria-pressed')).toBe('false');
   });
 
+  it('does not show diff decorations in linked prose editor when opened normally', () => {
+    // When the user opens the dialog via double-click (not via LLM trigger),
+    // the linked prose CodeMirror editor should NOT show diff decorations.
+    // This verifies that showDiff=false properly disables the diff plugin.
+    wrap(
+      <SceneEditorDialog
+        scene={makeScene({
+          id: 'scene-1',
+          prose_link: {
+            scope_type: 'chapter',
+            chapter_id: 'ch-1',
+            book_id: null,
+            start_offset: 0,
+            end_offset: 11,
+          },
+        })}
+        isOpen={true}
+        openedViaTrigger={false}
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+        getLinkedProseText={() => 'Hello World'}
+      />
+    );
+
+    const linkedProseEditor = screen.getByRole('textbox', {
+      name: /Linked Prose/i,
+    });
+    // The editor should NOT contain any cm-diff-inserted or cm-diff-deleted spans
+    expect(linkedProseEditor.innerHTML).not.toContain('cm-diff-inserted');
+    expect(linkedProseEditor.innerHTML).not.toContain('cm-diff-deleted');
+  });
+
+  it('shows diff decorations in linked prose editor when opened via LLM trigger', () => {
+    // When the dialog is opened via an LLM mutation (openedViaTrigger=true),
+    // the linked prose CodeMirror SHOULD show diff decorations against the baseline.
+    baselineScenesState.push(
+      makeScene({
+        id: 'scene-1',
+        summary: 'Old summary',
+        prose_link: {
+          scope_type: 'story',
+          chapter_id: null,
+          book_id: null,
+          start_offset: 0,
+          end_offset: 5,
+        },
+      })
+    );
+
+    wrap(
+      <SceneEditorDialog
+        scene={makeScene({
+          id: 'scene-1',
+          summary: 'New AI summary',
+          prose_link: {
+            scope_type: 'story',
+            chapter_id: null,
+            book_id: null,
+            start_offset: 0,
+            end_offset: 5,
+          },
+        })}
+        isOpen={true}
+        openedViaTrigger={true}
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+        getLinkedProseText={() => 'New LLM prose'}
+      />
+    );
+
+    // The diff button should be pressed
+    const diffButton = screen.getByRole('button', { name: /Toggle diff view/i });
+    expect(diffButton.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('does not show diff after user accepts all diffs and reopens dialog normally', () => {
+    // User opens dialog via trigger, accepts diffs, closes. Then reopens
+    // normally — no diffs should show because baseline was advanced.
+    wrap(
+      <SceneEditorDialog
+        scene={makeScene({
+          id: 'scene-1',
+          prose_link: {
+            scope_type: 'chapter',
+            chapter_id: 'ch-1',
+            book_id: null,
+            start_offset: 0,
+            end_offset: 11,
+          },
+        })}
+        isOpen={true}
+        openedViaTrigger={false}
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+        getLinkedProseText={() => 'Hello World'}
+      />
+    );
+
+    // No diff decorations in linked prose
+    const linkedProseEditor = screen.getByRole('textbox', {
+      name: /Linked Prose/i,
+    });
+    expect(linkedProseEditor.innerHTML).not.toContain('cm-diff-inserted');
+    expect(linkedProseEditor.innerHTML).not.toContain('cm-diff-deleted');
+
+    // The diff toggle should not be pressed
+    const diffButton = screen.getByRole('button', { name: /Toggle diff view/i });
+    expect(diffButton.getAttribute('aria-pressed')).toBe('false');
+  });
+
   it('renders the dialog when isOpen is true', () => {
     wrap(
       <SceneEditorDialog

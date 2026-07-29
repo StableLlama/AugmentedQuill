@@ -1337,3 +1337,122 @@ describe('multi-scene boundary drag (real-world two-digit IDs)', () => {
     expect(newContent).not.toContain('<!--scene:14:');
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+// getLinkedProseFromTextSource — marker-stripped source text handling
+// ═══════════════════════════════════════════════════════════════════════
+
+import { getLinkedProseFromTextSource } from './proseLinkCoordinates';
+import type { SceneProseLink, Scene } from '../../types';
+
+function makeLink(overrides: Partial<SceneProseLink> = {}): SceneProseLink {
+  return {
+    scope_type: 'chapter',
+    chapter_id: 'ch-1',
+    book_id: null,
+    start_offset: 0,
+    end_offset: 0,
+    ...overrides,
+  };
+}
+
+function makeUnit(overrides: Partial<WritingUnit> = {}): WritingUnit {
+  return {
+    id: 'ch-1',
+    scope: 'chapter',
+    title: 'Test',
+    summary: '',
+    content: '',
+    ...overrides,
+  };
+}
+
+describe('getLinkedProseFromTextSource', () => {
+  it('returns correct text when sourceText has inline scene markers and offsets are marker-inclusive', () => {
+    // scene:20:start (21 chars) + Hello World (11) + scene:20:end (19)
+    // + scene:13:start (21 chars) + Other Scene Text (16) + scene:13:end (19)
+    const content =
+      '<!--scene:20:start-->Hello World<!--scene:20:end-->' +
+      '<!--scene:13:start-->Other Scene Text<!--scene:13:end-->';
+    const unit = makeUnit({ content });
+    const link = makeLink({
+      scope_type: 'chapter',
+      chapter_id: 'ch-1',
+      start_offset: 21, // right after <!--scene:20:start-->
+      end_offset: 32, // right before <!--scene:20:end-->
+    });
+
+    const result = getLinkedProseFromTextSource(content, link, unit, []);
+    expect(result).toBe('Hello World');
+  });
+
+  it('returns correct text when sourceText is marker-stripped but offsets are still marker-inclusive', () => {
+    // Simulates the bug: editor has hideSceneMarkers=true, so its text is stripped.
+    // But prose_link offsets are in marker-inclusive coordinate space.
+    const markerContent =
+      '<!--scene:20:start-->Hello World<!--scene:20:end-->' +
+      '<!--scene:13:start-->Other Scene Text<!--scene:13:end-->';
+    const strippedText = stripInlineInternalMarkers(markerContent);
+    // strippedText = "Hello WorldOther Scene Text"
+
+    const unit = makeUnit({ content: markerContent }); // unit has markers
+    const link = makeLink({
+      scope_type: 'chapter',
+      chapter_id: 'ch-1',
+      start_offset: 21, // marker-inclusive: right after <!--scene:20:start-->
+      end_offset: 52, // marker-inclusive: right before <!--scene:20:end-->
+    });
+
+    const result = getLinkedProseFromTextSource(strippedText, link, unit, []);
+    // Should return "Hello World" (25 chars in stripped text at position 0)
+    // NOT text from wrong position due to stale marker-inclusive offsets
+    expect(result).toBe('Hello World');
+  });
+
+  it('returns correct text for second scene when sourceText is stripped but offsets are marker-inclusive', () => {
+    // scene:20:start (21 chars) + Hello World (11) + scene:20:end (19)
+    // + scene:13:start (21 chars) + Other Scene Text (16) + scene:13:end (19)
+    // Total: 21+11+19+21+16+19 = 107
+    const markerContent =
+      '<!--scene:20:start-->Hello World<!--scene:20:end-->' +
+      '<!--scene:13:start-->Other Scene Text<!--scene:13:end-->';
+    const strippedText = stripInlineInternalMarkers(markerContent);
+    // strippedText = "Hello WorldOther Scene Text" (27 chars)
+
+    const unit = makeUnit({ content: markerContent });
+    // scene:13:start at position 21+11+19 = 51
+    // scene:13 prose from 51+21 = 72 to 72+16 = 88
+    const link = makeLink({
+      scope_type: 'chapter',
+      chapter_id: 'ch-1',
+      start_offset: 72, // right after <!--scene:13:start-->
+      end_offset: 88, // right before <!--scene:13:end-->
+    });
+
+    const result = getLinkedProseFromTextSource(strippedText, link, unit, []);
+    expect(result).toBe('Other Scene Text');
+  });
+
+  it('returns correct text when sourceText is stripped with annotation markers', () => {
+    // scene:20:start (21) + "There was " (10) + annotation:end (30) + "no need" (7) + scene:20:end (19)
+    // + scene:13:start (21) + "Other text" (10) + scene:13:end (19)
+    const markerContent =
+      '<!--scene:20:start-->There was <!--annotation:annot-1:end-->no need<!--scene:20:end-->' +
+      '<!--scene:13:start-->Other text<!--scene:13:end-->';
+    const strippedText = stripInlineInternalMarkers(markerContent);
+    // strippedText = "There was no needOther text" (27 chars)
+
+    const unit = makeUnit({ content: markerContent });
+    // scene 20 prose: from 21 to 21+10+30+7 = 68
+    const link = makeLink({
+      scope_type: 'chapter',
+      chapter_id: 'ch-1',
+      start_offset: 21,
+      end_offset: 68,
+    });
+
+    const result = getLinkedProseFromTextSource(strippedText, link, unit, []);
+    // Expected: "There was no need" (without annotation marker)
+    expect(result).toBe('There was no need');
+  });
+});

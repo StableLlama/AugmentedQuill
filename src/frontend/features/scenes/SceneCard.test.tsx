@@ -776,7 +776,7 @@ describe('SceneCard — scene number display', () => {
     const { container } = renderCard(scene);
     const card = container.querySelector('[data-scene-card]');
     expect(card).toBeTruthy();
-    expect(card!.textContent).toContain('Scene 1');
+    expect(card!.textContent).toContain('#1');
   });
 
   it('displays the scene number when the scene has no summary', () => {
@@ -784,7 +784,7 @@ describe('SceneCard — scene number display', () => {
     const { container } = renderCard(scene);
     const card = container.querySelector('[data-scene-card]');
     expect(card).toBeTruthy();
-    expect(card!.textContent).toContain('Scene 1');
+    expect(card!.textContent).toContain('#1');
   });
 
   it('displays the correct scene number based on index', () => {
@@ -810,7 +810,7 @@ describe('SceneCard — scene number display', () => {
       </I18nextProvider>
     );
     const card = container.querySelector('[data-scene-card]');
-    expect(card!.textContent).toContain('Scene 5');
+    expect(card!.textContent).toContain('#5');
   });
 
   it('still displays the summary text alongside the scene number', () => {

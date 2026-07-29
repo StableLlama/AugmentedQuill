@@ -204,16 +204,35 @@ export function getLinkedProseFromTextSource(
     Math.min(rawEnd, sourceText.length)
   );
 
-  if (rawText.length > 0 || hasInlineSceneMarkers(unit.content)) {
+  // If sourceText itself has inline scene markers, the raw offsets are in the
+  // same coordinate space — slice directly without adjustment.
+  if (hasInlineSceneMarkers(sourceText)) {
     return rawText;
   }
 
-  // sourceText is the best available raw-content signal here (editor
-  // document / stored chapter or story content) — pass it through as
-  // fullContent so the conversion is the exact marker walk rather than any
-  // approximation.
-  const from = toVisibleLinkedOffset(rawFrom, unit, scenes, true, sourceText);
-  const end = toVisibleLinkedOffset(rawEnd, unit, scenes, true, sourceText);
+  // sourceText is stripped of markers.  Two sub-cases:
+  //
+  // 1. unit.content also lacks markers AND the raw slice produced non-empty
+  //    text → the offsets were computed against the same stripped
+  //    representation, return the raw slice as-is.
+  // 2. Otherwise (unit.content has markers, or the raw slice is empty because
+  //    offsets are beyond the stripped text) → the offsets live in
+  //    marker-inclusive space.  Walk the markers in unit.content to derive
+  //    visible offsets, then slice the stripped sourceText.
+  if (rawText.length > 0 && !hasInlineSceneMarkers(unit.content)) {
+    return rawText;
+  }
+
+  // Adjust: convert marker-inclusive offsets to visible offsets.
+  // Use unit.content (which has markers) as the full-content reference when
+  // available; otherwise fall back to the approximate per-scene subtraction.
+  const fullContent =
+    hasInlineSceneMarkers(unit.content) || hasInlineInternalMarkers(unit.content)
+      ? unit.content
+      : sourceText;
+
+  const from = toVisibleLinkedOffset(rawFrom, unit, scenes, true, fullContent);
+  const end = toVisibleLinkedOffset(rawEnd, unit, scenes, true, fullContent);
   const boundedFrom = Math.min(Math.max(from, 0), sourceText.length);
   const boundedEnd = Math.min(Math.max(end, boundedFrom), sourceText.length);
   return sourceText.slice(boundedFrom, boundedEnd);

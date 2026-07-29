@@ -1627,7 +1627,7 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
           isOpen={true}
           viewMode={viewMode}
           openedViaTrigger={dialogOpenedViaTrigger}
-          defaultShowDiff={Boolean(editorSettings?.showDiff)}
+          defaultShowDiff={false}
           sceneChangeHint={sceneEditorDialog.mutationHint}
           onClose={() => {
             setEditingSceneId(null);
