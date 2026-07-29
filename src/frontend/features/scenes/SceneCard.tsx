@@ -480,7 +480,15 @@ export const SceneCard: React.FC<SceneCardProps> = ({
         <p
           className={`text-sm font-medium leading-snug line-clamp-3 ${hasSceneTime ? 'pr-5' : ''} ${isLight ? 'text-brand-gray-900' : 'text-brand-gray-100'}`}
         >
-          {scene.summary || t('Scene {{index}}', { index: index + 1 })}
+          <span className="text-brand-gray-400 dark:text-brand-gray-500">
+            {t('Scene {{index}}', { index: index + 1 })}
+          </span>
+          {scene.summary && (
+            <>
+              {': '}
+              <span>{scene.summary}</span>
+            </>
+          )}
         </p>
 
         {/* beats count */}

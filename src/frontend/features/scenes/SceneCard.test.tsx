@@ -765,3 +765,58 @@ describe('SceneCard — Alt+drag cause creation', () => {
     expect(onCauseDrop).toHaveBeenCalledWith('scene-target');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Scene number display
+// ---------------------------------------------------------------------------
+
+describe('SceneCard — scene number display', () => {
+  it('displays the scene number when the scene has a summary', () => {
+    const scene = makeScene({ id: 'sc1', summary: 'The hero arrives' });
+    const { container } = renderCard(scene);
+    const card = container.querySelector('[data-scene-card]');
+    expect(card).toBeTruthy();
+    expect(card!.textContent).toContain('Scene 1');
+  });
+
+  it('displays the scene number when the scene has no summary', () => {
+    const scene = makeScene({ id: 'sc2', summary: '' });
+    const { container } = renderCard(scene);
+    const card = container.querySelector('[data-scene-card]');
+    expect(card).toBeTruthy();
+    expect(card!.textContent).toContain('Scene 1');
+  });
+
+  it('displays the correct scene number based on index', () => {
+    const scene = makeScene({ id: 'sc3', summary: 'Something happens' });
+    const { container } = render(
+      <I18nextProvider i18n={i18n}>
+        <SceneCard
+          scene={scene}
+          index={4}
+          onDragMove={NOOP}
+          onDragEnd={NOOP}
+          onSelect={NOOP}
+          onEdit={NOOP}
+          onCauseDragStart={NOOP}
+          onCauseDrop={NOOP}
+          onCauseLeave={NOOP}
+          isCauseTarget={false}
+          isSelected={false}
+          isActive={false}
+          isCause={false}
+          isEffect={false}
+        />
+      </I18nextProvider>
+    );
+    const card = container.querySelector('[data-scene-card]');
+    expect(card!.textContent).toContain('Scene 5');
+  });
+
+  it('still displays the summary text alongside the scene number', () => {
+    const scene = makeScene({ id: 'sc4', summary: 'The hero arrives at the castle' });
+    const { container } = renderCard(scene);
+    const card = container.querySelector('[data-scene-card]');
+    expect(card!.textContent).toContain('The hero arrives at the castle');
+  });
+});
