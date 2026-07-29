@@ -592,6 +592,7 @@ export const fr = {
     'Reset Zoom': 'Réinitialiser le zoom',
     'Alt+drag to create cause': 'Alt+glisser pour créer une cause',
     'Scene {{index}}': 'Scène {{index}}',
+    'Scene {{index}} (ID {{id}})': '#{{index}} · ID {{id}}',
     'Scene {{index}} of {{total}}': 'Scène {{index}} sur {{total}}',
     'Scene ID: {{id}}': 'ID: {{id}}',
     'AI changed fields: {{fields}}': 'IA a modifié : {{fields}}',

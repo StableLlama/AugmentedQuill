@@ -427,6 +427,13 @@ def inject_markers(
     (without any markers being inserted).  Assignments must not overlap each
     other; passing overlapping ranges raises ``ValueError``.
 
+    Inverted spans (``end < start``) are rejected with ``ValueError``.
+
+    After injection, if the result contains *only* marker tokens with no
+    prose content and more than one scene is being assigned, a
+    ``ValueError`` is raised to prevent data corruption where an entire
+    file is replaced by adjacent start/end markers.
+
     The result is additionally required to satisfy scene exclusivity against
     *any* scene markers already present in *content* (not just the new
     assignments) and to keep every marker (scene and annotation) balanced and
@@ -434,8 +441,23 @@ def inject_markers(
     function fail-closed: it either returns content that is guaranteed safe
     to persist, or raises ``ValueError`` and returns nothing.
     """
+    for scene_id, start, end in assignments:
+        if end < start:
+            raise ValueError(
+                f"Scene {scene_id}: invalid span [{start}, {end}) — "
+                f"end must be >= start"
+            )
     result = _inject_layer_spans(content, SCENE_LAYER, list(assignments))  # type: ignore[arg-type]
     validate_marker_integrity(result)
+    # Prevent data corruption: if the result has NO non-marker prose and
+    # multiple scenes were assigned, the file would be pure markers.
+    non_marker = _MARKER_RE.sub("", result).strip()
+    if len(non_marker) == 0 and len(assignments) > 1:
+        raise ValueError(
+            "Refusing to produce a marker-only result with no prose content "
+            f"for {len(assignments)} scenes.  Provide non-empty prose text "
+            "to link scenes to."
+        )
     return result
 
 

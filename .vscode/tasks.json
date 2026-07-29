@@ -110,7 +110,7 @@
       "label": "frontend: prettier",
       "type": "shell",
       "command": "npx",
-      "args": ["prettier", "--write", "src/**/*.{ts,tsx,js,jsx,css}"],
+      "args": ["prettier", "--write", "src/**/*.{ts,tsx,js,jsx,css,md,json,scss,html}"],
       "options": {
         "cwd": "${workspaceFolder}/src/frontend"
       },
@@ -122,7 +122,7 @@
     {
       "label": "fix: all",
       "type": "shell",
-      "command": "${workspaceFolder}/venv/bin/ruff check --fix . ; ${workspaceFolder}/venv/bin/ruff format . ; cd ${workspaceFolder}/src/frontend && npm run lint -- --fix ; npx prettier --write '**/*.{ts,tsx,js,jsx,css}'",
+      "command": "${workspaceFolder}/venv/bin/ruff check --fix . ; ${workspaceFolder}/venv/bin/black . ; cd ${workspaceFolder}/src/frontend && npm run lint -- --fix ; npx prettier --write '**/*.{ts,tsx,js,jsx,css,md,json,scss,html}'",
       "options": {
         "cwd": "${workspaceFolder}"
       },

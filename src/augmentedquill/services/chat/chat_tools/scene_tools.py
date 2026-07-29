@@ -1009,9 +1009,33 @@ async def manage_scenes(
                     ),
                     "details": {"reason": message},
                 }
+            if "zero-width" in message.lower() or "end must be > start" in message:
+                return {
+                    "error": "Invalid scene data",
+                    "message": (
+                        "Cannot create a scene with an empty prose range. "
+                        "Provide a non-empty prose segment to link the scene to."
+                    ),
+                    "details": {"reason": message},
+                }
             return {
                 "error": "Invalid scene data",
                 "message": message,
+            }
+        except OSError as exc:
+            return {
+                "error": "Scene creation failed",
+                "message": (
+                    "Could not write scene data to disk. "
+                    "Check filesystem permissions and disk space."
+                ),
+                "details": {"reason": str(exc)},
+            }
+        except Exception as exc:
+            return {
+                "error": "Scene creation failed",
+                "message": f"An unexpected error occurred: {exc}",
+                "details": {"reason": str(exc)},
             }
         mutations["story_changed"] = True
         all_scenes = list_scenes(active)
@@ -1274,6 +1298,21 @@ async def manage_scenes(
             return {
                 "error": "Invalid scene update",
                 "message": message,
+            }
+        except OSError as exc:
+            return {
+                "error": "Scene update failed",
+                "message": (
+                    "Could not write scene data to disk. "
+                    "Check filesystem permissions and disk space."
+                ),
+                "details": {"reason": str(exc)},
+            }
+        except Exception as exc:
+            return {
+                "error": "Scene update failed",
+                "message": f"An unexpected error occurred: {exc}",
+                "details": {"reason": str(exc)},
             }
         if updated is None:
             return {"error": f"Scene '{params.scene_id}' not found"}

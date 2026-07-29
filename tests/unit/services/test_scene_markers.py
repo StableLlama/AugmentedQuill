@@ -198,6 +198,43 @@ def test_inject_markers_keeps_adjacent_boundaries_as_separate_comments() -> None
     assert "<!--scene:2:start-<!--scene:1:end-->->" not in output
 
 
+def test_inject_markers_rejects_zero_width_span() -> None:
+    """Zero-width spans (start == end) are allowed for a single scene
+    in empty content (linking to a new empty chapter).  But multiple
+    scenes with zero-width spans in empty content are rejected
+    to prevent data corruption.
+    """
+    # Single scene in empty content: allowed
+    result = inject_markers("", [(1, 0, 0)])
+    assert "<!--scene:1:start-->" in result
+    assert "<!--scene:1:end-->" in result
+
+    # Multiple scenes in empty content via relink_scope_prose style:
+    # each assignment injected individually is fine, but relink_scope_prose
+    # calls inject_markers once with all assignments.  Two zero-width
+    # assignments in empty content -> rejected.
+    try:
+        inject_markers("", [(1, 0, 0), (2, 0, 0)])
+    except ValueError as exc:
+        assert "marker-only" in str(exc).lower()
+        return
+    raise AssertionError(
+        "Expected inject_markers to raise ValueError for multiple zero-width spans in empty content"
+    )
+
+
+def test_inject_markers_rejects_inverted_span() -> None:
+    """Spans where end < start must raise ValueError regardless of content."""
+    text = "hello world"
+    try:
+        inject_markers(text, [(1, 7, 3)])
+    except ValueError:
+        return
+    raise AssertionError(
+        "Expected inject_markers to raise ValueError for inverted span (end < start)"
+    )
+
+
 def test_validate_scene_marker_tokens_rejects_malformed_marker_fragments() -> None:
     malformed = "<!--scene:11:end-<!--scene:11:start-->-<!--scene:11:end-->"
     try:

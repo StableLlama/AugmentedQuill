@@ -182,7 +182,13 @@ const isNoopSceneMutationResult = (result: unknown): boolean => {
   if (resultObj.changed === false) {
     return true;
   }
-  return typeof resultObj.error === 'string' && resultObj.error.length > 0;
+  // Error results should NOT be treated as noop — the LLM reported an
+  // error and the user needs to see it.  We propagate the mutation so
+  // the chat UI can surface the failure.
+  if (typeof resultObj.error === 'string' && resultObj.error.length > 0) {
+    return false;
+  }
+  return false;
 };
 
 /** Build metadata fields. */

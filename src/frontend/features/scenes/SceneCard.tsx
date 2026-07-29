@@ -351,7 +351,7 @@ export const SceneCard: React.FC<SceneCardProps> = ({
       data-scene-card={scene.id}
       role="button"
       tabIndex={0}
-      aria-label={t('Scene {{index}}', { index: index + 1 })}
+      aria-label={t('Scene {{index}} (ID {{id}})', { index: index + 1, id: scene.id })}
       onKeyDown={(e: React.KeyboardEvent): void => {
         if (e.key === 'Enter' || e.key === ' ') onEdit(scene.id);
       }}
@@ -481,7 +481,7 @@ export const SceneCard: React.FC<SceneCardProps> = ({
           className={`text-sm font-medium leading-snug line-clamp-3 ${hasSceneTime ? 'pr-5' : ''} ${isLight ? 'text-brand-gray-900' : 'text-brand-gray-100'}`}
         >
           <span className="text-brand-gray-400 dark:text-brand-gray-500">
-            {t('Scene {{index}}', { index: index + 1 })}
+            {t('Scene {{index}} (ID {{id}})', { index: index + 1, id: scene.id })}
           </span>
           {scene.summary && (
             <>
