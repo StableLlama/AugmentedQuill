@@ -110,7 +110,7 @@ describe('DiffAcceptBar', () => {
   });
 
   it('applies light theme classes', () => {
-    const { container } = wrap(
+    wrap(
       <DiffAcceptBar
         theme="light"
         onAccept={vi.fn()}

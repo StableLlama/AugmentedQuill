@@ -95,12 +95,12 @@ test.describe('Scene cursor highlight — browser UX', () => {
     await clickAtEditorOffset(page, 19);
     await page.waitForTimeout(800);
 
-    // The scene card for Scene 14 should now have the selection ring
+    // The scene card for Scene 14 should now have the active ring
     const scene14Card = page.locator('[data-scene-card="14"]');
     await expect(scene14Card).toBeAttached({ timeout: 5000 });
 
-    // Verify the selection ring class is present
-    await expect(scene14Card).toHaveClass(/ring-brand-400/, { timeout: 3000 });
+    // Cursor sync sets the scene as active (violet ring), not just selected
+    await expect(scene14Card).toHaveClass(/ring-violet-400/, { timeout: 3000 });
 
     // Verify prose highlight decoration appears in the editor
     const highlights = page.locator('.cm-prose-link-highlight');
@@ -119,7 +119,7 @@ test.describe('Scene cursor highlight — browser UX', () => {
     await page.waitForTimeout(800);
 
     const scene13Card = page.locator('[data-scene-card="13"]');
-    await expect(scene13Card).toHaveClass(/ring-brand-400/, { timeout: 3000 });
+    await expect(scene13Card).toHaveClass(/ring-violet-400/, { timeout: 3000 });
 
     // Now click at the very end of the visible text (beyond all scenes)
     // Scene 16 ends at visible offset 38, so offset 45 should be outside
@@ -133,8 +133,8 @@ test.describe('Scene cursor highlight — browser UX', () => {
     }
     await page.waitForTimeout(500);
 
-    // Scene 13 should no longer be selected
-    await expect(scene13Card).not.toHaveClass(/ring-brand-400/, { timeout: 3000 });
+    // Scene 13 should no longer be active
+    await expect(scene13Card).not.toHaveClass(/ring-violet-400/, { timeout: 3000 });
   });
 
   test('cursor moves between scenes and highlights the correct one', async ({
@@ -149,7 +149,7 @@ test.describe('Scene cursor highlight — browser UX', () => {
     await page.waitForTimeout(800);
 
     const scene13Card = page.locator('[data-scene-card="13"]');
-    await expect(scene13Card).toHaveClass(/ring-brand-400/, { timeout: 3000 });
+    await expect(scene13Card).toHaveClass(/ring-violet-400/, { timeout: 3000 });
 
     // Move cursor right past Scene 13 into Scene 14 (13 chars for SceneThirteen)
     for (let i = 0; i < 15; i++) {
@@ -158,10 +158,10 @@ test.describe('Scene cursor highlight — browser UX', () => {
     }
     await page.waitForTimeout(500);
 
-    // Scene 13 should be deselected and Scene 14 should be selected
+    // Scene 13 should be deselected and Scene 14 should become active
     const scene14Card = page.locator('[data-scene-card="14"]');
-    await expect(scene13Card).not.toHaveClass(/ring-brand-400/, { timeout: 3000 });
-    await expect(scene14Card).toHaveClass(/ring-brand-400/, { timeout: 3000 });
+    await expect(scene13Card).not.toHaveClass(/ring-violet-400/, { timeout: 3000 });
+    await expect(scene14Card).toHaveClass(/ring-violet-400/, { timeout: 3000 });
 
     // Move further right into Scene 16
     for (let i = 0; i < 15; i++) {
@@ -171,8 +171,8 @@ test.describe('Scene cursor highlight — browser UX', () => {
     await page.waitForTimeout(500);
 
     const scene16Card = page.locator('[data-scene-card="16"]');
-    await expect(scene14Card).not.toHaveClass(/ring-brand-400/, { timeout: 3000 });
-    await expect(scene16Card).toHaveClass(/ring-brand-400/, { timeout: 3000 });
+    await expect(scene14Card).not.toHaveClass(/ring-violet-400/, { timeout: 3000 });
+    await expect(scene16Card).toHaveClass(/ring-violet-400/, { timeout: 3000 });
   });
 
   test('scene highlight persists after multiple cursor moves within same scene', async ({
@@ -191,14 +191,14 @@ test.describe('Scene cursor highlight — browser UX', () => {
     // Move cursor left and right within the scene — highlight should stay
     await page.keyboard.press('ArrowLeft');
     await page.waitForTimeout(200);
-    await expect(scene14Card).toHaveClass(/ring-brand-400/, { timeout: 2000 });
+    await expect(scene14Card).toHaveClass(/ring-violet-400/, { timeout: 2000 });
 
     await page.keyboard.press('ArrowRight');
     await page.waitForTimeout(200);
-    await expect(scene14Card).toHaveClass(/ring-brand-400/, { timeout: 2000 });
+    await expect(scene14Card).toHaveClass(/ring-violet-400/, { timeout: 2000 });
 
     await page.keyboard.press('ArrowRight');
     await page.waitForTimeout(200);
-    await expect(scene14Card).toHaveClass(/ring-brand-400/, { timeout: 2000 });
+    await expect(scene14Card).toHaveClass(/ring-violet-400/, { timeout: 2000 });
   });
 });

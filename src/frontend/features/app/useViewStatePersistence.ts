@@ -64,7 +64,7 @@ export async function restoreViewState(projectName: string): Promise<void> {
 /**
  * Build the current view state payload from the stores.
  */
-function buildViewStatePayload(projectName: string): ViewStatePayload {
+function buildViewStatePayload(_projectName: string): ViewStatePayload {
   const storyStore = useStoryStore.getState();
   const uiStore = useUIStore.getState();
 

@@ -90,16 +90,13 @@ async function openAppWithHandles(page: Page, sceneNum: number): Promise<void> {
     await page.waitForTimeout(500);
   }
 
-  // Click the scene to show highlights/handles.
-  // Scene buttons in Narrative view have nested text — use role + name.
-  await page
-    .getByRole('button', { name: new RegExp(`Scene ${sceneNum}\\b`) })
-    .first()
-    .click({ timeout: 5000 });
+  // Click the scene card to show highlights/handles.
+  // Scene cards have data-scene-card attributes with the real scene ID.
+  const sceneId = sceneNum === 1 ? 13 : sceneNum === 2 ? 14 : 16;
+  await page.locator(`[data-scene-card="${sceneId}"]`).click({ timeout: 5000 });
   await page.waitForTimeout(1500);
 
-  // Verify handles appear (use the real scene ID, not the display number)
-  const sceneId = sceneNum === 1 ? 13 : sceneNum === 2 ? 14 : 16;
+  // Verify handles appear
   await expect(page.locator(`[data-testid="handle-start-${sceneId}"]`)).toBeAttached({
     timeout: 5000,
   });
@@ -198,10 +195,8 @@ async function dragAndWait(
  * Must be called after openAppWithHandles has set up Split Mode.
  */
 async function selectScene(page: Page, sceneNum: number): Promise<void> {
-  await page
-    .getByRole('button', { name: new RegExp(`Scene ${sceneNum}\\b`) })
-    .first()
-    .click({ timeout: 5000 });
+  const sceneId = sceneNum === 1 ? 13 : sceneNum === 2 ? 14 : 16;
+  await page.locator(`[data-scene-card="${sceneId}"]`).click({ timeout: 5000 });
   await page.waitForTimeout(800);
 }
 

@@ -888,6 +888,7 @@ describe('prose-link highlight plugin', () => {
 
     const highlights = view.state.field(proseHighlightField);
     const bRange = highlights.find((r: ProseHighlightRange) => r.sceneId === 'b');
+    expect(bRange).toBeDefined();
     // B's start would be pushed to 12, which equals its end (11) —
     // so the overlap logic returns r unchanged. The build step will skip b
     // because from(5) < to(11) is still true. But visually they overlap.

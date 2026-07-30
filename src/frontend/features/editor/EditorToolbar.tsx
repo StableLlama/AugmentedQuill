@@ -9,7 +9,6 @@ import {
 import {
   Bold,
   Italic,
-  Type,
   Image as ImageIcon,
   Quote,
   Strikethrough,
@@ -17,11 +16,8 @@ import {
   Superscript,
   List,
   ListOrdered,
-  Link as LinkIcon,
   Code,
   Code2,
-  Pilcrow,
-  Hash,
 } from 'lucide-react';
 import { HeaderFormatControls, HeaderViewControls } from '../layout/layoutControlTypes';
 
