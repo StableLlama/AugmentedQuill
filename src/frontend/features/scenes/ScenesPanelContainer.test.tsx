@@ -806,7 +806,15 @@ describe('handleSaveProseContent', () => {
     apiMock.scenes.updateProseContent.mockResolvedValueOnce(updatedScene);
     const { ref, dispatch } = makeEditorRef('Hello world!');
 
-    await renderAndOpenDialog([scene], { editorRef: ref });
+    await renderAndOpenDialog([scene], {
+      editorRef: ref,
+      currentChapter: {
+        id: 'ch-1',
+        scope: 'chapter',
+        title: 'Chapter 1',
+        content: 'Hello world!',
+      },
+    });
 
     await act(async () => {
       await dlg().onSaveProseContent!('earth');
@@ -863,7 +871,15 @@ describe('handleSaveProseContent', () => {
     const shortDoc = 'Short.';
     const { ref, dispatch } = makeEditorRef(shortDoc);
 
-    await renderAndOpenDialog([scene], { editorRef: ref });
+    await renderAndOpenDialog([scene], {
+      editorRef: ref,
+      currentChapter: {
+        id: 'ch-1',
+        scope: 'chapter',
+        title: 'Chapter 1',
+        content: shortDoc,
+      },
+    });
 
     await act(async () => {
       await dlg().onSaveProseContent!('replaced');
