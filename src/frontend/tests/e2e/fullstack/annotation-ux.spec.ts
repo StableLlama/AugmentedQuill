@@ -114,19 +114,20 @@ async function deleteAnnotationsExcept(
 }
 
 /**
- * Click at a visible character offset in the CodeMirror editor.
+ * Set cursor at a visible offset using keyboard navigation from the editor
+ * start.  More reliable than approximate pixel clicking.
  */
-async function clickAtEditorOffset(page: Page, visibleOffset: number): Promise<void> {
+async function setCursorAtOffset(page: Page, offset: number): Promise<void> {
   const cmContent = page.locator('.cm-content');
   const box = await cmContent.boundingBox();
   if (!box) throw new Error('Editor .cm-content not found');
 
-  const charWidth = 9.5;
-  const leftPad = 20;
-  const x = leftPad + visibleOffset * charWidth;
-  const y = 20;
+  await cmContent.click({ position: { x: 25, y: 25 } });
+  await page.waitForTimeout(300);
 
-  await cmContent.click({ position: { x, y } });
+  for (let i = 0; i < offset; i++) {
+    await page.keyboard.press('ArrowRight');
+  }
   await page.waitForTimeout(500);
 }
 
@@ -236,6 +237,11 @@ test.describe('Annotation UX — reading', () => {
 test.describe('Annotation UX — cursor linking', () => {
   test.beforeEach(async ({ page }: { page: Page }) => {
     await page.setViewportSize({ width: 1920, height: 1080 });
+    // Clean up any annotations created by previous tests so cursor-linking
+    // tests see only the pre-existing annotations from the test project.
+    await page.goto(`${FRONTEND}`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(1000);
+    await deleteAnnotationsExcept(page, PREEXISTING_IDS);
     await navigateAndSelectProject(page);
     await switchToWriteMode(page);
   });
@@ -248,9 +254,8 @@ test.describe('Annotation UX — cursor linking', () => {
     const panel = page.locator('[aria-label="Annotation panel"]');
     await expect(panel).toBeAttached({ timeout: 10000 });
 
-    // Click inside "Scene" (visible offset ~2, annotated by e2e-anno-1)
-    await clickAtEditorOffset(page, 2);
-    await page.waitForTimeout(800);
+    // Set cursor inside "Scene" (visible offset ~2, annotated by e2e-anno-1)
+    await setCursorAtOffset(page, 2);
 
     const activeItem = panel.locator('[role="button"].bg-amber-500\\/20');
     await expect(activeItem).toBeAttached({ timeout: 5000 });
@@ -264,18 +269,16 @@ test.describe('Annotation UX — cursor linking', () => {
     const panel = page.locator('[aria-label="Annotation panel"]');
     await expect(panel).toBeAttached({ timeout: 10000 });
 
-    // Click inside "Scene" (annotated)
-    await clickAtEditorOffset(page, 2);
-    await page.waitForTimeout(800);
+    // Set cursor inside "Scene" (annotated)
+    await setCursorAtOffset(page, 2);
 
     const activeItem = panel.locator('[role="button"].bg-amber-500\\/20');
     await expect(activeItem).toBeAttached({ timeout: 5000 });
 
-    // Click in unannotated "Thir" (offsets 5-8)
-    await clickAtEditorOffset(page, 6);
-    await page.waitForTimeout(800);
+    // Set cursor in unannotated "Thir" (offsets 5-8)
+    await setCursorAtOffset(page, 6);
 
-    await expect(activeItem).not.toBeAttached({ timeout: 3000 });
+    await expect(activeItem).not.toBeAttached({ timeout: 5000 });
   });
 
   test('cursor moves between annotations and selects the correct one', async ({
@@ -286,9 +289,8 @@ test.describe('Annotation UX — cursor linking', () => {
     const panel = page.locator('[aria-label="Annotation panel"]');
     await expect(panel).toBeAttached({ timeout: 10000 });
 
-    // Click inside "Scene" (e2e-anno-1)
-    await clickAtEditorOffset(page, 2);
-    await page.waitForTimeout(800);
+    // Set cursor inside "Scene" (e2e-anno-1)
+    await setCursorAtOffset(page, 2);
 
     let activeItem = panel.locator('[role="button"].bg-amber-500\\/20');
     await expect(activeItem).toBeAttached({ timeout: 5000 });

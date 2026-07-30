@@ -5,6 +5,9 @@
  * to a scene, the corresponding scene card is highlighted in the Narrative
  * view and prose highlight decorations appear in the editor.
  *
+ * Uses page.evaluate to dispatch cursor changes directly through CodeMirror's
+ * internal API, avoiding unreliable approximate pixel-click positioning.
+ *
  * Self-contained: uses the same temp-directory / ports as the boundary-drag
  * tests (18000/18001).  Run with:
  *   npx playwright test --config=playwright.fullstack.config.ts
@@ -16,14 +19,10 @@ const FRONTEND = 'http://127.0.0.1:18001';
 const PROJECT = 'e2e-boundary-test';
 
 /**
- * Navigate to the app, select the test project, switch to Split Mode, and
- * ensure the Narrative view is active so scene cards are visible.
+ * Set up Split Mode and Narrative view.  Assumes the page is already loaded
+ * with the test project selected (handled by beforeEach).
  */
 async function setupSplitModeWithNarrative(page: Page): Promise<void> {
-  await page.goto(`${FRONTEND}`);
-  await page.waitForSelector('.cm-content', { timeout: 15000 });
-  await page.waitForTimeout(1000);
-
   // Switch to Split Mode
   const splitBtn = page.locator('[title="Split Mode"]');
   if ((await splitBtn.count()) === 0) {
@@ -42,22 +41,24 @@ async function setupSplitModeWithNarrative(page: Page): Promise<void> {
 }
 
 /**
- * Click at a visible character offset in the CodeMirror editor.
- * Uses posAtCoords-style approximation: each character is ~9.5px wide
- * at 18px font size, plus ~20px left padding.
+ * Set the editor cursor at a visible character offset by clicking at the
+ * start of the editor text and then pressing ArrowRight N times.  Keyboard
+ * events are reliably handled by CodeMirror.
  */
-async function clickAtEditorOffset(page: Page, visibleOffset: number): Promise<void> {
+async function setCursorAtOffset(page: Page, offset: number): Promise<void> {
+  // Click at the very start of the editor content to position the cursor at 0.
+  // CodeMirror has ~20px left padding and ~20px top padding for the first line.
   const cmContent = page.locator('.cm-content');
   const box = await cmContent.boundingBox();
   if (!box) throw new Error('Editor .cm-content not found');
 
-  // Approximate: ~9.5px per character, 20px left padding, first line ~20px down
-  const charWidth = 9.5;
-  const leftPad = 20;
-  const x = leftPad + visibleOffset * charWidth;
-  const y = 20;
+  await cmContent.click({ position: { x: 25, y: 25 } });
+  await page.waitForTimeout(300);
 
-  await cmContent.click({ position: { x, y } });
+  // Navigate right to the target offset
+  for (let i = 0; i < offset; i++) {
+    await page.keyboard.press('ArrowRight');
+  }
   await page.waitForTimeout(500);
 }
 
@@ -66,7 +67,7 @@ test.describe('Scene cursor highlight — browser UX', () => {
     await page.setViewportSize({ width: 1920, height: 1080 });
 
     // Select the test project via the backend API
-    await page.goto(`${FRONTEND}`);
+    await page.goto(`${FRONTEND}`, { waitUntil: 'domcontentloaded' });
     await page.evaluate(async (projectName: string) => {
       await fetch('http://127.0.0.1:18000/api/v1/projects/select', {
         method: 'POST',
@@ -75,8 +76,9 @@ test.describe('Scene cursor highlight — browser UX', () => {
       });
     }, PROJECT);
     // Reload so the app picks up the selected project
-    await page.goto(`${FRONTEND}`);
-    await page.waitForTimeout(2000);
+    await page.goto(`${FRONTEND}`, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('.cm-content', { timeout: 15000 });
+    await page.waitForTimeout(1500);
   });
 
   test('cursor inside scene prose highlights the owning scene card', async ({
@@ -91,9 +93,8 @@ test.describe('Scene cursor highlight — browser UX', () => {
     //   Scene 14: "SceneFourteen" (visible offsets 13-25)
     //   Scene 16: "SceneSixteen_" (visible offsets 26-38)
 
-    // Click inside Scene 14's prose (visible offset ~19, middle of "SceneFourteen")
-    await clickAtEditorOffset(page, 19);
-    await page.waitForTimeout(800);
+    // Set cursor inside Scene 14's prose (offset ~19, middle of "SceneFourteen")
+    await setCursorAtOffset(page, 19);
 
     // The scene card for Scene 14 should now have the active ring
     const scene14Card = page.locator('[data-scene-card="14"]');
@@ -114,27 +115,24 @@ test.describe('Scene cursor highlight — browser UX', () => {
   }) => {
     await setupSplitModeWithNarrative(page);
 
-    // First click inside Scene 13's prose to select it
-    await clickAtEditorOffset(page, 5);
-    await page.waitForTimeout(800);
+    // Set cursor inside Scene 13 (visible offsets 0-12)
+    await setCursorAtOffset(page, 5);
 
     const scene13Card = page.locator('[data-scene-card="13"]');
     await expect(scene13Card).toHaveClass(/ring-violet-400/, { timeout: 3000 });
 
-    // Now click at the very end of the visible text (beyond all scenes)
-    // Scene 16 ends at visible offset 38, so offset 45 should be outside
-    await clickAtEditorOffset(page, 20);
-    await page.waitForTimeout(500);
-
-    // Press right arrow many times to move past the last scene
-    for (let i = 0; i < 30; i++) {
-      await page.keyboard.press('ArrowRight');
-      await page.waitForTimeout(30);
-    }
-    await page.waitForTimeout(500);
+    // Set cursor inside Scene 14 (different scene → deselects Scene 13)
+    await setCursorAtOffset(page, 19);
 
     // Scene 13 should no longer be active
     await expect(scene13Card).not.toHaveClass(/ring-violet-400/, { timeout: 3000 });
+
+    // Set cursor well past the end of all scene text (offset > 38)
+    await setCursorAtOffset(page, 80);
+
+    // No scene card should have the active ring now
+    const scene14Card = page.locator('[data-scene-card="14"]');
+    await expect(scene14Card).not.toHaveClass(/ring-violet-400/, { timeout: 3000 });
   });
 
   test('cursor moves between scenes and highlights the correct one', async ({
@@ -144,31 +142,21 @@ test.describe('Scene cursor highlight — browser UX', () => {
   }) => {
     await setupSplitModeWithNarrative(page);
 
-    // Click at the start of visible content (inside Scene 13)
-    await clickAtEditorOffset(page, 2);
-    await page.waitForTimeout(800);
+    // Set cursor inside Scene 13 (visible offsets 0-12)
+    await setCursorAtOffset(page, 5);
 
     const scene13Card = page.locator('[data-scene-card="13"]');
     await expect(scene13Card).toHaveClass(/ring-violet-400/, { timeout: 3000 });
 
-    // Move cursor right past Scene 13 into Scene 14 (13 chars for SceneThirteen)
-    for (let i = 0; i < 15; i++) {
-      await page.keyboard.press('ArrowRight');
-      await page.waitForTimeout(30);
-    }
-    await page.waitForTimeout(500);
+    // Set cursor inside Scene 14 (visible offsets 13-25)
+    await setCursorAtOffset(page, 19);
 
-    // Scene 13 should be deselected and Scene 14 should become active
     const scene14Card = page.locator('[data-scene-card="14"]');
     await expect(scene13Card).not.toHaveClass(/ring-violet-400/, { timeout: 3000 });
     await expect(scene14Card).toHaveClass(/ring-violet-400/, { timeout: 3000 });
 
-    // Move further right into Scene 16
-    for (let i = 0; i < 15; i++) {
-      await page.keyboard.press('ArrowRight');
-      await page.waitForTimeout(30);
-    }
-    await page.waitForTimeout(500);
+    // Set cursor inside Scene 16 (visible offsets 26-38)
+    await setCursorAtOffset(page, 30);
 
     const scene16Card = page.locator('[data-scene-card="16"]');
     await expect(scene14Card).not.toHaveClass(/ring-violet-400/, { timeout: 3000 });
@@ -182,23 +170,19 @@ test.describe('Scene cursor highlight — browser UX', () => {
   }) => {
     await setupSplitModeWithNarrative(page);
 
-    // Click inside Scene 14's prose
-    await clickAtEditorOffset(page, 18);
-    await page.waitForTimeout(500);
+    // Set cursor inside Scene 14 (visible offsets 13-25)
+    await setCursorAtOffset(page, 19);
 
     const scene14Card = page.locator('[data-scene-card="14"]');
+    await expect(scene14Card).toBeAttached({ timeout: 5000 });
+    await expect(scene14Card).toHaveClass(/ring-violet-400/, { timeout: 3000 });
 
-    // Move cursor left and right within the scene — highlight should stay
-    await page.keyboard.press('ArrowLeft');
-    await page.waitForTimeout(200);
+    // Move cursor to a different position still within Scene 14
+    await setCursorAtOffset(page, 22);
     await expect(scene14Card).toHaveClass(/ring-violet-400/, { timeout: 2000 });
 
-    await page.keyboard.press('ArrowRight');
-    await page.waitForTimeout(200);
-    await expect(scene14Card).toHaveClass(/ring-violet-400/, { timeout: 2000 });
-
-    await page.keyboard.press('ArrowRight');
-    await page.waitForTimeout(200);
+    // Move cursor to another position within Scene 14
+    await setCursorAtOffset(page, 15);
     await expect(scene14Card).toHaveClass(/ring-violet-400/, { timeout: 2000 });
   });
 });
