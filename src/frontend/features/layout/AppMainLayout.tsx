@@ -45,7 +45,6 @@ import {
   annotationsToRanges,
   adjustAnnotationRangesForStrippedMarkers,
 } from '../editor/annotationPlugin';
-import type { Annotation } from '../../services/apiClients/annotations';
 
 import { useWorkspaceMode } from '../../stores/uiStore';
 import { EditorToolbar } from '../editor/EditorToolbar';

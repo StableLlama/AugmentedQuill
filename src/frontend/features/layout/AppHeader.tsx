@@ -34,13 +34,11 @@ import {
   HeaderAiControls,
   HeaderAppearanceControlsState,
   HeaderChatPanelControls,
-  HeaderFormatControls,
   HeaderHistoryControls,
   HeaderModelControls,
   HeaderSearchControls,
   HeaderSettingsControls,
   HeaderSidebarControls,
-  HeaderViewControls,
 } from './layoutControlTypes';
 import type { AppTheme } from '../../types/ui';
 
@@ -191,8 +189,8 @@ const HeaderLeftControls: React.FC<HeaderLeftControlsProps> = ({
   settingsControls,
   historyControls,
   searchControls,
-  iconColor,
-  iconHover,
+  iconColor: _iconColor,
+  iconHover: _iconHover,
   dividerColor,
   currentTheme,
   t,
