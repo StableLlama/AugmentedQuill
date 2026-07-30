@@ -1329,6 +1329,190 @@ def test_reorder_scene_prose_within_same_chapter_moves_marker_block(
     assert second_start < first_start
 
 
+def test_reorder_scene_prose_preserves_linked_prose_content_same_chapter(
+    project_dir: Path,
+) -> None:
+    """Reordering two scenes with linked prose in the same chapter must preserve
+    each scene's prose content exactly — no bytes added, removed, or altered."""
+    story = json.loads((project_dir / "story.json").read_text(encoding="utf-8"))
+    story["chapters"] = [
+        {
+            "id": "1",
+            "filename": "0001.txt",
+            "title": "Chapter 1",
+            "summary": "",
+            "content": "",
+        }
+    ]
+    (project_dir / "story.json").write_text(json.dumps(story), encoding="utf-8")
+
+    chapters_dir = project_dir / "chapters"
+    chapters_dir.mkdir(parents=True, exist_ok=True)
+    chapter_path = chapters_dir / "0001.txt"
+    chapter_path.write_text("Alpha Bravo Charlie Delta Echo", encoding="utf-8")
+
+    first = create_scene(project_dir, SceneCreateRequest(summary="First"))
+    second = create_scene(project_dir, SceneCreateRequest(summary="Second"))
+
+    # Link first scene to "Alpha Bravo" (chars 0-10)
+    link_prose(
+        project_dir,
+        first["id"],
+        SceneLinkProseRequest(
+            scope_type="chapter",
+            chapter_id="1",
+            start_offset=0,
+            end_offset=10,
+        ),
+    )
+    # The marker-injected content now has markers around "Alpha Bravo"
+    current = chapter_path.read_text(encoding="utf-8")
+    # Find "Charlie" and link second scene
+    charlie_start = current.index("Charlie")
+    charlie_end = charlie_start + len("Charlie Delta Echo")
+    link_prose(
+        project_dir,
+        second["id"],
+        SceneLinkProseRequest(
+            scope_type="chapter",
+            chapter_id="1",
+            start_offset=charlie_start,
+            end_offset=charlie_end,
+        ),
+    )
+
+    # Capture prose text before reorder
+    before = chapter_path.read_text(encoding="utf-8")
+    before_spans = {s.scene_id: s for s in parse_scene_spans(before)}
+    first_prose_before = before[
+        before_spans[first["id"]].start : before_spans[first["id"]].end
+    ]
+    second_prose_before = before[
+        before_spans[second["id"]].start : before_spans[second["id"]].end
+    ]
+
+    # Reorder: move second before first
+    reorder_scene_prose(
+        project_dir,
+        SceneReorderProseRequest(
+            source_scene_id=second["id"],
+            target_scene_id=first["id"],
+            place_before=True,
+        ),
+    )
+
+    after = chapter_path.read_text(encoding="utf-8")
+    after_spans = {s.scene_id: s for s in parse_scene_spans(after)}
+    assert [span.scene_id for span in parse_scene_spans(after)] == [
+        second["id"],
+        first["id"],
+    ]
+
+    first_prose_after = after[
+        after_spans[first["id"]].start : after_spans[first["id"]].end
+    ]
+    second_prose_after = after[
+        after_spans[second["id"]].start : after_spans[second["id"]].end
+    ]
+
+    # Each scene's linked prose must be byte-for-byte identical after reorder
+    assert first_prose_after == first_prose_before, (
+        f"First scene prose changed during reorder.\n"
+        f"Before ({len(first_prose_before)} chars): {first_prose_before!r}\n"
+        f"After  ({len(first_prose_after)} chars): {first_prose_after!r}"
+    )
+    assert second_prose_after == second_prose_before, (
+        f"Second scene prose changed during reorder.\n"
+        f"Before ({len(second_prose_before)} chars): {second_prose_before!r}\n"
+        f"After  ({len(second_prose_after)} chars): {second_prose_after!r}"
+    )
+
+    # Also verify prose content is non-empty (not just markers moving without prose)
+    assert len(first_prose_after.strip()) > 0, "First scene prose should be non-empty"
+    assert len(second_prose_after.strip()) > 0, "Second scene prose should be non-empty"
+
+
+def test_reorder_scene_prose_preserves_content_when_adjacent(
+    project_dir: Path,
+) -> None:
+    """Reordering two adjacent scenes with linked prose must preserve each
+    scene's prose content exactly, even when their marker blocks are adjacent
+    (no gap between end marker of one and start marker of next)."""
+    story = json.loads((project_dir / "story.json").read_text(encoding="utf-8"))
+    story["chapters"] = [
+        {
+            "id": "1",
+            "filename": "0001.txt",
+            "title": "Chapter 1",
+            "summary": "",
+            "content": "",
+        }
+    ]
+    (project_dir / "story.json").write_text(json.dumps(story), encoding="utf-8")
+
+    chapters_dir = project_dir / "chapters"
+    chapters_dir.mkdir(parents=True, exist_ok=True)
+    chapter_path = chapters_dir / "0001.txt"
+    chapter_path.write_text("Hello World", encoding="utf-8")
+
+    first = create_scene(project_dir, SceneCreateRequest(summary="First"))
+    second = create_scene(project_dir, SceneCreateRequest(summary="Second"))
+
+    link_prose(
+        project_dir,
+        first["id"],
+        SceneLinkProseRequest(
+            scope_type="chapter",
+            chapter_id="1",
+            start_offset=0,
+            end_offset=5,
+        ),
+    )
+    current = chapter_path.read_text(encoding="utf-8")
+    world_start = current.index("World")
+    world_end = world_start + len("World")
+    link_prose(
+        project_dir,
+        second["id"],
+        SceneLinkProseRequest(
+            scope_type="chapter",
+            chapter_id="1",
+            start_offset=world_start,
+            end_offset=world_end,
+        ),
+    )
+
+    before = chapter_path.read_text(encoding="utf-8")
+    before_spans = {s.scene_id: s for s in parse_scene_spans(before)}
+    first_prose_before = before[
+        before_spans[first["id"]].start : before_spans[first["id"]].end
+    ]
+    second_prose_before = before[
+        before_spans[second["id"]].start : before_spans[second["id"]].end
+    ]
+
+    reorder_scene_prose(
+        project_dir,
+        SceneReorderProseRequest(
+            source_scene_id=second["id"],
+            target_scene_id=first["id"],
+            place_before=True,
+        ),
+    )
+
+    after = chapter_path.read_text(encoding="utf-8")
+    after_spans = {s.scene_id: s for s in parse_scene_spans(after)}
+    first_prose_after = after[
+        after_spans[first["id"]].start : after_spans[first["id"]].end
+    ]
+    second_prose_after = after[
+        after_spans[second["id"]].start : after_spans[second["id"]].end
+    ]
+
+    assert first_prose_after == first_prose_before
+    assert second_prose_after == second_prose_before
+
+
 def test_reorder_scene_prose_moves_between_chapters_and_transfers_markers(
     project_dir: Path,
 ) -> None:

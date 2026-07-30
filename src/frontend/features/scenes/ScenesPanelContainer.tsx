@@ -47,6 +47,8 @@ import {
   getSceneMarkerSpanRange,
   hasInlineSceneMarkers,
   sceneMarkerTokenLength,
+  stripInlineInternalMarkers,
+  toVisibleOffset,
 } from '../editor/internalTags';
 import {
   getLinkedProseFromTextSource,
@@ -716,19 +718,23 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
 
         if (!scopeMatchesCurrentChapter) return;
 
-        // Guard against stale editor documents: the file on disk may have
-        // grown (e.g. annotation-split markers from a previous server-side
-        // success whose frontend dispatch failed with a RangeError).  Clamp
-        // the replacement range to the actual document length — the
-        // rebuilt_text already spans the extra bytes so the final document
-        // will be correct.
+        // The backend returns scope_start / scope_end / rebuilt_text in the
+        // marker-inclusive (original) coordinate space.  The editor document
+        // is marker-stripped (hideSceneMarkers=true), so we must convert
+        // offsets to visible space and strip markers from the rebuilt text
+        // before dispatching.  Failing to do this corrupts linked prose by
+        // inserting markers into the visible document at wrong positions.
+        const fullContent = currentChapter.content ?? '';
+        const visibleStart = toVisibleOffset(fullContent, reorderResult.scope_start);
+        const visibleEnd = toVisibleOffset(fullContent, reorderResult.scope_end);
+        const strippedText = stripInlineInternalMarkers(reorderResult.rebuilt_text);
         const docLength = view.state.doc.length;
-        const safeEnd = Math.min(reorderResult.scope_end, docLength);
+        const safeEnd = Math.min(visibleEnd, docLength);
         view.dispatch({
           changes: {
-            from: reorderResult.scope_start,
+            from: visibleStart,
             to: safeEnd,
-            insert: reorderResult.rebuilt_text,
+            insert: strippedText,
           },
         });
       } catch (err) {
@@ -1265,17 +1271,26 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
       );
       // Reflect the change immediately in the editor so the writer sees the
       // updated text without having to close and reopen the chapter.
-      if (proseLink && editorRef?.current) {
+      // prose_link offsets are marker-inclusive; convert to visible space
+      // because the editor document is marker-stripped (hideSceneMarkers=true).
+      if (proseLink && editorRef?.current && currentChapter?.content) {
         const view: EditorView | null = editorRef.current.getEditorView();
         if (view) {
+          const fullContent = currentChapter.content;
           const docLen = view.state.doc.length;
-          const from = Math.min(Number(proseLink.start_offset ?? 0), docLen);
-          const to = Math.min(proseLink.end_offset ?? docLen, docLen);
+          const from = Math.min(
+            toVisibleOffset(fullContent, Number(proseLink.start_offset ?? 0)),
+            docLen
+          );
+          const to = Math.min(
+            toVisibleOffset(fullContent, proseLink.end_offset ?? docLen),
+            docLen
+          );
           view.dispatch({ changes: { from, to, insert: text } });
         }
       }
     },
-    [editingSceneId, patchScene, recordSceneHistory, scenes, editorRef]
+    [editingSceneId, patchScene, recordSceneHistory, scenes, editorRef, currentChapter]
   );
 
   // eslint-disable-next-line complexity
@@ -1466,9 +1481,26 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
 
       if (!linkSource) return result.generated_text;
 
-      const rawFrom = Math.min(Math.max(linkSource.start_offset, 0), docLen);
+      // prose_link offsets are marker-inclusive.  When the editor document
+      // is marker-stripped (hideSceneMarkers=true), convert to visible space
+      // so the replacement targets the correct range.
+      const fullContent: string = currentChapter.content ?? '';
+      const rawFrom = Math.min(
+        Math.max(
+          docHasInlineSceneMarkers
+            ? linkSource.start_offset
+            : toVisibleOffset(fullContent, linkSource.start_offset),
+          0
+        ),
+        docLen
+      );
       const rawTo = Math.min(
-        Math.max(linkSource.end_offset ?? rawFrom, rawFrom),
+        Math.max(
+          docHasInlineSceneMarkers
+            ? (linkSource.end_offset ?? rawFrom)
+            : toVisibleOffset(fullContent, linkSource.end_offset ?? fullContent.length),
+          rawFrom
+        ),
         docLen
       );
       const { from, to } = hasInlineMarkers
