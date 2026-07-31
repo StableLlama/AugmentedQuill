@@ -23,7 +23,7 @@ interface UseSettingsDialogProviderValidationParams {
 const toConnectionTestKey = (provider: LLMConfig): string => {
   const baseUrl = (provider.baseUrl || '').trim();
   const apiKey = provider.apiKeyEnabled ? (provider.apiKey || '').trim() : '';
-  const timeoutS = Math.max(1, Math.round((provider.timeout || 10000) / 1000));
+  const timeoutS = Math.max(1, Math.round(provider.timeout || 10));
   return `${baseUrl}|${apiKey}|${timeoutS}|${provider.apiKeyEnabled ? 'enabled' : 'disabled'}`;
 };
 
@@ -71,7 +71,7 @@ export function useSettingsDialogProviderValidation({
       const apiKey = provider.apiKeyEnabled
         ? (provider.apiKey || '').trim()
         : undefined;
-      const timeoutS = Math.max(1, Math.round((provider.timeout || 10000) / 1000));
+      const timeoutS = Math.max(1, Math.round(provider.timeout || 10));
       const testKey = toConnectionTestKey(provider);
 
       if (!baseUrl || (provider.apiKeyEnabled && !apiKey)) {
@@ -200,7 +200,7 @@ export function useSettingsDialogProviderValidation({
       const apiKey = provider.apiKeyEnabled
         ? (provider.apiKey || '').trim()
         : undefined;
-      const timeoutS = Math.max(1, Math.round((provider.timeout || 10000) / 1000));
+      const timeoutS = Math.max(1, Math.round(provider.timeout || 10));
 
       const run = async (): Promise<void> => {
         if (cancelled) return;

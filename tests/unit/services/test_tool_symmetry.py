@@ -12,9 +12,10 @@ import os
 import tempfile
 from pathlib import Path
 from unittest import TestCase
+
 from fastapi.testclient import TestClient
 
-import augmentedquill.main as main
+from augmentedquill import main
 from augmentedquill.services.projects.projects import select_project
 
 
@@ -77,7 +78,7 @@ class TestChatToolsSymmetry(TestCase):
     def test_story_metadata_symmetry(self):
         self._bootstrap_project()
 
-        # 1. Test update_story_metadata
+        # 1. Test manage_story_core update_metadata
         update_body = {
             "messages": [
                 {
@@ -88,13 +89,16 @@ class TestChatToolsSymmetry(TestCase):
                             "id": "call_update",
                             "type": "function",
                             "function": {
-                                "name": "update_story_metadata",
+                                "name": "manage_story_core",
                                 "arguments": json.dumps(
                                     {
-                                        "title": "New Title",
-                                        "summary": "New Summary",
-                                        "notes": "New Notes",
-                                        "tags": ["tag1", "tag2"],
+                                        "action": "update_metadata",
+                                        "update_data": {
+                                            "title": "New Title",
+                                            "summary": "New Summary",
+                                            "notes": "New Notes",
+                                            "tags": ["tag1", "tag2"],
+                                        },
                                     }
                                 ),
                             },
@@ -106,7 +110,7 @@ class TestChatToolsSymmetry(TestCase):
         r = self.client.post("/api/v1/chat/tools", json=update_body)
         self.assertEqual(r.status_code, 200)
 
-        # 2. Test get_story_metadata symmetry
+        # 2. Test manage_story_core get_metadata symmetry
         get_body = {
             "messages": [
                 {
@@ -117,8 +121,8 @@ class TestChatToolsSymmetry(TestCase):
                             "id": "call_get",
                             "type": "function",
                             "function": {
-                                "name": "get_story_metadata",
-                                "arguments": "{}",
+                                "name": "manage_story_core",
+                                "arguments": '{"action":"get_metadata"}',
                             },
                         }
                     ],

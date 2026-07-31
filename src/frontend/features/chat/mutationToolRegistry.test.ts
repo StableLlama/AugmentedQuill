@@ -15,6 +15,168 @@ import { buildMetadataFields, MUTATION_TOOL_REGISTRY } from './mutationToolRegis
 import type { SessionMutation } from './components/MutationTags';
 
 describe('mutationToolRegistry', () => {
+  it('detects manage_scenes mutations when tool args are raw JSON', () => {
+    const factory = MUTATION_TOOL_REGISTRY.manage_scenes;
+    expect(factory).toBeDefined();
+
+    const mutation = factory({
+      args: {
+        raw: JSON.stringify({
+          action: 'update',
+          scene_id: 'scene-1',
+          update_data: { summary_patch: { operation: 'append', value: 'x' } },
+        }),
+      },
+      result: { id: 'scene-1' },
+    });
+
+    expect(mutation).toMatchObject({
+      type: 'scene',
+      label: 'Scene',
+      targetId: 'scene-1',
+    });
+  });
+
+  it('detects manage_scenes mutations for direct args and numeric ids', () => {
+    const mutation = MUTATION_TOOL_REGISTRY.manage_scenes({
+      args: {
+        action: 'update',
+        scene_id: 42,
+        update_data: {
+          scene_time: { temporal_zoned_datetime: '2026-06-01T14:00:00Z' },
+        },
+      },
+      result: {},
+    });
+
+    expect(mutation).toMatchObject({
+      type: 'scene',
+      label: 'Scene',
+      targetId: '42',
+      sceneChangeHint: { changedFields: ['scene_time'] },
+    });
+  });
+
+  it('does not emit manage_scenes mutation for non-mutating actions', () => {
+    const mutation = MUTATION_TOOL_REGISTRY.manage_scenes({
+      args: { action: 'get' },
+      result: { id: 'scene-1' },
+    });
+
+    expect(mutation).toBeNull();
+  });
+
+  it('does not emit manage_scenes mutation when update reports no effective changes', () => {
+    const mutation = MUTATION_TOOL_REGISTRY.manage_scenes({
+      args: { action: 'update', scene_id: 1 },
+      result: {
+        ok: true,
+        changed: false,
+        message: 'No effective scene content changes',
+      },
+    });
+
+    expect(mutation).toBeNull();
+  });
+
+  it('does not emit manage_scenes mutation when raw args are invalid JSON', () => {
+    const mutation = MUTATION_TOOL_REGISTRY.manage_scenes({
+      args: { raw: '{not-json' },
+      result: { id: 'scene-1' },
+    });
+
+    expect(mutation).toBeNull();
+  });
+
+  it('emits one scene mutation per updated scene in aggregated manage_scenes results', () => {
+    const mutations = MUTATION_TOOL_REGISTRY.manage_scenes({
+      args: { action: 'update' },
+      result: [
+        { scene_id: 7, causes: [8] },
+        { scene_id: 9, causes_patch: { add: [10] } },
+      ],
+    }) as SessionMutation[];
+
+    expect(Array.isArray(mutations)).toBe(true);
+    expect(mutations).toHaveLength(2);
+    expect(mutations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ targetId: '7' }),
+        expect.objectContaining({ targetId: '9' }),
+      ])
+    );
+  });
+
+  it('emits one scene mutation per scene when result contains scene_list array only', () => {
+    const mutations = MUTATION_TOOL_REGISTRY.manage_scenes({
+      args: { action: 'update' },
+      result: [{ scene_id: 5 }, { scene_id: '6' }],
+    }) as SessionMutation[];
+
+    expect(Array.isArray(mutations)).toBe(true);
+    expect(mutations).toHaveLength(2);
+    expect(mutations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ targetId: '5' }),
+        expect.objectContaining({ targetId: '6' }),
+      ])
+    );
+  });
+
+  it('normalizes raw args for manage_story_core metadata actions', () => {
+    const mutations = MUTATION_TOOL_REGISTRY.manage_story_core({
+      args: {
+        raw: JSON.stringify({
+          action: 'update_metadata',
+          update_data: { notes_patch: { operation: 'replace', value: 'x' } },
+        }),
+      },
+      result: {},
+    }) as SessionMutation[];
+
+    expect(Array.isArray(mutations)).toBe(true);
+    expect(mutations).toHaveLength(1);
+    expect(mutations[0]).toMatchObject({ type: 'metadata', subType: 'notes' });
+  });
+
+  it('normalizes raw args for manage_sourcebook actions', () => {
+    const mutation = MUTATION_TOOL_REGISTRY.manage_sourcebook({
+      args: {
+        raw: JSON.stringify({ action: 'create', name: 'People', name_or_id: 'people' }),
+      },
+      result: {},
+    });
+
+    expect(mutation).toMatchObject({
+      type: 'sourcebook',
+      targetId: 'people',
+    });
+  });
+
+  it('normalizes raw args for manage_images actions', () => {
+    const mutation = MUTATION_TOOL_REGISTRY.manage_images({
+      args: { raw: JSON.stringify({ action: 'set_metadata', image_path: 'x.png' }) },
+      result: {},
+    });
+
+    expect(mutation).toMatchObject({ type: 'story', label: 'Images' });
+  });
+
+  it('normalizes raw args for search_and_replace delegation', () => {
+    const mutation = MUTATION_TOOL_REGISTRY.search_and_replace({
+      args: { raw: JSON.stringify({ action: 'replace' }) },
+      result: { changed_sections: ['Scene 7 notes'] },
+    }) as SessionMutation[];
+
+    expect(Array.isArray(mutation)).toBe(true);
+    expect(mutation).toHaveLength(1);
+    expect(mutation[0]).toMatchObject({
+      type: 'scene',
+      targetId: '7',
+      label: 'Scene 7 notes',
+    });
+  });
+
   it('produces sensible mutations for replace_in_project change_locations', () => {
     const factory = MUTATION_TOOL_REGISTRY.replace_in_project;
     expect(factory).toBeDefined();
@@ -41,12 +203,18 @@ describe('mutationToolRegistry', () => {
             field: 'story_summary',
             label: 'Story summary',
           },
+          {
+            type: 'scene',
+            target_id: 'scene-7',
+            field: 'summary',
+            label: 'Scene scene-7 summary',
+          },
         ],
       },
     }) as SessionMutation[];
 
     expect(Array.isArray(mutations)).toBe(true);
-    expect(mutations).toHaveLength(3);
+    expect(mutations).toHaveLength(4);
     expect(mutations[0]).toMatchObject({
       type: 'metadata',
       targetId: '1',
@@ -63,6 +231,11 @@ describe('mutationToolRegistry', () => {
       label: 'Story summary',
       subType: 'summary',
     });
+    expect(mutations[3]).toMatchObject({
+      type: 'scene',
+      targetId: 'scene-7',
+      label: 'Scene scene-7 summary',
+    });
   });
 
   it('falls back to changed_sections when change_locations are unavailable', () => {
@@ -74,12 +247,13 @@ describe('mutationToolRegistry', () => {
           'Chapter 1: The Dusty Discovery summary',
           "Sourcebook 'Fred' Description",
           'Story summary',
+          'Scene 9 summary',
         ],
       },
     }) as SessionMutation[];
 
     expect(Array.isArray(mutations)).toBe(true);
-    expect(mutations).toHaveLength(3);
+    expect(mutations).toHaveLength(4);
     expect(mutations[0]).toMatchObject({
       type: 'chapter',
       targetId: '1',
@@ -94,6 +268,26 @@ describe('mutationToolRegistry', () => {
       type: 'metadata',
       label: 'Story summary',
       subType: 'summary',
+    });
+    expect(mutations[3]).toMatchObject({
+      type: 'scene',
+      targetId: '9',
+      label: 'Scene 9 summary',
+    });
+  });
+
+  it('falls back to generic project replace story mutation when no change details are available', () => {
+    const factory = MUTATION_TOOL_REGISTRY.replace_in_project;
+    const mutations = factory({
+      args: {},
+      result: {},
+    }) as SessionMutation[];
+
+    expect(Array.isArray(mutations)).toBe(true);
+    expect(mutations).toHaveLength(1);
+    expect(mutations[0]).toMatchObject({
+      type: 'story',
+      label: 'Project replace',
     });
   });
 });

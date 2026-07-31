@@ -98,7 +98,7 @@ The suggestion cards appear — click any card to insert that text, or press `Es
 
 `[SCREENSHOT: The suggestion footer open with continuation cards based on the current chapter context]`
 
-## Step 5b: Adding Visual References
+## Step 6: Adding Visual References
 
 Visual references help both you and the AI stay consistent with how characters and places look.
 
@@ -111,7 +111,7 @@ Visual references help both you and the AI stay consistent with how characters a
 
 `[SCREENSHOT: Project Images dialog showing the Elara placeholder card with the generated prompt popup open]`
 
-## Step 6: Pacing and Review
+## Step 7: Pacing and Review
 
 Once you finish the chapter, it's time to review.
 
@@ -123,7 +123,7 @@ Pacing is how fast or slow the story feels. Action scenes should have shorter se
 2. Type: _"Please review Chapter 1. How is the pacing? Is the conflict clear?"_
 3. The AI will analyze your text and provide constructive feedback.
 
-## Step 7: Set Up Your Writing Environment
+## Step 8: Set Up Your Writing Environment
 
 Before your next long writing session, take a moment to tune the appearance to your preferences.
 
@@ -140,4 +140,6 @@ Congratulations! You have set up a project, built your world in the Sourcebook, 
 
 Remember, AugmentedQuill is a tool to enhance _your_ creativity. The story is always yours. Keep writing, keep experimenting, and let your imagination run wild!
 
-_Return to the [User Manual index](index.md) to explore any topic in more depth._
+---
+
+Next up: Learn how to use your AI writing partner in [The AI Chat Assistant](07_ai_chat_assistant.md).

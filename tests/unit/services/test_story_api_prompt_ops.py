@@ -17,6 +17,7 @@ from augmentedquill.services.story.story_api_prompt_ops import (
 )
 from augmentedquill.services.story.story_generation_common import (
     gather_writing_context,
+    normalize_included_markdown_headings,
     sanitize_prompt,
 )
 
@@ -45,7 +46,7 @@ class StoryApiPromptOpsTest(TestCase):
         self.assertNotIn("{tool_instructions}", system_msg["content"])
 
         # Regression guard: ensure at least one tool is listed in the system prompt.
-        self.assertIn("get_story_metadata", system_msg["content"])
+        self.assertIn("manage_story_core", system_msg["content"])
 
         user_msg = next((m for m in messages if m["role"] == "user"), None)
         self.assertIsNotNone(user_msg)
@@ -94,16 +95,16 @@ class StoryApiPromptOpsTest(TestCase):
         user_msg = next((m for m in messages if m["role"] == "user"), None)
         self.assertIsNotNone(user_msg)
         self.assertIn(
-            "Task: Write the full current draft as continuous prose.",
+            "Task: Continue or rewrite the current draft according to the selected action while preserving coherence, voice, and pacing.",
             user_msg["content"],
         )
-        self.assertNotIn("Existing draft text (do not change)", user_msg["content"])
-        self.assertNotIn("# Chapter 1", user_msg["content"])
+        self.assertIn("Existing draft text (do not change):", user_msg["content"])
+        self.assertIn("# Chapter 1", user_msg["content"])
 
     def test_read_only_tool_schema_filter_excludes_editing_functions(self):
         tools = _get_read_only_tool_schemas(project_type="series")
         names = {t["function"]["name"] for t in tools}
-        self.assertIn("get_story_metadata", names)
+        self.assertIn("manage_story_core", names)
         self.assertNotIn("sync_story_summary", names)
         self.assertNotIn("write_story_content", names)
         self.assertNotIn("replace_text_in_chapter", names)
@@ -157,6 +158,23 @@ Story tags: cozy
         self.assertNotIn("Story description:", cleaned)
         self.assertIn("Story title: My Short Story", cleaned)
         self.assertIn("Story tags: cozy", cleaned)
+
+    def test_normalize_included_markdown_headings_aligns_to_level_three(self):
+        text = "# Heading 1\n## Subheading\n### Subsubheading\n"
+        normalized = normalize_included_markdown_headings(text)
+        self.assertIn("### Heading 1", normalized)
+        self.assertIn("#### Subheading", normalized)
+        self.assertIn("##### Subsubheading", normalized)
+
+        text2 = "## Section\n### Detail\n"
+        normalized2 = normalize_included_markdown_headings(text2)
+        self.assertIn("### Section", normalized2)
+        self.assertIn("#### Detail", normalized2)
+
+        text3 = "#### Deep section\n##### Detail\n"
+        normalized3 = normalize_included_markdown_headings(text3)
+        self.assertIn("### Deep section", normalized3)
+        self.assertIn("#### Detail", normalized3)
 
     # -----------------------------------------------------------------------
     # story_summary target – template selection and placeholder filling

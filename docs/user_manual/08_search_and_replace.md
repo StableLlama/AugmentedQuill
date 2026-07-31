@@ -107,11 +107,11 @@ This is especially useful when a character is renamed and you want the name upda
 
 ## Using Search & Replace via AI Chat
 
-The AI assistant has two built-in tools for search and replace that you can invoke conversationally:
+The AI assistant exposes search/replace through a single manager tool that you can invoke conversationally:
 
-### `search_in_project`
+### `search_and_replace` (action=`search`)
 
-Ask the AI to find text and it will use the **`search_in_project`** tool:
+Ask the AI to find text and it will use **`search_and_replace`** with `action="search"`:
 
 > _"Find all mentions of Elena in my chapters."_
 > _"Search for the word 'sword' across everything."_
@@ -119,7 +119,7 @@ Ask the AI to find text and it will use the **`search_in_project`** tool:
 
 The tool returns a list of matches grouped by section, which the AI formats into a readable reply.
 
-### `replace_in_project`
+### `search_and_replace` (action=`replace`)
 
 Ask the AI to rename a character or fix a recurring phrase:
 
@@ -141,3 +141,7 @@ The tool runs a global replace and reports how many occurrences were changed and
 | Find name variants of Elara                | Phonetic enabled, All scope     | `Elara`             |
 | Rename a character across all chapters     | Replace All, All Chapters scope | old name → new name |
 | Check if any chapter summary lacks a date  | Metadata scope                  | `[0-9]{4}`          |
+
+---
+
+Next up: Manage your project's visual assets in [Project Images](09_project_images.md).

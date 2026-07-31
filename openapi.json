@@ -1771,7 +1771,7 @@
       "post": {
         "tags": ["Story", "Story"],
         "summary": "Api Story Sourcebook Relevance",
-        "description": "Ask the WRITING model which sourcebook entries are relevant.\n\nThis is a lightweight helper used by the frontend to keep checkboxes\nin sync.  It is deliberately separate from the prose suggestion call so\nthat we can run it in the background on every text change.",
+        "description": "Return scene-derived sourcebook entries relevant to the active prose end.\n\nThis runs in the background while the user types, so it must stay\ndeterministic, cheap, and free of LLM latency.",
         "operationId": "api_story_sourcebook_relevance_api_v1_projects__project_name__story_sourcebook_relevance_post",
         "parameters": [
           {
@@ -2049,6 +2049,58 @@
               "application/json": {
                 "schema": {
                   "title": "Response Api Story Action Stream Api V1 Projects  Project Name  Story Action Stream Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_name}/chapters/{chap_id}/rewrite-and-relink": {
+      "post": {
+        "tags": ["Story", "Story"],
+        "summary": "Api Chapter Rewrite And Relink",
+        "description": "Atomically rewrite a chapter and auto-link scenes in one transaction.\n\nThis endpoint streams the generated content and persists it,\nthen performs scene auto-linking on the resulting text.",
+        "operationId": "api_chapter_rewrite_and_relink_api_v1_projects__project_name__chapters__chap_id__rewrite_and_relink_post",
+        "parameters": [
+          {
+            "name": "chap_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Chap Id"
+            }
+          },
+          {
+            "name": "project_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Directory name of the project",
+              "title": "Project Name"
+            },
+            "description": "Directory name of the project"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Api Chapter Rewrite And Relink Api V1 Projects  Project Name  Chapters  Chap Id  Rewrite And Relink Post"
                 }
               }
             }
@@ -3512,6 +3564,1157 @@
         }
       }
     },
+    "/api/v1/projects/{project_name}/scenes": {
+      "get": {
+        "tags": ["Scenes"],
+        "summary": "Get Scenes",
+        "description": "List all scenes for the project, with staleness flags on prose links.",
+        "operationId": "get_scenes_api_v1_projects__project_name__scenes_get",
+        "parameters": [
+          {
+            "name": "project_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Directory name of the project",
+              "title": "Project Name"
+            },
+            "description": "Directory name of the project"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Scene"
+                  },
+                  "title": "Response Get Scenes Api V1 Projects  Project Name  Scenes Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Scenes"],
+        "summary": "Create New Scene",
+        "description": "Create a new scene.",
+        "operationId": "create_new_scene_api_v1_projects__project_name__scenes_post",
+        "parameters": [
+          {
+            "name": "project_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Directory name of the project",
+              "title": "Project Name"
+            },
+            "description": "Directory name of the project"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SceneCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Scene"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_name}/scenes/{scene_id}": {
+      "get": {
+        "tags": ["Scenes"],
+        "summary": "Get Single Scene",
+        "description": "Fetch a single scene by ID.",
+        "operationId": "get_single_scene_api_v1_projects__project_name__scenes__scene_id__get",
+        "parameters": [
+          {
+            "name": "scene_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Scene Id"
+            }
+          },
+          {
+            "name": "project_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Directory name of the project",
+              "title": "Project Name"
+            },
+            "description": "Directory name of the project"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Scene"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": ["Scenes"],
+        "summary": "Update Existing Scene",
+        "description": "Update an existing scene (partial \u2013 only provided fields are changed).",
+        "operationId": "update_existing_scene_api_v1_projects__project_name__scenes__scene_id__put",
+        "parameters": [
+          {
+            "name": "scene_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Scene Id"
+            }
+          },
+          {
+            "name": "project_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Directory name of the project",
+              "title": "Project Name"
+            },
+            "description": "Directory name of the project"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SceneUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Scene"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Scenes"],
+        "summary": "Delete Existing Scene",
+        "description": "Delete a scene and remove it from all order constraints.",
+        "operationId": "delete_existing_scene_api_v1_projects__project_name__scenes__scene_id__delete",
+        "parameters": [
+          {
+            "name": "scene_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Scene Id"
+            }
+          },
+          {
+            "name": "project_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Directory name of the project",
+              "title": "Project Name"
+            },
+            "description": "Directory name of the project"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_name}/scenes/{scene_id}/link-prose": {
+      "post": {
+        "tags": ["Scenes"],
+        "summary": "Link Scene Prose",
+        "description": "Assign a prose-text range to a scene using inline file markers.",
+        "operationId": "link_scene_prose_api_v1_projects__project_name__scenes__scene_id__link_prose_post",
+        "parameters": [
+          {
+            "name": "scene_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Scene Id"
+            }
+          },
+          {
+            "name": "project_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Directory name of the project",
+              "title": "Project Name"
+            },
+            "description": "Directory name of the project"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SceneLinkProseRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Scene"
+                  },
+                  "title": "Response Link Scene Prose Api V1 Projects  Project Name  Scenes  Scene Id  Link Prose Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_name}/scenes/batch-link-prose": {
+      "post": {
+        "tags": ["Scenes"],
+        "summary": "Batch Link Scene Prose",
+        "description": "Atomically unlink and relink multiple scenes in one scope.\n\nAll assignments are processed in a single pass so touching boundaries\ndo not get replayed through repeated single-scene edits that can split\nfreshly inserted markers.",
+        "operationId": "batch_link_scene_prose_api_v1_projects__project_name__scenes_batch_link_prose_post",
+        "parameters": [
+          {
+            "name": "project_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Directory name of the project",
+              "title": "Project Name"
+            },
+            "description": "Directory name of the project"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SceneBatchLinkProseRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Scene"
+                  },
+                  "title": "Response Batch Link Scene Prose Api V1 Projects  Project Name  Scenes Batch Link Prose Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_name}/scenes/{scene_id}/unlink-prose": {
+      "post": {
+        "tags": ["Scenes"],
+        "summary": "Unlink Scene Prose",
+        "description": "Remove the prose link from a scene, preserving its narrative position.\n\nReturns all scenes affected in the same prose scope.",
+        "operationId": "unlink_scene_prose_api_v1_projects__project_name__scenes__scene_id__unlink_prose_post",
+        "parameters": [
+          {
+            "name": "scene_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Scene Id"
+            }
+          },
+          {
+            "name": "project_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Directory name of the project",
+              "title": "Project Name"
+            },
+            "description": "Directory name of the project"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Scene"
+                  },
+                  "title": "Response Unlink Scene Prose Api V1 Projects  Project Name  Scenes  Scene Id  Unlink Prose Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_name}/scenes/reorder-prose": {
+      "post": {
+        "tags": ["Scenes"],
+        "summary": "Reorder Scene Prose Route",
+        "description": "Reorder linked prose blocks and persist marker-aware offsets.",
+        "operationId": "reorder_scene_prose_route_api_v1_projects__project_name__scenes_reorder_prose_post",
+        "parameters": [
+          {
+            "name": "project_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Directory name of the project",
+              "title": "Project Name"
+            },
+            "description": "Directory name of the project"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SceneReorderProseRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneReorderProseResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_name}/scenes/{scene_id}/prose-content": {
+      "patch": {
+        "tags": ["Scenes"],
+        "summary": "Update Scene Prose Content",
+        "description": "Replace the text between a scene's inline start/end markers.",
+        "operationId": "update_scene_prose_content_api_v1_projects__project_name__scenes__scene_id__prose_content_patch",
+        "parameters": [
+          {
+            "name": "scene_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Scene Id"
+            }
+          },
+          {
+            "name": "project_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Directory name of the project",
+              "title": "Project Name"
+            },
+            "description": "Directory name of the project"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SceneUpdateProseContentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Scene"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_name}/scenes/detect-boundaries": {
+      "post": {
+        "tags": ["Scenes"],
+        "summary": "Detect Boundaries For Scenes",
+        "description": "Detect scene boundaries in a prose segment and relink affected scenes.",
+        "operationId": "detect_boundaries_for_scenes_api_v1_projects__project_name__scenes_detect_boundaries_post",
+        "parameters": [
+          {
+            "name": "project_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Directory name of the project",
+              "title": "Project Name"
+            },
+            "description": "Directory name of the project"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SceneDetectBoundariesRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneDetectBoundariesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_name}/scenes/{scene_id}/write": {
+      "post": {
+        "tags": ["Scenes"],
+        "summary": "Write Scene Prose",
+        "description": "Generate prose for one scene and automatically link generated boundaries.",
+        "operationId": "write_scene_prose_api_v1_projects__project_name__scenes__scene_id__write_post",
+        "parameters": [
+          {
+            "name": "scene_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Scene Id"
+            }
+          },
+          {
+            "name": "project_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Directory name of the project",
+              "title": "Project Name"
+            },
+            "description": "Directory name of the project"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SceneWriteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneWriteResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_name}/scenes/auto-link-scope": {
+      "post": {
+        "tags": ["Scenes"],
+        "summary": "Auto Link Saved Scope",
+        "description": "Auto-link a saved prose scope to the scenes that belong to it.",
+        "operationId": "auto_link_saved_scope_api_v1_projects__project_name__scenes_auto_link_scope_post",
+        "parameters": [
+          {
+            "name": "project_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Directory name of the project",
+              "title": "Project Name"
+            },
+            "description": "Directory name of the project"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AutoLinkScopeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutoLinkScopeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_name}/annotations": {
+      "get": {
+        "tags": ["Annotations"],
+        "summary": "Api List Annotations",
+        "description": "List all annotations for the project.",
+        "operationId": "api_list_annotations_api_v1_projects__project_name__annotations_get",
+        "parameters": [
+          {
+            "name": "project_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Directory name of the project",
+              "title": "Project Name"
+            },
+            "description": "Directory name of the project"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AnnotationResponse"
+                  },
+                  "title": "Response Api List Annotations Api V1 Projects  Project Name  Annotations Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Annotations"],
+        "summary": "Api Create Annotation",
+        "description": "Create a new inline annotation.",
+        "operationId": "api_create_annotation_api_v1_projects__project_name__annotations_post",
+        "parameters": [
+          {
+            "name": "project_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Directory name of the project",
+              "title": "Project Name"
+            },
+            "description": "Directory name of the project"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAnnotationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnnotationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_name}/annotations/scope": {
+      "get": {
+        "tags": ["Annotations"],
+        "summary": "Api List Annotations For Scope",
+        "description": "List annotations for a specific prose scope.",
+        "operationId": "api_list_annotations_for_scope_api_v1_projects__project_name__annotations_scope_get",
+        "parameters": [
+          {
+            "name": "project_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Directory name of the project",
+              "title": "Project Name"
+            },
+            "description": "Directory name of the project"
+          },
+          {
+            "name": "scope_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "story",
+              "title": "Scope Type"
+            }
+          },
+          {
+            "name": "chapter_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Chapter Id"
+            }
+          },
+          {
+            "name": "book_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Book Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AnnotationResponse"
+                  },
+                  "title": "Response Api List Annotations For Scope Api V1 Projects  Project Name  Annotations Scope Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_name}/annotations/{annotation_id}": {
+      "get": {
+        "tags": ["Annotations"],
+        "summary": "Api Get Annotation",
+        "description": "Fetch a single annotation by ID.",
+        "operationId": "api_get_annotation_api_v1_projects__project_name__annotations__annotation_id__get",
+        "parameters": [
+          {
+            "name": "annotation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Annotation Id"
+            }
+          },
+          {
+            "name": "project_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Directory name of the project",
+              "title": "Project Name"
+            },
+            "description": "Directory name of the project"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnnotationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": ["Annotations"],
+        "summary": "Api Update Annotation",
+        "description": "Update an annotation's comment.",
+        "operationId": "api_update_annotation_api_v1_projects__project_name__annotations__annotation_id__put",
+        "parameters": [
+          {
+            "name": "annotation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Annotation Id"
+            }
+          },
+          {
+            "name": "project_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Directory name of the project",
+              "title": "Project Name"
+            },
+            "description": "Directory name of the project"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAnnotationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnnotationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Annotations"],
+        "summary": "Api Delete Annotation",
+        "description": "Delete an annotation and remove its inline markers.",
+        "operationId": "api_delete_annotation_api_v1_projects__project_name__annotations__annotation_id__delete",
+        "parameters": [
+          {
+            "name": "annotation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Annotation Id"
+            }
+          },
+          {
+            "name": "project_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Directory name of the project",
+              "title": "Project Name"
+            },
+            "description": "Directory name of the project"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_name}/view-state": {
+      "get": {
+        "tags": ["View State"],
+        "summary": "Get View State",
+        "description": "Return the saved view state for the project, with defaults for missing fields.",
+        "operationId": "get_view_state_api_v1_projects__project_name__view_state_get",
+        "parameters": [
+          {
+            "name": "project_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Directory name of the project",
+              "title": "Project Name"
+            },
+            "description": "Directory name of the project"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ViewStateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": ["View State"],
+        "summary": "Put View State",
+        "description": "Persist view state for the project.",
+        "operationId": "put_view_state_api_v1_projects__project_name__view_state_put",
+        "parameters": [
+          {
+            "name": "project_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Directory name of the project",
+              "title": "Project Name"
+            },
+            "description": "Directory name of the project"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ViewStatePayload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ViewStateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/health": {
       "get": {
         "summary": "<Lambda>",
@@ -3548,6 +4751,165 @@
   },
   "components": {
     "schemas": {
+      "AnnotationResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "comment": {
+            "type": "string",
+            "title": "Comment"
+          },
+          "scope_type": {
+            "type": "string",
+            "title": "Scope Type"
+          },
+          "chapter_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chapter Id"
+          },
+          "book_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Book Id"
+          },
+          "start_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Offset"
+          },
+          "end_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Offset"
+          }
+        },
+        "type": "object",
+        "required": ["id", "comment", "scope_type"],
+        "title": "AnnotationResponse",
+        "description": "A single annotation with runtime offsets attached."
+      },
+      "AutoLinkScopeRequest": {
+        "properties": {
+          "scope_type": {
+            "type": "string",
+            "enum": ["story", "chapter", "unlinked"],
+            "title": "Scope Type",
+            "default": "chapter"
+          },
+          "chapter_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chapter Id"
+          },
+          "book_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Book Id"
+          },
+          "scene_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Scene Ids"
+          },
+          "start_offset": {
+            "type": "integer",
+            "title": "Start Offset",
+            "default": 0
+          },
+          "end_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Offset"
+          },
+          "prose_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prose Text"
+          },
+          "current_text": {
+            "type": "string",
+            "title": "Current Text"
+          }
+        },
+        "type": "object",
+        "required": ["current_text"],
+        "title": "AutoLinkScopeRequest",
+        "description": "Body for auto-linking a saved prose scope to its scenes."
+      },
+      "AutoLinkScopeResponse": {
+        "properties": {
+          "assignments": {
+            "items": {
+              "$ref": "#/components/schemas/SceneBoundaryAssignment"
+            },
+            "type": "array",
+            "title": "Assignments"
+          },
+          "scenes": {
+            "items": {
+              "$ref": "#/components/schemas/Scene"
+            },
+            "type": "array",
+            "title": "Scenes"
+          }
+        },
+        "type": "object",
+        "title": "AutoLinkScopeResponse",
+        "description": "Response for auto-linking a saved prose scope to its scenes."
+      },
       "Body_api_projects_images_upload_api_v1_projects_images_upload_post": {
         "properties": {
           "file": {
@@ -3684,6 +5046,7 @@
             "title": "Book Ids"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": ["book_ids"],
         "title": "BooksReorderRequest",
@@ -3977,6 +5340,7 @@
             "title": "Book Id"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": ["chapter_ids"],
         "title": "ChaptersReorderRequest",
@@ -4250,6 +5614,58 @@
         "required": ["timestamp"],
         "title": "CheckpointLoadDeleteRequest",
         "description": "Represents the CheckpointLoadDeleteRequest type."
+      },
+      "CreateAnnotationRequest": {
+        "properties": {
+          "scope_type": {
+            "type": "string",
+            "title": "Scope Type",
+            "description": "'story', 'chapter', or 'unlinked'"
+          },
+          "chapter_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chapter Id",
+            "description": "Chapter ID for chapter scope"
+          },
+          "book_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Book Id",
+            "description": "Book ID for nested chapter scope"
+          },
+          "start_offset": {
+            "type": "integer",
+            "title": "Start Offset",
+            "description": "Raw character offset (markers included)"
+          },
+          "end_offset": {
+            "type": "integer",
+            "title": "End Offset",
+            "description": "Raw character offset (markers included)"
+          },
+          "comment": {
+            "type": "string",
+            "title": "Comment",
+            "description": "Human-readable annotation comment"
+          }
+        },
+        "type": "object",
+        "required": ["scope_type", "start_offset", "end_offset", "comment"],
+        "title": "CreateAnnotationRequest",
+        "description": "Payload for creating a new annotation."
       },
       "DebugLogEntry": {
         "properties": {
@@ -5752,6 +7168,7 @@
             "title": "Active Chapter Id"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": ["query", "replacement"],
         "title": "ReplaceAllRequest",
@@ -5892,6 +7309,7 @@
             "description": "Zero-based index of the match within this section+field"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "query",
@@ -5903,6 +7321,1086 @@
         ],
         "title": "ReplaceSingleRequest",
         "description": "Request to replace one specific match (identified by its ordinal index)."
+      },
+      "Scene": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary",
+            "default": ""
+          },
+          "beats": {
+            "items": {
+              "$ref": "#/components/schemas/SceneBeat"
+            },
+            "type": "array",
+            "title": "Beats",
+            "default": []
+          },
+          "active_characters": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Active Characters",
+            "default": []
+          },
+          "passive_characters": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Passive Characters",
+            "default": []
+          },
+          "sourcebook_entry_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Sourcebook Entry Ids",
+            "default": []
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time"
+          },
+          "scene_time": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SceneChronologyTime"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "timeline_id": {
+            "type": "string",
+            "title": "Timeline Id",
+            "default": "main"
+          },
+          "color_tag": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color Tag"
+          },
+          "prose_link": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SceneProseLink"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "causes": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Causes",
+            "default": []
+          },
+          "pinboard_x": {
+            "type": "number",
+            "title": "Pinboard X",
+            "default": 100.0
+          },
+          "pinboard_y": {
+            "type": "number",
+            "title": "Pinboard Y",
+            "default": 100.0
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "active"
+          },
+          "tag_personal_datetimes": {
+            "items": {
+              "$ref": "#/components/schemas/SceneTagPersonalDatetime"
+            },
+            "type": "array",
+            "title": "Tag Personal Datetimes"
+          },
+          "annotations": {
+            "items": {
+              "$ref": "#/components/schemas/SceneAnnotation"
+            },
+            "type": "array",
+            "title": "Annotations",
+            "description": "Optional inline annotations associated with this scene."
+          }
+        },
+        "type": "object",
+        "required": ["id"],
+        "title": "Scene",
+        "description": "A narrative scene used for structural story planning.\n\nActive characters, passive characters, location, and time are stored as\nsourcebook entry IDs so the frontend can look them up by reference.\n\n``causes`` stores IDs of other scenes that this scene causally precedes.\nThese are not narrative order indexes; they are dependency constraints that\nallow the pinboard to highlight cause/effect relationships.\n\n``pinboard_x`` / ``pinboard_y`` store the card's free-form position on the\npinboard canvas, in logical (unscaled) units."
+      },
+      "SceneAnnotation": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "Stable annotation identifier."
+          },
+          "comment": {
+            "type": "string",
+            "title": "Comment",
+            "description": "Human-readable annotation comment."
+          },
+          "scope_type": {
+            "type": "string",
+            "enum": ["story", "chapter", "unlinked"],
+            "title": "Scope Type",
+            "description": "Scope where the annotation lives.",
+            "default": "story"
+          },
+          "chapter_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chapter Id",
+            "description": "Chapter ID when scope_type='chapter'."
+          },
+          "book_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Book Id",
+            "description": "Book ID when scope_type='chapter' and the chapter is nested."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": ["id", "comment"],
+        "title": "SceneAnnotation",
+        "description": "Inline annotation metadata mirrored from prose markers."
+      },
+      "SceneBatchLinkProseRequest": {
+        "properties": {
+          "scope_type": {
+            "type": "string",
+            "title": "Scope Type",
+            "default": "story"
+          },
+          "chapter_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chapter Id"
+          },
+          "book_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Book Id"
+          },
+          "assignments": {
+            "items": {
+              "$ref": "#/components/schemas/SceneBoundaryAssignment"
+            },
+            "type": "array",
+            "title": "Assignments"
+          },
+          "unlink_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Unlink Ids"
+          }
+        },
+        "type": "object",
+        "title": "SceneBatchLinkProseRequest",
+        "description": "Batch variant: atomically unlink and relink multiple scenes in one scope.\n\n``assignments`` are processed together with ``relink_scope_prose`` so\ntouching boundaries are never replayed through sequential single-scene\nedits that can split freshly inserted markers."
+      },
+      "SceneBeat": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "Stable beat identifier. Usually generated automatically."
+          },
+          "text": {
+            "type": "string",
+            "title": "Text",
+            "description": "Short description of the beat's action or event."
+          },
+          "prose_link": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SceneProseLink"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional link from this beat to a specific prose range."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": ["text"],
+        "title": "SceneBeat",
+        "description": "A single beat within a scene \u2013 a discrete micro-action or plot step."
+      },
+      "SceneBoundaryAssignment": {
+        "properties": {
+          "scene_id": {
+            "type": "integer",
+            "title": "Scene Id"
+          },
+          "start_offset": {
+            "type": "integer",
+            "title": "Start Offset"
+          },
+          "end_offset": {
+            "type": "integer",
+            "title": "End Offset"
+          }
+        },
+        "type": "object",
+        "required": ["scene_id", "start_offset", "end_offset"],
+        "title": "SceneBoundaryAssignment",
+        "description": "One scene-to-prose boundary mapping in absolute offsets."
+      },
+      "SceneChronologyTime": {
+        "properties": {
+          "temporal_zoned_datetime": {
+            "type": "string",
+            "title": "Temporal Zoned Datetime",
+            "description": "Normalized ISO 8601 timestamp for the scene's chronology."
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value",
+            "description": "Optional shorthand scene time string accepted by the tool. When provided, it is normalized into temporal_zoned_datetime."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": ["temporal_zoned_datetime"],
+        "title": "SceneChronologyTime",
+        "description": "Scene-local timeline point represented as a Temporal ZonedDateTime string."
+      },
+      "SceneCreateRequest": {
+        "properties": {
+          "summary": {
+            "type": "string",
+            "title": "Summary",
+            "description": "Scene summary / label. Scenes do not have a separate title field; use this field instead. Keep it short, specific, and suitable for a scene card heading.",
+            "default": ""
+          },
+          "beats": {
+            "items": {
+              "$ref": "#/components/schemas/SceneBeat"
+            },
+            "type": "array",
+            "title": "Beats",
+            "description": "Optional ordered beats inside the scene. Use when the scene needs a micro-beat breakdown."
+          },
+          "active_characters": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Active Characters",
+            "description": "Character IDs actively participating in the scene. Use sourcebook/character IDs, not display names, when available."
+          },
+          "passive_characters": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Passive Characters",
+            "description": "Character IDs present but not actively driving the scene. Use sourcebook/character IDs, not display names, when available."
+          },
+          "sourcebook_entry_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Sourcebook Entry Ids",
+            "description": "Sourcebook entry IDs needed to ground the scene's facts, setting, or canon references. Always include relevant sourcebook entries when creating a scene so the scene remains connected to existing world knowledge."
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location",
+            "description": "Location identifier or location name for where the scene occurs."
+          },
+          "time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time",
+            "description": "Human-readable scene time string when a formal chronology is not needed."
+          },
+          "scene_time": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SceneChronologyTime"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Formal timeline position for the scene. Always set this when the scene can be placed on the story timeline; if an exact timestamp is not known, use causes to capture relative chronology. Accepts ISO-like timestamps and normalizes them."
+          },
+          "timeline_id": {
+            "type": "string",
+            "title": "Timeline Id",
+            "description": "Explicit timeline identity for this scene. Use 'main' for the primary timeline and stable IDs for branch timelines.",
+            "default": "main"
+          },
+          "color_tag": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color Tag",
+            "description": "Optional color label for the scene card, usually a hex string."
+          },
+          "prose_link": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SceneProseLink"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional prose link showing which content file the scene is linked to prose. Use this when the scene is already anchored to prose."
+          },
+          "causes": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Causes",
+            "description": "IDs of scenes that this scene causally precedes. Use this to record cause/effect relationships without changing narrative order directly.",
+            "examples": [[1, 2]]
+          },
+          "pinboard_x": {
+            "type": "number",
+            "title": "Pinboard X",
+            "description": "Pinboard X position in logical canvas units.",
+            "default": 100.0
+          },
+          "pinboard_y": {
+            "type": "number",
+            "title": "Pinboard Y",
+            "description": "Pinboard Y position in logical canvas units.",
+            "default": 100.0
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Scene lifecycle status such as active, inactive, or draft.",
+            "default": "active"
+          },
+          "tag_personal_datetimes": {
+            "items": {
+              "$ref": "#/components/schemas/SceneTagPersonalDatetime"
+            },
+            "type": "array",
+            "title": "Tag Personal Datetimes",
+            "description": "Per-tag personal age overrides used for time-travel or age-specific ordering. Leave empty unless you need those overrides."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "SceneCreateRequest",
+        "description": "Payload for creating a new scene."
+      },
+      "SceneDetectBoundariesRequest": {
+        "properties": {
+          "scope_type": {
+            "type": "string",
+            "enum": ["story", "chapter", "unlinked"],
+            "title": "Scope Type",
+            "default": "chapter"
+          },
+          "chapter_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chapter Id"
+          },
+          "book_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Book Id"
+          },
+          "scene_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Scene Ids"
+          },
+          "start_offset": {
+            "type": "integer",
+            "title": "Start Offset",
+            "default": 0
+          },
+          "end_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Offset"
+          },
+          "prose_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prose Text"
+          }
+        },
+        "type": "object",
+        "title": "SceneDetectBoundariesRequest",
+        "description": "Payload for boundary detection + optional automatic scene relinking."
+      },
+      "SceneDetectBoundariesResponse": {
+        "properties": {
+          "assignments": {
+            "items": {
+              "$ref": "#/components/schemas/SceneBoundaryAssignment"
+            },
+            "type": "array",
+            "title": "Assignments"
+          },
+          "scenes": {
+            "items": {
+              "$ref": "#/components/schemas/Scene"
+            },
+            "type": "array",
+            "title": "Scenes"
+          }
+        },
+        "type": "object",
+        "title": "SceneDetectBoundariesResponse",
+        "description": "Result of boundary detection + link updates."
+      },
+      "SceneLinkProseRequest": {
+        "properties": {
+          "scope_type": {
+            "type": "string",
+            "title": "Scope Type",
+            "default": "story"
+          },
+          "chapter_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chapter Id"
+          },
+          "book_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Book Id"
+          },
+          "start_offset": {
+            "type": "integer",
+            "title": "Start Offset"
+          },
+          "end_offset": {
+            "type": "integer",
+            "title": "End Offset"
+          }
+        },
+        "type": "object",
+        "required": ["start_offset", "end_offset"],
+        "title": "SceneLinkProseRequest",
+        "description": "Payload for assigning a prose-text range to a scene.\n\nThe offsets are UTF-8 character positions within the referenced content\nfile.  Validation against existing scene links happens in the service."
+      },
+      "SceneProseLink": {
+        "properties": {
+          "scope_type": {
+            "type": "string",
+            "enum": ["story", "chapter", "unlinked"],
+            "title": "Scope Type",
+            "description": "Which content scope the scene is linked to: 'story', 'chapter', or internal 'unlinked'."
+          },
+          "chapter_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chapter Id",
+            "description": "Chapter ID when scope_type='chapter'. Leave empty for story or unlinked scope."
+          },
+          "book_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Book Id",
+            "description": "Book ID when the linked prose belongs to a book chapter. Leave empty for story or unlinked scope."
+          },
+          "start_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Offset",
+            "description": "Computed start offset within the linked content file."
+          },
+          "end_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Offset",
+            "description": "Computed end offset within the linked content file."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": ["scope_type"],
+        "title": "SceneProseLink",
+        "description": "A link between a scene (or beat) and a specific content file.\n\n    ``scope_type`` distinguishes between:\n- ``'story'`` \u2013 the main story content file (short-story projects)\n- ``'chapter'`` \u2013 a specific chapter file (novel / series projects)\n    - ``'unlinked'`` \u2013 internal planning prose for scenes not attached to\n        story/chapter content\n\nOnly the file identity is persisted.  ``start_offset`` and ``end_offset``\nare character positions derived at read time by parsing the inline HTML\ncomment markers embedded in the content file (see ``scene_markers.py``).\nThey are populated by the service layer before returning scenes to the API\nand are excluded from disk storage."
+      },
+      "SceneReorderProseRequest": {
+        "properties": {
+          "source_scene_id": {
+            "type": "integer",
+            "title": "Source Scene Id"
+          },
+          "target_scene_id": {
+            "type": "integer",
+            "title": "Target Scene Id"
+          },
+          "place_before": {
+            "type": "boolean",
+            "title": "Place Before",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": ["source_scene_id", "target_scene_id"],
+        "title": "SceneReorderProseRequest",
+        "description": "Payload for reordering scenes within a linked prose scope."
+      },
+      "SceneReorderProseResponse": {
+        "properties": {
+          "scenes": {
+            "items": {
+              "$ref": "#/components/schemas/Scene"
+            },
+            "type": "array",
+            "title": "Scenes"
+          },
+          "scope_type": {
+            "type": "string",
+            "title": "Scope Type"
+          },
+          "chapter_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chapter Id"
+          },
+          "book_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Book Id"
+          },
+          "scope_start": {
+            "type": "integer",
+            "title": "Scope Start"
+          },
+          "scope_end": {
+            "type": "integer",
+            "title": "Scope End"
+          },
+          "rebuilt_text": {
+            "type": "string",
+            "title": "Rebuilt Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scenes",
+          "scope_type",
+          "scope_start",
+          "scope_end",
+          "rebuilt_text"
+        ],
+        "title": "SceneReorderProseResponse",
+        "description": "Result of a prose reorder transaction."
+      },
+      "SceneTagPersonalDatetime": {
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": ["active", "passive", "sourcebook"],
+            "title": "Role",
+            "description": "Which tag list this override applies to."
+          },
+          "ref": {
+            "type": "string",
+            "title": "Ref",
+            "description": "Character name or sourcebook entry ID for the tag."
+          },
+          "index": {
+            "type": "integer",
+            "title": "Index",
+            "description": "0-based position within the chosen tag list. Use this when the same character appears multiple times.",
+            "default": 0
+          },
+          "personal_age": {
+            "type": "string",
+            "title": "Personal Age",
+            "description": "Human-readable age such as '17y', '17y 3m', or '30d'."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": ["role", "ref", "personal_age"],
+        "title": "SceneTagPersonalDatetime",
+        "description": "Personal age override for a single scene tag.\n\n``role`` is ``'active'``, ``'passive'``, or ``'sourcebook'``.\n``ref`` is the character name (for active/passive) or sourcebook entry ID\n(for sourcebook).\n``index`` is the 0-based position within the role's list \u2013 this allows\nthe same character to appear multiple times in one scene (e.g. a time\ntraveller meeting their younger self).\n``personal_age`` is a human-readable age string such as ``'17y'``,\n``'17y 3m'``, ``'5m 12d'``, or ``'30d'``."
+      },
+      "SceneUpdateProseContentRequest": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "required": ["text"],
+        "title": "SceneUpdateProseContentRequest",
+        "description": "Payload for replacing the prose text between a scene's inline markers."
+      },
+      "SceneUpdateRequest": {
+        "properties": {
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary",
+            "description": "Replacement scene label/summary. Use this instead of a title."
+          },
+          "beats": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SceneBeat"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Beats",
+            "description": "Full replacement beat list for the scene."
+          },
+          "active_characters": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Characters",
+            "description": "Full replacement list of active character IDs."
+          },
+          "passive_characters": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Passive Characters",
+            "description": "Full replacement list of passive character IDs."
+          },
+          "sourcebook_entry_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourcebook Entry Ids",
+            "description": "Full replacement list of sourcebook entry IDs."
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location",
+            "description": "Replacement location identifier or name."
+          },
+          "time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time",
+            "description": "Replacement human-readable time string."
+          },
+          "scene_time": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SceneChronologyTime"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Replacement formal chronology timestamp for the scene."
+          },
+          "timeline_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeline Id",
+            "description": "Replacement explicit timeline identity for the scene."
+          },
+          "color_tag": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color Tag",
+            "description": "Replacement card color tag."
+          },
+          "prose_link": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SceneProseLink"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Replacement prose link for the scene."
+          },
+          "causes": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Causes",
+            "description": "Replacement list of scene IDs that this scene causally precedes.",
+            "examples": [[1, 2]]
+          },
+          "pinboard_x": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pinboard X",
+            "description": "Replacement pinboard X position."
+          },
+          "pinboard_y": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pinboard Y",
+            "description": "Replacement pinboard Y position."
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status",
+            "description": "Replacement lifecycle status such as active, inactive, or draft."
+          },
+          "tag_personal_datetimes": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SceneTagPersonalDatetime"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tag Personal Datetimes",
+            "description": "Replacement per-tag personal age overrides. Use None to leave the field unchanged, or an explicit list to replace it."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "SceneUpdateRequest",
+        "description": "Payload for updating an existing scene."
+      },
+      "SceneWriteRequest": {
+        "properties": {
+          "scope_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": ["story", "chapter", "unlinked"]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Type"
+          },
+          "chapter_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chapter Id"
+          },
+          "book_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Book Id"
+          },
+          "include_following_scenes": {
+            "type": "integer",
+            "title": "Include Following Scenes",
+            "default": 1
+          },
+          "detect_boundaries": {
+            "type": "boolean",
+            "title": "Detect Boundaries",
+            "default": true
+          }
+        },
+        "type": "object",
+        "title": "SceneWriteRequest",
+        "description": "Payload for generating prose for one scene and linking the result."
+      },
+      "SceneWriteResponse": {
+        "properties": {
+          "scene": {
+            "$ref": "#/components/schemas/Scene"
+          },
+          "generated_text": {
+            "type": "string",
+            "title": "Generated Text"
+          },
+          "assignments": {
+            "items": {
+              "$ref": "#/components/schemas/SceneBoundaryAssignment"
+            },
+            "type": "array",
+            "title": "Assignments"
+          },
+          "scenes": {
+            "items": {
+              "$ref": "#/components/schemas/Scene"
+            },
+            "type": "array",
+            "title": "Scenes"
+          }
+        },
+        "type": "object",
+        "required": ["scene", "generated_text"],
+        "title": "SceneWriteResponse",
+        "description": "Result of writing one scene and relinking affected scenes."
       },
       "SearchMatch": {
         "properties": {
@@ -5980,6 +8478,7 @@
             "description": "Chapter ID to use when scope is current_chapter"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": ["query"],
         "title": "SearchOptions",
@@ -6113,6 +8612,55 @@
             "type": "array",
             "title": "Relations",
             "default": []
+          },
+          "origin_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Date"
+          },
+          "destination_datetime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destination Datetime"
+          },
+          "destination_relative": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destination Relative"
+          },
+          "creates_new_timeline": {
+            "type": "boolean",
+            "title": "Creates New Timeline",
+            "default": false
+          },
+          "timeline_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeline Id"
           }
         },
         "type": "object",
@@ -6164,6 +8712,55 @@
             "type": "array",
             "title": "Relations",
             "default": []
+          },
+          "origin_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Date"
+          },
+          "destination_datetime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destination Datetime"
+          },
+          "destination_relative": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destination Relative"
+          },
+          "creates_new_timeline": {
+            "type": "boolean",
+            "title": "Creates New Timeline",
+            "default": false
+          },
+          "timeline_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeline Id"
           }
         },
         "type": "object",
@@ -6247,6 +8844,61 @@
               }
             ],
             "title": "Relations"
+          },
+          "origin_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Date"
+          },
+          "destination_datetime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destination Datetime"
+          },
+          "destination_relative": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destination Relative"
+          },
+          "creates_new_timeline": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Creates New Timeline"
+          },
+          "timeline_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeline Id"
           }
         },
         "type": "object",
@@ -6333,16 +8985,16 @@
             "title": "Direction",
             "default": "forward"
           },
-          "start_chapter": {
+          "start_scene": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "integer"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Start Chapter"
+            "title": "Start Scene"
           },
           "start_book": {
             "anyOf": [
@@ -6355,16 +9007,16 @@
             ],
             "title": "Start Book"
           },
-          "end_chapter": {
+          "end_scene": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "integer"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "End Chapter"
+            "title": "End Scene"
           },
           "end_book": {
             "anyOf": [
@@ -6652,6 +9304,18 @@
             ],
             "title": "Tags"
           },
+          "annotations": {
+            "anyOf": [
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annotations"
+          },
           "image_style": {
             "anyOf": [
               {
@@ -6748,6 +9412,20 @@
               }
             ],
             "title": "Chapters"
+          },
+          "scenes": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/Scene"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scenes"
           }
         },
         "type": "object",
@@ -6853,6 +9531,61 @@
               }
             ],
             "title": "Relations"
+          },
+          "origin_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Date"
+          },
+          "destination_datetime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destination Datetime"
+          },
+          "destination_relative": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destination Relative"
+          },
+          "creates_new_timeline": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Creates New Timeline"
+          },
+          "timeline_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeline Id"
           }
         },
         "type": "object",
@@ -6930,6 +9663,18 @@
         "title": "StoryTagsResponse",
         "description": "Response for ``PUT /api/v1/story/tags``."
       },
+      "UpdateAnnotationRequest": {
+        "properties": {
+          "comment": {
+            "type": "string",
+            "title": "Comment"
+          }
+        },
+        "type": "object",
+        "required": ["comment"],
+        "title": "UpdateAnnotationRequest",
+        "description": "Payload for updating an annotation's comment."
+      },
       "ValidationError": {
         "properties": {
           "loc": {
@@ -6965,6 +9710,61 @@
         "type": "object",
         "required": ["loc", "msg", "type"],
         "title": "ValidationError"
+      },
+      "ViewStatePayload": {
+        "properties": {
+          "current_chapter_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Chapter Id"
+          },
+          "scroll_position": {
+            "type": "integer",
+            "title": "Scroll Position",
+            "default": 0
+          },
+          "workspace_mode": {
+            "type": "string",
+            "title": "Workspace Mode",
+            "default": "page"
+          },
+          "scenes_view_type": {
+            "type": "string",
+            "title": "Scenes View Type",
+            "default": "narrative"
+          }
+        },
+        "type": "object",
+        "title": "ViewStatePayload",
+        "description": "View state for a single project.\n\nAll fields are optional so partial updates are safe; the service layer\nfills missing fields with defaults on load."
+      },
+      "ViewStateResponse": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok",
+            "default": true
+          },
+          "view_state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ViewStatePayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "ViewStateResponse",
+        "description": "Response body for view state endpoints."
       },
       "augmentedquill__models__chat__OkResponse": {
         "properties": {

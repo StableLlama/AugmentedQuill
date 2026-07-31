@@ -12,7 +12,8 @@ import os
 import tempfile
 from pathlib import Path
 from unittest import TestCase
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
+
 from fastapi.testclient import TestClient
 
 
@@ -141,9 +142,11 @@ class ModelRoutingTest(TestCase):
         mock_instance.stream.return_value = mock_stream_ctx
 
         async def fake_aiter_lines():
-            yield "data: " + json.dumps(
-                {"choices": [{"delta": {"content": "Test\n"}}]}
-            ) + "\n\n"
+            yield (
+                "data: "
+                + json.dumps({"choices": [{"delta": {"content": "Test\n"}}]})
+                + "\n\n"
+            )
 
         mock_resp.aiter_lines = fake_aiter_lines
 
@@ -185,9 +188,11 @@ class ModelRoutingTest(TestCase):
             mock_instance.stream.return_value = mock_stream_ctx
 
             async def fake_aiter_lines():
-                yield "data: " + json.dumps(
-                    {"choices": [{"delta": {"content": "Test\n"}}]}
-                ) + "\n\n"
+                yield (
+                    "data: "
+                    + json.dumps({"choices": [{"delta": {"content": "Test\n"}}]})
+                    + "\n\n"
+                )
 
             mock_resp.aiter_lines = fake_aiter_lines
 
@@ -275,9 +280,11 @@ class ModelRoutingTest(TestCase):
         mock_instance.stream.return_value = mock_stream_ctx
 
         async def fake_aiter_lines():
-            yield "data: " + json.dumps(
-                {"choices": [{"delta": {"content": "Test\n"}}]}
-            ) + "\n\n"
+            yield (
+                "data: "
+                + json.dumps({"choices": [{"delta": {"content": "Test\n"}}]})
+                + "\n\n"
+            )
 
         mock_resp.aiter_lines = fake_aiter_lines
 
@@ -336,9 +343,11 @@ class ModelRoutingTest(TestCase):
         mock_instance.stream.return_value = mock_stream_ctx
 
         async def fake_aiter_lines():
-            yield "data: " + json.dumps(
-                {"choices": [{"delta": {"content": "Test chat"}}]}
-            ) + "\n\n"
+            yield (
+                "data: "
+                + json.dumps({"choices": [{"delta": {"content": "Test chat"}}]})
+                + "\n\n"
+            )
 
         mock_resp.aiter_lines = fake_aiter_lines
 
@@ -360,28 +369,44 @@ class ModelRoutingTest(TestCase):
         )
 
     @patch("augmentedquill.services.llm.llm_http_ops.httpx.AsyncClient")
-    def test_routing_sourcebook_relevance_uses_writing_mode(self, MockClientClass):
+    def test_sourcebook_relevance_does_not_call_llm(self, MockClientClass):
         mock_instance = MagicMock()
         MockClientClass.return_value = mock_instance
         mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
         mock_instance.__aexit__ = AsyncMock()
 
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.json = lambda: {"choices": [{"message": {"content": "Dennis"}}]}
-        mock_resp.read = lambda: b"{}"
-        mock_instance.request = AsyncMock(return_value=mock_resp)
+        pdir = self.projects_root / "novel"
+        story_path = pdir / "story.json"
+        story = json.loads(story_path.read_text(encoding="utf-8"))
+        story["sourcebook"] = {
+            "Hero": {
+                "description": "Hero profile.",
+                "category": "Character",
+                "synonyms": [],
+            }
+        }
+        story["scenes"] = {
+            "1": {
+                "summary": "Arrival",
+                "active_characters": ["Hero"],
+                "passive_characters": [],
+                "sourcebook_entry_ids": [],
+                "location": None,
+                "order_index": 1,
+                "prose_link": {
+                    "scope_type": "chapter",
+                    "chapter_id": "1",
+                    "start_offset": 0,
+                    "end_offset": 4,
+                },
+            }
+        }
+        story_path.write_text(json.dumps(story), encoding="utf-8")
 
         r = self.client.post(
             "/api/v1/story/sourcebook/relevance",
             json={"chap_id": 1, "current_text": "text"},
         )
         self.assertEqual(r.status_code, 200, r.text)
-
-        call_kwargs = mock_instance.request.call_args[1]
-        payload = call_kwargs["json"]
-        self.assertEqual(
-            payload.get("mode"),
-            "write",
-            "Sourcebook Relevance did not route to WRITING model",
-        )
+        self.assertEqual(r.json(), {"relevant": ["Hero"]})
+        mock_instance.request.assert_not_called()

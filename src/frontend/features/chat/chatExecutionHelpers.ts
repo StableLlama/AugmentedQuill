@@ -40,19 +40,24 @@ export type ChatToolMutationPayload = ChatToolExecutionResponse & {
   }>;
 };
 
+const UNEXPECTED_TOOL_LOOP_STOP_HINT =
+  'Your previous response appears to have stopped unexpectedly with no visible assistant reply. If your plan is not finished, continue from where you left off and proceed with the next required actions. If your plan is finished, provide a concise summary of what you completed.';
+
 const PROJECT_CONTEXT_TOOL_NAMES = new Set<string>([
   'refresh_project_context',
   'get_current_chapter_id',
-  'get_project_overview',
-  'get_story_metadata',
-  'update_story_metadata',
-  'read_story_content',
+  'manage_project',
+  'manage_story_core',
+  'manage_sourcebook',
+  'manage_images',
+  'manage_scratchpad',
+  'search_and_replace',
+  'manage_scenes',
   'write_story_content',
   'get_book_metadata',
   'update_book_metadata',
   'read_book_content',
   'write_book_content',
-  'sync_story_summary',
   'get_chapter_metadata',
   'update_chapter_metadata',
   'get_chapter_summaries',
@@ -71,20 +76,10 @@ const PROJECT_CONTEXT_TOOL_NAMES = new Set<string>([
   'get_chapter_summary',
   'delete_chapter',
   'recommend_metadata_updates',
-  'get_sourcebook_entry',
-  'create_sourcebook_entry',
-  'update_sourcebook_entry',
-  'delete_sourcebook_entry',
-  'list_sourcebook_entries',
-  'add_sourcebook_relation',
-  'remove_sourcebook_relation',
-  'search_in_project',
-  'replace_in_project',
   'reorder_chapters',
   'reorder_books',
   'delete_book',
   'create_new_book',
-  'change_project_type',
 ]);
 
 const trimText = (value: string, maxLength: number): string => {
@@ -152,6 +147,56 @@ const buildSectionRefreshPayload = (
 ): Record<string, unknown> => {
   const results: Record<string, unknown> = {};
 
+  const assignChapterSection = (section: string): boolean => {
+    const chapterMatch = section.match(/^chapter:([^\.]+)\.(summary|notes|conflicts)$/);
+    if (!chapterMatch) {
+      return false;
+    }
+    const [, chapterId, field] = chapterMatch;
+    const chapter = story.chapters.find(
+      (candidate: Chapter): boolean => candidate.id === chapterId
+    );
+    if (!chapter) {
+      return true;
+    }
+    if (field === 'summary') {
+      results[section] = chapter.summary;
+      return true;
+    }
+    if (field === 'notes') {
+      results[section] = chapter.notes ?? '';
+      return true;
+    }
+    results[section] = chapter.conflicts ?? [];
+    return true;
+  };
+
+  const assignSourcebookSection = (section: string): boolean => {
+    const sourcebookMatch = section.match(
+      /^sourcebook:([^\.]+)\.(description|synonyms|relations)$/
+    );
+    if (!sourcebookMatch) {
+      return false;
+    }
+    const [, entryId, field] = sourcebookMatch;
+    const entry = (story.sourcebook ?? []).find(
+      (candidate: SourcebookEntry): boolean => candidate.id === entryId
+    );
+    if (!entry) {
+      return true;
+    }
+    if (field === 'description') {
+      results[section] = trimText(entry.description ?? '', 600);
+      return true;
+    }
+    if (field === 'synonyms') {
+      results[section] = entry.synonyms.slice(0, 10);
+      return true;
+    }
+    results[section] = (entry.relations ?? []).slice(0, 10);
+    return true;
+  };
+
   for (const section of sections) {
     if (section === 'story.summary') {
       results[section] = story.summary;
@@ -166,56 +211,11 @@ const buildSectionRefreshPayload = (
       continue;
     }
 
-    if (section.startsWith('chapter:')) {
-      const chapterMatch = section.match(
-        /^chapter:([^\.]+)\.(summary|notes|conflicts)$/
-      );
-      if (!chapterMatch) {
-        continue;
-      }
-      const [, chapterId, field] = chapterMatch;
-      const chapter = story.chapters.find(
-        (candidate: Chapter): boolean => candidate.id === chapterId
-      );
-      if (!chapter) {
-        continue;
-      }
-      if (field === 'summary') {
-        results[section] = chapter.summary;
-      }
-      if (field === 'notes') {
-        results[section] = chapter.notes ?? '';
-      }
-      if (field === 'conflicts') {
-        results[section] = chapter.conflicts ?? [];
-      }
+    if (assignChapterSection(section)) {
       continue;
     }
 
-    if (section.startsWith('sourcebook:')) {
-      const sourcebookMatch = section.match(
-        /^sourcebook:([^\.]+)\.(description|synonyms|relations)$/
-      );
-      if (!sourcebookMatch) {
-        continue;
-      }
-      const [, entryId, field] = sourcebookMatch;
-      const entry = (story.sourcebook ?? []).find(
-        (candidate: SourcebookEntry): boolean => candidate.id === entryId
-      );
-      if (!entry) {
-        continue;
-      }
-      if (field === 'description') {
-        results[section] = trimText(entry.description ?? '', 600);
-      }
-      if (field === 'synonyms') {
-        results[section] = entry.synonyms.slice(0, 10);
-      }
-      if (field === 'relations') {
-        results[section] = (entry.relations ?? []).slice(0, 10);
-      }
-    }
+    assignSourcebookSection(section);
   }
 
   return results;
@@ -324,13 +324,20 @@ export type ExecuteChatRequestContext = {
   currentChapterId: string | null;
   getCurrentChatId: () => string | null;
   currentChapter?: { id: string; title: string } | null;
-  onProseChunk?: (chapId: number, writeMode: string, accumulated: string) => void;
+  onProseChunk?: (
+    chapId: number,
+    writeMode: string,
+    accumulated: string,
+    streamId: number
+  ) => void;
   refreshProjects: () => Promise<void>;
   refreshStory: () => Promise<void>;
   requestToolCallLoopAccess: (
     count: number
   ) => Promise<'stop' | 'continue' | 'unlimited'>;
+  confirmDangerousToolCalls: (toolCalls: ChatToolCall[]) => Promise<boolean>;
   onMutations?: (mutations: ChatToolMutationPayload) => void;
+  setLatestServerUsage?: (usage: Record<string, unknown> | null) => void;
   pushExternalHistoryEntry?: (params: {
     label: string;
     onUndo?: () => Promise<void>;
@@ -509,7 +516,13 @@ const normalizeFunctionCalls = (
     })
   );
 
-const buildToolPayload = (
+export const isManageProjectCreateToolCall = (toolCall: ChatToolCall): boolean =>
+  toolCall.name === 'manage_project' &&
+  typeof toolCall.args === 'object' &&
+  toolCall.args !== null &&
+  (toolCall.args as Record<string, unknown>).action === 'create';
+
+export const buildToolPayload = (
   currentHistory: ChatMessage[],
   currentChapterId: string | null,
   currentChatId: string | null
@@ -525,40 +538,74 @@ const buildToolPayload = (
         arguments: string;
       };
     }>;
+    name?: string;
+    tool_call_id?: string;
   }>;
   active_chapter_id?: number;
   chat_id?: string;
 } => ({
-  messages: currentHistory.map((message: ChatMessage) => ({
-    role: (message.role === 'model' ? 'assistant' : message.role) as
-      | 'user'
-      | 'assistant'
-      | 'system'
-      | 'tool',
-    content: message.text || null,
-    tool_calls: message.tool_calls?.map(
-      (
-        toolCall: import('../../types').ChatToolCall
-      ): {
+  messages: currentHistory.map((message: ChatMessage) => {
+    const payload: {
+      role: 'user' | 'assistant' | 'system' | 'tool';
+      content: string | null;
+      tool_calls?: Array<{
         id: string;
         type: 'function';
         function: { name: string; arguments: string };
-      } => ({
-        id: toolCall.id,
-        type: 'function' as const,
-        function: {
-          name: toolCall.name,
-          arguments:
-            typeof toolCall.args === 'string'
-              ? toolCall.args
-              : JSON.stringify(toolCall.args),
-        },
-      })
-    ),
-  })),
+      }>;
+      name?: string;
+      tool_call_id?: string;
+    } = {
+      role: (message.role === 'model' ? 'assistant' : message.role) as
+        | 'user'
+        | 'assistant'
+        | 'system'
+        | 'tool',
+      content: message.text || null,
+    };
+
+    if (message.name) {
+      payload.name = message.name;
+    }
+
+    if (message.tool_call_id) {
+      payload.tool_call_id = message.tool_call_id;
+    }
+
+    if (message.tool_calls) {
+      payload.tool_calls = message.tool_calls.map(
+        (
+          toolCall: import('../../types').ChatToolCall
+        ): {
+          id: string;
+          type: 'function';
+          function: { name: string; arguments: string };
+        } => ({
+          id: toolCall.id,
+          type: 'function' as const,
+          function: {
+            name: toolCall.name,
+            arguments:
+              typeof toolCall.args === 'string'
+                ? toolCall.args
+                : JSON.stringify(toolCall.args),
+          },
+        })
+      );
+    }
+
+    return payload;
+  }),
   active_chapter_id: currentChapterId ? Number(currentChapterId) : undefined,
   chat_id: currentChatId || undefined,
 });
+
+const hasVisibleAssistantOutput = (result: UnifiedChatResult): boolean =>
+  Boolean(
+    result.text?.trim() ||
+    result.thinking?.trim() ||
+    (result.functionCalls && result.functionCalls.length > 0)
+  );
 
 const extractScratchpadContent = (
   args: Record<string, unknown> | string | undefined,
@@ -695,15 +742,41 @@ const handleToolResponse = async (
     {
       allowWebSearch: context.getAllowWebSearch(),
       currentChapter: context.currentChapter,
+      onServerUsage: context.setLatestServerUsage,
       isStopped: (): boolean => context.stopSignalRef.current,
     }
   );
 
   const nextMsgId = uuidv4();
-  const nextResult = await nextSession.sendMessage(
-    { message: '' },
-    makeMessageUpdater(context.setChatMessages)(nextMsgId)
-  );
+  const continuationUpdater = makeMessageUpdater(context.setChatMessages)(nextMsgId);
+
+  const requestContinuation = async (message: string): Promise<UnifiedChatResult> => {
+    const continuation = await nextSession.sendMessage(
+      { message },
+      continuationUpdater
+    );
+    context.setLatestServerUsage?.(continuation.serverUsage ?? null);
+    return continuation;
+  };
+
+  context.setLatestServerUsage?.(null);
+  let nextResult = await requestContinuation('');
+
+  // Some models occasionally terminate a post-tool continuation with an empty
+  // assistant turn (finish_reason=stop, no content/tool calls). Give one
+  // extra silent retry first so the model can continue naturally, then only
+  // send an explicit stale-turn hint if still empty.
+  if (
+    !context.stopSignalRef.current &&
+    !hasVisibleAssistantOutput(nextResult) &&
+    toolResponse.appended_messages.length > 0
+  ) {
+    nextResult = await requestContinuation('');
+
+    if (!context.stopSignalRef.current && !hasVisibleAssistantOutput(nextResult)) {
+      nextResult = await requestContinuation(UNEXPECTED_TOOL_LOOP_STOP_HINT);
+    }
+  }
 
   return {
     currentHistory,
@@ -720,7 +793,151 @@ type UnifiedChatResult = {
     name: string;
     args: Record<string, unknown> | string;
   }>;
+  serverUsage?: Record<string, unknown>;
   traceback?: string;
+};
+
+type ToolBatchSummary = {
+  batch_id: string;
+  label: string;
+  operation_count?: number;
+  changed_chapter_ids?: number[];
+};
+
+export const buildToolLoopCompletionFallback = (
+  result: UnifiedChatResult,
+  accumulatedToolBatches: ToolBatchSummary[]
+): string => {
+  if (hasVisibleAssistantOutput(result)) {
+    return '';
+  }
+  if (accumulatedToolBatches.length === 0) {
+    return '';
+  }
+
+  const totalOperations = accumulatedToolBatches.reduce(
+    (sum: number, batch: ToolBatchSummary): number =>
+      sum + Math.max(1, batch.operation_count ?? 1),
+    0
+  );
+  const operationLabel = totalOperations === 1 ? 'action' : 'actions';
+
+  return `Completed ${totalOperations} tool ${operationLabel}.`;
+};
+
+const executeToolCall = async (
+  assistantMessage: ChatMessage,
+  currentHistory: ChatMessage[],
+  currentChatId: string,
+  context: ExecuteChatRequestContext
+): Promise<ChatToolExecutionResponse> => {
+  const toolCalls = assistantMessage.tool_calls ?? [];
+  const shouldExecute = await context.confirmDangerousToolCalls(toolCalls);
+  if (!shouldExecute) {
+    return {
+      ok: true,
+      appended_messages: [
+        {
+          role: 'tool',
+          tool_call_id: toolCalls[0]?.id ?? '',
+          name: toolCalls[0]?.name ?? 'manage_project',
+          content: JSON.stringify({
+            error: 'Forbidden to create a new project',
+          }),
+        },
+      ],
+    };
+  }
+
+  return api.chat.executeTools(
+    buildToolPayload(currentHistory, context.currentChapterId, currentChatId),
+    context.onProseChunk,
+    (): boolean => context.stopSignalRef.current
+  );
+};
+
+const resolveToolCallLimit = async (
+  sequentialToolCalls: number,
+  currentLimit: number,
+  requestToolCallLoopAccess: (
+    count: number
+  ) => Promise<'stop' | 'continue' | 'unlimited'>
+): Promise<number | 'stop'> => {
+  if (sequentialToolCalls < currentLimit) {
+    return currentLimit;
+  }
+
+  const choice = await requestToolCallLoopAccess(sequentialToolCalls);
+  if (choice === 'stop') {
+    return 'stop';
+  }
+
+  return choice === 'continue' ? currentLimit + 10 : Infinity;
+};
+
+const buildToolExecutionResponse = async (
+  currentChatId: string | null,
+  assistantMessage: ChatMessage,
+  currentHistory: ChatMessage[],
+  currentMsgId: string,
+  context: ExecuteChatRequestContext
+): Promise<ChatToolExecutionResponse> => {
+  if (!currentChatId) {
+    return {
+      ok: false,
+      appended_messages: [
+        {
+          role: 'tool',
+          tool_call_id: assistantMessage.tool_calls?.[0]?.id ?? '',
+          name: 'tool_error',
+          content: 'Tool execution failed: missing active chat session',
+        },
+      ],
+    };
+  }
+
+  try {
+    return await executeToolCall(
+      assistantMessage,
+      currentHistory,
+      currentChatId,
+      context
+    );
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Tool execution failed';
+    return {
+      ok: false,
+      appended_messages: [
+        {
+          role: 'tool',
+          tool_call_id: assistantMessage.tool_calls?.[0]?.id ?? '',
+          name: 'tool_error',
+          content: `Tool execution failed: ${message}`,
+        },
+      ],
+    };
+  }
+};
+
+const normalizeToolExecutionResponse = (
+  toolResponse: ChatToolExecutionResponse,
+  assistantMessage: ChatMessage
+): ChatToolExecutionResponse => {
+  if (toolResponse.ok === false && toolResponse.appended_messages.length === 0) {
+    return {
+      ...toolResponse,
+      appended_messages: [
+        {
+          role: 'tool',
+          tool_call_id: assistantMessage.tool_calls?.[0]?.id ?? '',
+          name: 'tool_error',
+          content: 'A tool failed to execute.',
+        },
+      ],
+    };
+  }
+
+  return toolResponse;
 };
 
 const runToolCallLoop = async (
@@ -747,16 +964,13 @@ const runToolCallLoop = async (
     if (context.stopSignalRef.current) break;
 
     sequentialToolCalls++;
-    if (sequentialToolCalls >= toolCallLimit) {
-      const choice = await context.requestToolCallLoopAccess(sequentialToolCalls);
-      if (choice === 'stop') break;
-      if (choice === 'continue') {
-        toolCallLimit += 10;
-      } else {
-        toolCallLimit = Infinity;
-      }
-    }
-
+    const updatedLimit = await resolveToolCallLimit(
+      sequentialToolCalls,
+      toolCallLimit,
+      context.requestToolCallLoopAccess
+    );
+    if (updatedLimit === 'stop') break;
+    toolCallLimit = updatedLimit;
     const assistantMessage = context.createAssistantMessage(currentMsgId, {
       text: result.text,
       thinking: result.thinking,
@@ -771,14 +985,16 @@ const runToolCallLoop = async (
     currentHistory.push(assistantMessage);
 
     const currentChatId = context.getCurrentChatId();
-    const toolResponse = await api.chat.executeTools(
-      buildToolPayload(currentHistory, context.currentChapterId, currentChatId),
-      context.onProseChunk,
-      (): boolean => context.stopSignalRef.current
+    let toolResponse = await buildToolExecutionResponse(
+      currentChatId,
+      assistantMessage,
+      currentHistory,
+      currentMsgId,
+      context
     );
+    toolResponse = normalizeToolExecutionResponse(toolResponse, assistantMessage);
 
     if (context.stopSignalRef.current) break;
-    if (!toolResponse.ok) break;
 
     const nextState = await handleToolResponse(
       context,
@@ -840,15 +1056,18 @@ const executeChatRequestImpl = async (
       {
         allowWebSearch: context.getAllowWebSearch(),
         currentChapter: context.currentChapter,
+        onServerUsage: context.setLatestServerUsage,
         isStopped: (): boolean => context.stopSignalRef.current,
       }
     );
 
+    context.setLatestServerUsage?.(null);
     let currentMsgId = uuidv4();
     let result = await session.sendMessage(
       { message: userText, attachments },
       updateMessage(currentMsgId)
     );
+    context.setLatestServerUsage?.(result.serverUsage ?? null);
 
     const effectiveUserMsgId = userMsgId || uuidv4();
     if (
@@ -862,12 +1081,7 @@ const executeChatRequestImpl = async (
       });
     }
 
-    const accumulatedToolBatches: Array<{
-      batch_id: string;
-      label: string;
-      operation_count?: number;
-      changed_chapter_ids?: number[];
-    }> = [];
+    const accumulatedToolBatches: ToolBatchSummary[] = [];
     const storyChangedState = { value: false };
     const loopResult = await runToolCallLoop(
       context,
@@ -903,8 +1117,11 @@ const executeChatRequestImpl = async (
       });
     }
 
+    const fallbackText = context.stopSignalRef.current
+      ? ''
+      : buildToolLoopCompletionFallback(result, accumulatedToolBatches);
     const botMessage = context.createAssistantMessage(currentMsgId, {
-      text: result.text,
+      text: result.text || fallbackText,
       thinking: result.thinking,
       functionCalls: normalizeFunctionCalls(result.functionCalls),
     });
@@ -949,13 +1166,6 @@ const executeChatRequestImpl = async (
     context.setIsChatLoading(false);
     context.stopSignalRef.current = false;
   }
-};
-
-type ToolBatchSummary = {
-  batch_id: string;
-  label: string;
-  operation_count?: number;
-  changed_chapter_ids?: number[];
 };
 
 const fetchBaselineChapterOverrides = async (

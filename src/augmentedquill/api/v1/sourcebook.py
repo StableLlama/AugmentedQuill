@@ -10,10 +10,18 @@
 API endpoints for managing the sourcebook (knowledge base) associated with a project.
 """
 
-from typing import Any, List, Literal, Optional
+from typing import Any, Literal
+
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 
 from augmentedquill.api.v1.dependencies import ProjectDep
+from augmentedquill.models.sourcebook import (
+    SourcebookEntry,
+    SourcebookEntryCreate,
+    SourcebookEntryUpdate,
+    SourcebookKeywordsRequest,
+    SourcebookKeywordsResponse,
+)
 from augmentedquill.services.sourcebook.sourcebook_helpers import (
     sourcebook_create_entry,
     sourcebook_delete_entry,
@@ -22,13 +30,6 @@ from augmentedquill.services.sourcebook.sourcebook_helpers import (
     sourcebook_refresh_entry_keywords,
     sourcebook_search_entries_with_keyword_refresh,
     sourcebook_update_entry,
-)
-from augmentedquill.models.sourcebook import (
-    SourcebookEntry,
-    SourcebookEntryCreate,
-    SourcebookEntryUpdate,
-    SourcebookKeywordsRequest,
-    SourcebookKeywordsResponse,
 )
 
 router = APIRouter(prefix="/projects/{project_name}", tags=["Sourcebook"])
@@ -58,10 +59,10 @@ async def generate_sourcebook_keywords(
 @router.get("/sourcebook")
 async def get_sourcebook(
     project_dir: ProjectDep,
-    query: Optional[str] = None,
+    query: str | None = None,
     match_mode: Literal["direct", "extensive"] = "extensive",
     split_query_fallback: bool = False,
-) -> List[SourcebookEntry]:
+) -> list[SourcebookEntry]:
     """Return sourcebook."""
     if query:
         return [
@@ -94,6 +95,11 @@ async def create_sourcebook_entry(
         synonyms=entry.synonyms,
         relations=[r.model_dump() for r in entry.relations],
         images=entry.images,
+        origin_date=entry.origin_date,
+        destination_datetime=entry.destination_datetime,
+        destination_relative=entry.destination_relative,
+        creates_new_timeline=entry.creates_new_timeline,
+        timeline_id=entry.timeline_id,
         active=project_dir,
     )
     if "error" in created:
@@ -128,6 +134,11 @@ async def update_sourcebook_entry(
             else None
         ),
         images=updates.images,
+        origin_date=updates.origin_date,
+        destination_datetime=updates.destination_datetime,
+        destination_relative=updates.destination_relative,
+        creates_new_timeline=updates.creates_new_timeline,
+        timeline_id=updates.timeline_id,
         active=project_dir,
     )
     if "error" in result:

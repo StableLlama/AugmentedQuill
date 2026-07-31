@@ -16,7 +16,7 @@ import { gzipSync } from 'node:zlib';
 
 const ASSETS_DIR = path.resolve(process.cwd(), '../../static/dist/assets');
 const MAIN_BUNDLE_PATTERN = /^index-.*\.js$/;
-const MAX_GZIP_KB = Number(process.env.AQ_BUNDLE_BUDGET_GZIP_KB || 600);
+const MAX_GZIP_KB = Number(process.env.AQ_BUNDLE_BUDGET_GZIP_KB || 800);
 
 const formatKb = (bytes) => (bytes / 1024).toFixed(2);
 

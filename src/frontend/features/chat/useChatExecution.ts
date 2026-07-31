@@ -12,7 +12,7 @@
 import { useCallback, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 
-import { ChatAttachment, ChatMessage, LLMConfig } from '../../types';
+import { ChatAttachment, ChatMessage, LLMConfig, ChatToolCall } from '../../types';
 import { useChatStore } from '../../stores/chatStore';
 import { ChatToolFunctionCall } from '../../services/apiTypes';
 import {
@@ -44,7 +44,12 @@ type UseChatExecutionParams = {
   currentChapter?: { id: string; title: string } | null;
   refreshProjects: () => Promise<void>;
   refreshStory: () => Promise<void>;
-  onProseChunk?: (chapId: number, writeMode: string, accumulated: string) => void;
+  onProseChunk?: (
+    chapId: number,
+    writeMode: string,
+    accumulated: string,
+    streamId: number
+  ) => void;
   onMutations?: (mutations: ChatToolMutationPayload) => void;
   pushExternalHistoryEntry?: (params: {
     label: string;
@@ -52,6 +57,7 @@ type UseChatExecutionParams = {
     onRedo?: () => Promise<void>;
   }) => void;
   requestToolCallLoopAccess: (count: number) => Promise<ToolLoopChoice>;
+  confirmDangerousToolCalls: (toolCalls: ChatToolCall[]) => Promise<boolean>;
 };
 
 /** Custom React hook that manages chat execution. */
@@ -69,6 +75,7 @@ export function useChatExecution({
   onMutations,
   pushExternalHistoryEntry,
   requestToolCallLoopAccess,
+  confirmDangerousToolCalls,
 }: UseChatExecutionParams): {
   handleSendMessage: (text: string, attachments?: ChatAttachment[]) => Promise<void>;
   handleStopChat: () => void;
@@ -76,7 +83,8 @@ export function useChatExecution({
 } {
   // Setters are stable — read via getState() so this hook does not subscribe to
   // every per-token chatMessages change.
-  const { setChatMessages, setIsChatLoading } = useChatStore.getState();
+  const { setChatMessages, setIsChatLoading, setLatestServerUsage } =
+    useChatStore.getState();
   const stopSignalRef = useRef(false);
 
   const executeChatRequest = useCallback(
@@ -91,7 +99,9 @@ export function useChatExecution({
       refreshProjects,
       refreshStory,
       requestToolCallLoopAccess,
+      confirmDangerousToolCalls,
       onMutations,
+      setLatestServerUsage,
       pushExternalHistoryEntry,
       setChatMessages,
       setIsChatLoading,

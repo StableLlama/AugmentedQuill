@@ -46,7 +46,7 @@ describe('HeaderCenterControls', () => {
             name: 'Default',
             baseUrl: 'https://api.openai.com/v1',
             apiKey: '',
-            timeout: 30000,
+            timeout: 30,
             modelId: 'gpt-4o',
             temperature: 0.7,
             topP: 0.95,

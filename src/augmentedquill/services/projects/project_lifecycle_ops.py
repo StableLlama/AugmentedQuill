@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import json
 import shutil
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Dict, List, Tuple
 
 from augmentedquill.core.config import load_story_config, save_story_config
 
@@ -20,19 +20,16 @@ from augmentedquill.core.config import load_story_config, save_story_config
 def delete_project_under_root(
     name: str,
     projects_root: Path,
-    current_registry: Dict,
-) -> Tuple[bool, str, str, List[str]]:
+    current_registry: dict,
+) -> tuple[bool, str, str, list[str]]:
     """Delete Project Under Root."""
-    if not name:
+    clean_name = str(name or "").strip()
+    if not clean_name:
         return False, "Project name is required", "", []
-    if (
-        any(ch in name for ch in ("/", "\\"))
-        or name.strip() != name
-        or name in (".", "..")
-    ):
+    if any(ch in clean_name for ch in ("/", "\\")) or clean_name in (".", ".."):
         return False, "Invalid project name", "", []
 
-    project_path = projects_root / name
+    project_path = projects_root / clean_name
     if not project_path.exists() or not project_path.is_dir():
         return False, "Project does not exist", "", []
 
@@ -54,7 +51,7 @@ def delete_project_under_root(
     if current_name and current_name == name:
         current = ""
 
-    filtered_recent: List[str] = []
+    filtered_recent: list[str] = []
     for item in recent:
         try:
             if Path(str(item)).name == name:
@@ -66,7 +63,7 @@ def delete_project_under_root(
     return True, "Project deleted", current, filtered_recent
 
 
-def validate_project_dir_data(path: Path) -> Tuple[bool, str]:
+def validate_project_dir_data(path: Path) -> tuple[bool, str]:
     """Validate Project Dir Data."""
     if not path.exists():
         return False, "does_not_exist"
@@ -157,12 +154,12 @@ def initialize_project_dir_data(
 def list_projects_under_root(
     projects_root: Path,
     validate_project_dir: Callable[[Path], object],
-) -> List[Dict[str, str | bool]]:
+) -> list[dict[str, str | bool]]:
     """List Projects Under Root."""
     if not projects_root.exists():
         return []
 
-    items: List[Dict[str, str | bool]] = []
+    items: list[dict[str, str | bool]] = []
     for directory in sorted(
         [item for item in projects_root.iterdir() if item.is_dir()]
     ):
@@ -206,15 +203,17 @@ def create_project_under_root(
     initialize_project: Callable[[Path, str, str, str], None],
     validate_project: Callable[[Path], object],
     language: str = "en",
-) -> Tuple[bool, str, Path | None]:
+) -> tuple[bool, str, Path | None]:
     """Create Project Under Root."""
-    if not name:
+    clean_name = str(name or "").strip()
+    if not clean_name:
         return False, "Project name is required", None
-    if name.strip() != name or name in (".", ".."):
+    if clean_name in (".", ".."):
         return False, "Invalid project name", None
 
     safe_name = "".join(
-        char if char.isalnum() or char in (" ", "-", "_") else "_" for char in name
+        char if char.isalnum() or char in (" ", "-", "_") else "_"
+        for char in clean_name
     ).strip()
     if not safe_name:
         safe_name = "Untitled_Project"
@@ -241,19 +240,16 @@ def select_project_under_root(
     projects_root: Path,
     initialize_project: Callable[[Path, str, str], None],
     validate_project: Callable[[Path], object],
-) -> Tuple[bool, str, Path | None]:
+) -> tuple[bool, str, Path | None]:
     """Select Project Under Root."""
-    if not name:
+    clean_name = str(name or "").strip()
+    if not clean_name:
         return False, "Project name is required", None
 
-    if (
-        any(ch in name for ch in ("/", "\\"))
-        or name.strip() != name
-        or name in (".", "..")
-    ):
+    if any(ch in clean_name for ch in ("/", "\\")) or clean_name in (".", ".."):
         return False, "Invalid project name", None
 
-    project_path = projects_root / name
+    project_path = projects_root / clean_name
     if not project_path.exists():
         projects_root.mkdir(parents=True, exist_ok=True)
         initialize_project(project_path, name, "novel")

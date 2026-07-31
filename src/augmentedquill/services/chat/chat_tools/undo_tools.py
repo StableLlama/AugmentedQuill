@@ -16,11 +16,12 @@ import re
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from augmentedquill.services.chat.chat_tool_decorator import (
     CHAT_ROLE,
     EDITING_ROLE,
+    ToolModel,
     chat_tool,
 )
 from augmentedquill.services.projects.project_snapshots import restore_project_snapshot
@@ -70,7 +71,7 @@ def _find_most_recent_batch(project_dir: Path) -> dict[str, Any] | None:
 # ============================================================================
 
 
-class UndoLastToolChangesParams(BaseModel):
+class UndoLastToolChangesParams(ToolModel):
     """Parameters for the undo_last_tool_changes tool."""
 
     scope: str = Field(

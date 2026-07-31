@@ -7,11 +7,12 @@
 
 """Defines the test hallucination prevention unit so this responsibility stays isolated, testable, and easy to evolve."""
 
+import json
 import os
 import tempfile
-import json
 from pathlib import Path
 from unittest import TestCase
+
 from fastapi.testclient import TestClient
 
 from augmentedquill.main import app

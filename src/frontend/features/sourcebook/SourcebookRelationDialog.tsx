@@ -173,39 +173,39 @@ const RelationLogicSection: React.FC<RelationLogicSectionProps> = ({
 };
 
 interface ConstraintSectionProps {
-  showChapters: boolean;
+  showScenes: boolean;
   showBooks: boolean;
-  startChapter: string;
-  endChapter: string;
+  startScene: string;
+  endScene: string;
   startBook: string;
   endBook: string;
   inputBorderClass: string;
   inputBgClass: string;
   textClass: string;
-  onStartChapterChange: (value: string) => void;
-  onEndChapterChange: (value: string) => void;
+  onStartSceneChange: (value: string) => void;
+  onEndSceneChange: (value: string) => void;
   onStartBookChange: (value: string) => void;
   onEndBookChange: (value: string) => void;
   t: (key: string) => string;
 }
 
 const ConstraintSection: React.FC<ConstraintSectionProps> = ({
-  showChapters,
+  showScenes,
   showBooks,
-  startChapter,
-  endChapter,
+  startScene,
+  endScene,
   startBook,
   endBook,
   inputBorderClass,
   inputBgClass,
   textClass,
-  onStartChapterChange,
-  onEndChapterChange,
+  onStartSceneChange,
+  onEndSceneChange,
   onStartBookChange,
   onEndBookChange,
   t,
 }: ConstraintSectionProps) => {
-  if (!showChapters && !showBooks) {
+  if (!showScenes && !showBooks) {
     return null;
   }
 
@@ -213,14 +213,15 @@ const ConstraintSection: React.FC<ConstraintSectionProps> = ({
     <div className="grid grid-cols-2 gap-4 pt-2">
       <div className="space-y-2">
         <label className="text-sm font-medium">{t('Start Constraint')}</label>
-        {showChapters && (
+        {showScenes && (
           <input
-            type="text"
-            placeholder={t('e.g. Chapter 3')}
-            value={startChapter}
+            type="number"
+            min="1"
+            placeholder={t('e.g. Scene 3')}
+            value={startScene}
             onChange={(
               e: React.ChangeEvent<HTMLInputElement, HTMLInputElement>
-            ): void => onStartChapterChange(e.target.value)}
+            ): void => onStartSceneChange(e.target.value)}
             className={`w-full px-3 py-2 rounded-md border ${inputBorderClass} ${inputBgClass} ${textClass} focus:outline-none focus:ring-2 focus:ring-brand-500 mb-2`}
           />
         )}
@@ -239,14 +240,15 @@ const ConstraintSection: React.FC<ConstraintSectionProps> = ({
 
       <div className="space-y-2">
         <label className="text-sm font-medium">{t('End Constraint')}</label>
-        {showChapters && (
+        {showScenes && (
           <input
-            type="text"
-            placeholder={t('e.g. Chapter 10')}
-            value={endChapter}
+            type="number"
+            min="1"
+            placeholder={t('e.g. Scene 10')}
+            value={endScene}
             onChange={(
               e: React.ChangeEvent<HTMLInputElement, HTMLInputElement>
-            ): void => onEndChapterChange(e.target.value)}
+            ): void => onEndSceneChange(e.target.value)}
             className={`w-full px-3 py-2 rounded-md border ${inputBorderClass} ${inputBgClass} ${textClass} focus:outline-none focus:ring-2 focus:ring-brand-500 mb-2`}
           />
         )}
@@ -288,8 +290,8 @@ export const SourcebookRelationDialog: React.FC<SourcebookRelationDialogProps> =
   // Form fields
   const [targetId, setTargetId] = useState('');
   const [relationStatement, setRelationStatement] = useState('');
-  const [startChapter, setStartChapter] = useState('');
-  const [endChapter, setEndChapter] = useState('');
+  const [startScene, setStartScene] = useState('');
+  const [endScene, setEndScene] = useState('');
   const [startBook, setStartBook] = useState('');
   const [endBook, setEndBook] = useState('');
   const [direction, setDirection] = useState<'forward' | 'reverse'>('forward');
@@ -307,16 +309,27 @@ export const SourcebookRelationDialog: React.FC<SourcebookRelationDialogProps> =
       if (initialRelation) {
         setTargetId(initialRelation.target_id);
         setRelationStatement(initialRelation.relation);
-        setStartChapter(initialRelation.start_chapter || '');
-        setEndChapter(initialRelation.end_chapter || '');
+        const startSceneValue =
+          initialRelation.start_scene ?? initialRelation.start_chapter;
+        const endSceneValue = initialRelation.end_scene ?? initialRelation.end_chapter;
+        setStartScene(
+          startSceneValue === undefined || startSceneValue === null
+            ? ''
+            : String(startSceneValue)
+        );
+        setEndScene(
+          endSceneValue === undefined || endSceneValue === null
+            ? ''
+            : String(endSceneValue)
+        );
         setStartBook(initialRelation.start_book || '');
         setEndBook(initialRelation.end_book || '');
         setDirection(initialRelation.direction || 'forward');
       } else {
         setTargetId('');
         setRelationStatement('');
-        setStartChapter('');
-        setEndChapter('');
+        setStartScene('');
+        setEndScene('');
         setStartBook('');
         setEndBook('');
         setDirection('forward');
@@ -339,13 +352,29 @@ export const SourcebookRelationDialog: React.FC<SourcebookRelationDialogProps> =
     )?.name || t('Target Entry');
   const mainName = currentEntryName || t('Current Entry');
 
+  const parseSceneValue = (value: string): number | undefined => {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    if (!/^\d+$/.test(trimmed)) {
+      return undefined;
+    }
+    const parsed = Number(trimmed);
+    return Number.isInteger(parsed) ? parsed : undefined;
+  };
+
   const handleSave = (): void => {
     if (!targetId || !relationStatement.trim()) return;
+    const parsedStartScene = parseSceneValue(startScene);
+    const parsedEndScene = parseSceneValue(endScene);
+    if (startScene.trim() && parsedStartScene === undefined) return;
+    if (endScene.trim() && parsedEndScene === undefined) return;
     onSave({
       target_id: targetId,
       relation: relationStatement.trim(),
-      start_chapter: startChapter.trim() || undefined,
-      end_chapter: endChapter.trim() || undefined,
+      start_scene: parsedStartScene,
+      end_scene: parsedEndScene,
       start_book: startBook.trim() || undefined,
       end_book: endBook.trim() || undefined,
       direction: direction,
@@ -353,7 +382,7 @@ export const SourcebookRelationDialog: React.FC<SourcebookRelationDialogProps> =
     onClose();
   };
 
-  const showChapters = projectType === 'novel' || projectType === 'series';
+  const showScenes = projectType === 'novel' || projectType === 'series';
   const showBooks = projectType === 'series';
 
   return createPortal(
@@ -420,17 +449,17 @@ export const SourcebookRelationDialog: React.FC<SourcebookRelationDialogProps> =
           />
 
           <ConstraintSection
-            showChapters={showChapters}
+            showScenes={showScenes}
             showBooks={showBooks}
-            startChapter={startChapter}
-            endChapter={endChapter}
+            startScene={startScene}
+            endScene={endScene}
             startBook={startBook}
             endBook={endBook}
             inputBorderClass={inputBorderClass}
             inputBgClass={inputBgClass}
             textClass={textClass}
-            onStartChapterChange={setStartChapter}
-            onEndChapterChange={setEndChapter}
+            onStartSceneChange={setStartScene}
+            onEndSceneChange={setEndScene}
             onStartBookChange={setStartBook}
             onEndBookChange={setEndBook}
             t={t}

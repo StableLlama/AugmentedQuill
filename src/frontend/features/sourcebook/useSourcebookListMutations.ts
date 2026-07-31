@@ -158,6 +158,10 @@ export function useSourcebookListMutations({
             images: previous.images,
             relations: (previous.relations ??
               []) as SourcebookUpsertPayload['relations'],
+            origin_date: previous.origin_date ?? undefined,
+            destination_datetime: previous.destination_datetime ?? undefined,
+            destination_relative: previous.destination_relative ?? undefined,
+            creates_new_timeline: previous.creates_new_timeline ?? false,
           });
           activeId = reverted.id;
           await loadEntries();
@@ -170,6 +174,10 @@ export function useSourcebookListMutations({
             description: entry.description,
             images: entry.images,
             relations: entry.relations ?? [],
+            origin_date: entry.origin_date ?? undefined,
+            destination_datetime: entry.destination_datetime ?? undefined,
+            destination_relative: entry.destination_relative ?? undefined,
+            creates_new_timeline: entry.creates_new_timeline ?? false,
           });
           activeId = redone.id;
           await loadEntries();
@@ -222,6 +230,7 @@ export function useSourcebookListMutations({
             images: deletedEntry.images,
             relations: (deletedEntry.relations ??
               []) as SourcebookUpsertPayload['relations'],
+            creates_new_timeline: deletedEntry.creates_new_timeline ?? false,
           });
           activeId = restored.id;
           await loadEntries();

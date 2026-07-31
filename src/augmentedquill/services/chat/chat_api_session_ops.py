@@ -11,14 +11,15 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
-from augmentedquill.services.exceptions import NotFoundError
+
 from augmentedquill.services.chat.chat_session_helpers import (
+    delete_all_chats,
+    delete_chat,
     list_chats,
     load_chat,
     save_chat,
-    delete_chat,
-    delete_all_chats,
 )
+from augmentedquill.services.exceptions import NotFoundError
 
 
 def list_active_chats(project_dir: Path) -> Any:

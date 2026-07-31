@@ -9,29 +9,24 @@
 
 from __future__ import annotations
 
+import base64
 import io
+import json
+import re
 import shutil
 import uuid
 import zipfile
-import json
-import base64
-import re
 from pathlib import Path
 
 from fastapi import UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 
+from augmentedquill.core.config import load_story_config
+from augmentedquill.models.story import ProjectMutationResponse
 from augmentedquill.services.exceptions import (
     BadRequestError,
     NotFoundError,
     PersistenceError,
-)
-
-from augmentedquill.core.config import load_story_config
-from augmentedquill.utils.image_helpers import (
-    delete_image_metadata,
-    get_project_images,
-    update_image_metadata,
 )
 from augmentedquill.services.projects.projects import (
     get_active_project_dir,
@@ -40,9 +35,13 @@ from augmentedquill.services.projects.projects import (
     load_registry,
     select_project,
 )
-from augmentedquill.utils.path_utils import safe_child_path
 from augmentedquill.services.projects.projects_api_manage_ops import normalize_registry
-from augmentedquill.models.story import ProjectMutationResponse
+from augmentedquill.utils.image_helpers import (
+    delete_image_metadata,
+    get_project_images,
+    update_image_metadata,
+)
+from augmentedquill.utils.path_utils import safe_child_path
 
 _RESTORE_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
 
@@ -362,7 +361,11 @@ async def import_project_response(file: UploadFile) -> ProjectMutationResponse:
         return ProjectMutationResponse(
             ok=True,
             message=f"Imported as {final_name}",
-            registry={"current": normalized_reg["current"], "recent": normalized_reg["recent"], "available": available},  # type: ignore[arg-type]
+            registry={
+                "current": normalized_reg["current"],
+                "recent": normalized_reg["recent"],
+                "available": available,
+            },  # type: ignore[arg-type]
         )
     except Exception as e:
         if temp_dir.exists():

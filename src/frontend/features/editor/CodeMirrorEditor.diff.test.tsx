@@ -374,6 +374,54 @@ describe('CodeMirrorEditor Diff Highlighting', () => {
     expect(deletedSpan?.textContent).toContain('\t');
   });
 
+  it('does not render inline scene markers in deleted diff payload', async () => {
+    const marker = '<!--scene:11:start-->';
+    const { container } = render(
+      <CodeMirrorEditor
+        value={'Alpha'}
+        baselineValue={`${marker}Alpha`}
+        showWhitespace={false}
+        showDiff={true}
+        hideSceneMarkers={true}
+        onChange={vi.fn()}
+      />
+    );
+
+    await act(async () => {});
+
+    const deletedSpans = Array.from(
+      container.querySelectorAll<HTMLSpanElement>('.cm-diff-deleted')
+    );
+    const deletedText = deletedSpans
+      .map((span: HTMLSpanElement) => span.textContent ?? '')
+      .join('');
+    expect(deletedText).not.toContain('<!--scene:11:start-->');
+  });
+
+  it('does not render inline annotation markers in deleted diff payload', async () => {
+    const marker = '<!--annotation:note-1:start-->';
+    const { container } = render(
+      <CodeMirrorEditor
+        value={'Alpha'}
+        baselineValue={`${marker}Alpha`}
+        showWhitespace={false}
+        showDiff={true}
+        hideSceneMarkers={true}
+        onChange={vi.fn()}
+      />
+    );
+
+    await act(async () => {});
+
+    const deletedSpans = Array.from(
+      container.querySelectorAll<HTMLSpanElement>('.cm-diff-deleted')
+    );
+    const deletedText = deletedSpans
+      .map((span: HTMLSpanElement) => span.textContent ?? '')
+      .join('');
+    expect(deletedText).not.toContain('<!--annotation:note-1:start-->');
+  });
+
   it('keeps highlighted DOM sequence identical for space+text+space between green and red', async () => {
     const changedPart = ' seen—of ';
     const fullText = `Start${changedPart}Finish`;
@@ -448,5 +496,181 @@ describe('CodeMirrorEditor Diff Highlighting', () => {
     const newlineCount = (deletedPart.match(/\n/g) ?? []).length;
     expect(newlineCount).toBeGreaterThan(0);
     expect(redBreaks).toBe(newlineCount);
+  });
+
+  it('shows no diff when baseline differs from value only by markers', async () => {
+    // Simulates the annotation-creation scenario: the baseline (from
+    // baselineState) contains internal markers, the editor document is
+    // always stripped.  When prose is identical the diff must be empty.
+    const { container } = render(
+      <CodeMirrorEditor
+        value={'The scent of jasmine filled the air'}
+        baselineValue={
+          '<!--scene:1:start-->The scent of <!--annotation:a1:start-->jasmine' +
+          '<!--annotation:a1:end--> filled the air<!--scene:1:end-->'
+        }
+        showWhitespace={false}
+        showDiff={true}
+        hideSceneMarkers={true}
+        onChange={vi.fn()}
+      />
+    );
+
+    await act(async () => {});
+
+    expect(container.querySelector('.cm-diff-inserted')).toBeNull();
+    expect(container.querySelector('.cm-diff-deleted')).toBeNull();
+  });
+});
+
+// ─── User-edit diff suppression ─────────────────────────────────────────────
+// When the user manually types, their own edits must NOT produce diff
+// decorations.  Only automatic (external-sync) changes should show diffs.
+// The diff plugin achieves this by patching the baseline on user edits.
+
+describe('CodeMirrorEditor – user edits do not produce diff', () => {
+  it('user typing does not show as diff insertion when baseline differs', async () => {
+    const ref = React.createRef<EditorView | null>();
+    const onChange = vi.fn();
+
+    // Simulate: AI changed "Hello" → "Hello World", baseline still "Hello"
+    const { container } = render(
+      <CodeMirrorEditor
+        ref={ref}
+        value="Hello World"
+        baselineValue="Hello"
+        showDiff={true}
+        onChange={onChange}
+      />
+    );
+
+    await act(async () => {});
+
+    // The AI insertion " World" should be visible as a diff.
+    expect(container.querySelector('.cm-diff-inserted')).toBeTruthy();
+
+    // Now simulate user typing: replace "World" with "there"
+    const view = ref.current!;
+    await act(async () => {
+      view.dispatch({
+        changes: { from: 6, to: 11, insert: 'there' },
+        // Deliberately NOT annotating with externalValueSyncAnnotation
+      });
+    });
+
+    // After user edit, the diff for the edited region should be gone
+    // because the baseline was patched to match.
+    const insertedEls = container.querySelectorAll('.cm-diff-inserted');
+    // The text is now "Hello there". No diff should remain because the
+    // baseline was patched to match at the edited position.
+    expect(insertedEls.length).toBe(0);
+    expect(view.state.doc.toString()).toBe('Hello there');
+  });
+
+  it('AI diff remains visible in untouched regions after user edits elsewhere', async () => {
+    const ref = React.createRef<EditorView | null>();
+    const onChange = vi.fn();
+
+    // AI added two words: "brave" at pos 6 and "quickly" at a later position.
+    const { container } = render(
+      <CodeMirrorEditor
+        ref={ref}
+        value="Hello brave world and quickly run"
+        baselineValue="Hello world and run"
+        showDiff={true}
+        onChange={onChange}
+      />
+    );
+
+    await act(async () => {});
+
+    // Both AI insertions should be visible.
+    let insertedEls = container.querySelectorAll('.cm-diff-inserted');
+    expect(insertedEls.length).toBeGreaterThanOrEqual(1);
+
+    // User types at the beginning, away from the AI insertions.
+    const view = ref.current!;
+    await act(async () => {
+      view.dispatch({
+        changes: { from: 0, to: 0, insert: 'Why ' },
+      });
+    });
+
+    // The AI diffs should still be present in untouched regions.
+    insertedEls = container.querySelectorAll('.cm-diff-inserted');
+    expect(insertedEls.length).toBeGreaterThanOrEqual(1);
+    expect(view.state.doc.toString()).toBe('Why Hello brave world and quickly run');
+  });
+
+  it('external sync (AI change) does produce diff decorations', async () => {
+    const ref = React.createRef<EditorView | null>();
+    const onChange = vi.fn();
+
+    const { container, rerender } = render(
+      <CodeMirrorEditor
+        ref={ref}
+        value="Hello"
+        baselineValue="Hello"
+        showDiff={true}
+        onChange={onChange}
+      />
+    );
+
+    await act(async () => {});
+
+    // No diff initially (baseline == content)
+    expect(container.querySelector('.cm-diff-inserted')).toBeNull();
+
+    // Simulate AI push: parent updates value but keeps baseline
+    await act(async () => {
+      rerender(
+        <CodeMirrorEditor
+          ref={ref}
+          value="Hello AI world"
+          baselineValue="Hello"
+          showDiff={true}
+          onChange={onChange}
+        />
+      );
+    });
+
+    // AI insertion should be visible as diff
+    expect(container.querySelector('.cm-diff-inserted')).toBeTruthy();
+  });
+
+  it('accepting a diff (setting baseline to match value) clears decorations', async () => {
+    const ref = React.createRef<EditorView | null>();
+    const onChange = vi.fn();
+
+    const { container, rerender } = render(
+      <CodeMirrorEditor
+        ref={ref}
+        value="Hello World"
+        baselineValue="Hello"
+        showDiff={true}
+        onChange={onChange}
+      />
+    );
+
+    await act(async () => {});
+
+    // AI diff visible
+    expect(container.querySelector('.cm-diff-inserted')).toBeTruthy();
+
+    // Parent accepts: sets baseline to match current value
+    await act(async () => {
+      rerender(
+        <CodeMirrorEditor
+          ref={ref}
+          value="Hello World"
+          baselineValue="Hello World"
+          showDiff={true}
+          onChange={onChange}
+        />
+      );
+    });
+
+    // Diff should be gone
+    expect(container.querySelector('.cm-diff-inserted')).toBeNull();
   });
 });

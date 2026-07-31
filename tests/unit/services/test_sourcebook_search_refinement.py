@@ -7,11 +7,12 @@
 
 """Tests for sourcebook search refinement logic."""
 
+import json
 import os
 import tempfile
-import json
 from pathlib import Path
 from unittest import TestCase
+
 from fastapi.testclient import TestClient
 
 from augmentedquill.main import app
@@ -73,9 +74,10 @@ class SourcebookSearchRefinementTest(TestCase):
                             "id": "c1",
                             "type": "function",
                             "function": {
-                                "name": "search_in_project",
+                                "name": "search_and_replace",
                                 "arguments": json.dumps(
                                     {
+                                        "action": "search",
                                         "query": query,
                                         "scope": scope,
                                     }

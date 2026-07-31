@@ -7,11 +7,10 @@
 
 """Defines the chapter tools unit so this responsibility stays isolated, testable, and easy to evolve."""
 
+import json as _json
 from typing import Any
 
-import json as _json
-
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from augmentedquill.core.config import load_story_config
 from augmentedquill.services.chapters.chapter_helpers import (
@@ -23,30 +22,40 @@ from augmentedquill.services.chat.chat_tool_decorator import (
     CHAT_ROLE,
     EDITING_ROLE,
     WRITING_ROLE,
+    ToolModel,
     chat_tool,
+)
+from augmentedquill.services.chat.chat_tools.metadata_patching import (
+    ConflictEntry,
+    ConflictListPatch,
+    TextPatch,
+    apply_conflict_list_patch,
+    apply_text_patch,
 )
 from augmentedquill.services.projects.project_helpers import (
     _project_overview,
     _snap_to_boundary,
 )
+from augmentedquill.services.projects.projects import (
+    create_new_chapter as _create_new_chapter,
+)
+from augmentedquill.services.projects.projects import (
+    get_active_project_dir,
+    write_chapter_title,
+)
+from augmentedquill.services.projects.projects import (
+    update_chapter_metadata as _update_chapter_metadata,
+)
+from augmentedquill.services.projects.projects import (
+    write_chapter_content as _write_chapter_content,
+)
+from augmentedquill.services.projects.projects import (
+    write_chapter_summary as _write_chapter_summary,
+)
 from augmentedquill.services.story.story_generation_ops import (
     continue_chapter_from_summary,
     generate_chapter_summary,
     write_chapter_from_summary,
-)
-from augmentedquill.services.projects.projects import (
-    create_new_chapter as _create_new_chapter,
-    get_active_project_dir,
-    update_chapter_metadata as _update_chapter_metadata,
-    write_chapter_content as _write_chapter_content,
-    write_chapter_summary as _write_chapter_summary,
-    write_chapter_title,
-)
-from augmentedquill.services.chat.chat_tools.metadata_patching import (
-    ConflictListPatch,
-    TextPatch,
-    apply_conflict_list_patch,
-    apply_text_patch,
 )
 
 _MAX_CHAPTER_CHARS = 8000
@@ -148,7 +157,7 @@ def compose_current_chapter_state(payload: dict) -> dict | None:
 # ============================================================================
 
 
-class GetChapterMetadataParams(BaseModel):
+class GetChapterMetadataParams(ToolModel):
     """Represents the GetChapterMetadataParams type."""
 
     chap_id: int | None = Field(
@@ -165,7 +174,7 @@ class GetChapterMetadataParams(BaseModel):
     )
 
 
-class UpdateChapterMetadataParams(BaseModel):
+class UpdateChapterMetadataParams(ToolModel):
     """Represents the UpdateChapterMetadataParams type."""
 
     chap_id: int = Field(..., description="The chapter ID to update metadata for")
@@ -188,11 +197,12 @@ class UpdateChapterMetadataParams(BaseModel):
             "{operation:'replace_text', old_text:'...', new_text:'...', occurrence:'first|last|all|unique'}."
         ),
     )
-    conflicts: list | str | None = Field(
+    conflicts: list[ConflictEntry] | str | None = Field(
         None,
         description=(
-            "List of conflicts in the chapter (can be JSON string). "
-            "Each conflict should include description, resolution, and optional resolved status."
+            "List of chapter conflicts (or a JSON string containing that list). "
+            "Each conflict should include description, optional resolution, and a "
+            "resolved flag when the conflict is no longer active."
         ),
     )
     conflicts_patch: ConflictListPatch | None = Field(
@@ -207,13 +217,11 @@ class UpdateChapterMetadataParams(BaseModel):
     )
 
 
-class GetChapterSummariesParams(BaseModel):
+class GetChapterSummariesParams(ToolModel):
     """Represents the GetChapterSummariesParams type."""
 
-    pass
 
-
-class GetChapterContentParams(BaseModel):
+class GetChapterContentParams(ToolModel):
     """Represents the GetChapterContentParams type."""
 
     chap_id: int | None = Field(
@@ -234,20 +242,18 @@ class GetChapterContentParams(BaseModel):
     )
 
 
-class GetCurrentChapterParams(BaseModel):
+class GetCurrentChapterParams(ToolModel):
     """No parameters required, active chapter is inferred from context."""
 
-    pass
 
-
-class WriteChapterContentParams(BaseModel):
+class WriteChapterContentParams(ToolModel):
     """Represents the WriteChapterContentParams type."""
 
     chap_id: int = Field(..., description="The chapter ID to write content to")
     content: str = Field(..., description="The content to write")
 
 
-class ReplaceTextInChapterParams(BaseModel):
+class ReplaceTextInChapterParams(ToolModel):
     """Represents the ReplaceTextInChapterParams type."""
 
     chap_id: int = Field(..., description="The chapter ID to edit")
@@ -255,14 +261,14 @@ class ReplaceTextInChapterParams(BaseModel):
     new_text: str = Field(..., description="The new text to insert instead")
 
 
-class WriteChapterSummaryParams(BaseModel):
+class WriteChapterSummaryParams(ToolModel):
     """Represents the WriteChapterSummaryParams type."""
 
     chap_id: int = Field(..., description="The chapter ID to write summary to")
     summary: str = Field(..., description="The summary to write")
 
 
-class SyncSummaryParams(BaseModel):
+class SyncSummaryParams(ToolModel):
     """Represents the SyncSummaryParams type."""
 
     chap_id: int = Field(..., description="The chapter ID to generate summary for")
@@ -272,7 +278,7 @@ class SyncSummaryParams(BaseModel):
     )
 
 
-class WriteChapterParams(BaseModel):
+class WriteChapterParams(ToolModel):
     """Represents the WriteChapterParams type."""
 
     chap_id: int = Field(
@@ -280,13 +286,13 @@ class WriteChapterParams(BaseModel):
     )
 
 
-class ContinueChapterParams(BaseModel):
+class ContinueChapterParams(ToolModel):
     """Represents the ContinueChapterParams type."""
 
     chap_id: int = Field(..., description="The chapter ID to continue writing")
 
 
-class CreateNewChapterParams(BaseModel):
+class CreateNewChapterParams(ToolModel):
     """Represents the CreateNewChapterParams type."""
 
     title: str = Field("", description="The title for the new chapter")
@@ -295,33 +301,33 @@ class CreateNewChapterParams(BaseModel):
     )
 
 
-class GetChapterHeadingParams(BaseModel):
+class GetChapterHeadingParams(ToolModel):
     """Represents the GetChapterHeadingParams type."""
 
     chap_id: int = Field(..., description="The chapter ID to get heading for")
 
 
-class WriteChapterHeadingParams(BaseModel):
+class WriteChapterHeadingParams(ToolModel):
     """Represents the WriteChapterHeadingParams type."""
 
     chap_id: int = Field(..., description="The chapter ID to write heading to")
     heading: str = Field(..., description="The heading to write")
 
 
-class GetChapterSummaryParams(BaseModel):
+class GetChapterSummaryParams(ToolModel):
     """Represents the GetChapterSummaryParams type."""
 
     chap_id: int = Field(..., description="The chapter ID to get summary for")
 
 
-class DeleteChapterParams(BaseModel):
+class DeleteChapterParams(ToolModel):
     """Represents the DeleteChapterParams type."""
 
     chap_id: int = Field(..., description="The chapter ID to delete")
     confirm: bool = Field(False, description="Set to true to confirm deletion")
 
 
-class RecommendMetadataUpdatesParams(BaseModel):
+class RecommendMetadataUpdatesParams(ToolModel):
     """Represents the RecommendMetadataUpdatesParams type."""
 
     story_summary: str | None = Field(
@@ -443,6 +449,11 @@ async def update_chapter_metadata(
             conflicts = _json.loads(conflicts)
         except Exception:
             conflicts = None
+    elif isinstance(conflicts, list):
+        conflicts = [
+            conflict.model_dump() if hasattr(conflict, "model_dump") else conflict
+            for conflict in conflicts
+        ]
 
     active = get_active_project_dir()
     story = load_story_config((active / "story.json") if active else None) or {}
@@ -688,7 +699,7 @@ async def replace_text_in_chapter(
 MARKER = "~~~"
 
 
-class InsertTextAtMarkerParams(BaseModel):
+class InsertTextAtMarkerParams(ToolModel):
     """Parameters for inserting text at the fixed marker in a chapter."""
 
     chap_id: int = Field(..., description="The numeric ID of the chapter.")
@@ -738,7 +749,7 @@ async def insert_text_at_marker(
     }
 
 
-class ApplyChapterReplacementsParams(BaseModel):
+class ApplyChapterReplacementsParams(ToolModel):
     """Parameters for applying multiple replacements in a chapter."""
 
     chap_id: int = Field(..., description="The numeric ID of the chapter.")
@@ -855,6 +866,7 @@ async def continue_chapter(
     description="Create a new chapter with an optional title and book_id.",
     allowed_roles=(CHAT_ROLE,),
     capability="metadata-write",
+    project_types=("novel", "series"),
 )
 async def create_new_chapter(
     params: CreateNewChapterParams, payload: dict, mutations: dict

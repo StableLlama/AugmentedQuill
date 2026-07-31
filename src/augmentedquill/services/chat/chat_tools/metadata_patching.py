@@ -11,10 +11,32 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import ConfigDict, Field, model_validator
+
+from augmentedquill.services.chat.chat_tool_decorator import ToolModel
 
 
-class TextPatch(BaseModel):
+class ConflictEntry(ToolModel):
+    """Structured conflict entry used by chapter and story metadata tools."""
+
+    id: str | None = Field(
+        None,
+        description="Optional stable conflict identifier. If omitted, a new one may be assigned.",
+    )
+    description: str = Field(
+        ..., description="Short description of the unresolved story conflict."
+    )
+    resolution: str | None = Field(
+        None,
+        description="Optional proposed or current resolution for the conflict.",
+    )
+    resolved: bool = Field(
+        False,
+        description="Set to true when the conflict has been resolved and should no longer be treated as active.",
+    )
+
+
+class TextPatch(ToolModel):
     """Patch operation for text fields."""
 
     operation: Literal["replace", "append", "prepend", "replace_text"] = Field(
@@ -45,21 +67,28 @@ class TextPatch(BaseModel):
     )
 
     @model_validator(mode="after")
-    def _validate_shape(self) -> "TextPatch":
+    def _validate_shape(self) -> TextPatch:
         if self.operation in ("replace", "append", "prepend"):
             if self.value is None:
                 raise ValueError(
-                    "value is required for replace/append/prepend operations"
+                    f"missing required key(s): value for operation '{self.operation}'"
                 )
         if self.operation == "replace_text":
-            if self.old_text is None or self.new_text is None:
+            missing_keys: list[str] = []
+            if self.old_text is None:
+                missing_keys.append("old_text")
+            if self.new_text is None:
+                missing_keys.append("new_text")
+            if missing_keys:
                 raise ValueError(
-                    "old_text and new_text are required for replace_text operation"
+                    "missing required key(s): "
+                    + ", ".join(missing_keys)
+                    + " for operation 'replace_text'"
                 )
         return self
 
 
-class StringListPatch(BaseModel):
+class StringListPatch(ToolModel):
     """Patch operation for string list fields (tags, synonyms, images)."""
 
     set: list[str] | None = Field(
@@ -81,7 +110,40 @@ class StringListPatch(BaseModel):
     )
 
 
-class ConflictPatchOperation(BaseModel):
+class IntListPatch(ToolModel):
+    """Patch operation for integer list fields (scene IDs, chapter IDs)."""
+
+    set: list[int] | None = Field(
+        None,
+        description=(
+            "Optional full replacement integer list before add/remove operations. "
+            "Example: [1, 2, 3]."
+        ),
+        json_schema_extra={"examples": [[1, 2, 3]]},
+    )
+    add: list[int] | None = Field(
+        None,
+        description=(
+            "Integer scene IDs to add while preserving untouched existing values. "
+            "Example: [1, 2, 3]."
+        ),
+        json_schema_extra={"examples": [[1, 2, 3]]},
+    )
+    remove: list[int] | None = Field(
+        None,
+        description=(
+            "Integer scene IDs to remove from the current list. Example: [1, 2]."
+        ),
+        json_schema_extra={"examples": [[1, 2]]},
+    )
+    clear: bool = Field(False, description="Clear the existing list before add/set.")
+    unique: bool = Field(
+        True,
+        description="If true, deduplicate while preserving first-seen order.",
+    )
+
+
+class ConflictPatchOperation(ToolModel):
     """One atomic conflict-list change."""
 
     model_config = ConfigDict(extra="forbid")
@@ -92,20 +154,30 @@ class ConflictPatchOperation(BaseModel):
             "Operation type. Inferred automatically when omitted: "
             "updates present → 'update'; conflict present with index → 'replace'; "
             "conflict present without index → 'add'; only index present → 'remove'. "
-            "Must be set explicitly for 'insert' and 'clear'."
+            "Must be set explicitly for 'insert' and 'clear'. "
+            "IMPORTANT: 'update' requires both index and updates (not conflict)."
         ),
     )
     index: int | None = Field(
         None,
-        description="0-based conflict list index. Required for insert/replace/update/remove.",
+        description=(
+            "0-based conflict list index. Required for insert/replace/update/remove. "
+            "For append/add, omit index."
+        ),
     )
-    conflict: dict[str, Any] | None = Field(
+    conflict: ConflictEntry | dict[str, Any] | None = Field(
         None,
-        description="Conflict payload for add/insert/replace operations.",
+        description=(
+            "Conflict payload for add/insert/replace operations. "
+            "Use this to append a new conflict object (usually without index)."
+        ),
     )
     updates: dict[str, Any] | None = Field(
         None,
-        description="Fields to merge into the existing conflict for update operations.",
+        description=(
+            "Fields to merge into an existing conflict for update operations. "
+            "Requires index to identify which conflict to update."
+        ),
     )
 
     @model_validator(mode="before")
@@ -128,14 +200,18 @@ class ConflictPatchOperation(BaseModel):
         return data
 
     @model_validator(mode="after")
-    def _validate_shape(self) -> "ConflictPatchOperation":
+    def _validate_shape(self) -> ConflictPatchOperation:
         if self.op is None:
             raise ValueError(
                 "op is required and could not be inferred; "
                 "provide op explicitly (add/insert/replace/update/remove/clear)"
             )
         if self.op in ("insert", "replace", "update", "remove") and self.index is None:
-            raise ValueError("index is required for insert/replace/update/remove")
+            raise ValueError(
+                "index is required for insert/replace/update/remove. "
+                "To append a new conflict, omit index and use conflict with op='add' "
+                "(or omit op to infer add). For update, provide both index and updates."
+            )
         if self.op in ("add", "insert", "replace") and self.conflict is None:
             raise ValueError("conflict is required for add/insert/replace")
         if self.op == "update" and self.updates is None:
@@ -143,14 +219,15 @@ class ConflictPatchOperation(BaseModel):
         return self
 
 
-class ConflictListPatch(BaseModel):
+class ConflictListPatch(ToolModel):
     """Patch operation for conflict list fields."""
 
     operations: list[ConflictPatchOperation] = Field(
         ...,
         description=(
             "Ordered index-based operations to apply to the conflicts list. "
-            "Use numeric index for update/insert/replace/remove operations."
+            "Use numeric index for update/insert/replace/remove operations. "
+            "Examples: append -> {conflict:{...}}; update existing -> {index:0, updates:{resolution:'...'}}."
         ),
     )
 
@@ -216,11 +293,49 @@ def apply_string_list_patch(current: list[str], patch: StringListPatch) -> list[
     return result
 
 
+def apply_int_list_patch(current: list[int], patch: IntListPatch) -> list[int]:
+    """Apply integer list patch while preserving existing items by default."""
+    result: list[int]
+    if patch.set is not None:
+        result = list(patch.set)
+    elif patch.clear:
+        result = []
+    else:
+        result = list(current or [])
+
+    if patch.add:
+        result.extend(patch.add)
+
+    if patch.remove:
+        remove_set = set(patch.remove)
+        result = [item for item in result if item not in remove_set]
+
+    if patch.unique:
+        deduped: list[int] = []
+        seen: set[int] = set()
+        for item in result:
+            if item in seen:
+                continue
+            seen.add(item)
+            deduped.append(item)
+        result = deduped
+
+    return result
+
+
 def apply_conflict_list_patch(
     current: list[dict[str, Any]], patch: ConflictListPatch
 ) -> list[dict[str, Any]]:
     """Apply ordered conflict-list operations."""
     result = [dict(item) for item in (current or []) if isinstance(item, dict)]
+
+    def _as_dict(value: Any) -> dict[str, Any]:
+        if hasattr(value, "model_dump"):
+            dumped = value.model_dump()
+            return dumped if isinstance(dumped, dict) else {}
+        if isinstance(value, dict):
+            return dict(value)
+        return {}
 
     for op in patch.operations:
         if op.op == "clear":
@@ -228,7 +343,7 @@ def apply_conflict_list_patch(
             continue
 
         if op.op == "add":
-            result.append(dict(op.conflict or {}))
+            result.append(_as_dict(op.conflict))
             continue
 
         if op.index is None:
@@ -239,13 +354,13 @@ def apply_conflict_list_patch(
             )
 
         if op.op == "insert":
-            result.insert(op.index, dict(op.conflict or {}))
+            result.insert(op.index, _as_dict(op.conflict))
         elif op.op == "replace":
             if op.index >= len(result):
                 raise ValueError(
                     f"replace index {op.index} is out of bounds for size {len(result)}"
                 )
-            result[op.index] = dict(op.conflict or {})
+            result[op.index] = _as_dict(op.conflict)
         elif op.op == "update":
             if op.index >= len(result):
                 raise ValueError(

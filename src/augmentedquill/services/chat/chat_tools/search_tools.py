@@ -11,45 +11,88 @@ LLM-callable chat tools for searching and replacing text within a project.
 These tools are available to the CHAT and EDITING model roles.
 """
 
-from pydantic import BaseModel, Field
+from typing import Literal
+
+from pydantic import Field
 
 from augmentedquill.services.chat.chat_tool_decorator import (
     CHAT_ROLE,
     EDITING_ROLE,
+    ToolModel,
     chat_tool,
 )
 
 
-class SearchInProjectParams(BaseModel):
-    """Parameters for searching text within the active project."""
+class SearchAndReplaceParams(ToolModel):
+    """Action router parameters for search_and_replace."""
 
+    action: Literal["search", "replace"] = Field(
+        ...,
+        description="Operation to execute: 'search' or 'replace'.",
+    )
     query: str = Field(..., description="Text or pattern to search for")
+    replacement: str | None = Field(
+        None,
+        description="Required when action='replace'.",
+    )
     scope: str = Field(
         "all",
         description=(
-            "Where to search. One of: 'all', 'all_chapters', 'current_chapter', "
-            "'sourcebook', 'metadata'. Default: 'all'."
+            "Where to search/replace. One of: 'all', 'all_chapters', "
+            "'current_chapter', 'sourcebook', 'metadata'."
         ),
     )
     case_sensitive: bool = Field(
-        False, description="Whether the search is case-sensitive"
+        False,
+        description="Whether matching is case-sensitive",
     )
     is_regex: bool = Field(False, description="Treat query as a regular expression")
 
 
 @chat_tool(
     description=(
-        "Search for text within the active project. Returns matches grouped by "
-        "chapter content, sourcebook entries, and metadata (summaries, notes, "
-        "conflicts). Use scope='current_chapter' to search only the active chapter, "
-        "scope='all' to search everything. Results include context snippets around "
-        "each match."
+        "Unified search and replace tool. Use action='search' to find matches "
+        "or action='replace' to replace all matches (requires replacement)."
     ),
     allowed_roles=(CHAT_ROLE, EDITING_ROLE),
     capability="search",
 )
-async def search_in_project(
-    params: SearchInProjectParams, payload: dict, mutations: dict
+async def search_and_replace(
+    params: SearchAndReplaceParams, payload: dict, mutations: dict
+) -> dict:
+    """Route search/replace actions using existing search services."""
+    if params.action == "search":
+        return _run_search_in_project(
+            query=params.query,
+            scope=params.scope,
+            case_sensitive=params.case_sensitive,
+            is_regex=params.is_regex,
+            payload=payload,
+        )
+
+    if params.action == "replace":
+        if params.replacement is None:
+            return {"error": "replacement is required when action='replace'."}
+        return _run_replace_in_project(
+            query=params.query,
+            replacement=params.replacement,
+            scope=params.scope,
+            case_sensitive=params.case_sensitive,
+            is_regex=params.is_regex,
+            payload=payload,
+            mutations=mutations,
+        )
+
+    return {"error": f"Unsupported action: {params.action}"}
+
+
+def _run_search_in_project(
+    *,
+    query: str,
+    scope: str,
+    case_sensitive: bool,
+    is_regex: bool,
+    payload: dict,
 ) -> dict:
     """Execute a text search across the project and return readable results."""
     from augmentedquill.models.search import SearchOptions, SearchScope
@@ -62,7 +105,7 @@ async def search_in_project(
 
     # Resolve scope string to enum (fall back to 'all' for invalid values)
     scope_map = {s.value: s for s in SearchScope}
-    scope = scope_map.get(params.scope, SearchScope.all)
+    scope = scope_map.get(scope, SearchScope.all)
 
     active_chap_id: int | None = None
     if scope == SearchScope.current_chapter:
@@ -74,10 +117,10 @@ async def search_in_project(
                 pass
 
     opts = SearchOptions(
-        query=params.query,
+        query=query,
         scope=scope,
-        case_sensitive=params.case_sensitive,
-        is_regex=params.is_regex,
+        case_sensitive=case_sensitive,
+        is_regex=is_regex,
         is_phonetic=False,  # Phonetic search not exposed as LLM tool
         active_chapter_id=active_chap_id,
     )
@@ -106,39 +149,15 @@ async def search_in_project(
     }
 
 
-class ReplaceInProjectParams(BaseModel):
-    """Parameters for replacing text within the active project."""
-
-    query: str = Field(..., description="Text or pattern to search for and replace")
-    replacement: str = Field(
-        ..., description="Text to substitute in place of each match"
-    )
-    scope: str = Field(
-        "all",
-        description=(
-            "Where to replace. One of: 'all', 'all_chapters', 'current_chapter', "
-            "'sourcebook', 'metadata'. Default: 'all'."
-        ),
-    )
-    case_sensitive: bool = Field(
-        False, description="Whether the match is case-sensitive"
-    )
-    is_regex: bool = Field(False, description="Treat query as a regular expression")
-
-
-@chat_tool(
-    description=(
-        "Replace text throughout the active project. Replaces every occurrence of "
-        "'query' with 'replacement' within the specified scope. Returns how many "
-        "replacements were made and which sections were changed. Use "
-        "scope='all_chapters' to rename a character in all prose, or scope='all' "
-        "to also update their sourcebook entry and metadata fields."
-    ),
-    allowed_roles=(CHAT_ROLE, EDITING_ROLE),
-    capability="replace",
-)
-async def replace_in_project(
-    params: ReplaceInProjectParams, payload: dict, mutations: dict
+def _run_replace_in_project(
+    *,
+    query: str,
+    replacement: str,
+    scope: str,
+    case_sensitive: bool,
+    is_regex: bool,
+    payload: dict,
+    mutations: dict,
 ) -> dict:
     """Replace text throughout the project and report the changes."""
     from augmentedquill.models.search import ReplaceAllRequest, SearchScope
@@ -150,7 +169,7 @@ async def replace_in_project(
         return {"error": "No active project"}
 
     scope_map = {s.value: s for s in SearchScope}
-    scope = scope_map.get(params.scope, SearchScope.all)
+    scope = scope_map.get(scope, SearchScope.all)
 
     active_chap_id: int | None = None
     if scope == SearchScope.current_chapter:
@@ -162,11 +181,11 @@ async def replace_in_project(
                 pass
 
     req = ReplaceAllRequest(
-        query=params.query,
-        replacement=params.replacement,
+        query=query,
+        replacement=replacement,
         scope=scope,
-        case_sensitive=params.case_sensitive,
-        is_regex=params.is_regex,
+        case_sensitive=case_sensitive,
+        is_regex=is_regex,
         is_phonetic=False,
         active_chapter_id=active_chap_id,
     )

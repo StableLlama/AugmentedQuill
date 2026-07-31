@@ -9,14 +9,17 @@
  * Defines the sourcebook entry dialog unit so this responsibility stays isolated, testable, and easy to evolve.
  */
 
-import React, { useRef } from 'react';
+import React, { useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AppTheme, SourcebookEntry, SourcebookRelation } from '../../types';
+import type { Scene, SceneId } from '../../types';
 import { SourcebookUpsertPayload } from '../../services/apiTypes';
 import { useThemeClasses } from '../layout/ThemeContext';
 import { useFocusTrap } from '../layout/useFocusTrap';
+import { buildSourcebookTimelineOptions } from '../scenes/timelineOptions';
 import { SourcebookEntryDialogView } from './SourcebookEntryDialogView';
 import { useSourcebookEntryDialogState } from './useSourcebookEntryDialogState';
+import { useScenes } from '../../stores/storyStore';
 
 interface SourcebookEntryDialogProps {
   entry?: SourcebookEntry | null;
@@ -67,6 +70,11 @@ export const SourcebookEntryDialog: React.FC<SourcebookEntryDialogProps> = ({
     onSave,
     onClose,
   });
+  const scenes = useScenes();
+  const timelineOptions = useMemo(
+    () => buildSourcebookTimelineOptions(allEntries, state.timelineId),
+    [allEntries, state.timelineId]
+  );
 
   const entryDialogRef = useRef<HTMLDivElement>(null);
   const imagePickerRef = useRef<HTMLDivElement>(null);
@@ -92,6 +100,65 @@ export const SourcebookEntryDialog: React.FC<SourcebookEntryDialogProps> = ({
     : state.keywords.length > 0
       ? state.keywords.join(', ')
       : 'No keywords yet.';
+
+  const sceneReferences = useMemo((): Array<{
+    id: SceneId;
+    summary: string;
+    roles: string[];
+  }> => {
+    if (!entry) return [];
+    const normalizedName = entry.name.trim().toLowerCase();
+    return scenes
+      .map(
+        (
+          sceneItem: Scene
+        ): {
+          id: SceneId;
+          summary: string;
+          roles: string[];
+        } | null => {
+          const roles: string[] = [];
+          if (
+            sceneItem.active_characters.some(
+              (name: string): boolean => name.trim().toLowerCase() === normalizedName
+            )
+          ) {
+            roles.push('active');
+          }
+          if (
+            sceneItem.passive_characters.some(
+              (name: string): boolean => name.trim().toLowerCase() === normalizedName
+            )
+          ) {
+            roles.push('passive');
+          }
+          if (
+            (sceneItem.sourcebook_entry_ids ?? []).includes(entry.id) ||
+            (sceneItem.location ?? '').trim().toLowerCase() === normalizedName ||
+            (sceneItem.time ?? '').trim().toLowerCase() === normalizedName
+          ) {
+            roles.push('sourcebook');
+          }
+          if (roles.length === 0) {
+            return null;
+          }
+          return {
+            id: sceneItem.id,
+            summary: sceneItem.summary,
+            roles,
+          };
+        }
+      )
+      .filter(
+        (
+          value: { id: SceneId; summary: string; roles: string[] } | null
+        ): value is {
+          id: SceneId;
+          summary: string;
+          roles: string[];
+        } => value !== null
+      );
+  }, [entry, scenes]);
 
   if (!isOpen) {
     return null;
@@ -155,6 +222,12 @@ export const SourcebookEntryDialog: React.FC<SourcebookEntryDialogProps> = ({
       category={state.category}
       synonyms={state.synonyms}
       newSynonym={state.newSynonym}
+      originDate={state.originDate}
+      destinationDatetime={state.destinationDatetime}
+      destinationRelative={state.destinationRelative}
+      createsNewTimeline={state.createsNewTimeline}
+      timelineId={state.timelineId}
+      timelineOptions={timelineOptions}
       images={state.images}
       relations={state.relations}
       relationNameMap={state.relationNameMap}
@@ -189,6 +262,11 @@ export const SourcebookEntryDialog: React.FC<SourcebookEntryDialogProps> = ({
       onSynonymInputChange={state.setNewSynonym}
       onAddSynonym={state.addSynonym}
       onRemoveSynonym={state.removeSynonym}
+      onOriginDateChange={state.setOriginDate}
+      onDestinationDatetimeChange={state.setDestinationDatetime}
+      onDestinationRelativeChange={state.setDestinationRelative}
+      onCreatesNewTimelineChange={state.setCreatesNewTimeline}
+      onTimelineIdChange={state.setTimelineId}
       onToggleImagesExpanded={(): void =>
         state.setIsImagesExpanded((value: boolean): boolean => !value)
       }
@@ -225,6 +303,7 @@ export const SourcebookEntryDialog: React.FC<SourcebookEntryDialogProps> = ({
       onSaveRelation={handleRelationSave}
       onCloseRelationDialog={(): void => state.setIsRelationDialogVisible(false)}
       onCloseImagePicker={(): void => state.setIsImagePickerOpen(false)}
+      sceneReferences={sceneReferences}
     />
   );
 };

@@ -18,6 +18,7 @@ import type {
   ChatAttachment,
   EditorSettings,
   LLMConfig,
+  StoryState,
   SourcebookEntry,
   SuggestionGenerationMode,
   ViewMode,
@@ -243,10 +244,18 @@ export type MainEditorControls = {
   setShowWhitespace: (v: boolean) => void;
   baselineContent?: string;
   onOpenSearch?: () => void;
+  recordHistoryEntry?: (params: {
+    label: string;
+    state?: StoryState;
+    onUndo?: () => Promise<void> | void;
+    onRedo?: () => Promise<void> | void;
+    forceNewHistory?: boolean;
+  }) => void;
 };
 
 export type MainChatControls = {
   isChatOpen: boolean;
+  setIsChatOpen: (v: boolean) => void;
   isChatAvailable: boolean;
   activeChatConfig: LLMConfig;
   handleSendMessage: (text: string, attachments?: ChatAttachment[]) => Promise<void>;
@@ -254,7 +263,10 @@ export type MainChatControls = {
   handleRegenerate: () => Promise<void>;
   handleEditMessage: (id: string, newText: string) => void;
   handleDeleteMessage: (id: string) => void;
-  handleLoadProject: (projectId: string) => Promise<void>;
+  handleLoadProject: (
+    projectId: string,
+    options?: { preserveActiveChatSession?: boolean }
+  ) => Promise<void>;
   handleSelectChat: (chatId: string) => Promise<void>;
   handleNewChat: (incognito?: boolean) => void;
   handleDeleteChat: (chatId: string) => Promise<void>;

@@ -10,7 +10,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { ProjectMetadata, StoryState } from '../../types';
+import { ChatMessage, ProjectMetadata, StoryState } from '../../types';
 import { api } from '../../services/api';
 import { ProjectListItem } from '../../services/apiTypes';
 import { mapSelectStoryToState } from '../story/storyMappers';
@@ -18,6 +18,10 @@ import { formatError, notifyError } from '../../services/errorNotifier';
 import { useChatStore } from '../../stores/chatStore';
 
 type CreateProjectType = 'short-story' | 'novel' | 'series';
+
+type LoadProjectOptions = {
+  preserveActiveChatSession?: boolean;
+};
 
 type UseProjectManagementParams = {
   storyId: string;
@@ -117,7 +121,7 @@ export function useProjectManagement({
     import('react').SetStateAction<boolean>
   >;
   instructionLanguages: string[];
-  handleLoadProject: (id: string) => Promise<void>;
+  handleLoadProject: (id: string, options?: LoadProjectOptions) => Promise<void>;
   handleImportProject: (file: File) => Promise<void>;
   handleCreateProject: () => void;
   handleCreateProjectConfirm: (
@@ -231,15 +235,115 @@ export function useProjectManagement({
     });
   }, [storyId, storyTitle, storyProjectType, storyLanguage]);
 
+  const getActivePersistentChatSnapshot = useCallback((): {
+    chatId: string;
+    payload: {
+      name: string;
+      messages: unknown[];
+      systemPrompt: string;
+      allowWebSearch: boolean;
+      scratchpad: string;
+      projectContextRevision: number | null;
+    };
+  } | null => {
+    const {
+      currentChatId,
+      chatMessages,
+      systemPrompt,
+      allowWebSearch,
+      scratchpad,
+      projectContextRevision,
+      isIncognito,
+    } = useChatStore.getState();
+
+    if (!currentChatId || isIncognito) {
+      return null;
+    }
+
+    const firstUserMessage = chatMessages.find(
+      (message: ChatMessage): boolean => message.role === 'user'
+    );
+    const name = firstUserMessage?.text?.substring(0, 40) || 'Untitled Chat';
+
+    return {
+      chatId: currentChatId,
+      payload: {
+        name,
+        messages: chatMessages,
+        systemPrompt,
+        allowWebSearch,
+        scratchpad,
+        projectContextRevision,
+      },
+    };
+  }, []);
+
   const handleLoadProject = useCallback(
-    async (id: string): Promise<void> => {
+    async (id: string, options?: LoadProjectOptions): Promise<void> => {
       try {
-        const response = await api.projects.select(id);
+        const shouldPreserveActiveChat =
+          Boolean(options?.preserveActiveChatSession) && id !== storyId;
+        let targetProjectId = id;
+
+        if (shouldPreserveActiveChat) {
+          try {
+            const listing = await api.projects.list();
+            const match = listing.available.find(
+              (project: ProjectListItem): boolean =>
+                project.name === id || project.title === id
+            );
+            if (match) {
+              targetProjectId = match.name;
+            }
+          } catch (error) {
+            console.warn('Failed to resolve canonical project id before switch', error);
+          }
+        }
+
+        let carriedChatId: string | null = null;
+
+        if (shouldPreserveActiveChat) {
+          const snapshot = getActivePersistentChatSnapshot();
+          if (snapshot) {
+            carriedChatId = snapshot.chatId;
+
+            // Flush current project chat state so the source project keeps the
+            // partial history up to this switch point.
+            try {
+              await api
+                .forProject(storyId)
+                .chat.save(snapshot.chatId, snapshot.payload);
+            } catch (error) {
+              console.warn('Failed to flush source chat before project switch', error);
+            }
+
+            try {
+              await api
+                .forProject(targetProjectId)
+                .chat.save(snapshot.chatId, snapshot.payload);
+            } catch (error) {
+              console.warn('Failed to duplicate chat into target project', error);
+              carriedChatId = null;
+            }
+          }
+        }
+
+        const response = await api.projects.select(targetProjectId);
         if (!response.ok) return;
 
         await refreshStory(undefined, true);
         const chats = await api.chat.list();
         useChatStore.getState().setChatHistoryList(chats);
+        if (
+          carriedChatId &&
+          chats.some(
+            (chat: import('../../types').ChatSession): boolean =>
+              chat.id === carriedChatId
+          )
+        ) {
+          await handleSelectChat(carriedChatId);
+          return;
+        }
         if (chats.length > 0) {
           await handleSelectChat(chats[0].id);
         } else {
@@ -249,7 +353,13 @@ export function useProjectManagement({
         console.error('Failed to load project', error);
       }
     },
-    [refreshStory, handleSelectChat, handleNewChat]
+    [
+      storyId,
+      refreshStory,
+      handleSelectChat,
+      handleNewChat,
+      getActivePersistentChatSnapshot,
+    ]
   );
 
   const handleImportProject = useCallback(
@@ -335,8 +445,9 @@ export function useProjectManagement({
       language: string = 'en'
     ): Promise<void> => {
       try {
+        const trimmedName = name.trim();
         const previousProjectId = storyId;
-        const result = await api.projects.create(name, type, language);
+        const result = await api.projects.create(trimmedName, type, language);
         if (!result.ok) return;
 
         const listing = await api.projects.list();
@@ -346,7 +457,7 @@ export function useProjectManagement({
 
         if (result.story) {
           const mappedStory: StoryState = mapSelectStoryToState(
-            name,
+            trimmedName,
             result.story,
             (result.story.chapters ?? []).map(
               (
@@ -388,18 +499,18 @@ export function useProjectManagement({
           handleNewChat(false);
 
           recordHistoryEntry?.({
-            label: `Create project: ${name}`,
+            label: `Create project: ${trimmedName}`,
             onUndo: async (): Promise<void> => {
-              await api.projects.delete(name);
+              await api.projects.delete(trimmedName);
               await refreshProjects();
-              if (previousProjectId && previousProjectId !== name) {
+              if (previousProjectId && previousProjectId !== trimmedName) {
                 await handleLoadProject(previousProjectId);
               }
             },
             onRedo: async (): Promise<void> => {
-              await api.projects.create(name, type, language);
+              await api.projects.create(trimmedName, type, language);
               await refreshProjects();
-              await handleLoadProject(name);
+              await handleLoadProject(trimmedName);
             },
           });
         }

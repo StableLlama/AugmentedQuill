@@ -33,7 +33,12 @@ import {
   Superscript,
   Type,
   Wand2,
+  BookOpen,
+  Layers,
+  Columns,
 } from 'lucide-react';
+import { useShallow } from 'zustand/react/shallow';
+import { useUIStore, UIStoreState } from '../../../stores/uiStore';
 
 import { Button } from '../../../components/ui/Button';
 import {
@@ -48,14 +53,14 @@ import { useClickOutside } from '../../../utils/hooks';
 import type { AppTheme } from '../../../types/ui';
 
 type HeaderCenterControlsProps = {
-  viewControls: HeaderViewControls;
-  formatControls: HeaderFormatControls;
+  title: string | null;
+  hasUpdates?: boolean;
   aiControls: HeaderAiControls;
   modelControls: HeaderModelControls;
   themeTokens: HeaderThemeTokens;
 };
 
-type FormatButton = {
+export type FormatButton = {
   key: string;
   icon: React.ReactNode;
   label: string;
@@ -63,7 +68,7 @@ type FormatButton = {
   extraClass?: string;
 };
 
-interface ViewModeSelectorProps {
+export interface ViewModeSelectorProps {
   viewMode: string;
   setViewMode: (mode: 'raw' | 'markdown' | 'wysiwyg') => void;
   showWhitespace: boolean;
@@ -88,7 +93,7 @@ const VIEW_MODES: Array<{
   { key: 'wysiwyg', icon: <Eye size={14} />, label: 'Visual' },
 ];
 
-const ViewModeSelector: React.FC<ViewModeSelectorProps> = ({
+export const ViewModeSelector: React.FC<ViewModeSelectorProps> = ({
   viewMode,
   setViewMode,
   showWhitespace,
@@ -216,7 +221,7 @@ const ViewModeSelector: React.FC<ViewModeSelectorProps> = ({
   );
 };
 
-interface FormatToolbarProps {
+export interface FormatToolbarProps {
   allFormatButtons: FormatButton[];
   inlineCount: number;
   getFormatButtonClass: (key: string) => string;
@@ -232,7 +237,7 @@ interface FormatToolbarProps {
   t: (key: string) => string;
 }
 
-const FormatToolbar: React.FC<FormatToolbarProps> = ({
+export const FormatToolbar: React.FC<FormatToolbarProps> = ({
   allFormatButtons,
   inlineCount,
   getFormatButtonClass,
@@ -450,30 +455,20 @@ const AiChapterControls: React.FC<AiChapterControlsProps> = ({
 };
 
 export const HeaderCenterControls: React.FC<HeaderCenterControlsProps> = ({
-  viewControls,
-  formatControls,
   aiControls,
   modelControls,
   themeTokens,
+  title,
 }: HeaderCenterControlsProps) => {
   const { t } = useTranslation();
-  const {
-    viewMode,
-    setViewMode,
-    showWhitespace,
-    setShowWhitespace,
-    isViewMenuOpen,
-    setIsViewMenuOpen,
-  } = viewControls;
-  const {
-    handleFormat,
-    getFormatButtonClass,
-    isFormatMenuOpen,
-    setIsFormatMenuOpen,
-    isMobileFormatMenuOpen,
-    setIsMobileFormatMenuOpen,
-    onOpenImages,
-  } = formatControls;
+
+  const { workspaceMode, setWorkspaceMode } = useUIStore(
+    useShallow((s: UIStoreState) => ({
+      workspaceMode: s.workspaceMode,
+      setWorkspaceMode: s.setWorkspaceMode,
+    }))
+  );
+
   const { handleAiAction, isAiActionLoading, isWritingAvailable, isChapterEmpty } =
     aiControls;
   const {
@@ -533,121 +528,6 @@ export const HeaderCenterControls: React.FC<HeaderCenterControlsProps> = ({
   }, []);
 
   useClickOutside(modelMenuRef, (): void => setIsModelMenuOpen(false), isModelMenuOpen);
-  useClickOutside(
-    formatMenuRef,
-    (): void => setIsFormatMenuOpen(false),
-    isFormatMenuOpen
-  );
-
-  const allFormatButtons: FormatButton[] = [
-    {
-      key: 'bold',
-      icon: <Bold size={16} />,
-      label: 'Bold',
-      onClick: (): void => handleFormat('bold'),
-    },
-    {
-      key: 'italic',
-      icon: <Italic size={16} />,
-      label: 'Italic',
-      onClick: (): void => handleFormat('italic'),
-    },
-    {
-      key: 'image',
-      icon: <ImageIcon size={16} />,
-      label: 'Insert Image',
-      onClick: onOpenImages,
-    },
-    {
-      key: 'h1',
-      icon: <span className="font-serif font-bold text-xs">H1</span>,
-      label: 'Heading 1',
-      onClick: (): void => handleFormat('h1'),
-    },
-    {
-      key: 'h2',
-      icon: <span className="font-serif font-bold text-xs">H2</span>,
-      label: 'Heading 2',
-      onClick: (): void => handleFormat('h2'),
-    },
-    {
-      key: 'h3',
-      icon: <span className="font-serif font-bold text-xs">H3</span>,
-      label: 'Heading 3',
-      onClick: (): void => handleFormat('h3'),
-    },
-    {
-      key: 'ul',
-      icon: <List size={16} />,
-      label: 'List',
-      onClick: (): void => handleFormat('ul'),
-    },
-    {
-      key: 'ol',
-      icon: <ListOrdered size={16} />,
-      label: 'Numbered List',
-      onClick: (): void => handleFormat('ol'),
-    },
-    {
-      key: 'quote',
-      icon: <Quote size={16} />,
-      label: 'Blockquote',
-      onClick: (): void => handleFormat('quote'),
-    },
-    {
-      key: 'link',
-      icon: <LinkIcon size={16} />,
-      label: 'Link',
-      onClick: (): void => handleFormat('link'),
-    },
-    {
-      key: 'footnote',
-      icon: <Hash size={14} />,
-      label: 'Footnote',
-      onClick: (): void => handleFormat('footnote'),
-    },
-    {
-      key: 'codeblock',
-      icon: <Code2 size={16} />,
-      label: 'Fenced Code Block',
-      onClick: (): void => handleFormat('codeblock'),
-    },
-    {
-      key: 'subscript',
-      icon: <Subscript size={16} />,
-      label: 'Subscript',
-      onClick: (): void => handleFormat('subscript'),
-    },
-    {
-      key: 'superscript',
-      icon: <Superscript size={16} />,
-      label: 'Superscript',
-      onClick: (): void => handleFormat('superscript'),
-    },
-    {
-      key: 'strikethrough',
-      icon: <Strikethrough size={16} />,
-      label: 'Strikethrough',
-      onClick: (): void => handleFormat('strikethrough'),
-    },
-  ];
-
-  const showInlineViewTabs = centerWidth >= 900;
-
-  const inlineCount = ((): number => {
-    if (centerWidth >= 1500) return allFormatButtons.length;
-    if (centerWidth >= 1320) return 12;
-    if (centerWidth >= 1180) return 10;
-    if (centerWidth >= 1060) return 8;
-    if (centerWidth >= 960) return 6;
-    if (centerWidth >= 860) return 4;
-    if (centerWidth >= 760) return 2;
-    return 0;
-  })();
-
-  const effectiveInlineCount =
-    inlineCount === allFormatButtons.length - 1 ? allFormatButtons.length : inlineCount;
-
   const showAiControls = centerWidth >= 860;
   const showAiLabel = centerWidth >= 1180;
   const showModelInline = centerWidth >= 1360;
@@ -665,36 +545,65 @@ export const HeaderCenterControls: React.FC<HeaderCenterControlsProps> = ({
       ref={centerRef}
       className="basis-full sm:basis-auto order-3 sm:order-2 flex-1 flex justify-center items-center min-w-0 px-2 space-x-2 xl:space-x-4 py-1 sm:py-0"
     >
-      <ViewModeSelector
-        viewMode={viewMode}
-        setViewMode={setViewMode}
-        showWhitespace={showWhitespace}
-        setShowWhitespace={setShowWhitespace}
-        showInlineTabs={showInlineViewTabs}
-        isViewMenuOpen={isViewMenuOpen}
-        setIsViewMenuOpen={setIsViewMenuOpen}
-        isLight={isLight}
-        iconColor={iconColor}
-        iconHover={iconHover}
-        buttonActive={buttonActive}
-        t={t}
-      />
+      {/* Workspace Mode Toggles */}
+      <div
+        className={`flex items-center rounded-md p-1 border ${
+          isLight
+            ? 'bg-brand-gray-100 border-brand-gray-200'
+            : 'bg-brand-gray-800 border-brand-gray-700'
+        }`}
+      >
+        <button
+          onClick={() => setWorkspaceMode('page')}
+          className={`flex items-center justify-center gap-1.5 px-3 py-1 text-xs font-medium rounded-sm transition-colors ${
+            workspaceMode === 'page'
+              ? isLight
+                ? 'bg-white shadow-sm text-brand-gray-900 border border-brand-gray-200'
+                : 'bg-brand-gray-700 text-brand-gray-100 border border-brand-gray-600'
+              : isLight
+                ? 'text-brand-gray-500 hover:text-brand-gray-700'
+                : 'text-brand-gray-400 hover:text-brand-gray-200 hover:bg-brand-gray-700/50'
+          }`}
+          title={t('Page Mode')}
+        >
+          <FileText size={14} />
+          <span className="hidden xl:inline">{t('Page')}</span>
+        </button>
 
-      <FormatToolbar
-        allFormatButtons={allFormatButtons}
-        inlineCount={effectiveInlineCount}
-        getFormatButtonClass={getFormatButtonClass}
-        isFormatMenuOpen={isFormatMenuOpen}
-        setIsFormatMenuOpen={setIsFormatMenuOpen}
-        isMobileFormatMenuOpen={isMobileFormatMenuOpen}
-        setIsMobileFormatMenuOpen={setIsMobileFormatMenuOpen}
-        formatMenuRef={formatMenuRef}
-        dividerColor={dividerColor}
-        isLight={isLight}
-        buttonActive={buttonActive}
-        currentTheme={currentTheme}
-        t={t}
-      />
+        <button
+          onClick={() => setWorkspaceMode('scenes')}
+          className={`flex items-center justify-center gap-1.5 px-3 py-1 text-xs font-medium rounded-sm transition-colors ${
+            workspaceMode === 'scenes'
+              ? isLight
+                ? 'bg-white shadow-sm text-brand-gray-900 border border-brand-gray-200'
+                : 'bg-brand-gray-700 text-brand-gray-100 border border-brand-gray-600'
+              : isLight
+                ? 'text-brand-gray-500 hover:text-brand-gray-700'
+                : 'text-brand-gray-400 hover:text-brand-gray-200 hover:bg-brand-gray-700/50'
+          }`}
+          title={t('Scenes Mode')}
+        >
+          <BookOpen size={14} />
+          <span className="hidden xl:inline">{t('Scenes')}</span>
+        </button>
+
+        <button
+          onClick={() => setWorkspaceMode('split')}
+          className={`flex items-center justify-center gap-1.5 px-3 py-1 text-xs font-medium rounded-sm transition-colors ${
+            workspaceMode === 'split'
+              ? isLight
+                ? 'bg-white shadow-sm text-brand-gray-900 border border-brand-gray-200'
+                : 'bg-brand-gray-700 text-brand-gray-100 border border-brand-gray-600'
+              : isLight
+                ? 'text-brand-gray-500 hover:text-brand-gray-700'
+                : 'text-brand-gray-400 hover:text-brand-gray-200 hover:bg-brand-gray-700/50'
+          }`}
+          title={t('Split Mode')}
+        >
+          <Columns size={14} />
+          <span className="hidden xl:inline">{t('Split')}</span>
+        </button>
+      </div>
 
       {showAiControls && (
         <div className="hidden lg:flex items-center space-x-1">

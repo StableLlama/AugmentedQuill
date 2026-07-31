@@ -41,7 +41,12 @@ export interface ChatApi {
       model_name?: string;
       chat_id?: string;
     },
-    onProseChunk?: (chapId: number, writeMode: string, accumulated: string) => void,
+    onProseChunk?: (
+      chapId: number,
+      writeMode: string,
+      accumulated: string,
+      streamId: number
+    ) => void,
     isStopped?: () => boolean
   ) => Promise<ChatToolExecutionResponse>;
   undoToolBatch: (batchId: string) => Promise<{
@@ -64,9 +69,15 @@ type ToolProseChunk = {
   chapId: number;
   writeMode: string;
   accumulated: string;
+  streamId: number;
 };
 
 type ParsedChatToolEvent =
+  | {
+      type: 'prose_start';
+      chapId: number;
+      writeMode: string;
+    }
   | {
       type: 'prose_chunk';
       chapId: number;
@@ -95,6 +106,14 @@ const parseChatToolEvent = (dataStr: string): ParsedChatToolEvent | null => {
       mutations?: ChatToolExecutionResponse['mutations'];
       error?: string;
     };
+
+    if (event.type === 'prose_start') {
+      return {
+        type: 'prose_start',
+        chapId: event.chap_id ?? 0,
+        writeMode: event.write_mode ?? '',
+      };
+    }
 
     if (event.type === 'prose_chunk') {
       return {
@@ -150,7 +169,12 @@ const yieldToMacrotask = async (): Promise<void> => {
 };
 
 const createProseChunkScheduler = (
-  onProseChunk?: (chapId: number, writeMode: string, accumulated: string) => void
+  onProseChunk?: (
+    chapId: number,
+    writeMode: string,
+    accumulated: string,
+    streamId: number
+  ) => void
 ): ProseChunkScheduler => {
   let pendingProseChunk: ToolProseChunk | null = null;
   let proseFlushHandle: ReturnType<typeof setTimeout> | null = null;
@@ -161,7 +185,7 @@ const createProseChunkScheduler = (
     if (!pendingProseChunk || !onProseChunk) return;
     const chunk = pendingProseChunk;
     pendingProseChunk = null;
-    onProseChunk(chunk.chapId, chunk.writeMode, chunk.accumulated);
+    onProseChunk(chunk.chapId, chunk.writeMode, chunk.accumulated, chunk.streamId);
   };
 
   const scheduleProseChunkFlush = (): void => {
@@ -258,7 +282,12 @@ export const createChatApi = (projectName: string): ChatApi => ({
       model_name?: string;
       chat_id?: string;
     },
-    onProseChunk?: (chapId: number, writeMode: string, accumulated: string) => void,
+    onProseChunk?: (
+      chapId: number,
+      writeMode: string,
+      accumulated: string,
+      streamId: number
+    ) => void,
     isStopped?: () => boolean
   ): Promise<ChatToolExecutionResponse> => {
     const res = await fetch(`/api/v1${projectEndpoint(projectName, '/chat/tools')}`, {
@@ -280,6 +309,7 @@ export const createChatApi = (projectName: string): ChatApi => ({
     let buffer = '';
 
     const proseChunkScheduler = createProseChunkScheduler(onProseChunk);
+    let currentProseStreamId = 0;
 
     try {
       while (true) {
@@ -306,11 +336,14 @@ export const createChatApi = (projectName: string): ChatApi => ({
           const event = parseChatToolEvent(dataStr);
           if (!event) continue;
 
-          if (event.type === 'prose_chunk') {
+          if (event.type === 'prose_start') {
+            currentProseStreamId += 1;
+          } else if (event.type === 'prose_chunk') {
             proseChunkScheduler.setPendingProseChunk({
               chapId: event.chapId,
               writeMode: event.writeMode,
               accumulated: event.accumulated,
+              streamId: currentProseStreamId,
             });
             proseChunkScheduler.scheduleProseChunkFlush();
           } else if (event.type === 'result') {

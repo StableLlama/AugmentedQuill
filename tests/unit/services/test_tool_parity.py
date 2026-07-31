@@ -16,7 +16,7 @@ from unittest import TestCase
 
 from fastapi.testclient import TestClient
 
-import augmentedquill.main as main
+from augmentedquill import main
 
 
 def _parse_tool_sse_result(text: str) -> dict:
@@ -98,12 +98,98 @@ class ToolParityTest(TestCase):
         os.environ.pop("AUGQ_PROJECTS_ROOT", None)
         os.environ.pop("AUGQ_PROJECTS_REGISTRY", None)
 
+    @staticmethod
+    def _normalize_manager_tool_call(name: str, args: dict) -> tuple[str, dict]:
+        """Translate legacy per-action tool invocations to manager tool actions."""
+        if name == "get_project_overview":
+            return "manage_project", {"action": "get_overview", **args}
+        if name == "create_project":
+            return "manage_project", {"action": "create", "create_data": args}
+        if name == "list_projects":
+            return "manage_project", {"action": "list"}
+        if name == "delete_project":
+            return "manage_project", {"action": "delete", "delete_data": args}
+        if name == "change_project_type":
+            return (
+                "manage_project",
+                {
+                    "action": "change_type",
+                    "type_data": {"new_type": args.get("new_type")},
+                },
+            )
+
+        if name == "get_story_metadata":
+            return "manage_story_core", {"action": "get_metadata"}
+        if name == "update_story_metadata":
+            return "manage_story_core", {
+                "action": "update_metadata",
+                "update_data": args,
+            }
+        if name == "read_story_content":
+            return "manage_story_core", {"action": "read_content", "read_data": args}
+        if name == "sync_story_summary":
+            return "manage_story_core", {"action": "sync_summary", "sync_data": args}
+
+        if name == "read_scratchpad":
+            req = {"action": "read"}
+            if "chat_id" in args:
+                req["chat_id"] = args["chat_id"]
+            return "manage_scratchpad", req
+        if name == "write_scratchpad":
+            return "manage_scratchpad", {"action": "write", "write_data": args}
+
+        if name == "get_sourcebook_entry":
+            return "manage_sourcebook", {"action": "get", **args}
+        if name == "create_sourcebook_entry":
+            return "manage_sourcebook", {"action": "create", "entry_data": args}
+        if name == "update_sourcebook_entry":
+            payload = dict(args)
+            name_or_id = payload.pop("name_or_id", None)
+            return (
+                "manage_sourcebook",
+                {"action": "update", "name_or_id": name_or_id, "update_data": payload},
+            )
+        if name == "delete_sourcebook_entry":
+            return "manage_sourcebook", {"action": "delete", **args}
+        if name == "list_sourcebook_entries":
+            return "manage_sourcebook", {"action": "list", **args}
+        if name == "add_sourcebook_relation":
+            return "manage_sourcebook", {
+                "action": "add_relation",
+                "relation_data": args,
+            }
+        if name == "remove_sourcebook_relation":
+            return "manage_sourcebook", {
+                "action": "remove_relation",
+                "relation_data": args,
+            }
+
+        if name == "list_images":
+            return "manage_images", {"action": "list"}
+        if name == "generate_image_description":
+            return "manage_images", {"action": "generate_description", **args}
+        if name == "create_image_placeholder":
+            return "manage_images", {
+                "action": "create_placeholder",
+                "create_data": args,
+            }
+        if name == "set_image_metadata":
+            return "manage_images", {"action": "set_metadata", "metadata_data": args}
+
+        if name == "search_in_project":
+            return "search_and_replace", {"action": "search", **args}
+        if name == "replace_in_project":
+            return "search_and_replace", {"action": "replace", **args}
+
+        return name, args
+
     def _call_tool(self, name, args, model_type: str = "CHAT"):
+        normalized_name, normalized_args = self._normalize_manager_tool_call(name, args)
         body = {
             "model_name": "gpt-4o",
             "model_type": model_type,
             "messages": [
-                {"role": "user", "content": f"Execute {name}"},
+                {"role": "user", "content": f"Execute {normalized_name}"},
                 {
                     "role": "assistant",
                     "content": None,
@@ -112,8 +198,8 @@ class ToolParityTest(TestCase):
                             "id": "call_123",
                             "type": "function",
                             "function": {
-                                "name": name,
-                                "arguments": json.dumps(args),
+                                "name": normalized_name,
+                                "arguments": json.dumps(normalized_args),
                             },
                         }
                     ],
@@ -339,7 +425,7 @@ class ToolParityTest(TestCase):
 
     def test_sync_summary(self):
         # We need to mock the LLM for sync_summary because it calls unified_chat_complete
-        from unittest.mock import patch, AsyncMock
+        from unittest.mock import AsyncMock, patch
 
         _dummy_runtime = (
             "http://localhost:11434/v1",
@@ -378,7 +464,7 @@ class ToolParityTest(TestCase):
             self.assertEqual(res["summary"], "Synced summary")
 
     def test_sync_summary_with_tool_call(self):
-        from unittest.mock import patch, AsyncMock
+        from unittest.mock import AsyncMock, patch
 
         _dummy_runtime = (
             "http://localhost:11434/v1",
@@ -440,7 +526,7 @@ class ToolParityTest(TestCase):
             mock_tool.assert_called_once()
 
     def test_sync_story_summary(self):
-        from unittest.mock import patch, AsyncMock
+        from unittest.mock import AsyncMock, patch
 
         _dummy_runtime = (
             "http://localhost:11434/v1",

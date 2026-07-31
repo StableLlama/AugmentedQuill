@@ -9,18 +9,24 @@
 
 from __future__ import annotations
 
+import base64
+import json
 import re
 import shutil
-import json
-import base64
-from uuid import uuid4
 from pathlib import Path
+from uuid import uuid4
 
 from fastapi import HTTPException
-
-from augmentedquill.services.exceptions import BadRequestError
+from pydantic import ValidationError
 
 from augmentedquill.core.config import load_story_config, save_story_config
+from augmentedquill.models.story import (
+    BookMutationResponse,
+    ProjectMutationResponse,
+    ProjectSelectResponse,
+    StoryPayload,
+)
+from augmentedquill.services.exceptions import BadRequestError
 from augmentedquill.services.projects.project_helpers import (
     normalize_story_for_frontend,
 )
@@ -33,12 +39,6 @@ from augmentedquill.services.projects.projects import (
     list_projects,
     load_registry,
     select_project,
-)
-from augmentedquill.models.story import (
-    BookMutationResponse,
-    ProjectMutationResponse,
-    ProjectSelectResponse,
-    StoryPayload,
 )
 
 _BOOK_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,80}$")
@@ -101,7 +101,11 @@ def delete_project_response(name: str) -> ProjectMutationResponse:
     return ProjectMutationResponse(
         ok=True,
         message=msg,
-        registry={"current": normalized_reg["current"], "recent": normalized_reg["recent"], "available": available},  # type: ignore[arg-type]
+        registry={
+            "current": normalized_reg["current"],
+            "recent": normalized_reg["recent"],
+            "available": available,
+        },  # type: ignore[arg-type]
     )
 
 
@@ -122,18 +126,41 @@ def select_project_response(name: str) -> ProjectSelectResponse:
             return ProjectSelectResponse(
                 ok=True,
                 message=msg,
-                registry={"current": normalized_reg["current"], "recent": normalized_reg["recent"]},  # type: ignore[arg-type]
+                registry={
+                    "current": normalized_reg["current"],
+                    "recent": normalized_reg["recent"],
+                },  # type: ignore[arg-type]
                 story=None,
                 error="invalid_config",
                 error_message=error_msg,
             )
         raise
 
+    try:
+        story_payload = StoryPayload(**normalize_story_for_frontend(story))
+    except ValidationError as e:
+        return ProjectSelectResponse(
+            ok=True,
+            message=msg,
+            registry={
+                "current": normalized_reg["current"],
+                "recent": normalized_reg["recent"],
+            },  # type: ignore[arg-type]
+            story=None,
+            error="invalid_config",
+            error_message=(
+                f"Story config does not match schema requirements: {e.errors()}"
+            ),
+        )
+
     return ProjectSelectResponse(
         ok=True,
         message=msg,
-        registry={"current": normalized_reg["current"], "recent": normalized_reg["recent"]},  # type: ignore[arg-type]
-        story=StoryPayload(**normalize_story_for_frontend(story)),
+        registry={
+            "current": normalized_reg["current"],
+            "recent": normalized_reg["recent"],
+        },  # type: ignore[arg-type]
+        story=story_payload,
     )
 
 
@@ -152,7 +179,10 @@ def create_project_response(
     return ProjectMutationResponse(
         ok=True,
         message=msg,
-        registry={"current": normalized_reg["current"], "recent": normalized_reg["recent"]},  # type: ignore[arg-type]
+        registry={
+            "current": normalized_reg["current"],
+            "recent": normalized_reg["recent"],
+        },  # type: ignore[arg-type]
         story=StoryPayload(**normalize_story_for_frontend(story)),
     )
 

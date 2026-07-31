@@ -22,13 +22,23 @@ import {
   ViewUpdate,
   DecorationSet,
   drawSelection,
+  WidgetType,
 } from '@codemirror/view';
-import { EditorState, Compartment, Prec, Range, Transaction } from '@codemirror/state';
+import {
+  EditorState,
+  Compartment,
+  Prec,
+  Range,
+  Transaction,
+  StateEffect,
+  StateField,
+} from '@codemirror/state';
 import type { Extension } from '@codemirror/state';
 import { history, historyKeymap, defaultKeymap } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
 import { syntaxHighlighting, HighlightStyle } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
+import type { SceneId } from '../../types';
 import {
   buildMarkdownDecorationPlugin,
   markdownDecorationTheme,
@@ -38,6 +48,208 @@ import { buildClipboardExtension } from './clipboardExtension';
 import { buildDiffPlugin, externalValueSyncAnnotation } from './codeMirrorDiffPlugin';
 import { buildWhitespacePlugin } from './codeMirrorWhitespacePlugin';
 import { buildEnterExtension, buildTabExtension } from './codeMirrorKeymap';
+import { stripInlineInternalMarkers } from './internalTags';
+import { buildAnnotationExtensions } from './annotationPlugin';
+import { FloatingDiffToolbar } from './FloatingDiffToolbar';
+
+// ─── Prose-link highlight StateEffect / StateField ───────────────────────────
+// Exported so that EditorHandle.setProseHighlight can dispatch it directly on
+// the EditorView without going through a React prop.
+
+export interface ProseHighlightRange {
+  /** Owning scene identifier – used to route boundary-drag callbacks. */
+  sceneId: SceneId;
+  from: number;
+  to: number;
+}
+
+/** Callback type for prose-link boundary drag events. */
+export type ProseBoundaryCallback = (
+  sceneId: SceneId,
+  edge: 'start' | 'end',
+  offset: number
+) => void;
+
+export const setProseHighlightEffect = StateEffect.define<ProseHighlightRange[]>();
+
+export const proseHighlightField = StateField.define<ProseHighlightRange[]>({
+  create: () => [],
+  update(value: ProseHighlightRange[], tr: Transaction) {
+    for (const e of tr.effects) {
+      if (e.is(setProseHighlightEffect)) return e.value;
+    }
+    return value;
+  },
+});
+
+// ─── Prose-link boundary drag handles ────────────────────────────────────────
+
+/**
+ * Inline widget rendered at the start and end of each prose-link highlight.
+ *
+ * Visual marker is a thin vertical bar rendered via an absolutely-positioned
+ * ::before pseudo-element — zero width in text flow, no reflow, no character
+ * overlap.  The widget itself is 2 px wide to provide a clickable drag area.
+ * Only mousedown events are intercepted; all other events pass through to the
+ * editor so cursor navigation, selection, and clicks feel natural.
+ */
+class ProseHandleWidget extends WidgetType {
+  constructor(
+    private readonly sceneId: SceneId,
+    private readonly edge: 'start' | 'end',
+    private readonly offset: number,
+    private readonly callbackRef: React.MutableRefObject<ProseBoundaryCallback | null>,
+    private readonly view: EditorView
+  ) {
+    super();
+  }
+
+  eq(other: ProseHandleWidget): boolean {
+    return (
+      this.sceneId === other.sceneId &&
+      this.edge === other.edge &&
+      this.offset === other.offset
+    );
+  }
+
+  toDOM(): HTMLElement {
+    const el = document.createElement('span');
+    el.className = `cm-prose-handle cm-prose-handle-${this.edge}`;
+    el.setAttribute('aria-hidden', 'true');
+    el.setAttribute('data-testid', `handle-${this.edge}-${this.sceneId}`);
+    el.title =
+      this.edge === 'start' ? 'Drag to move scene start' : 'Drag to move scene end';
+    const { view, sceneId, edge, callbackRef } = this;
+    el.addEventListener('mousedown', (downEv: MouseEvent): void => {
+      downEv.preventDefault();
+      downEv.stopPropagation();
+      let currentOffset = this.offset;
+      const onMove = (moveEv: MouseEvent): void => {
+        const pos = view.posAtCoords({ x: moveEv.clientX, y: moveEv.clientY }, false);
+        if (pos == null) return;
+        currentOffset = pos;
+        const current = view.state.field(proseHighlightField);
+        const draggedEntry = current.find(
+          (r: ProseHighlightRange): boolean => r.sceneId === sceneId
+        );
+        if (!draggedEntry) return;
+        const draggedFrom = edge === 'start' ? pos : draggedEntry.from;
+        const draggedTo = edge === 'end' ? pos : draggedEntry.to;
+        const updated = current.map((r: ProseHighlightRange): ProseHighlightRange => {
+          if (r.sceneId === sceneId) {
+            return edge === 'start' ? { ...r, from: pos } : { ...r, to: pos };
+          }
+          // When the new dragged range is valid, push any range that it now overlaps
+          // so no two scenes share the same text during live preview.
+          if (draggedFrom >= draggedTo) return r;
+          if (r.to <= draggedFrom || r.from >= draggedTo) return r;
+          if (edge === 'end') {
+            // Right boundary moved right: push the other scene's start.
+            return draggedTo < r.to ? { ...r, from: draggedTo } : r;
+          } else {
+            // Left boundary moved left: push the other scene's end.
+            return r.from < draggedFrom ? { ...r, to: draggedFrom } : r;
+          }
+        });
+        view.dispatch({ effects: setProseHighlightEffect.of(updated) });
+      };
+      const onUp = (): void => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        if (typeof window !== 'undefined' && window.__AQ_DEBUG_RANGES) {
+          console.log(
+            `[AQ:ProseHandleWidget] mouseup, sceneId=${sceneId} edge=${edge} currentOffset=${currentOffset}`
+          );
+        }
+        callbackRef.current?.(sceneId, edge, currentOffset);
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+    return el;
+  }
+
+  /** Let the editor handle all events except mousedown (drag affordance). */
+  ignoreEvent(event: Event): boolean {
+    return event.type !== 'mousedown';
+  }
+}
+
+/**
+ * Factory that builds a ViewPlugin rendering mark decorations plus draggable
+ * boundary widgets for all active prose-link highlights.  Accepts a stable
+ * MutableRefObject so the plugin can be constructed once at mount time while
+ * always reading the latest callback.
+ */
+function buildProseHighlightPlugin(
+  callbackRef: React.MutableRefObject<ProseBoundaryCallback | null>
+): Extension {
+  return ViewPlugin.fromClass(
+    class {
+      decorations: DecorationSet;
+      constructor(view: EditorView) {
+        this.decorations = this.build(view);
+      }
+      update(u: ViewUpdate): void {
+        if (
+          u.state.field(proseHighlightField) !==
+            u.startState.field(proseHighlightField) ||
+          u.docChanged
+        ) {
+          this.decorations = this.build(u.view);
+        }
+      }
+      build(view: EditorView): DecorationSet {
+        const ranges = view.state.field(proseHighlightField);
+        if (ranges.length === 0) return Decoration.none;
+        const docLen = view.state.doc.length;
+        const decos: Range<Decoration>[] = [];
+        const sorted = [...ranges].sort(
+          (a: ProseHighlightRange, b: ProseHighlightRange): number => a.from - b.from
+        );
+        for (const entry of sorted) {
+          const from = Math.max(0, Math.min(entry.from, docLen));
+          const to = Math.max(0, Math.min(entry.to, docLen));
+          if (from >= to) continue;
+          // side:-1 on the end widget and side:1 on the start widget ensure that
+          // when two scenes share a boundary position the end bracket ']' sorts
+          // before the start bracket '[', giving the correct visual '][' order.
+          decos.push(
+            Decoration.widget({
+              widget: new ProseHandleWidget(
+                entry.sceneId,
+                'end',
+                to,
+                callbackRef,
+                view
+              ),
+              side: -1,
+            }).range(to)
+          );
+          decos.push(
+            Decoration.mark({ class: 'cm-prose-link-highlight' }).range(from, to)
+          );
+          decos.push(
+            Decoration.widget({
+              widget: new ProseHandleWidget(
+                entry.sceneId,
+                'start',
+                from,
+                callbackRef,
+                view
+              ),
+              side: 1,
+            }).range(from)
+          );
+        }
+        return Decoration.set(decos, true);
+      }
+    },
+    {
+      decorations: (v: { decorations: DecorationSet }): DecorationSet => v.decorations,
+    }
+  );
+}
 
 // ─── Markdown syntax highlight style ────────────────────────────────────────
 // Maps Lezer markdown tokens to CSS properties so prose writers see inline
@@ -63,6 +275,8 @@ const mdHighlightStyle = HighlightStyle.define([
   { tag: tags.contentSeparator, opacity: '0.5' },
   { tag: tags.labelName, opacity: '0.55' },
 ]);
+
+const buildSceneMarkerHideExtension = (): Extension => [];
 
 // ─── Base theme ──────────────────────────────────────────────────────────────
 // Makes CodeMirror transparent so the host element's styles (font, colour, bg)
@@ -217,6 +431,39 @@ const baseTheme = EditorView.theme({
     backgroundColor: 'rgba(245, 158, 11, 0.25)',
     borderRadius: '2px',
   },
+  // Prose-link highlight: page colour with elevated saturation/brightness so the
+  // reader can immediately see which prose passage is linked to the selected card.
+  // A box-shadow bottom-line provides a secondary visual cue on all themes.
+  // The exact colour is overridden per-theme via proseHighlightBgCompartment.
+  '.cm-prose-link-highlight': {
+    backgroundColor: 'rgba(245, 158, 11, 0.40)',
+    borderRadius: '2px',
+    boxShadow: 'inset 0 -2px 0 rgba(180, 110, 0, 0.45)',
+  },
+  // Draggable boundary handles rendered at the start/end of each prose-link
+  // highlight.  The marker is an absolutely-positioned ::before pill — zero
+  // width in text flow so the text never reflows, but 6 px wide visually so
+  // it can be grabbed with the mouse.  Mousedown on the ::before area bubbles
+  // to the widget for drag-to-resize; all other events pass through.
+  '.cm-prose-handle': {
+    display: 'inline-block',
+    position: 'relative',
+    width: '0px',
+    verticalAlign: 'baseline',
+    cursor: 'ew-resize',
+    userSelect: 'none',
+    pointerEvents: 'all',
+  },
+  '.cm-prose-handle::before': {
+    content: '""',
+    position: 'absolute',
+    left: '-3px',
+    top: '-0.35em',
+    height: '0.7em',
+    width: '6px',
+    background: 'rgba(180, 100, 0, 0.50)',
+    borderRadius: '3px',
+  },
   // Placeholder styling
   '.cm-placeholder': {
     color: 'inherit',
@@ -312,6 +559,38 @@ export interface CodeMirrorEditorProps {
    * modes each get the right contrast level.
    */
   selectionBg?: string;
+  /**
+   * Background colour for the prose-link highlight decoration (the tinted mark
+   * shown when a scene card with a linked range is selected on the Pinboard).
+   * Should be based on the page colour with higher saturation/contrast so the
+   * highlight feels like the page itself is "waking up" around the passage.
+   * Pass a theme-appropriate computed value from the Editor component.
+   */
+  proseHighlightBg?: string;
+  /** Called when a drag starts from inside the editor. Use to set custom dataTransfer data. */
+  onDragStart?: (event: DragEvent, view: EditorView) => void;
+  /**
+   * Called when the user drags a prose-link boundary handle to a new position.
+   * Fires on mouse-up with the scene id, which edge was moved, and the new
+   * character offset.  Use this to persist updated start_offset / end_offset.
+   */
+  onProseBoundaryChange?: ProseBoundaryCallback;
+  /** When true, scene marker comments are hidden in the rendered editor view. */
+  hideSceneMarkers?: boolean;
+  /**
+   * Called when the user accepts a diff via the floating toolbar.
+   * The parent should update the baseline to match the current content.
+   */
+  onAcceptDiff?: () => void;
+  /**
+   * Called when the user rejects a diff via the floating toolbar.
+   * The parent should revert content to the baseline.
+   */
+  onRejectDiff?: () => void;
+  /** Whether to show the floating diff accept/reject toolbar on hover. */
+  showDiffToolbar?: boolean;
+  /** Whether the current theme is light (used for diff toolbar styling). */
+  isLight?: boolean;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -340,6 +619,14 @@ export const CodeMirrorEditor = React.forwardRef<
       spellCheck = false,
       onOpenSearch,
       selectionBg,
+      proseHighlightBg,
+      onDragStart,
+      onProseBoundaryChange,
+      hideSceneMarkers = false,
+      onAcceptDiff,
+      onRejectDiff,
+      showDiffToolbar = false,
+      isLight = true,
     }: CodeMirrorEditorProps,
     ref: React.ForwardedRef<EditorView | null>
   ) => {
@@ -362,9 +649,13 @@ export const CodeMirrorEditor = React.forwardRef<
     const onChangeRef = useRef(onChange);
     const onSelectionChangeRef = useRef(onSelectionChange);
     const onOpenSearchRef = useRef(onOpenSearch);
+    const onDragStartRef = useRef(onDragStart);
+    const proseBoundaryCallbackRef = useRef<ProseBoundaryCallback | null>(null);
     onChangeRef.current = onChange;
     onSelectionChangeRef.current = onSelectionChange;
     onOpenSearchRef.current = onOpenSearch;
+    onDragStartRef.current = onDragStart;
+    proseBoundaryCallbackRef.current = onProseBoundaryChange ?? null;
 
     // Track the last value emitted by our own onChange so we can distinguish
     // externally-driven value changes from the echo of our own edits.
@@ -379,8 +670,9 @@ export const CodeMirrorEditor = React.forwardRef<
     const placeholderCompartment = useRef(new Compartment());
     const attributesCompartment = useRef(new Compartment());
     const mdDecorationCompartment = useRef(new Compartment());
+    const markerHideCompartment = useRef(new Compartment());
     const selectionBgCompartment = useRef(new Compartment());
-
+    const proseHighlightBgCompartment = useRef(new Compartment());
     // ── Extension builders ──────────────────────────────────────────────────
 
     const buildAttributesExtension = (
@@ -504,6 +796,20 @@ export const CodeMirrorEditor = React.forwardRef<
       });
     };
 
+    // Overrides the CSS variable --aq-prose-highlight-bg used by
+    // .cm-prose-link-highlight so the background matches the editor page colour
+    // with elevated saturation/contrast (computed by the parent Editor component).
+    const buildProseHighlightBgExtension = (bg: string | undefined): Extension => {
+      if (!bg) return [];
+      return EditorView.theme({
+        '.cm-prose-link-highlight': {
+          backgroundColor: `${bg} !important`,
+          // Keep the bottom-shadow underline consistent across theme overrides.
+          boxShadow: 'inset 0 -2px 0 rgba(180, 110, 0, 0.45) !important',
+        },
+      });
+    };
+
     // ── Mount / unmount ─────────────────────────────────────────────────────
     // ── Mount / unmount ─────────────────────────────────────────────────────
 
@@ -557,7 +863,16 @@ export const CodeMirrorEditor = React.forwardRef<
         ),
         placeholderCompartment.current.of(buildPlaceholderExtension(placeholder)),
         mdDecorationCompartment.current.of(buildMdDecorationExtension(viewMode)),
+        markerHideCompartment.current.of(buildSceneMarkerHideExtension()),
         selectionBgCompartment.current.of(buildSelectionBgExtension(selectionBg)),
+        proseHighlightBgCompartment.current.of(
+          buildProseHighlightBgExtension(proseHighlightBg)
+        ),
+        // Prose-link highlight: StateField persists the ranges, ViewPlugin renders them.
+        proseHighlightField,
+        buildProseHighlightPlugin(proseBoundaryCallbackRef),
+        // Annotation highlights.
+        ...buildAnnotationExtensions(),
         EditorView.updateListener.of((update: ViewUpdate): void => {
           if (update.docChanged) {
             const isExternalSync = update.transactions.some((tx: Transaction) =>
@@ -580,10 +895,15 @@ export const CodeMirrorEditor = React.forwardRef<
         }),
       ];
 
-      const state = EditorState.create({ doc: value, extensions });
+      const state = EditorState.create({
+        doc: hideSceneMarkers ? stripInlineInternalMarkers(value) : value,
+        extensions,
+      });
       const view = new EditorView({ state, parent: containerRef.current });
       viewRef.current = view;
-      lastEmittedRef.current = value;
+      lastEmittedRef.current = hideSceneMarkers
+        ? stripInlineInternalMarkers(value)
+        : value;
 
       // Expose the EditorView via forwardRef
       if (typeof ref === 'function') {
@@ -592,9 +912,19 @@ export const CodeMirrorEditor = React.forwardRef<
         (ref as React.MutableRefObject<EditorView | null>).current = view;
       }
 
+      // Expose the EditorView on window for E2E automation so tests can
+      // dispatch cursor selections deterministically (mirrors the pattern
+      // used by the test fixture in tests/e2e/fixture/main.ts).
+      if (typeof window !== 'undefined') {
+        (window as unknown as { __aqEditorView?: EditorView }).__aqEditorView = view;
+      }
+
       return (): void => {
         view.destroy();
         viewRef.current = null;
+        if (typeof window !== 'undefined') {
+          delete (window as unknown as { __aqEditorView?: EditorView }).__aqEditorView;
+        }
         if (typeof ref === 'function') {
           ref(null);
         } else if (ref) {
@@ -608,6 +938,7 @@ export const CodeMirrorEditor = React.forwardRef<
     useEffect((): void => {
       viewRef.current?.dispatch({
         effects: languageCompartment.current.reconfigure(buildLanguageExtension(mode)),
+        annotations: Transaction.addToHistory.of(false),
       });
     }, [mode]);
 
@@ -616,14 +947,25 @@ export const CodeMirrorEditor = React.forwardRef<
         effects: mdDecorationCompartment.current.reconfigure(
           buildMdDecorationExtension(viewMode)
         ),
+        annotations: Transaction.addToHistory.of(false),
       });
     }, [viewMode]);
+
+    useEffect((): void => {
+      viewRef.current?.dispatch({
+        effects: markerHideCompartment.current.reconfigure(
+          buildSceneMarkerHideExtension()
+        ),
+        annotations: Transaction.addToHistory.of(false),
+      });
+    }, [hideSceneMarkers]);
 
     useEffect((): void => {
       viewRef.current?.dispatch({
         effects: wsCompartment.current.reconfigure(
           buildWsExtension(showWhitespace, baselineValue, showDiff, streamingMode)
         ),
+        annotations: Transaction.addToHistory.of(false),
       });
     }, [showWhitespace, baselineValue, showDiff, streamingMode]);
 
@@ -632,6 +974,7 @@ export const CodeMirrorEditor = React.forwardRef<
         effects: enterCompartment.current.reconfigure(
           buildEnterExtension(enterBehavior)
         ),
+        annotations: Transaction.addToHistory.of(false),
       });
     }, [enterBehavior]);
 
@@ -640,14 +983,25 @@ export const CodeMirrorEditor = React.forwardRef<
         effects: selectionBgCompartment.current.reconfigure(
           buildSelectionBgExtension(selectionBg)
         ),
+        annotations: Transaction.addToHistory.of(false),
       });
     }, [selectionBg]);
+
+    useEffect((): void => {
+      viewRef.current?.dispatch({
+        effects: proseHighlightBgCompartment.current.reconfigure(
+          buildProseHighlightBgExtension(proseHighlightBg)
+        ),
+        annotations: Transaction.addToHistory.of(false),
+      });
+    }, [proseHighlightBg]);
 
     useEffect((): void => {
       viewRef.current?.dispatch({
         effects: placeholderCompartment.current.reconfigure(
           buildPlaceholderExtension(placeholder)
         ),
+        annotations: Transaction.addToHistory.of(false),
       });
     }, [placeholder]);
 
@@ -656,6 +1010,7 @@ export const CodeMirrorEditor = React.forwardRef<
         effects: attributesCompartment.current.reconfigure(
           buildAttributesExtension(language, spellCheck, placeholder)
         ),
+        annotations: Transaction.addToHistory.of(false),
       });
     }, [language, spellCheck, placeholder]);
 
@@ -670,6 +1025,7 @@ export const CodeMirrorEditor = React.forwardRef<
         effects: diffCompartment.current.reconfigure(
           buildDiffExtension(baselineValue, showDiff, streamingMode, showWhitespace)
         ),
+        annotations: Transaction.addToHistory.of(false),
       });
     }, [baselineValue, showDiff, streamingMode, showWhitespace]);
 
@@ -678,6 +1034,7 @@ export const CodeMirrorEditor = React.forwardRef<
         effects: searchHighlightCompartment.current.reconfigure(
           buildSearchHighlightExtension(searchHighlightRanges)
         ),
+        annotations: Transaction.addToHistory.of(false),
       });
     }, [searchHighlightRanges]);
 
@@ -693,21 +1050,21 @@ export const CodeMirrorEditor = React.forwardRef<
       const view = viewRef.current;
       if (!view) return;
       const docStr = view.state.doc.toString();
-      // Skip if CodeMirror already has this value (our own edit echoed back)
-      // or if the last value we emitted matches (user typed ahead of React update cycle)
-      if (docStr === value || lastEmittedRef.current === value) return;
+      // When hideSceneMarkers is true, the editor document is stripped of
+      // internal markers while the value prop carries the full content with
+      // markers (injected by Editor.tsx via transferInternalMarkers).  Compare
+      // the stripped forms so the sync is skipped when the document already
+      // matches the intended visible content.
+      const stripped = hideSceneMarkers ? stripInlineInternalMarkers(value) : value;
+      if (docStr === stripped || lastEmittedRef.current === stripped) return;
 
       const { anchor, head } = view.state.selection.main;
-      const maxPos = value.length;
+      const maxPos = stripped.length;
 
       view.dispatch({
-        changes: { from: 0, to: view.state.doc.length, insert: value },
+        changes: { from: 0, to: view.state.doc.length, insert: stripped },
         annotations: [
           externalValueSyncAnnotation.of(true),
-          // External prop changes (LLM updates, dialog restores) must not enter
-          // CodeMirror's own undo history.  Without this, Ctrl+Z inside the
-          // field would undo the LLM text instead of triggering the dialog-level
-          // undo, corrupting the undo/redo button state.
           Transaction.addToHistory.of(false),
         ],
         selection: {
@@ -715,10 +1072,57 @@ export const CodeMirrorEditor = React.forwardRef<
           head: Math.min(head, maxPos),
         },
       });
-      lastEmittedRef.current = value;
+      lastEmittedRef.current = stripped;
     }, [value]);
 
-    return <div ref={containerRef} className={className} style={style} />;
+    useEffect((): (() => void) | void => {
+      const container = containerRef.current;
+      if (!container) return;
+
+      const handleContainerDragStart = (e: DragEvent): void => {
+        const view = viewRef.current;
+        if (view) {
+          onDragStartRef.current?.(e, view);
+        }
+      };
+
+      container.addEventListener('dragstart', handleContainerDragStart);
+      return () => {
+        container.removeEventListener('dragstart', handleContainerDragStart);
+      };
+    }, []);
+
+    // Intercept dragstart as it bubbles up from CM's contentDOM.
+    // By the time the event reaches this wrapper div, CM6's own dragstart
+    // handler on contentDOM has already run and set
+    // `effectAllowed = "copyMove"`.  We can override that here because we
+    // are still within the same dragstart event dispatch cycle.
+
+    // Ref for the FloatingDiffToolbar container — wraps the CM editor so
+    // the toolbar can detect hover over CM's diff decorations.
+    const toolbarContainerRef = useRef<HTMLDivElement>(null);
+
+    const toolbarEnabled =
+      showDiffToolbar &&
+      showDiff &&
+      !!baselineValue &&
+      !!onAcceptDiff &&
+      !!onRejectDiff;
+
+    return (
+      <div ref={toolbarContainerRef} className="relative">
+        <div ref={containerRef} className={className} style={style} />
+        {toolbarEnabled && (
+          <FloatingDiffToolbar
+            containerRef={toolbarContainerRef}
+            enabled={true}
+            isLight={isLight}
+            onAccept={(): void => onAcceptDiff?.()}
+            onReject={(): void => onRejectDiff?.()}
+          />
+        )}
+      </div>
+    );
   }
 );
 

@@ -11,7 +11,7 @@
  * streaming tokens or display-count increments progressively).
  */
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChatMessage, AppTheme } from '../../../types';
 import {
@@ -88,7 +88,10 @@ export interface ChatMessageItemProps {
   chatDisabledReason: string;
   storyLanguage?: string;
   theme?: AppTheme;
-  onSwitchProject?: (id: string) => void;
+  onSwitchProject?: (
+    id: string,
+    options?: { preserveActiveChatSession?: boolean }
+  ) => void | Promise<void>;
   onStartEditing: (msg: ChatMessage) => void;
   onCancelEdit: () => void;
   onSaveEdit: (id: string) => void;
@@ -123,6 +126,36 @@ export const ChatMessageItem = React.memo(function ChatMessageItem({
   onThinkingToggle,
 }: ChatMessageItemProps) {
   const { t } = useTranslation();
+  const hasAutoSwitchedRef = useRef(false);
+
+  // Auto-switch to newly created projects from manage_project tool
+  useEffect((): void => {
+    if (
+      isLoading &&
+      isLast &&
+      msg.role === 'tool' &&
+      msg.name === 'manage_project' &&
+      onSwitchProject &&
+      !hasAutoSwitchedRef.current
+    ) {
+      try {
+        const toolResult = tryParseJson(msg.text);
+        if (
+          typeof toolResult === 'object' &&
+          toolResult !== null &&
+          'project_name' in toolResult &&
+          toolResult.project_name
+        ) {
+          hasAutoSwitchedRef.current = true;
+          onSwitchProject(String(toolResult.project_name), {
+            preserveActiveChatSession: true,
+          });
+        }
+      } catch {
+        /* ignore parsing errors */
+      }
+    }
+  }, [isLoading, isLast, msg.id, msg.role, msg.name, onSwitchProject]);
 
   return (
     <div
@@ -246,7 +279,9 @@ export const ChatMessageItem = React.memo(function ChatMessageItem({
                                 if (match) projectName = match[1];
                               }
                               if (projectName) {
-                                onSwitchProject(projectName.trim());
+                                onSwitchProject(projectName.trim(), {
+                                  preserveActiveChatSession: true,
+                                });
                               }
                             }}
                             icon={<ArrowRight size={14} />}

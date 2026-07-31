@@ -13,7 +13,6 @@ import os
 import shutil
 import uuid
 from pathlib import Path
-from typing import Tuple
 
 from augmentedquill.core.config import load_story_config, save_story_config
 from augmentedquill.services.chapters.chapter_helpers import (
@@ -174,7 +173,7 @@ def create_new_book_in_project(active: Path, title: str) -> str:
     return book_id
 
 
-def change_project_type_in_project(active: Path, new_type: str) -> Tuple[bool, str]:
+def change_project_type_in_project(active: Path, new_type: str) -> tuple[bool, str]:
     """Convert active project to a new type in-place."""
     story_path = active / "story.json"
     story = load_story_config(story_path) or {}
@@ -185,7 +184,7 @@ def change_project_type_in_project(active: Path, new_type: str) -> Tuple[bool, s
 
     def _convert_project_type(
         current_old_type: str, target_type: str
-    ) -> Tuple[bool, str]:
+    ) -> tuple[bool, str]:
         """Convert Project Type."""
         local_story = load_story_config(story_path) or {}
         local_old_type = local_story.get("project_type", "novel")

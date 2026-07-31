@@ -55,6 +55,32 @@ export async function fetchJson<T>(
   return response.json() as Promise<T>;
 }
 
+/**
+ * Perform a DELETE request.
+ *
+ * When T is void (or the server returns 204 / empty body) the response body
+ * is intentionally not parsed.  When the server returns a JSON body the
+ * caller must supply an explicit type parameter (e.g. `deleteJson<{ok:boolean}>`).
+ */
+export async function deleteJson<T = void>(
+  path: string,
+  fallbackError: string
+): Promise<T> {
+  const response = await fetch(endpoint(path), { method: 'DELETE' });
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, fallbackError));
+  }
+  // 204 No Content (and any other empty body): return undefined cast to T.
+  // Callers that pass a non-void T must only do so when the server actually
+  // sends a JSON body on success.
+  if (response.status === 204 || response.headers.get('content-length') === '0') {
+    return undefined as unknown as T;
+  }
+  const text = await response.text();
+  if (!text) return undefined as unknown as T;
+  return JSON.parse(text) as T;
+}
+
 /** Fetch blob. */
 export async function fetchBlob(
   path: string,
@@ -102,7 +128,19 @@ export async function putJson<T>(
   );
 }
 
-/** Delete json. */
-export async function deleteJson<T>(path: string, fallbackError: string): Promise<T> {
-  return fetchJson<T>(path, { method: 'DELETE' }, fallbackError);
+/** Send json via PATCH. */
+export async function patchJson<T>(
+  path: string,
+  body: unknown,
+  fallbackError: string
+): Promise<T> {
+  return fetchJson<T>(
+    path,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+    fallbackError
+  );
 }

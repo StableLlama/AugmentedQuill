@@ -31,8 +31,8 @@ export const normalizeProjectType = (
   return 'novel';
 };
 
-const mapStoryBook = (b: StoryBook): Book => ({
-  id: b.id ?? '',
+const mapStoryBook = (b: StoryBook, index: number): Book => ({
+  id: (b.id ?? b.folder ?? '').trim() || `book-${index + 1}`,
   title: b.title ?? '',
   chapters: [],
 });
@@ -45,6 +45,12 @@ const mapStorySourcebookEntry = (e: StorySourcebookEntry): SourcebookEntry => ({
   description: e.description ?? '',
   images: e.images ?? [],
   keywords: e.keywords ?? undefined,
+  relations: (e.relations as SourcebookEntry['relations']) ?? undefined,
+  origin_date: e.origin_date ?? undefined,
+  destination_datetime: e.destination_datetime ?? undefined,
+  destination_relative: e.destination_relative ?? undefined,
+  creates_new_timeline: e.creates_new_timeline ?? undefined,
+  timeline_id: e.timeline_id ?? undefined,
 });
 
 export const mapStoryBooks = (books: StoryBook[] | null | undefined): Book[] =>

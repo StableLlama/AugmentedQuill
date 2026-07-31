@@ -13,9 +13,8 @@ Pydantic models for search-and-replace API request/response contracts.
 from __future__ import annotations
 
 from enum import Enum
-from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class SearchScope(str, Enum):
@@ -31,6 +30,8 @@ class SearchScope(str, Enum):
 class SearchOptions(BaseModel):
     """Parameters controlling what and how to search."""
 
+    model_config = ConfigDict(extra="forbid")
+
     query: str = Field(..., description="Text or pattern to search for")
     scope: SearchScope = Field(
         SearchScope.all, description="Which parts of the project to search"
@@ -42,7 +43,7 @@ class SearchOptions(BaseModel):
     is_phonetic: bool = Field(
         False, description="Use phonetic (soundex) matching instead of literal"
     )
-    active_chapter_id: Optional[int] = Field(
+    active_chapter_id: int | None = Field(
         None, description="Chapter ID to use when scope is current_chapter"
     )
 
@@ -110,6 +111,8 @@ class SearchResponse(BaseModel):
 class ReplaceAllRequest(BaseModel):
     """Request to replace all occurrences of a search query."""
 
+    model_config = ConfigDict(extra="forbid")
+
     query: str = Field(..., description="Text or pattern to search for")
     replacement: str = Field(
         ..., description="Text to substitute in place of each match"
@@ -118,11 +121,13 @@ class ReplaceAllRequest(BaseModel):
     case_sensitive: bool = Field(False)
     is_regex: bool = Field(False)
     is_phonetic: bool = Field(False)
-    active_chapter_id: Optional[int] = Field(None)
+    active_chapter_id: int | None = Field(None)
 
 
 class ReplaceSingleRequest(BaseModel):
     """Request to replace one specific match (identified by its ordinal index)."""
+
+    model_config = ConfigDict(extra="forbid")
 
     query: str = Field(..., description="Text or pattern to search for")
     replacement: str = Field(
@@ -132,7 +137,7 @@ class ReplaceSingleRequest(BaseModel):
     case_sensitive: bool = Field(False)
     is_regex: bool = Field(False)
     is_phonetic: bool = Field(False)
-    active_chapter_id: Optional[int] = Field(None)
+    active_chapter_id: int | None = Field(None)
     section_type: str = Field(
         ..., description="The section_type value from SearchResultSection"
     )

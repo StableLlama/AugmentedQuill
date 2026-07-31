@@ -306,3 +306,215 @@ describe('Editor diff highlighting – smart-quote regression', () => {
     expect(countInserted(cmContent?.innerHTML ?? '')).toBeGreaterThan(0);
   });
 });
+
+// ─── Spec: Diff visibility rules ────────────────────────────────────────────
+// See AGENTS.md diff spec for the full decision table.
+
+describe('Spec: diff visibility on initial load', () => {
+  it('shows NO diff when baseline is undefined (initial load)', async () => {
+    // SPEC: App loads, chapter content appears for the first time → NO diff.
+    // The baseline must be initialized to equal current content.
+    const { container } = render(
+      <Editor
+        {...defaultProps}
+        chapter={{ ...mockChapter, content: 'Hello world' }}
+        baselineContent={undefined}
+      />
+    );
+
+    await act(async () => {});
+
+    const cmContent = container.querySelector('.cm-content');
+    expect(cmContent?.innerHTML).not.toContain('diff-inserted');
+    expect(cmContent?.innerHTML).not.toContain('diff-deleted');
+  });
+
+  it('shows NO diff when baseline equals chapter content', async () => {
+    // SPEC: baseline matches content → no diff
+    const { container } = render(
+      <Editor
+        {...defaultProps}
+        chapter={{ ...mockChapter, content: 'Hello world' }}
+        baselineContent="Hello world"
+      />
+    );
+
+    await act(async () => {});
+
+    const cmContent = container.querySelector('.cm-content');
+    expect(cmContent?.innerHTML).not.toContain('diff-inserted');
+  });
+});
+
+describe('Spec: undo/redo shows diff', () => {
+  it('shows diff after undo when savedBaseline is set', async () => {
+    // SPEC: User triggers undo → automatic change → diff shown.
+    // Editor.tsx calls setLocalBaseline(savedBaselineRef.current) on undo.
+    // We verify by rendering with a baseline that differs and checking
+    // that the diff decorations appear.
+    const { container } = render(
+      <Editor
+        {...defaultProps}
+        chapter={{ ...mockChapter, content: 'AI wrote this paragraph' }}
+        baselineContent="Original content"
+      />
+    );
+
+    await act(async () => {});
+
+    const cmContent = container.querySelector('.cm-content');
+    expect(cmContent?.innerHTML).toContain('diff-inserted');
+  });
+
+  it('shows NO diff after undo when there is no saved baseline', async () => {
+    // SPEC: If no automatic change occurred previously, undo should not
+    // set a diff baseline. savedBaselineRef is undefined → no diff.
+    const { container } = render(
+      <Editor
+        {...defaultProps}
+        chapter={{ ...mockChapter, content: 'Just user typing' }}
+        baselineContent={undefined}
+      />
+    );
+
+    await act(async () => {});
+
+    const cmContent = container.querySelector('.cm-content');
+    expect(cmContent?.innerHTML).not.toContain('diff-inserted');
+  });
+});
+
+describe('Spec: normal chapter switch shows no diff', () => {
+  it('clears diff when switching to a new chapter with no baseline', async () => {
+    // SPEC: User switches to a different chapter (normal navigation) →
+    // NO diff if the new chapter has no automatic changes pending.
+    const { container, rerender } = render(
+      <Editor
+        {...defaultProps}
+        chapter={{ ...mockChapter, id: 'ch1', content: 'AI text' }}
+        baselineContent="Original"
+      />
+    );
+
+    await act(async () => {});
+
+    // First chapter has diff
+    expect(container.querySelector('.cm-content')?.innerHTML).toContain(
+      'diff-inserted'
+    );
+
+    // Switch to new chapter with undefined baseline
+    await act(async () => {
+      rerender(
+        <Editor
+          {...defaultProps}
+          chapter={{ ...mockChapter, id: 'ch2', content: 'New chapter text' }}
+          baselineContent={undefined}
+        />
+      );
+    });
+
+    expect(container.querySelector('.cm-content')?.innerHTML).not.toContain(
+      'diff-inserted'
+    );
+  });
+});
+
+describe('Spec: user typing does not show diff', () => {
+  it('clears localBaseline on user edit so typing is not highlighted', async () => {
+    // SPEC: User types a character → NO diff.
+    // Editor.tsx calls setLocalBaseline(undefined) on non-undo user edits.
+    // We verify by rendering with a baseline that differs, then simulating
+    // that the parent clears the baseline (as would happen after the onChange
+    // callback sets localBaseline to undefined).
+
+    const { container, rerender } = render(
+      <Editor
+        {...defaultProps}
+        chapter={{ ...mockChapter, content: 'AI inserted this' }}
+        baselineContent="Original content"
+      />
+    );
+
+    await act(async () => {});
+
+    // Diff IS visible initially
+    expect(container.querySelector('.cm-content')?.innerHTML).toContain(
+      'diff-inserted'
+    );
+
+    // Simulate user typing: parent sets baseline to undefined
+    await act(async () => {
+      rerender(
+        <Editor
+          {...defaultProps}
+          chapter={{ ...mockChapter, content: 'AI inserted this and user typed' }}
+          baselineContent={undefined}
+        />
+      );
+    });
+
+    expect(container.querySelector('.cm-content')?.innerHTML).not.toContain(
+      'diff-inserted'
+    );
+  });
+});
+
+// ─── Spec: Bug A — FloatingDiffToolbar on undo/redo ─────────────────────────
+
+describe('Spec: FloatingDiffToolbar for prose editor', () => {
+  it('Editor does NOT pass showDiffToolbar to CodeMirrorEditor', async () => {
+    // SPEC BUG A: The main prose Editor does not wire up the
+    // FloatingDiffToolbar.  When undo/redo shows diffs, the user has no
+    // accept/reject buttons.  This test documents the missing wiring.
+    //
+    // Fix: Editor.tsx must pass showDiffToolbar, onAcceptDiff, onRejectDiff
+    // to CodeMirrorEditor.
+
+    // We verify the absence by checking that the FloatingDiffToolbar
+    // never appears in the DOM when hovering over diff text.
+    const { container } = render(
+      <Editor
+        {...defaultProps}
+        chapter={{ ...mockChapter, content: 'AI changed this' }}
+        baselineContent="Original"
+      />
+    );
+
+    await act(async () => {});
+
+    // Diff IS visible (correct)
+    const cmContent = container.querySelector('.cm-content');
+    expect(cmContent?.innerHTML).toContain('diff-inserted');
+
+    // But there is NO FloatingDiffToolbar in the DOM
+    // (it would render a role="toolbar" element via portal)
+    const toolbars = document.body.querySelectorAll('[role="toolbar"]');
+    expect(toolbars.length).toBe(0);
+  });
+});
+
+// ─── Spec: Bug C — Initial load with empty baseline ─────────────────────────
+
+describe('Spec: initial load with empty-string baseline shows no diff', () => {
+  it('shows NO diff when baseline is empty string and content is present', async () => {
+    // SPEC BUG C: If the baseline is accidentally set to '' (empty string)
+    // while content is "Hello world", the diff plugin would show everything
+    // as inserted.  The baseline must either be undefined or equal to content.
+    const { container } = render(
+      <Editor
+        {...defaultProps}
+        chapter={{ ...mockChapter, content: 'Hello world' }}
+        baselineContent=""
+      />
+    );
+
+    await act(async () => {});
+
+    const cmContent = container.querySelector('.cm-content');
+    // Empty-string baseline vs "Hello world" would show all as inserted.
+    // This must NOT happen — baseline '' should be treated as "no diff".
+    expect(cmContent?.innerHTML).not.toContain('diff-inserted');
+    expect(cmContent?.innerHTML).not.toContain('diff-deleted');
+  });
+});

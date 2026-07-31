@@ -11,7 +11,6 @@ Pydantic models for project-related API requests and responses.
 """
 
 from pydantic import BaseModel
-from typing import Optional
 
 
 class ProjectDeleteRequest(BaseModel):
@@ -31,7 +30,7 @@ class ProjectCreateRequest(BaseModel):
 
     name: str
     type: str  # 'short-story', 'novel', 'series'
-    language: Optional[str] = "en"
+    language: str | None = "en"
 
 
 class ProjectConvertRequest(BaseModel):
@@ -62,16 +61,16 @@ class ImageDescriptionUpdateRequest(BaseModel):
     """Represents the ImageDescriptionUpdateRequest type."""
 
     filename: str
-    description: Optional[str] = ""
-    title: Optional[str] = ""
+    description: str | None = ""
+    title: str | None = ""
 
 
 class ImagePlaceholderRequest(BaseModel):
     """Represents the ImagePlaceholderRequest type."""
 
-    name: Optional[str] = ""
-    title: Optional[str] = ""
-    description: Optional[str] = ""
+    name: str | None = ""
+    title: str | None = ""
+    description: str | None = ""
 
 
 class ImageDeleteRequest(BaseModel):
@@ -100,7 +99,7 @@ class ProjectInfo(BaseModel):
     is_valid: bool
     title: str
     type: str = "novel"
-    language: Optional[str] = None
+    language: str | None = None
 
 
 class ProjectListResponse(BaseModel):

@@ -57,7 +57,7 @@ The Metadata Editor is a full-screen or sidebar panel that opens whenever you cl
 
 - The text area holds the public description that appears in the sidebar card and is sent to every AI call that involves this chapter or story.
 - When the summary is empty, an **AI Write** button (<img src="assets/wand.svg" alt="Wand icon" width="16" height="16" style="vertical-align:text-bottom;" />) asks the <img src="assets/swatches/fuchsia.svg" alt="Fuchsia swatch" width="16" height="16" style="vertical-align:text-bottom;" /> **EDITING** model to draft a summary from the chapter content.
-- Once a summary exists, the button becomes **AI Update** (<img src="assets/edit-2.svg" alt="Refresh icon" width="16" height="16" style="vertical-align:text-bottom;" />) which updates the existing text, and an adjacent **AI Rewrite** (<img src="assets/pen.svg" alt="Pen icon" width="16" height="16" style="vertical-align:text-bottom;" />) button regenerates it from scratch — useful when the story direction has changed.
+- Once a summary exists, the button becomes **AI Update** (<img src="assets/refresh-cw.svg" alt="Refresh icon" width="16" height="16" style="vertical-align:text-bottom;" />) which updates the existing text, and an adjacent **AI Rewrite** (<img src="assets/pen.svg" alt="Pen icon" width="16" height="16" style="vertical-align:text-bottom;" />) button regenerates it from scratch — useful when the story direction has changed.
 
 **Notes tab:**
 

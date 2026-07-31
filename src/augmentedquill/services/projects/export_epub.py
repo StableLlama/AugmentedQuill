@@ -9,21 +9,22 @@
 
 import io
 import re
-import markdown
 from pathlib import Path
-from fastapi import Response
-from typing import Any, List, Tuple
-from ebooklib import epub
+from typing import Any
 
+import markdown
+from ebooklib import epub
+from fastapi import Response
+
+from augmentedquill.core.config import load_story_config
 from augmentedquill.services.exceptions import BadRequestError
 from augmentedquill.services.projects.projects import (
-    get_projects_root,
     get_active_project_dir,
+    get_projects_root,
 )
-from augmentedquill.core.config import load_story_config
 
 
-def scan_project_chapters(active: Path) -> List[Tuple[int, Path, str, str]]:
+def scan_project_chapters(active: Path) -> list[tuple[int, Path, str, str]]:
     """Scan the project for content and return a list of (global_id, path, book_id, chapter_title)."""
     story = load_story_config(active / "story.json") or {}
     p_type = story.get("project_type", "novel")

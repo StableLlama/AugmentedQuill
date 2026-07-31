@@ -8,6 +8,7 @@
 """Unit tests for chat stream injection logic."""
 
 from unittest import TestCase
+
 from augmentedquill.services.chat.chat_api_stream_ops import inject_chat_user_context
 
 

@@ -20,7 +20,8 @@ import { ProjectImage } from '../../services/apiTypes';
 interface SourcebookHoverCardProps {
   entry: SourcebookEntry;
   position: { x: number; y: number };
-  isLight: boolean;
+  topRightMeta?: string | null;
+  bgClass: string;
   borderClass: string;
   textClass: string;
   subTextClass: string;
@@ -30,7 +31,8 @@ interface SourcebookHoverCardProps {
 export const SourcebookHoverCard: React.FC<SourcebookHoverCardProps> = ({
   entry,
   position,
-  isLight,
+  topRightMeta = null,
+  bgClass,
   borderClass,
   textClass,
   subTextClass,
@@ -56,15 +58,20 @@ export const SourcebookHoverCard: React.FC<SourcebookHoverCardProps> = ({
         left: position.x,
         maxWidth: '300px',
       }}
-      className={`fixed z-[100] p-3 rounded-lg shadow-xl border ${borderClass} ${isLight ? 'bg-white' : 'bg-brand-gray-900'} animate-in fade-in zoom-in-95 duration-100`}
+      className={`fixed z-[100] p-3 rounded-lg shadow-xl border ${borderClass} ${bgClass} animate-in fade-in zoom-in-95 duration-100`}
     >
-      <div className="flex items-center gap-2 mb-2">
-        <h4 className={`font-bold text-sm ${textClass}`}>{entry.name}</h4>
-        <span
-          className={`text-[10px] px-1.5 py-0.5 rounded-full border ${borderClass} ${subTextClass}`}
-        >
-          {entry.category}
-        </span>
+      <div className="flex items-start justify-between gap-2 mb-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <h4 className={`font-bold text-sm truncate ${textClass}`}>{entry.name}</h4>
+          <span
+            className={`text-[10px] px-1.5 py-0.5 rounded-full border ${borderClass} ${subTextClass}`}
+          >
+            {entry.category}
+          </span>
+        </div>
+        {topRightMeta && (
+          <span className={`text-[10px] shrink-0 ${subTextClass}`}>{topRightMeta}</span>
+        )}
       </div>
 
       {img && (
@@ -84,9 +91,7 @@ export const SourcebookHoverCard: React.FC<SourcebookHoverCardProps> = ({
       )}
 
       {entry.description ? (
-        <p
-          className={`text-xs ${isLight ? 'text-brand-gray-700' : 'text-brand-gray-300'} line-clamp-6 leading-relaxed`}
-        >
+        <p className={`text-xs ${subTextClass} line-clamp-6 leading-relaxed`}>
           {entry.description}
         </p>
       ) : (

@@ -7,34 +7,21 @@
 
 """Defines the story tools unit so this responsibility stays isolated, testable, and easy to evolve."""
 
-from typing import Any
-
 import os
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from augmentedquill.core.config import load_story_config
 from augmentedquill.services.chat.chat_session_helpers import load_chat, save_chat
 from augmentedquill.services.chat.chat_tool_decorator import (
     CHAT_ROLE,
     EDITING_ROLE,
+    ToolModel,
     chat_tool,
 )
-from augmentedquill.services.projects.project_helpers import _snap_to_boundary
-from augmentedquill.services.projects.projects import (
-    get_active_project_dir,
-    read_book_content as _read_book_content,
-    read_story_content as _read_story_content,
-    update_book_metadata as _update_book_metadata,
-    update_story_metadata as _update_story_metadata,
-    write_book_content as _write_book_content,
-    write_story_content as _write_story_content,
-    read_scratchpad as _read_scratchpad,
-    write_scratchpad as _write_scratchpad,
-    read_editing_scratchpad as _read_editing_scratchpad,
-    write_editing_scratchpad as _write_editing_scratchpad,
-)
 from augmentedquill.services.chat.chat_tools.metadata_patching import (
+    ConflictEntry,
     ConflictListPatch,
     StringListPatch,
     TextPatch,
@@ -42,75 +29,57 @@ from augmentedquill.services.chat.chat_tools.metadata_patching import (
     apply_string_list_patch,
     apply_text_patch,
 )
+from augmentedquill.services.projects.project_helpers import _snap_to_boundary
+from augmentedquill.services.projects.projects import (
+    get_active_project_dir,
+)
+from augmentedquill.services.projects.projects import (
+    read_book_content as _read_book_content,
+)
+from augmentedquill.services.projects.projects import (
+    read_editing_scratchpad as _read_editing_scratchpad,
+)
+from augmentedquill.services.projects.projects import (
+    read_scratchpad as _read_scratchpad,
+)
+from augmentedquill.services.projects.projects import (
+    read_story_content as _read_story_content,
+)
+from augmentedquill.services.projects.projects import (
+    update_book_metadata as _update_book_metadata,
+)
+from augmentedquill.services.projects.projects import (
+    update_story_metadata as _update_story_metadata,
+)
+from augmentedquill.services.projects.projects import (
+    write_book_content as _write_book_content,
+)
+from augmentedquill.services.projects.projects import (
+    write_editing_scratchpad as _write_editing_scratchpad,
+)
+from augmentedquill.services.projects.projects import (
+    write_scratchpad as _write_scratchpad,
+)
+from augmentedquill.services.projects.projects import (
+    write_story_content as _write_story_content,
+)
 
 # Pydantic models for tool parameters
 
 
-class GetStoryMetadataParams(BaseModel):
-    """Parameters for get_story_metadata (no parameters needed)."""
-
-    pass
-
-
-class UpdateStoryMetadataParams(BaseModel):
-    """Parameters for updating story metadata."""
-
-    title: str | None = Field(None, description="The new story title")
-    summary: str | None = Field(None, description="The new story summary")
-    notes: str | None = Field(None, description="General notes for the story")
-    summary_patch: TextPatch | None = Field(
-        None,
-        description="Optional patch operation for partially editing summary.",
-    )
-    notes_patch: TextPatch | None = Field(
-        None,
-        description="Optional patch operation for partially editing notes.",
-    )
-    tags: list[str] | None = Field(None, description="List of tags for the story")
-    tags_patch: StringListPatch | None = Field(
-        None,
-        description="Optional patch operation for tags (add/remove/set/clear).",
-    )
-    conflicts: list[dict] | None = Field(
-        None,
-        description="List of active story conflicts with description and optional resolution.",
-    )
-    conflicts_patch: ConflictListPatch | None = Field(
-        None,
-        description="Optional ordered operations for partial conflict updates.",
-    )
-
-
-class ReadStoryContentParams(BaseModel):
-    """Parameters for read_story_content."""
-
-    start: int = Field(
-        0,
-        description="Starting character index (0-based). Ignored when read_from_end=True.",
-    )
-    max_chars: int = Field(
-        8000,
-        description="Maximum number of characters to return (max 8000).",
-    )
-    read_from_end: bool = Field(
-        False,
-        description="When True, return the last max_chars characters instead of reading from start. Useful for reading the most recent prose before appending.",
-    )
-
-
-class WriteStoryContentParams(BaseModel):
+class WriteStoryContentParams(ToolModel):
     """Parameters for writing story content."""
 
     content: str = Field(..., description="The new content for the story")
 
 
-class GetBookMetadataParams(BaseModel):
+class GetBookMetadataParams(ToolModel):
     """Parameters for getting book metadata."""
 
     book_id: str = Field(..., description="The UUID of the book")
 
 
-class UpdateBookMetadataParams(BaseModel):
+class UpdateBookMetadataParams(ToolModel):
     """Parameters for updating book metadata."""
 
     book_id: str = Field(..., description="The UUID of the book to update")
@@ -127,7 +96,7 @@ class UpdateBookMetadataParams(BaseModel):
     )
 
 
-class ReadBookContentParams(BaseModel):
+class ReadBookContentParams(ToolModel):
     """Parameters for reading book content."""
 
     book_id: str = Field(..., description="The UUID of the book")
@@ -145,51 +114,18 @@ class ReadBookContentParams(BaseModel):
     )
 
 
-class WriteBookContentParams(BaseModel):
+class WriteBookContentParams(ToolModel):
     """Parameters for writing book content."""
 
     book_id: str = Field(..., description="The UUID of the book")
     content: str = Field(..., description="The new content for the book")
 
 
-class SyncStorySummaryParams(BaseModel):
-    """Parameters for auto-generating story summary."""
-
-    mode: str = Field(
-        "",
-        description="Generation mode: 'discard' (new from scratch) or 'update' (refine existing). Empty string defaults to 'update'.",
-    )
-
-
-class ReadScratchpadParams(BaseModel):
-    """Parameters for reading the scratchpad."""
-
-    chat_id: str | None = Field(
-        None,
-        description="Chat ID to read scratchpad for (per-chat). If absent, falls back to project-wide scratchpad.",
-    )
-
-
-class WriteScratchpadParams(BaseModel):
-    """Parameters for writing content to the scratchpad."""
-
-    content: str = Field(
-        ...,
-        description="The full new content for the scratchpad. This replaces current content.",
-    )
-    chat_id: str | None = Field(
-        None,
-        description="Chat ID to write scratchpad for (per-chat). If absent, falls back to project-wide scratchpad.",
-    )
-
-
-class ReadEditingScratchpadParams(BaseModel):
+class ReadEditingScratchpadParams(ToolModel):
     """Parameters for reading the EDITING scratchpad (no parameters needed)."""
 
-    pass
 
-
-class WriteEditingScratchpadParams(BaseModel):
+class WriteEditingScratchpadParams(ToolModel):
     """Parameters for writing to the EDITING scratchpad."""
 
     content: str = Field(
@@ -198,104 +134,267 @@ class WriteEditingScratchpadParams(BaseModel):
     )
 
 
+class ManageStoryCoreReadData(ToolModel):
+    """Payload for story content reads."""
+
+    start: int = Field(
+        0,
+        description="Starting character index (0-based). Ignored when read_from_end=True.",
+    )
+    max_chars: int = Field(
+        8000,
+        description="Maximum number of characters to return (max 8000).",
+    )
+    read_from_end: bool = Field(
+        False,
+        description="When true, reads the tail of the content instead of start.",
+    )
+
+
+class ManageStoryCoreUpdateData(ToolModel):
+    """Payload for story metadata updates."""
+
+    title: str | None = Field(None, description="The new story title")
+    summary: str | None = Field(None, description="The new story summary")
+    notes: str | None = Field(None, description="General notes for the story")
+    summary_patch: TextPatch | None = Field(
+        None,
+        description="Optional patch operation for partially editing summary.",
+    )
+    notes_patch: TextPatch | None = Field(
+        None,
+        description="Optional patch operation for partially editing notes.",
+    )
+    tags: list[str] | None = Field(None, description="List of tags for the story")
+    tags_patch: StringListPatch | None = Field(
+        None,
+        description="Optional patch operation for tags (add/remove/set/clear).",
+    )
+    conflicts: list[ConflictEntry] | None = Field(
+        None,
+        description=(
+            "List of active story conflicts. Each entry should include a "
+            "description, optional resolution, and resolved flag."
+        ),
+    )
+    conflicts_patch: ConflictListPatch | None = Field(
+        None,
+        description=(
+            "Optional ordered operations for partial conflict updates. "
+            "Use index-based operations: append new conflict with {conflict:{...}} (no index), "
+            "update existing with {index:<0-based>, updates:{...}}, replace existing with "
+            "{index:<0-based>, conflict:{...}}, and remove with {index:<0-based>}."
+        ),
+    )
+
+
+class ManageStoryCoreSyncData(ToolModel):
+    """Payload for story summary synchronization."""
+
+    mode: str = Field(
+        "",
+        description="Generation mode: 'discard' or 'update' (empty defaults to 'update').",
+    )
+
+
+class ManageStoryCoreParams(ToolModel):
+    """Action router parameters for manage_story_core."""
+
+    action: Literal[
+        "get_metadata", "update_metadata", "read_content", "sync_summary"
+    ] = Field(
+        ...,
+        description=(
+            "Action to execute: 'get_metadata', 'update_metadata', 'read_content', "
+            "or 'sync_summary'."
+        ),
+    )
+    update_data: ManageStoryCoreUpdateData | None = Field(
+        None,
+        description="Required when action='update_metadata'.",
+    )
+    read_data: ManageStoryCoreReadData | None = Field(
+        None,
+        description="Optional when action='read_content'. Defaults are applied when omitted.",
+    )
+    sync_data: ManageStoryCoreSyncData | None = Field(
+        None,
+        description="Optional when action='sync_summary'. Defaults to update mode.",
+    )
+
+
+class ManageScratchpadWriteData(ToolModel):
+    """Payload for scratchpad writes."""
+
+    content: str = Field(
+        ...,
+        description="The full new content for the scratchpad. This replaces current content.",
+    )
+    chat_id: str | None = Field(
+        None,
+        description="Optional chat ID. Falls back to request chat_id or project scratchpad.",
+    )
+
+
+class ManageScratchpadParams(ToolModel):
+    """Action router parameters for manage_scratchpad."""
+
+    action: Literal["read", "write"] = Field(
+        ...,
+        description="Scratchpad action: 'read' or 'write'.",
+    )
+    chat_id: str | None = Field(
+        None,
+        description="Optional chat ID for action='read'.",
+    )
+    write_data: ManageScratchpadWriteData | None = Field(
+        None,
+        description="Required when action='write'.",
+    )
+
+
 # Tool implementations with co-located schemas
 
 
 @chat_tool(
-    description="Get the overall story title, summary, notes, conflicts, tags, and project type.",
+    description=(
+        "Unified story core manager. Use action='get_metadata' to read story-level "
+        "metadata, action='update_metadata' to patch title/summary/notes/tags/conflicts "
+        "(requires update_data), action='read_content' to read story-level prose "
+        "(optional read_data), and action='sync_summary' to regenerate summary "
+        "(optional sync_data.mode). For update_data.conflicts_patch: this is index-based. "
+        "To append a new conflict, use operations:[{conflict:{description:'...',resolution:'...'}}]. "
+        "To update an existing conflict, use operations:[{index:0, updates:{resolution:'...'}}]."
+    ),
     allowed_roles=(CHAT_ROLE, EDITING_ROLE),
     capability="metadata-read",
 )
-async def get_story_metadata(
-    params: GetStoryMetadataParams, payload: dict, mutations: dict
+async def manage_story_core(
+    params: ManageStoryCoreParams, payload: dict, mutations: dict
 ) -> Any:
-    """Get Story Metadata."""
-    active = get_active_project_dir()
-    story = load_story_config((active / "story.json") if active else None) or {}
-    return {
-        "title": story.get("project_title", ""),
-        "summary": story.get("story_summary", ""),
-        "notes": story.get("notes", ""),
-        "tags": story.get("tags", []),
-        "conflicts": story.get("conflicts", []),
-        "project_type": story.get("project_type", "novel"),
-    }
+    """Route story-core actions to existing atomic metadata/content operations."""
+    if params.action == "get_metadata":
+        active = get_active_project_dir()
+        story = load_story_config((active / "story.json") if active else None) or {}
+        return {
+            "title": story.get("project_title", ""),
+            "summary": story.get("story_summary", ""),
+            "notes": story.get("notes", ""),
+            "tags": story.get("tags", []),
+            "conflicts": story.get("conflicts", []),
+            "project_type": story.get("project_type", "novel"),
+        }
+
+    if params.action == "update_metadata":
+        if params.update_data is None:
+            return {"error": "update_data is required when action='update_metadata'."}
+        active = get_active_project_dir()
+        story = load_story_config((active / "story.json") if active else None) or {}
+
+        summary_value = params.update_data.summary
+        if params.update_data.summary_patch is not None:
+            summary_value = apply_text_patch(
+                story.get("story_summary", ""), params.update_data.summary_patch
+            )
+
+        notes_value = params.update_data.notes
+        if params.update_data.notes_patch is not None:
+            notes_value = apply_text_patch(
+                story.get("notes", ""), params.update_data.notes_patch
+            )
+
+        tags_value = params.update_data.tags
+        if params.update_data.tags_patch is not None:
+            tags_value = apply_string_list_patch(
+                story.get("tags") or [], params.update_data.tags_patch
+            )
+
+        conflicts_value = params.update_data.conflicts
+        if params.update_data.conflicts_patch is not None:
+            conflicts_value = apply_conflict_list_patch(
+                story.get("conflicts") or [],
+                params.update_data.conflicts_patch,
+            )
+        elif isinstance(conflicts_value, list):
+            conflicts_value = [
+                conflict.model_dump() if hasattr(conflict, "model_dump") else conflict
+                for conflict in conflicts_value
+            ]
+
+        _update_story_metadata(
+            title=params.update_data.title,
+            summary=summary_value,
+            notes=notes_value,
+            tags=tags_value,
+            conflicts=conflicts_value,
+        )
+        mutations["story_changed"] = True
+        return {"ok": True, "message": "Story metadata updated successfully"}
+
+    if params.action == "read_content":
+        read_data = params.read_data or ManageStoryCoreReadData()
+        content = _read_story_content() or ""
+        max_chars = max(1, min(8000, read_data.max_chars))
+        total = len(content)
+        if read_data.read_from_end:
+            raw_start = max(0, total - max_chars)
+            start = _snap_to_boundary(content, raw_start, forward=False)
+            end = total
+        else:
+            start = max(0, read_data.start)
+            raw_end = min(total, start + max_chars)
+            end = min(total, _snap_to_boundary(content, raw_end, forward=True))
+        return {
+            "content": content[start:end],
+            "start": start,
+            "end": end,
+            "total": total,
+        }
+
+    if params.action == "sync_summary":
+        from augmentedquill.services.story.story_generation_ops import (
+            generate_story_summary,
+        )
+
+        mode = (params.sync_data.mode if params.sync_data else "") or ""
+        data = await generate_story_summary(mode=mode)
+        mutations["story_changed"] = True
+        return data
+
+    return {"error": f"Unsupported action: {params.action}"}
 
 
 @chat_tool(
     description=(
-        "Update story-level metadata such as title, summary, notes, tags, and conflicts. "
-        "Use *_patch fields (notes_patch, summary_patch, tags_patch, conflicts_patch) for "
-        "safe partial edits that keep untouched content."
+        "Unified scratchpad manager for CHAT state. Use action='read' to read the "
+        "scratchpad (optional chat_id), or action='write' to replace scratchpad "
+        "content (requires write_data.content)."
     ),
-    allowed_roles=(CHAT_ROLE, EDITING_ROLE),
-    capability="metadata-write",
-)
-async def update_story_metadata(
-    params: UpdateStoryMetadataParams, payload: dict, mutations: dict
-) -> Any:
-    """Update Story Metadata."""
-    active = get_active_project_dir()
-    story = load_story_config((active / "story.json") if active else None) or {}
-
-    summary_value = params.summary
-    if params.summary_patch is not None:
-        summary_value = apply_text_patch(
-            story.get("story_summary", ""), params.summary_patch
-        )
-
-    notes_value = params.notes
-    if params.notes_patch is not None:
-        notes_value = apply_text_patch(story.get("notes", ""), params.notes_patch)
-
-    tags_value = params.tags
-    if params.tags_patch is not None:
-        tags_value = apply_string_list_patch(story.get("tags") or [], params.tags_patch)
-
-    conflicts_value = params.conflicts
-    if params.conflicts_patch is not None:
-        conflicts_value = apply_conflict_list_patch(
-            story.get("conflicts") or [],
-            params.conflicts_patch,
-        )
-
-    _update_story_metadata(
-        title=params.title,
-        summary=summary_value,
-        notes=notes_value,
-        tags=tags_value,
-        conflicts=conflicts_value,
-    )
-    mutations["story_changed"] = True
-    return {"ok": True, "message": "Story metadata updated successfully"}
-
-
-@chat_tool(
-    description="Read the story-level introduction or content file. Use read_from_end=True to read the last max_chars characters, which is recommended before appending prose.",
-    allowed_roles=(CHAT_ROLE, EDITING_ROLE),
+    allowed_roles=(CHAT_ROLE,),
     capability="metadata-read",
 )
-async def read_story_content(
-    params: ReadStoryContentParams, payload: dict, mutations: dict
+async def manage_scratchpad(
+    params: ManageScratchpadParams, payload: dict, mutations: dict
 ) -> Any:
-    """Read story content."""
-    content = _read_story_content() or ""
-    max_chars = max(1, min(8000, params.max_chars))
-    total = len(content)
-    if params.read_from_end:
-        raw_start = max(0, total - max_chars)
-        start = _snap_to_boundary(content, raw_start, forward=False)
-        end = total
-    else:
-        start = max(0, params.start)
-        raw_end = min(total, start + max_chars)
-        end = min(total, _snap_to_boundary(content, raw_end, forward=True))
-    return {
-        "content": content[start:end],
-        "start": start,
-        "end": end,
-        "total": total,
-    }
+    """Route scratchpad read/write actions to existing scratchpad storage helpers."""
+    if params.action == "read":
+        chat_id = params.chat_id or (payload or {}).get("chat_id")
+        if chat_id:
+            return {"content": _read_scratchpad_from_chat(chat_id)}
+        return {"content": _read_scratchpad()}
+
+    if params.action == "write":
+        if params.write_data is None:
+            return {"error": "write_data is required when action='write'."}
+        chat_id = params.write_data.chat_id or (payload or {}).get("chat_id")
+        if chat_id:
+            _write_scratchpad_to_chat(chat_id, params.write_data.content)
+        else:
+            _write_scratchpad(params.write_data.content)
+        mutations["story_changed"] = True
+        return {"ok": True}
+
+    return {"error": f"Unsupported action: {params.action}"}
 
 
 @chat_tool(
@@ -475,67 +574,6 @@ def _write_scratchpad_to_chat(chat_id: str | None, content: str) -> None:
     }
     chat_data["scratchpad"] = content
     save_chat(project_dir, safe_id, chat_data)
-
-
-@chat_tool(
-    description=(
-        "Read your per-chat internal scratchpad/TODO list. "
-        "Scratchpad is temporary and chat-specific; it should be used for ephemeral planning only. "
-        "Persist important information in story notes or sourcebook entries."
-    ),
-    allowed_roles=(CHAT_ROLE,),
-    capability="metadata-read",
-)
-async def read_scratchpad(
-    params: ReadScratchpadParams, payload: dict, mutations: dict
-) -> Any:
-    """Read Scratchpad."""
-    chat_id = params.chat_id or (payload or {}).get("chat_id")
-    if chat_id:
-        return {"content": _read_scratchpad_from_chat(chat_id)}
-    return {"content": _read_scratchpad()}
-
-
-@chat_tool(
-    description=(
-        "Write your per-chat internal scratchpad/TODO list. "
-        "Scratchpad is temporary and chat-specific; updates are not shared across chats. "
-        "Persist important information in story notes or sourcebook entries."
-    ),
-    allowed_roles=(CHAT_ROLE,),
-    capability="metadata-write",
-)
-async def write_scratchpad(
-    params: WriteScratchpadParams, payload: dict, mutations: dict
-) -> Any:
-    """Write Scratchpad."""
-    chat_id = params.chat_id or (payload or {}).get("chat_id")
-    if chat_id:
-        _write_scratchpad_to_chat(chat_id, params.content)
-    else:
-        _write_scratchpad(params.content)
-    return {"ok": True}
-
-
-@chat_tool(
-    description=(
-        "Auto-generate a story summary from the current project prose context using AI. "
-        "Use mode='discard' to write from scratch or mode='update' (default) to refine the existing one."
-    ),
-    allowed_roles=(CHAT_ROLE, EDITING_ROLE),
-    capability="metadata-write",
-)
-async def sync_story_summary(
-    params: SyncStorySummaryParams, payload: dict, mutations: dict
-) -> Any:
-    """Sync Story Summary."""
-    from augmentedquill.services.story.story_generation_ops import (
-        generate_story_summary,
-    )
-
-    data = await generate_story_summary(mode=params.mode)
-    mutations["story_changed"] = True
-    return data
 
 
 # ---------------------------------------------------------------------------

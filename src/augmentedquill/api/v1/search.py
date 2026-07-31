@@ -20,8 +20,8 @@ from augmentedquill.models.search import (
     SearchOptions,
     SearchResponse,
 )
-from augmentedquill.services.search.search_service import run_search
 from augmentedquill.services.search.replace_service import replace_all, replace_single
+from augmentedquill.services.search.search_service import run_search
 
 router = APIRouter(prefix="/projects/{project_name}", tags=["Search"])
 

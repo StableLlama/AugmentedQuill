@@ -70,7 +70,7 @@ describe('provider mapping roundtrip', () => {
 
     expect(provider.isMultimodal).toBeUndefined();
     expect(provider.supportsFunctionCalling).toBeUndefined();
-    expect(provider.timeout).toBe(22000);
+    expect(provider.timeout).toBe(22);
     expect(provider.prompts).toMatchObject({
       system: 'S',
       continuation: 'base-c',
@@ -95,7 +95,7 @@ describe('provider mapping roundtrip', () => {
       baseUrl: 'https://api.example.com/v1',
       apiKey: 'k',
       apiKeyEnabled: false,
-      timeout: 10000,
+      timeout: 10,
       modelId: 'gpt-test',
       prompts: DEFAULT_LLM_CONFIG.prompts,
     };

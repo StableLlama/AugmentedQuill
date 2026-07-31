@@ -9,10 +9,9 @@
 
 from __future__ import annotations
 
-from typing import Any
 from pathlib import Path
+from typing import Any
 
-from augmentedquill.services.llm import llm
 from augmentedquill.core.config import load_machine_config
 from augmentedquill.core.prompts import (
     get_system_message,
@@ -23,29 +22,30 @@ from augmentedquill.services.chat.chat_tool_decorator import (
     EDITING_ROLE,
     get_tool_schemas,
 )
+from augmentedquill.services.llm import llm
 
 
 def _ensure_tools_loaded() -> Any:
     """Force load tool modules to ensure they are registered without causing circular imports at module level."""
     # We import here to avoid circular dependencies with story_generation_ops which imports us
-    import augmentedquill.services.chat.chat_tools.chapter_tools  # noqa: F401
+    import augmentedquill.services.chat.chat_tools.chapter_tools
+    import augmentedquill.services.chat.chat_tools.project_tools
+    import augmentedquill.services.chat.chat_tools.sourcebook_tools
     import augmentedquill.services.chat.chat_tools.story_tools  # noqa: F401
-    import augmentedquill.services.chat.chat_tools.project_tools  # noqa: F401
-    import augmentedquill.services.chat.chat_tools.sourcebook_tools  # noqa: F401
 
 
 def _get_read_only_tool_schemas(project_type: str | None = None) -> list[dict]:
     """Return a filtered tool schema list with only read-only story/chapter context tools."""
     tools = get_tool_schemas(EDITING_ROLE, project_type=project_type) or []
     relevant_names = {
-        "get_project_overview",
-        "get_story_metadata",
+        "manage_project",
+        "manage_story_core",
         "get_chapter_metadata",
         "get_chapter_content",
         "get_chapter_summary",
         "get_chapter_summaries",
-        "search_in_project",
-        "get_sourcebook_entry",
+        "search_and_replace",
+        "manage_sourcebook",
     }
     return [t for t in tools if t.get("function", {}).get("name") in relevant_names]
 
@@ -359,20 +359,13 @@ def build_ai_action_messages(
                 else "story_summary_update"
             )
     else:
-        # Keep chapter Extend/Rewrite on a shared continuation-style prompt path.
+        # Keep chapter Extend/Rewrite on the same continuation-style prompt path.
         if action in ("extend", "rewrite"):
             sys_key = "ai_action_chapter_extend"
             user_key = "chapter_ai_prefill_task"
         else:
             sys_key = f"ai_action_chapter_{action}"
             user_key = f"ai_action_chapter_{action}_user"
-
-    # User templates for chapter AI actions are currently the standard chapter templates.
-    if user_key.startswith("ai_action_chapter_"):
-        if action == "extend":
-            user_key = "continue_chapter"
-        elif action == "rewrite":
-            user_key = "continue_chapter"
 
     # Additional placeholders for EDITING tasks
     story_context = ""
@@ -434,6 +427,11 @@ def build_ai_action_messages(
     else:
         summary_heading = ""
 
+    existing_text_section = (
+        f"Existing draft text (do not change):\n\n{existing_content}"
+        if existing_content
+        else ""
+    )
     return _build_messages(
         system_message_key=sys_key,
         user_prompt_key=user_key,
@@ -450,6 +448,7 @@ def build_ai_action_messages(
         existing_content=existing_content,
         chapter_text=existing_content,
         existing_text=existing_content,
+        existing_text_section=existing_text_section,
         existing_summary=chapter_summary,
         chapter_summaries=chapter_summaries,
         source_summaries=chapter_summaries,

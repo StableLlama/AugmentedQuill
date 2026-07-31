@@ -7,14 +7,13 @@
 
 """Tests for prompt loading and language support."""
 
+import json
 from unittest import TestCase
 
-import json
-
 from augmentedquill.core.prompts import (
+    get_available_languages,
     get_system_message,
     get_user_prompt,
-    get_available_languages,
 )
 
 
@@ -78,3 +77,23 @@ class PromptsTest(TestCase):
             chat_msg,
         )
         self.assertIn("write_story_content", editing_msg)
+
+    def test_scene_boundary_detection_prompt_interpolates_variables(self):
+        prompt = get_user_prompt(
+            "scene_boundary_detection",
+            language="en",
+            scene_ids="1, 2",
+            scene_descriptions="1: Forest ambush\n2: Castle council",
+            prose_text="Forest scene.\n\nCastle scene.",
+        )
+
+        self.assertIn("Scene IDs (allowed): 1, 2", prompt)
+        self.assertIn("Scene descriptions:\n1: Forest ambush", prompt)
+        self.assertIn("Prose segment:\nForest scene.", prompt)
+        self.assertNotIn("{scene_ids}", prompt)
+        self.assertNotIn("{scene_descriptions}", prompt)
+        self.assertNotIn("{prose_text}", prompt)
+        self.assertIn(
+            '{"boundaries": [{"scene_id": 1, "start_offset": 0, "end_offset": 10}]}',
+            prompt,
+        )

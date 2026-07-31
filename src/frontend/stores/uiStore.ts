@@ -15,8 +15,8 @@
  */
 
 import { create, StoreApi } from 'zustand';
-import { persist } from 'zustand/middleware';
-import type { ViewMode, MetadataTab } from '../types';
+import { createJSONStorage, persist } from 'zustand/middleware';
+import type { MetadataTab, SceneId, ViewMode } from '../types';
 
 // ---------------------------------------------------------------------------
 // Dialog state types
@@ -42,6 +42,17 @@ export interface ChapterMetadataDialogState {
   initialTab?: MetadataTab;
 }
 
+export interface SceneEditorDialogState {
+  isOpen: boolean;
+  version: number;
+  sceneId: SceneId | null;
+  openedViaTrigger: boolean;
+  mutationHint: {
+    changedFields?: string[];
+    previousValues?: Record<string, unknown>;
+  } | null;
+}
+
 // ---------------------------------------------------------------------------
 // Store shape
 // ---------------------------------------------------------------------------
@@ -59,14 +70,44 @@ export interface UIStoreState {
   metadataDialog: MetadataDialogState;
   sourcebookDialog: SourcebookDialogState;
   chapterMetadataDialog: ChapterMetadataDialogState;
+  sceneEditorDialog: SceneEditorDialogState;
 
   // ── Editor UI flags ───────────────────────────────────────────────────────
   viewMode: ViewMode;
+  workspaceMode: 'page' | 'scenes' | 'split';
+  /** Scenes panel sub-view type (narrative, pinboard, chronological, convergence-map). Persisted. */
+  scenesViewType: string;
   showWhitespace: boolean;
   activeFormats: string[];
   isViewMenuOpen: boolean;
   isFormatMenuOpen: boolean;
   isMobileFormatMenuOpen: boolean;
+
+  sceneLaneState: {
+    visibleLaneEntryIds: string[];
+    removedReferencedLaneIds: string[];
+  };
+  sceneSelectionChapterIds: ReadonlySet<string>;
+  setSceneSelectionChapterIds: (chapterIds: ReadonlySet<string>) => void;
+  /** The primary (cursor-selected or clicked) scene ID.  Written by
+   *  ScenesPanelContainer and read by the left-pane SceneTreeView so
+   *  selection stays synchronised across both panes. */
+  sceneSelectionPrimaryId: SceneId | null;
+  setSceneSelectionPrimaryId: (id: SceneId | null) => void;
+  setSceneLaneState: (
+    state:
+      | {
+          visibleLaneEntryIds: string[];
+          removedReferencedLaneIds: string[];
+        }
+      | ((prev: {
+          visibleLaneEntryIds: string[];
+          removedReferencedLaneIds: string[];
+        }) => {
+          visibleLaneEntryIds: string[];
+          removedReferencedLaneIds: string[];
+        })
+  ) => void;
 
   // ── Actions ───────────────────────────────────────────────────────────────
   setIsChatOpen: (open: boolean | ((prev: boolean) => boolean)) => void;
@@ -82,7 +123,24 @@ export interface UIStoreState {
   closeSourcebookDialog: () => void;
   openChapterMetadataDialog: (chapterId: string, initialTab?: MetadataTab) => void;
   closeChapterMetadataDialog: () => void;
+  openSceneEditorDialog: (
+    sceneId: SceneId,
+    openedViaTrigger?: boolean,
+    mutationHint?: {
+      changedFields?: string[];
+      previousValues?: Record<string, unknown>;
+    } | null
+  ) => void;
+  closeSceneEditorDialog: () => void;
 
+  setWorkspaceMode: (
+    mode:
+      | 'page'
+      | 'scenes'
+      | 'split'
+      | ((prev: 'page' | 'scenes' | 'split') => 'page' | 'scenes' | 'split')
+  ) => void;
+  setScenesViewType: (viewType: string | ((prev: string) => string)) => void;
   setViewMode: (mode: ViewMode | ((prev: ViewMode) => ViewMode)) => void;
   setShowWhitespace: (show: boolean | ((prev: boolean) => boolean)) => void;
   setActiveFormats: (formats: string[] | ((prev: string[]) => string[])) => void;
@@ -128,14 +186,37 @@ export const useUIStore = create<UIStoreState>()(
         chapterId: null,
         initialTab: undefined,
       },
+      sceneEditorDialog: {
+        isOpen: false,
+        version: 0,
+        sceneId: null,
+        openedViaTrigger: false,
+        mutationHint: null,
+      },
 
       // ── Editor UI flags (not persisted) ─────────────────────────────────
       viewMode: 'raw' as ViewMode,
+      workspaceMode: 'page' as 'page' | 'scenes' | 'split',
+      scenesViewType: 'narrative',
       showWhitespace: false,
       activeFormats: [] as string[],
       isViewMenuOpen: false,
       isFormatMenuOpen: false,
       isMobileFormatMenuOpen: false,
+      sceneLaneState: {
+        visibleLaneEntryIds: [],
+        removedReferencedLaneIds: [],
+      },
+      sceneSelectionChapterIds: new Set<string>(),
+      setSceneSelectionChapterIds: (chapterIds: ReadonlySet<string>) =>
+        set((s: UIStoreState): { sceneSelectionChapterIds: ReadonlySet<string> } => ({
+          sceneSelectionChapterIds: chapterIds,
+        })),
+      sceneSelectionPrimaryId: null as SceneId | null,
+      setSceneSelectionPrimaryId: (id: SceneId | null) =>
+        set((): { sceneSelectionPrimaryId: SceneId | null } => ({
+          sceneSelectionPrimaryId: id,
+        })),
 
       // ── Panel actions ────────────────────────────────────────────────────
       setIsChatOpen: (v: boolean | ((prev: boolean) => boolean)) =>
@@ -241,7 +322,50 @@ export const useUIStore = create<UIStoreState>()(
           chapterMetadataDialog: { ...s.chapterMetadataDialog, isOpen: false },
         })),
 
+      openSceneEditorDialog: (
+        sceneId: SceneId,
+        openedViaTrigger: boolean = false,
+        mutationHint: {
+          changedFields?: string[];
+          previousValues?: Record<string, unknown>;
+        } | null = null
+      ) =>
+        set((s: UIStoreState) => ({
+          sceneEditorDialog: {
+            isOpen: true,
+            version: s.sceneEditorDialog.version + 1,
+            sceneId,
+            openedViaTrigger,
+            mutationHint,
+          },
+        })),
+
+      closeSceneEditorDialog: () =>
+        set((s: UIStoreState) => ({
+          sceneEditorDialog: {
+            ...s.sceneEditorDialog,
+            isOpen: false,
+            sceneId: null,
+            openedViaTrigger: false,
+            mutationHint: null,
+          },
+        })),
+
       // ── Editor UI actions ────────────────────────────────────────────────
+      setWorkspaceMode: (
+        v:
+          | 'page'
+          | 'scenes'
+          | 'split'
+          | ((prev: 'page' | 'scenes' | 'split') => 'page' | 'scenes' | 'split')
+      ) =>
+        set((s: UIStoreState): { workspaceMode: 'page' | 'scenes' | 'split' } => ({
+          workspaceMode: resolve(v, s.workspaceMode),
+        })),
+      setScenesViewType: (v: string | ((prev: string) => string)) =>
+        set((s: UIStoreState): { scenesViewType: string } => ({
+          scenesViewType: resolve(v, s.scenesViewType),
+        })),
       setViewMode: (v: ViewMode | ((prev: ViewMode) => ViewMode)) =>
         set((s: UIStoreState): { viewMode: ViewMode } => ({
           viewMode: resolve(v, s.viewMode),
@@ -254,6 +378,32 @@ export const useUIStore = create<UIStoreState>()(
         set((s: UIStoreState): { activeFormats: string[] } => ({
           activeFormats: resolve(v, s.activeFormats),
         })),
+      setSceneLaneState: (
+        state:
+          | {
+              visibleLaneEntryIds: string[];
+              removedReferencedLaneIds: string[];
+            }
+          | ((prev: {
+              visibleLaneEntryIds: string[];
+              removedReferencedLaneIds: string[];
+            }) => {
+              visibleLaneEntryIds: string[];
+              removedReferencedLaneIds: string[];
+            })
+      ) =>
+        set(
+          (
+            s: UIStoreState
+          ): {
+            sceneLaneState: {
+              visibleLaneEntryIds: string[];
+              removedReferencedLaneIds: string[];
+            };
+          } => ({
+            sceneLaneState: resolve(state, s.sceneLaneState),
+          })
+        ),
       setIsViewMenuOpen: (v: boolean | ((prev: boolean) => boolean)) =>
         set((s: UIStoreState): { isViewMenuOpen: boolean } => ({
           isViewMenuOpen: resolve(v, s.isViewMenuOpen),
@@ -269,13 +419,40 @@ export const useUIStore = create<UIStoreState>()(
     }),
     {
       name: 'aq_ui_panels',
-      // Only persist panel open/close state – dialogs and editor flags are
-      // transient and should reset on page load.
+      storage: createJSONStorage(() => {
+        if (
+          typeof localStorage !== 'undefined' &&
+          typeof localStorage.setItem === 'function'
+        ) {
+          return localStorage;
+        }
+
+        return {
+          getItem: (_name: string): string | null => null,
+          setItem: (_name: string, _value: string): void => undefined,
+          removeItem: (_name: string): void => undefined,
+          clear: (): void => undefined,
+        };
+      }),
+      // Persist panel open/close state and view state preferences so they
+      // survive page reloads.  Dialogs and transient editor flags reset.
       partialize: (
         state: UIStoreState
-      ): { isChatOpen: boolean; isSidebarOpen: boolean } => ({
+      ): {
+        isChatOpen: boolean;
+        isSidebarOpen: boolean;
+        workspaceMode: 'page' | 'scenes' | 'split';
+        scenesViewType: string;
+        sceneLaneState: {
+          visibleLaneEntryIds: string[];
+          removedReferencedLaneIds: string[];
+        };
+      } => ({
         isChatOpen: state.isChatOpen,
         isSidebarOpen: state.isSidebarOpen,
+        workspaceMode: state.workspaceMode,
+        scenesViewType: state.scenesViewType,
+        sceneLaneState: state.sceneLaneState,
       }),
     }
   )
@@ -302,6 +479,21 @@ export function useChapterMetadataDialog(): ChapterMetadataDialogState {
   );
 }
 
+/** Subscribe to scene editor dialog state only. */
+export function useSceneEditorDialog(): SceneEditorDialogState {
+  return useUIStore((s: UIStoreState): SceneEditorDialogState => s.sceneEditorDialog);
+}
+
+/** Subscribe to workspace mode state only. */
+export function useWorkspaceMode(): 'page' | 'scenes' | 'split' {
+  return useUIStore((s: UIStoreState) => s.workspaceMode);
+}
+
+/** Subscribe to scenes view type state only. */
+export function useScenesViewType(): string {
+  return useUIStore((s: UIStoreState) => s.scenesViewType);
+}
+
 // ---------------------------------------------------------------------------
 // Test helpers
 // ---------------------------------------------------------------------------
@@ -323,12 +515,25 @@ export function resetUIStore(): void {
       chapterId: null,
       initialTab: undefined,
     },
+    sceneEditorDialog: {
+      isOpen: false,
+      version: 0,
+      sceneId: null,
+      openedViaTrigger: false,
+      mutationHint: null,
+    },
     viewMode: 'raw' as ViewMode,
+    workspaceMode: 'page' as 'page' | 'scenes' | 'split',
+    scenesViewType: 'narrative',
     showWhitespace: false,
     activeFormats: [],
     isViewMenuOpen: false,
     isFormatMenuOpen: false,
     isMobileFormatMenuOpen: false,
+    sceneLaneState: {
+      visibleLaneEntryIds: [],
+      removedReferencedLaneIds: [],
+    },
   });
 }
 
@@ -347,4 +552,16 @@ export const uiStoreActions = {
   openChapterMetadataDialog: (chapterId: string, initialTab?: MetadataTab) =>
     useUIStore.getState().openChapterMetadataDialog(chapterId, initialTab),
   closeChapterMetadataDialog: () => useUIStore.getState().closeChapterMetadataDialog(),
+  openSceneEditorDialog: (
+    sceneId: SceneId,
+    openedViaTrigger: boolean = false,
+    mutationHint: {
+      changedFields?: string[];
+      previousValues?: Record<string, unknown>;
+    } | null = null
+  ) =>
+    useUIStore
+      .getState()
+      .openSceneEditorDialog(sceneId, openedViaTrigger, mutationHint),
+  closeSceneEditorDialog: () => useUIStore.getState().closeSceneEditorDialog(),
 };

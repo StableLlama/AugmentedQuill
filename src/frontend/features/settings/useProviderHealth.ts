@@ -86,7 +86,7 @@ export function groupProviders(
         payload: {
           base_url: provider.baseUrl,
           api_key: apiKey,
-          timeout_s: Math.round((provider.timeout || 10000) / 1000),
+          timeout_s: Math.max(1, Math.round(provider.timeout || 10)),
           model_id: modelId,
         },
       };
@@ -137,7 +137,7 @@ function resolveProviderHealthGroup(
     payload: groupedProviders[key]?.payload || {
       base_url: provider.baseUrl,
       api_key: apiKey,
-      timeout_s: Math.round((provider.timeout || 10000) / 1000),
+      timeout_s: Math.max(1, Math.round(provider.timeout || 10)),
       model_id: modelId,
     },
   };

@@ -9,13 +9,60 @@
 
 from typing import Any
 
-from augmentedquill.services.projects.projects import get_active_project_dir
 from augmentedquill.core.config import load_story_config
 from augmentedquill.services.chapters.chapter_helpers import (
-    _scan_chapter_files,
-    _normalize_chapter_entry,
     _chapter_by_id_or_404,
+    _normalize_chapter_entry,
+    _scan_chapter_files,
 )
+from augmentedquill.services.projects.projects import get_active_project_dir
+
+
+def _sanitize_scene_prose_links_for_frontend(scene_value: Any) -> Any:
+    """Drop legacy prose_link keys that violate strict frontend scene models."""
+    if not isinstance(scene_value, dict):
+        return scene_value
+
+    scene_copy = scene_value.copy()
+    prose_link = scene_copy.get("prose_link")
+    if isinstance(prose_link, dict):
+        clean_link = {
+            "scope_type": prose_link.get("scope_type"),
+            "chapter_id": prose_link.get("chapter_id"),
+            "book_id": prose_link.get("book_id"),
+            "start_offset": prose_link.get("start_offset"),
+            "end_offset": prose_link.get("end_offset"),
+        }
+        scene_copy["prose_link"] = {
+            key: value for key, value in clean_link.items() if value is not None
+        }
+
+    beats = scene_copy.get("beats")
+    if isinstance(beats, list):
+        normalized_beats: list[Any] = []
+        for beat in beats:
+            if not isinstance(beat, dict):
+                normalized_beats.append(beat)
+                continue
+            beat_copy = beat.copy()
+            beat_link = beat_copy.get("prose_link")
+            if isinstance(beat_link, dict):
+                clean_beat_link = {
+                    "scope_type": beat_link.get("scope_type"),
+                    "chapter_id": beat_link.get("chapter_id"),
+                    "book_id": beat_link.get("book_id"),
+                    "start_offset": beat_link.get("start_offset"),
+                    "end_offset": beat_link.get("end_offset"),
+                }
+                beat_copy["prose_link"] = {
+                    key: value
+                    for key, value in clean_beat_link.items()
+                    if value is not None
+                }
+            normalized_beats.append(beat_copy)
+        scene_copy["beats"] = normalized_beats
+
+    return scene_copy
 
 
 def normalize_story_for_frontend(story: dict) -> dict:
@@ -73,6 +120,22 @@ def normalize_story_for_frontend(story: dict) -> dict:
                             new_books.append(b_copy)
                     res["books"] = new_books
 
+    # Scenes: normalise from dict (on-disk format) to sorted list for frontend.
+    scenes_raw = res.get("scenes", {})
+    if isinstance(scenes_raw, dict):
+        scenes_list = [
+            _sanitize_scene_prose_links_for_frontend({"id": sid, **data})
+            for sid, data in scenes_raw.items()
+        ]
+        scenes_list.sort(key=lambda s: (s.get("pinboard_y", 0), s.get("pinboard_x", 0)))
+        res["scenes"] = scenes_list
+    elif isinstance(scenes_raw, list):
+        res["scenes"] = [
+            _sanitize_scene_prose_links_for_frontend(scene) for scene in scenes_raw
+        ]
+    else:
+        res["scenes"] = []
+
     # Conflict IDs are synthesized when missing so editing and reordering
     # remain stable in the frontend.
     def _handle_chapters(chapters: Any) -> Any:
@@ -109,7 +172,9 @@ def _project_overview(include_notes: bool = False) -> dict:
     Notes are excluded by default to keep the overview lightweight.
     """
     active = get_active_project_dir()
-    raw_story = load_story_config((active / "story.json") if active else None) or {}
+    raw_story = (
+        load_story_config(active / "story.json") if active is not None else {}
+    ) or {}
     story = normalize_story_for_frontend(raw_story)
     p_type = story.get("project_type", "novel")
 
@@ -117,6 +182,9 @@ def _project_overview(include_notes: bool = False) -> dict:
         "project_title": story.get("project_title") or (active.name if active else ""),
         "project_type": p_type,
         "sourcebook_entry_count": len(story.get("sourcebook", {})),
+        "scene_count": len(story.get("scenes", [])),
+        "story_summary": story.get("story_summary") or "",
+        "notes": story.get("notes") or "",
     }
 
     if p_type == "short-story":
@@ -223,8 +291,7 @@ def _project_overview(include_notes: bool = False) -> dict:
 
 def _chapter_content_slice(chap_id: int, start: int = 0, max_chars: int = 8000) -> dict:
     """Return a safe slice of chapter content with metadata."""
-    if start < 0:
-        start = 0
+    start = max(start, 0)
     if max_chars <= 0:
         max_chars = 1
     _, path, _pos = _chapter_by_id_or_404(chap_id)

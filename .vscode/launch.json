@@ -15,6 +15,19 @@
       }
     },
     {
+      "name": "Backend (Dev API 28000) Verbose",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "augmentedquill.main",
+      "args": ["--host", "127.0.0.1", "--port", "28000", "--reload", "--llm-dump"],
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "preLaunchTask": "backend: prepare",
+      "env": {
+        "AUGQ_LLM_DUMP_LEVEL": "debug"
+      }
+    },
+    {
       "name": "Frontend (Vite 28001)",
       "type": "node-terminal",
       "request": "launch",
@@ -30,6 +43,11 @@
     {
       "name": "Full Stack Dev (Backend + Frontend)",
       "configurations": ["Backend (Dev API 28000)", "Frontend (Vite 28001)"],
+      "stopAll": true
+    },
+    {
+      "name": "Full Stack Dev (Backend + Frontend) Verbose",
+      "configurations": ["Backend (Dev API 28000) Verbose", "Frontend (Vite 28001)"],
       "stopAll": true
     }
   ]

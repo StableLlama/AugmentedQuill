@@ -16,9 +16,28 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useProjectManagement } from './useProjectManagement';
 import { api } from '../../services/api';
+import { useChatStore } from '../../stores/chatStore';
+
+const scopedChatSaveMocks = new Map<string, ReturnType<typeof vi.fn>>();
+
+const getScopedChatSaveMock = (projectId: string): ReturnType<typeof vi.fn> => {
+  const existing = scopedChatSaveMocks.get(projectId);
+  if (existing) {
+    return existing;
+  }
+
+  const created = vi.fn().mockResolvedValue({ ok: true });
+  scopedChatSaveMocks.set(projectId, created);
+  return created;
+};
 
 vi.mock('../../services/api', () => ({
   api: {
+    forProject: vi.fn((projectId: string) => ({
+      chat: {
+        save: getScopedChatSaveMock(projectId),
+      },
+    })),
     projects: {
       list: vi.fn(),
       select: vi.fn(),
@@ -48,6 +67,7 @@ const baseStory = {
 
 function setupProjectManagementMocks(): void {
   vi.clearAllMocks();
+  scopedChatSaveMocks.clear();
   const store: Record<string, string> = {};
   vi.stubGlobal('localStorage', {
     getItem: (key: string) => (key in store ? store[key] : null),
@@ -144,6 +164,165 @@ describe('useProjectManagement: load and reset', () => {
 
     expect(refreshStory).toHaveBeenCalledWith(undefined, true);
     expect(handleNewChat).toHaveBeenCalled();
+  });
+
+  it('duplicates active chat into target project for preserved switches', async () => {
+    vi.mocked(api.projects.select).mockResolvedValue({ ok: true } as unknown as Awaited<
+      ReturnType<typeof api.projects.select>
+    >);
+    vi.mocked(api.chat.list).mockResolvedValue([
+      {
+        id: 'chat-continue',
+        name: 'Continue',
+        messages: [],
+      },
+    ] as unknown as Awaited<ReturnType<typeof api.chat.list>>);
+
+    const handleSelectChat = vi.fn().mockResolvedValue(undefined);
+
+    useChatStore.setState({
+      currentChatId: 'chat-continue',
+      chatMessages: [
+        {
+          id: 'm1',
+          role: 'user',
+          text: 'Please create a new project and continue',
+        },
+      ],
+      isIncognito: false,
+      systemPrompt: 'system prompt',
+      allowWebSearch: false,
+      scratchpad: 'scratchpad',
+      projectContextRevision: 7,
+    });
+
+    const { result } = renderHook(() =>
+      useProjectManagement({
+        storyId: baseStory.id,
+        storyTitle: baseStory.title,
+        storyProjectType: baseStory.projectType,
+        storyLanguage: baseStory.language ?? 'en',
+        storySummary: baseStory.summary,
+        storyStyleTags: baseStory.styleTags,
+        storyConflicts: baseStory.conflicts,
+        refreshStory: vi.fn().mockResolvedValue(undefined),
+        loadStory: vi.fn(),
+        updateStoryMetadata: vi.fn().mockResolvedValue(undefined),
+        handleSelectChat,
+        handleNewChat: vi.fn(),
+        setChatHistoryList: vi.fn(),
+        getErrorMessage: () => 'error',
+        isSettingsOpen: false,
+        setIsSettingsOpen: vi.fn(),
+      })
+    );
+
+    await act(async () => {
+      await result.current.handleLoadProject('p1', {
+        preserveActiveChatSession: true,
+      });
+    });
+
+    const sourceSave = scopedChatSaveMocks.get(baseStory.id);
+    const targetSave = scopedChatSaveMocks.get('p1');
+
+    expect(sourceSave).toBeTruthy();
+    expect(targetSave).toBeTruthy();
+    expect(sourceSave).toHaveBeenCalledWith(
+      'chat-continue',
+      expect.objectContaining({
+        name: 'Please create a new project and continue'.substring(0, 40),
+        systemPrompt: 'system prompt',
+        scratchpad: 'scratchpad',
+      })
+    );
+    expect(targetSave).toHaveBeenCalledWith(
+      'chat-continue',
+      expect.objectContaining({
+        name: 'Please create a new project and continue'.substring(0, 40),
+      })
+    );
+    expect(handleSelectChat).toHaveBeenCalledWith('chat-continue');
+  });
+
+  it('resolves target project title to canonical id before duplicating chat', async () => {
+    vi.mocked(api.projects.list).mockResolvedValue({
+      available: [
+        {
+          name: 'Back to the Future_ The Chronological Saga',
+          title: 'Back to the Future: The Chronological Saga',
+          type: 'novel',
+          language: 'en',
+        },
+      ],
+    } as unknown as Awaited<ReturnType<typeof api.projects.list>>);
+    vi.mocked(api.projects.select).mockResolvedValue({ ok: true } as unknown as Awaited<
+      ReturnType<typeof api.projects.select>
+    >);
+    vi.mocked(api.chat.list).mockResolvedValue([
+      {
+        id: 'chat-continue',
+        name: 'Continue',
+        messages: [],
+      },
+    ] as unknown as Awaited<ReturnType<typeof api.chat.list>>);
+
+    useChatStore.setState({
+      currentChatId: 'chat-continue',
+      chatMessages: [
+        {
+          id: 'm1',
+          role: 'user',
+          text: 'continue this thread',
+        },
+      ],
+      isIncognito: false,
+      systemPrompt: 'system prompt',
+      allowWebSearch: false,
+      scratchpad: 'scratchpad',
+      projectContextRevision: 7,
+    });
+
+    const handleSelectChat = vi.fn().mockResolvedValue(undefined);
+
+    const { result } = renderHook(() =>
+      useProjectManagement({
+        storyId: baseStory.id,
+        storyTitle: baseStory.title,
+        storyProjectType: baseStory.projectType,
+        storyLanguage: baseStory.language ?? 'en',
+        storySummary: baseStory.summary,
+        storyStyleTags: baseStory.styleTags,
+        storyConflicts: baseStory.conflicts,
+        refreshStory: vi.fn().mockResolvedValue(undefined),
+        loadStory: vi.fn(),
+        updateStoryMetadata: vi.fn().mockResolvedValue(undefined),
+        handleSelectChat,
+        handleNewChat: vi.fn(),
+        setChatHistoryList: vi.fn(),
+        getErrorMessage: () => 'error',
+        isSettingsOpen: false,
+        setIsSettingsOpen: vi.fn(),
+      })
+    );
+
+    await act(async () => {
+      await result.current.handleLoadProject(
+        'Back to the Future: The Chronological Saga',
+        {
+          preserveActiveChatSession: true,
+        }
+      );
+    });
+
+    const targetSave = scopedChatSaveMocks.get(
+      'Back to the Future_ The Chronological Saga'
+    );
+    expect(targetSave).toBeTruthy();
+    expect(vi.mocked(api.projects.select)).toHaveBeenCalledWith(
+      'Back to the Future_ The Chronological Saga'
+    );
+    expect(handleSelectChat).toHaveBeenCalledWith('chat-continue');
   });
 });
 

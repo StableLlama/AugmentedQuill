@@ -7,17 +7,26 @@
 
 """Defines the sourcebook tools unit so this responsibility stays isolated, testable, and easy to evolve."""
 
-from typing import Any, List, Union
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import Field, field_validator
 
 from augmentedquill.services.chat.chat_tool_decorator import (
     CHAT_ROLE,
     EDITING_ROLE,
+    ToolModel,
     chat_tool,
+    resolve_tool_role,
+)
+from augmentedquill.services.chat.chat_tools.metadata_patching import (
+    StringListPatch,
+    TextPatch,
+    apply_string_list_patch,
+    apply_text_patch,
 )
 from augmentedquill.services.sourcebook.sourcebook_helpers import (
     _get_entry_relations,
+    _get_story_data,
     sourcebook_add_relation,
     sourcebook_create_entry,
     sourcebook_delete_entry,
@@ -26,13 +35,6 @@ from augmentedquill.services.sourcebook.sourcebook_helpers import (
     sourcebook_refresh_entry_keywords,
     sourcebook_remove_relation,
     sourcebook_update_entry,
-    _get_story_data,
-)
-from augmentedquill.services.chat.chat_tools.metadata_patching import (
-    StringListPatch,
-    TextPatch,
-    apply_string_list_patch,
-    apply_text_patch,
 )
 
 
@@ -70,10 +72,10 @@ def _strip_internal_sourcebook_fields(entry: dict | None) -> dict | None:
             f_rel = {"relation": rel_tuple}
 
             if project_type in ("novel", "series"):
-                if r.get("start_chapter"):
-                    f_rel["start_chapter"] = r.get("start_chapter")
-                if r.get("end_chapter"):
-                    f_rel["end_chapter"] = r.get("end_chapter")
+                if r.get("start_scene") is not None:
+                    f_rel["start_scene"] = r.get("start_scene")
+                if r.get("end_scene") is not None:
+                    f_rel["end_scene"] = r.get("end_scene")
 
             if project_type == "series":
                 if r.get("start_book"):
@@ -102,54 +104,8 @@ def _strip_internal_sourcebook_fields_list(entries: list[dict]) -> list[dict]:
 # Pydantic models for tool parameters
 
 
-class SourcebookRelation(BaseModel):
-    """Represents a relation between sourcebook entries.
-
-    The `relation` field is a 3-element tuple:
-      1) source entry id
-      2) relation descriptor (how source relates to target)
-      3) target entry id
-    """
-
-    relation: List[str] = Field(
-        ...,
-        description=(
-            "A 3-element list: [source_entry_id, relation_type, target_entry_id]. "
-            "Used to express how one entry relates to another."
-        ),
-    )
-    start_chapter: str | None = Field(
-        None,
-        description="Optional start chapter for the relation.",
-    )
-    end_chapter: str | None = Field(
-        None,
-        description="Optional end chapter for the relation.",
-    )
-    start_book: str | None = Field(
-        None,
-        description="Optional start book for the relation.",
-    )
-    end_book: str | None = Field(
-        None,
-        description="Optional end book for the relation.",
-    )
-
-
-class GetSourcebookEntryParams(BaseModel):
-    """Parameters for retrieving one or more sourcebook entries."""
-
-    name_or_id: Union[str, List[str]] = Field(
-        ...,
-        description=(
-            "The name or ID of the sourcebook entry to retrieve. "
-            "Can be either a single string or a list of strings."
-        ),
-    )
-
-
-class CreateSourcebookEntryParams(BaseModel):
-    """Parameters for creating a sourcebook entry."""
+class ManageSourcebookEntryData(ToolModel):
+    """Payload for creating sourcebook entries."""
 
     name: str = Field(..., description="The name of the sourcebook entry")
     description: str = Field(..., description="The description/content of the entry")
@@ -165,12 +121,29 @@ class CreateSourcebookEntryParams(BaseModel):
         default_factory=list,
         description="Optional list of image IDs to associate with this entry.",
     )
+    relations: list[dict] | None = Field(
+        None,
+        description=(
+            "Optional list of relation objects to attach to this entry at creation time. "
+            "Each relation may include target_id, relation_type, direction ('forward' or 'reverse'), "
+            "and optional chapter/book bounds. Use relations to keep new sourcebook entries logically linked to existing world knowledge."
+        ),
+    )
+    origin_date: str | None = Field(
+        None,
+        description=(
+            "Optional ISO 8601 birth or creation date for this entry. "
+            "RECOMMENDED FORMAT: ISO 8601 date (e.g. '1985-11-05') or full datetime (e.g. '1985-11-05T12:00:00Z'). "
+            "ALSO ACCEPTED: time-only ('14:30' or '14:30:45' → uses today's date), or date with time and timezone. "
+            "Used to compute the entry's personal timeline age at each scene it appears in. "
+            "All forms are normalized and stored as complete ISO 8601 format."
+        ),
+    )
 
 
-class UpdateSourcebookEntryParams(BaseModel):
-    """Parameters for updating a sourcebook entry."""
+class ManageSourcebookUpdateData(ToolModel):
+    """Payload for updating sourcebook entries."""
 
-    name_or_id: str = Field(..., description="The name or ID of the entry to update")
     name: str | None = Field(None, description="New name for the entry")
     description: str | None = Field(None, description="New description for the entry")
     description_patch: TextPatch | None = Field(
@@ -192,212 +165,41 @@ class UpdateSourcebookEntryParams(BaseModel):
         None,
         description="Optional patch operation for images (add/remove/set/clear).",
     )
-
-
-class DeleteSourcebookEntryParams(BaseModel):
-    """Parameters for deleting a sourcebook entry."""
-
-    name_or_id: str = Field(..., description="The name or ID of the entry to delete")
-
-
-# Tool implementations with co-located schemas
-
-
-@chat_tool(
-    description="Get a specific sourcebook entry by name or ID.",
-    allowed_roles=(CHAT_ROLE, EDITING_ROLE),
-    capability="sourcebook-read",
-)
-async def get_sourcebook_entry(
-    params: GetSourcebookEntryParams, payload: dict, mutations: dict
-) -> Any:
-    """Get Sourcebook Entry.
-
-    Accepts either a single string (name/ID) or a list of strings.
-    """
-    ids = params.name_or_id
-
-    if isinstance(ids, str):
-        entry = sourcebook_get_entry(ids)
-        if not entry:
-            return {"error": "Not found"}
-        return _strip_internal_sourcebook_fields(entry)
-
-    results: list[dict] = []
-    for id_ in ids:
-        entry = sourcebook_get_entry(id_)
-        if entry:
-            results.append(_strip_internal_sourcebook_fields(entry))
-    return results
-
-
-@chat_tool(
-    description="Create a new sourcebook entry. Always provide name, description, and category. Allowed categories: Character, Location, Organization, Item, Event, Lore, Other. Synonyms and images are optional. For better lookup, set useful synonyms and relations (e.g., related characters/locations/organizations) when creating the entry.",
-    allowed_roles=(CHAT_ROLE,),
-    capability="sourcebook-write",
-)
-async def create_sourcebook_entry(
-    params: CreateSourcebookEntryParams, payload: dict, mutations: dict
-) -> Any:
-    """Create Sourcebook Entry."""
-    new_entry = sourcebook_create_entry(
-        name=params.name,
-        description=params.description,
-        category=params.category,
-        synonyms=params.synonyms,
-        images=params.images,
-    )
-    if "error" not in new_entry:
-        mutations["story_changed"] = True
-        refreshed = await sourcebook_refresh_entry_keywords(new_entry["id"], payload)
-        if isinstance(refreshed, dict):
-            new_entry = refreshed
-    return _strip_internal_sourcebook_fields(new_entry)
-
-
-@chat_tool(
-    description=(
-        "Update an existing sourcebook entry. Provide only the fields you want to change; this is a partial replacement. "
-        "At least one of name, description, description_patch, category, synonyms, synonyms_patch, images, or images_patch must be provided. "
-        "If category is provided, it must be one of: Character, Location, Organization, Item, Event, Lore, Other. "
-        "For better lookup, also update synonyms and relations (e.g., related characters/locations/organizations) when applicable. "
-        "Use add_sourcebook_relation/remove_sourcebook_relation for atomic relation edits without replacing entry fields."
-    ),
-    allowed_roles=(CHAT_ROLE,),
-    capability="sourcebook-write",
-)
-async def update_sourcebook_entry(
-    params: UpdateSourcebookEntryParams, payload: dict, mutations: dict
-) -> Any:
-    """Update Sourcebook Entry."""
-    if (
-        params.name is None
-        and params.description is None
-        and params.description_patch is None
-        and params.category is None
-        and params.synonyms is None
-        and params.synonyms_patch is None
-        and params.images is None
-        and params.images_patch is None
-    ):
-        return {
-            "error": "No update fields provided. Provide at least one of name, description, description_patch, category, synonyms, synonyms_patch, images, or images_patch."
-        }
-
-    current = sourcebook_get_entry(params.name_or_id)
-    if not isinstance(current, dict):
-        return {"error": "Entry not found."}
-
-    description_value = params.description
-    if params.description_patch is not None:
-        description_value = apply_text_patch(
-            str(current.get("description") or ""),
-            params.description_patch,
-        )
-
-    synonyms_value = params.synonyms
-    if params.synonyms_patch is not None:
-        current_synonyms = current.get("synonyms")
-        if not isinstance(current_synonyms, list):
-            current_synonyms = []
-        synonyms_value = apply_string_list_patch(
-            current_synonyms, params.synonyms_patch
-        )
-
-    images_value = params.images
-    if params.images_patch is not None:
-        current_images = current.get("images")
-        if not isinstance(current_images, list):
-            current_images = []
-        images_value = apply_string_list_patch(current_images, params.images_patch)
-
-    result = sourcebook_update_entry(
-        name_or_id=params.name_or_id,
-        name=params.name,
-        description=description_value,
-        category=params.category,
-        synonyms=synonyms_value,
-        images=images_value,
-    )
-    if "error" not in result:
-        mutations["story_changed"] = True
-        refreshed = await sourcebook_refresh_entry_keywords(result["id"], payload)
-        if isinstance(refreshed, dict):
-            result = refreshed
-    return _strip_internal_sourcebook_fields(result)
-
-
-@chat_tool(
-    description="Delete a sourcebook entry by name or ID.",
-    allowed_roles=(CHAT_ROLE,),
-    capability="sourcebook-write",
-)
-async def delete_sourcebook_entry(
-    params: DeleteSourcebookEntryParams, payload: dict, mutations: dict
-) -> Any:
-    """Delete Sourcebook Entry."""
-    deleted = sourcebook_delete_entry(params.name_or_id)
-    if deleted:
-        mutations["story_changed"] = True
-        return {"ok": True}
-    return {"error": "Not found"}
-
-
-# ---------------------------------------------------------------------------
-# List / browse
-# ---------------------------------------------------------------------------
-
-
-class ListSourcebookEntriesParams(BaseModel):
-    """Parameters for listing sourcebook entries."""
-
-    category: str | None = Field(
+    relations: list[dict] | None = Field(
         None,
         description=(
-            "Optional category filter. Allowed values: "
-            "Character, Location, Organization, Item, Event, Lore, Other."
+            "Optional list of relation objects to replace the entry's existing relations. "
+            "Each relation may include target_id, relation_type, direction ('forward' or 'reverse'), "
+            "and optional chapter/book bounds. Tuple-style relations of the form "
+            "['Source', 'relation', 'Target'] are also accepted and normalized."
+        ),
+    )
+    origin_date: str | None = Field(
+        None,
+        description=(
+            "Optional ISO 8601 birth or creation date. "
+            "RECOMMENDED FORMAT: ISO 8601 date (e.g. '1985-11-05') or full datetime (e.g. '1985-11-05T12:00:00Z'). "
+            "ALSO ACCEPTED: time-only ('14:30' or '14:30:45' → uses today's date), or date with time and timezone. "
+            "Set to clear the existing value or provide a new one. "
+            "All forms are normalized and stored as complete ISO 8601 format."
         ),
     )
 
 
-@chat_tool(
-    description=(
-        "List all sourcebook entries, optionally filtered by category. "
-        "Returns id, name, category, description, synonyms, images, and relations for each entry."
-    ),
-    allowed_roles=(CHAT_ROLE, EDITING_ROLE),
-    capability="sourcebook-read",
-)
-async def list_sourcebook_entries(
-    params: ListSourcebookEntriesParams, payload: dict, mutations: dict
-) -> Any:
-    """List all sourcebook entries with optional category filter."""
-    entries = sourcebook_list_entries()
-    if params.category:
-        needle = params.category.strip().lower()
-        entries = [e for e in entries if (e.get("category") or "").lower() == needle]
-    return _strip_internal_sourcebook_fields_list(entries)
-
-
-# ---------------------------------------------------------------------------
-# Atomic relation management
-# ---------------------------------------------------------------------------
-
-
-class AddSourcebookRelationParams(BaseModel):
-    """Parameters for adding a single sourcebook relation."""
+class ManageSourcebookRelationData(ToolModel):
+    """Payload for adding/removing a directed sourcebook relation."""
 
     source_id: str = Field(..., description="The name/ID of the source entry.")
     relation_type: str = Field(
         ...,
-        description="A short phrase describing how the source relates to the target (e.g. 'is ally of', 'owns').",
+        description="Relation descriptor used to connect source and target entries.",
     )
     target_id: str = Field(..., description="The name/ID of the target entry.")
-    start_chapter: str | None = Field(
-        None, description="Optional chapter where the relation begins."
+    start_scene: int | None = Field(
+        None, description="Optional scene where the relation begins."
     )
-    end_chapter: str | None = Field(
-        None, description="Optional chapter where the relation ends."
+    end_scene: int | None = Field(
+        None, description="Optional scene where the relation ends."
     )
     start_book: str | None = Field(
         None, description="Optional book where the relation begins."
@@ -406,61 +208,244 @@ class AddSourcebookRelationParams(BaseModel):
         None, description="Optional book where the relation ends."
     )
 
+    @field_validator("start_scene", "end_scene", mode="before")
+    @classmethod
+    def _validate_scene_id(cls, value: object) -> int | None:
+        if value is None:
+            return None
+        if type(value) is int:
+            return value
+        raise ValueError("Scene IDs must be integers.")
 
-class RemoveSourcebookRelationParams(BaseModel):
-    """Parameters for removing a single sourcebook relation."""
 
-    source_id: str = Field(..., description="The name/ID of the source entry.")
-    relation_type: str = Field(
-        ..., description="The relation descriptor used when the relation was created."
+class ManageSourcebookParams(ToolModel):
+    """Action router parameters for manage_sourcebook."""
+
+    action: Literal[
+        "get",
+        "create",
+        "update",
+        "delete",
+        "list",
+        "add_relation",
+        "remove_relation",
+    ] = Field(
+        ...,
+        description=(
+            "Sourcebook action: 'get', 'create', 'update', 'delete', 'list', "
+            "'add_relation', or 'remove_relation'."
+        ),
     )
-    target_id: str = Field(..., description="The name/ID of the target entry.")
+    name_or_id: str | list[str] | None = Field(
+        None,
+        description="Required for actions 'get', 'update', and 'delete'.",
+    )
+    category: str | None = Field(
+        None,
+        description="Optional category filter used when action='list'.",
+    )
+    entry_data: ManageSourcebookEntryData | None = Field(
+        None,
+        description="Required when action='create'.",
+    )
+    update_data: ManageSourcebookUpdateData | None = Field(
+        None,
+        description="Required when action='update'.",
+    )
+    relation_data: ManageSourcebookRelationData | None = Field(
+        None,
+        description="Required when action='add_relation' or 'remove_relation'.",
+    )
+
+
+# Tool implementations with co-located schemas
 
 
 @chat_tool(
     description=(
-        "Add a single directed relation between two sourcebook entries. "
-        "Use this instead of update_sourcebook_entry when you only want to add one relation "
-        "without touching the entry's other data."
+        "Unified sourcebook manager. Use action='list' (optional category), "
+        "action='get' (name_or_id), action='create' (entry_data), action='update' "
+        "(name_or_id + update_data), action='delete' (name_or_id), "
+        "action='add_relation' (relation_data), or action='remove_relation' "
+        "(relation_data). For action='create', entry_data may include relations to attach the new sourcebook entry into the existing world model. "
+        "For action='update', update_data may include relations to replace an entry's existing relations."
     ),
-    allowed_roles=(CHAT_ROLE,),
-    capability="sourcebook-write",
+    allowed_roles=(CHAT_ROLE, EDITING_ROLE),
+    capability="sourcebook-read",
 )
-async def add_sourcebook_relation(
-    params: AddSourcebookRelationParams, payload: dict, mutations: dict
+async def manage_sourcebook(
+    params: ManageSourcebookParams, payload: dict, mutations: dict
 ) -> Any:
-    """Add Sourcebook Relation."""
-    result = sourcebook_add_relation(
-        source_id=params.source_id,
-        relation_type=params.relation_type,
-        target_id=params.target_id,
-        start_chapter=params.start_chapter,
-        end_chapter=params.end_chapter,
-        start_book=params.start_book,
-        end_book=params.end_book,
-    )
-    if "error" not in result:
-        mutations["story_changed"] = True
-    return result
+    """Route sourcebook actions to existing atomic sourcebook helpers."""
+    role = resolve_tool_role(payload)
+    chat_only_actions = {
+        "create",
+        "update",
+        "delete",
+        "add_relation",
+        "remove_relation",
+    }
+    if role != CHAT_ROLE and params.action in chat_only_actions:
+        return {
+            "error": "Action unavailable for model role",
+            "details": {
+                "tool": "manage_sourcebook",
+                "action": params.action,
+                "model_role": role,
+                "allowed_roles": [CHAT_ROLE],
+            },
+        }
 
+    if params.action == "list":
+        entries = sourcebook_list_entries()
+        if params.category:
+            needle = params.category.strip().lower()
+            entries = [
+                e for e in entries if (e.get("category") or "").lower() == needle
+            ]
+        return _strip_internal_sourcebook_fields_list(entries)
 
-@chat_tool(
-    description=(
-        "Remove a single directed relation between two sourcebook entries. "
-        "Provide the exact source_id, relation_type, and target_id that were used when the relation was created."
-    ),
-    allowed_roles=(CHAT_ROLE,),
-    capability="sourcebook-write",
-)
-async def remove_sourcebook_relation(
-    params: RemoveSourcebookRelationParams, payload: dict, mutations: dict
-) -> Any:
-    """Remove Sourcebook Relation."""
-    result = sourcebook_remove_relation(
-        source_id=params.source_id,
-        relation_type=params.relation_type,
-        target_id=params.target_id,
-    )
-    if "error" not in result:
-        mutations["story_changed"] = True
-    return result
+    if params.action == "get":
+        if params.name_or_id is None:
+            return {"error": "name_or_id is required when action='get'."}
+        if isinstance(params.name_or_id, str):
+            entry = sourcebook_get_entry(params.name_or_id)
+            if not entry:
+                return {"error": "Not found"}
+            return _strip_internal_sourcebook_fields(entry)
+        results: list[dict] = []
+        for value in params.name_or_id:
+            entry = sourcebook_get_entry(value)
+            if entry:
+                sanitized = _strip_internal_sourcebook_fields(entry)
+                if isinstance(sanitized, dict):
+                    results.append(sanitized)
+        return results
+
+    if params.action == "create":
+        if params.entry_data is None:
+            return {"error": "entry_data is required when action='create'."}
+        new_entry = sourcebook_create_entry(
+            name=params.entry_data.name,
+            description=params.entry_data.description,
+            category=params.entry_data.category,
+            synonyms=params.entry_data.synonyms,
+            images=params.entry_data.images,
+            relations=params.entry_data.relations,
+            origin_date=params.entry_data.origin_date,
+        )
+        if "error" not in new_entry:
+            mutations["story_changed"] = True
+            refreshed = await sourcebook_refresh_entry_keywords(
+                new_entry["id"], payload
+            )
+            if isinstance(refreshed, dict):
+                new_entry = refreshed
+        return _strip_internal_sourcebook_fields(new_entry)
+
+    if params.action == "update":
+        if params.name_or_id is None or not isinstance(params.name_or_id, str):
+            return {"error": "name_or_id (string) is required when action='update'."}
+        if params.update_data is None:
+            return {"error": "update_data is required when action='update'."}
+
+        if (
+            params.update_data.name is None
+            and params.update_data.description is None
+            and params.update_data.description_patch is None
+            and params.update_data.category is None
+            and params.update_data.synonyms is None
+            and params.update_data.synonyms_patch is None
+            and params.update_data.images is None
+            and params.update_data.images_patch is None
+            and params.update_data.relations is None
+            and params.update_data.origin_date is None
+        ):
+            return {
+                "error": "No update fields provided. Provide at least one update field in update_data."
+            }
+
+        current = sourcebook_get_entry(params.name_or_id)
+        if not isinstance(current, dict):
+            return {"error": "Entry not found."}
+
+        description_value = params.update_data.description
+        if params.update_data.description_patch is not None:
+            description_value = apply_text_patch(
+                str(current.get("description") or ""),
+                params.update_data.description_patch,
+            )
+
+        synonyms_value = params.update_data.synonyms
+        if params.update_data.synonyms_patch is not None:
+            current_synonyms = current.get("synonyms")
+            if not isinstance(current_synonyms, list):
+                current_synonyms = []
+            synonyms_value = apply_string_list_patch(
+                current_synonyms, params.update_data.synonyms_patch
+            )
+
+        images_value = params.update_data.images
+        if params.update_data.images_patch is not None:
+            current_images = current.get("images")
+            if not isinstance(current_images, list):
+                current_images = []
+            images_value = apply_string_list_patch(
+                current_images, params.update_data.images_patch
+            )
+
+        result = sourcebook_update_entry(
+            name_or_id=params.name_or_id,
+            name=params.update_data.name,
+            description=description_value,
+            category=params.update_data.category,
+            synonyms=synonyms_value,
+            images=images_value,
+            relations=params.update_data.relations,
+            origin_date=params.update_data.origin_date,
+        )
+        if "error" not in result:
+            mutations["story_changed"] = True
+            refreshed = await sourcebook_refresh_entry_keywords(result["id"], payload)
+            if isinstance(refreshed, dict):
+                result = refreshed
+        return _strip_internal_sourcebook_fields(result)
+
+    if params.action == "delete":
+        if params.name_or_id is None or not isinstance(params.name_or_id, str):
+            return {"error": "name_or_id (string) is required when action='delete'."}
+        deleted = sourcebook_delete_entry(params.name_or_id)
+        if deleted:
+            mutations["story_changed"] = True
+            return {"ok": True}
+        return {"error": "Not found"}
+
+    if params.action == "add_relation":
+        if params.relation_data is None:
+            return {"error": "relation_data is required when action='add_relation'."}
+        result = sourcebook_add_relation(
+            source_id=params.relation_data.source_id,
+            relation_type=params.relation_data.relation_type,
+            target_id=params.relation_data.target_id,
+            start_scene=params.relation_data.start_scene,
+            end_scene=params.relation_data.end_scene,
+            start_book=params.relation_data.start_book,
+            end_book=params.relation_data.end_book,
+        )
+        if "error" not in result:
+            mutations["story_changed"] = True
+        return result
+
+    if params.action == "remove_relation":
+        if params.relation_data is None:
+            return {"error": "relation_data is required when action='remove_relation'."}
+        result = sourcebook_remove_relation(
+            source_id=params.relation_data.source_id,
+            relation_type=params.relation_data.relation_type,
+            target_id=params.relation_data.target_id,
+        )
+        if "error" not in result:
+            mutations["story_changed"] = True
+        return result
+
+    return {"error": f"Unsupported action: {params.action}"}

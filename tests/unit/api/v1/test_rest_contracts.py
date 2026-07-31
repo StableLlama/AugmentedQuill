@@ -13,6 +13,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from fastapi.responses import JSONResponse
+
 from augmentedquill.services.projects.projects import select_project
 from tests.unit.api.v1.api_test_case import ApiTestCase
 

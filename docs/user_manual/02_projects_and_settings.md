@@ -27,11 +27,11 @@ The Projects tab lists every project stored on this machine and lets you create,
 
 Three buttons sit above the project list:
 
-| Button          | Icon                                                                                                            | Action                                                                                                                                                                                        |
-| --------------- | --------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Refresh**     | <img src="assets/edit-2.svg" alt="Refresh icon" width="16" height="16" style="vertical-align:text-bottom;" /> ↺ | Rescans the projects folder from disk — useful if you have added or removed project folders manually.                                                                                         |
-| **Import**      | ↑ Upload                                                                                                        | Opens a file picker that accepts `.zip` files. AugmentedQuill will unpack the archive and add the project to your list. This is the matching action to the Export button on each project row. |
-| **New Project** | <img src="assets/plus.svg" alt="Plus icon" width="16" height="16" style="vertical-align:text-bottom;" />        | Opens the **Create Project** dialog (see below).                                                                                                                                              |
+| Button          | Icon                                                                                                              | Action                                                                                                                                                                                        |
+| --------------- | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Refresh**     | <img src="assets/refresh-cw.svg" alt="Refresh icon" width="16" height="16" style="vertical-align:text-bottom;" /> | Rescans the projects folder from disk — useful if you have added or removed project folders manually.                                                                                         |
+| **Import**      | ↑ Upload                                                                                                          | Opens a file picker that accepts `.zip` files. AugmentedQuill will unpack the archive and add the project to your list. This is the matching action to the Export button on each project row. |
+| **New Project** | <img src="assets/plus.svg" alt="Plus icon" width="16" height="16" style="vertical-align:text-bottom;" />          | Opens the **Create Project** dialog (see below).                                                                                                                                              |
 
 ### Project Cards
 
@@ -305,10 +305,6 @@ Click **Save & Close** at the bottom of the Settings dialog to write your machin
 
 ---
 
-Next up: Explore [The Writing Interface](03_writing_interface.md).
-
----
-
 ## Multiple Languages (GUI vs Project)
 
 AugmentedQuill supports distinct languages for its interface (GUI) and your story content.
@@ -325,3 +321,7 @@ The story language dictates the spellchecking and grammar tools used by your cho
 1. When creating a **New Project**, select the language in the project dialog.
 2. OR, open the **Project Settings** (by clicking your story title in the corner or typing in the Project tab) and change the language dropdown.
 3. Chat fields, Editors, and Images will automatically adapt their spellchecker to the project's saved language.
+
+---
+
+Next up: Explore [The Writing Interface](03_writing_interface.md).

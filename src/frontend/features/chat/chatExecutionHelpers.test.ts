@@ -13,6 +13,9 @@ import { describe, it, expect } from 'vitest';
 
 import {
   applyScratchpadToolResult,
+  buildToolLoopCompletionFallback,
+  buildToolPayload,
+  isManageProjectCreateToolCall,
   makeMessageUpdater,
   refreshStaleProjectContextHistory,
 } from './chatExecutionHelpers';
@@ -112,6 +115,56 @@ describe('scratchpad tool results', () => {
   });
 });
 
+describe('build tool payload', () => {
+  it('preserves tool result name and tool_call_id for tool messages', () => {
+    const history: ChatMessage[] = [
+      {
+        id: 'tool-result',
+        role: 'tool',
+        text: '{"status":"ok"}',
+        name: 'manage_scenes',
+        tool_call_id: 'call-123',
+      },
+    ];
+
+    const payload = buildToolPayload(history, null, null);
+
+    expect(payload.messages[0]?.name).toBe('manage_scenes');
+    expect(payload.messages[0]?.tool_call_id).toBe('call-123');
+    expect(payload.messages[0]?.content).toBe('{"status":"ok"}');
+  });
+});
+
+describe('project creation tool detection', () => {
+  it('detects manage_project create tool calls', () => {
+    const toolCall = {
+      id: 't1',
+      name: 'manage_project',
+      args: {
+        action: 'create',
+        create_data: {
+          name: 'The Gilded Cage - Reorganized',
+          project_type: 'novel',
+        },
+      },
+    } as const;
+
+    expect(isManageProjectCreateToolCall(toolCall)).toBe(true);
+  });
+
+  it('rejects manage_project actions that are not create', () => {
+    const toolCall = {
+      id: 't2',
+      name: 'manage_project',
+      args: {
+        action: 'list',
+      },
+    } as const;
+
+    expect(isManageProjectCreateToolCall(toolCall)).toBe(false);
+  });
+});
+
 describe('project context refresh injection', () => {
   it('replaces stale project tool messages with a synthetic refresh tool payload', () => {
     const history: ChatMessage[] = [
@@ -119,13 +172,19 @@ describe('project context refresh injection', () => {
         id: 'assistant-tool',
         role: 'model',
         text: '',
-        tool_calls: [{ id: 'call-1', name: 'get_story_metadata', args: {} }],
+        tool_calls: [
+          {
+            id: 'call-1',
+            name: 'manage_story_core',
+            args: { action: 'get_metadata' },
+          },
+        ],
       },
       {
         id: 'tool-result',
         role: 'tool',
         text: '{"title":"Old"}',
-        name: 'get_story_metadata',
+        name: 'manage_story_core',
         tool_call_id: 'call-1',
       },
       { id: 'user-1', role: 'user', text: 'Continue.' },
@@ -171,7 +230,7 @@ describe('project context refresh injection', () => {
     expect(result.injected).toBe(true);
     expect(
       result.history.some(
-        (message: ChatMessage) => message.name === 'get_story_metadata'
+        (message: ChatMessage) => message.name === 'manage_story_core'
       )
     ).toBe(false);
 
@@ -212,13 +271,19 @@ describe('project context refresh injection', () => {
         id: 'assistant-tool',
         role: 'model',
         text: '',
-        tool_calls: [{ id: 'call-1', name: 'get_story_metadata', args: {} }],
+        tool_calls: [
+          {
+            id: 'call-1',
+            name: 'manage_story_core',
+            args: { action: 'get_metadata' },
+          },
+        ],
       },
       {
         id: 'tool-result',
         role: 'tool',
         text: '{"summary":"Old"}',
-        name: 'get_story_metadata',
+        name: 'manage_story_core',
         tool_call_id: 'call-1',
       },
     ];
@@ -261,5 +326,37 @@ describe('project context refresh injection', () => {
       )
     ).toBe(false);
     expect(JSON.stringify(refreshPayload)).not.toContain('Very long story content');
+  });
+});
+
+describe('terminal tool loop fallback', () => {
+  it('builds a visible completion note when the final model turn is empty', () => {
+    const text = buildToolLoopCompletionFallback(
+      { text: '', thinking: '', functionCalls: [] },
+      [
+        {
+          batch_id: 'batch-1',
+          label: 'AI tools: manage_project (+2)',
+          operation_count: 3,
+        },
+      ]
+    );
+
+    expect(text).toBe('Completed 3 tool actions.');
+  });
+
+  it('returns empty when the final model turn already has visible output', () => {
+    const text = buildToolLoopCompletionFallback(
+      { text: 'Done. I created the chapters.', functionCalls: [] },
+      [
+        {
+          batch_id: 'batch-1',
+          label: 'AI tools: create_new_chapter (+1)',
+          operation_count: 2,
+        },
+      ]
+    );
+
+    expect(text).toBe('');
   });
 });

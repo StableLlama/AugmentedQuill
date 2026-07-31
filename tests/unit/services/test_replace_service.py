@@ -259,6 +259,42 @@ class TestReplaceAll(TestCase):
         story_data = json.loads(story_path.read_text(encoding="utf-8"))
         self.assertEqual(story_data["chapters"][0]["title"], "Chapter I")
 
+    def test_replace_all_in_scene_summary(self):
+        active = self._make_and_select_project("replace_test_scene")
+        story_path = active / "story.json"
+        story = json.loads(story_path.read_text(encoding="utf-8"))
+        story["scenes"] = {
+            "1": {
+                "id": 1,
+                "summary": "Eorla enters the forest.",
+                "beats": [],
+                "active_characters": [],
+                "passive_characters": [],
+                "sourcebook_entry_ids": [],
+                "causes": [],
+                "pinboard_x": 100,
+                "pinboard_y": 100,
+                "status": "active",
+            }
+        }
+        story_path.write_text(json.dumps(story, indent=2), encoding="utf-8")
+
+        req = ReplaceAllRequest(
+            query="Eorla",
+            scope=SearchScope.metadata,
+            case_sensitive=False,
+            is_regex=False,
+            is_phonetic=False,
+            active_chapter_id=None,
+            replacement="Elara",
+        )
+        resp = replace_all(req, active)
+        self.assertEqual(resp.replacements_made, 1)
+        story_data = json.loads(story_path.read_text(encoding="utf-8"))
+        self.assertEqual(
+            story_data["scenes"]["1"]["summary"], "Elara enters the forest."
+        )
+
     def test_replace_all_in_story_title(self):
         active = self._make_and_select_project("replace_test_story_title")
         story_path = active / "story.json"

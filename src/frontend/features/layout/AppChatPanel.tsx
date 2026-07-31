@@ -88,50 +88,65 @@ export const AppChatPanel: React.FC<AppChatPanelProps> = React.memo(
       [incognitoSessions, chatHistoryList]
     );
 
-    if (!isChatOpen) return null;
+    const isLight = currentTheme === 'light';
 
     return (
       <aside
         id="aq-chat"
         aria-label="AI Chat Assistant"
-        className="fixed inset-y-0 right-0 top-14 w-full md:w-[var(--sidebar-width)] flex-shrink-0 flex flex-col z-40 shadow-xl transition duration-300 ease-in-out md:relative md:top-auto md:bottom-auto md:z-20 md:h-full"
+        className={`fixed inset-y-0 right-0 top-14 w-[var(--sidebar-width)] flex-col border-l flex-shrink-0 z-40 transition-transform duration-300 ease-in-out flex h-full ${
+          isChatOpen ? 'translate-x-0' : 'translate-x-full'
+        } lg:relative lg:top-auto ${!isChatOpen ? 'lg:hidden' : ''} ${
+          isLight
+            ? 'bg-brand-gray-50 border-brand-gray-200'
+            : 'bg-brand-gray-900 border-brand-gray-800'
+        }`}
       >
-        <ChatProvider
-          value={{
-            isChatOpen,
-            messages: chatMessages,
-            isLoading: isChatLoading,
-            isModelAvailable: isChatAvailable,
-            activeChatConfig,
-            systemPrompt,
-            onSendMessage: handleSendMessage,
-            onStop: handleStopChat,
-            onRegenerate: handleRegenerate,
-            onEditMessage: handleEditMessage,
-            onDeleteMessage: handleDeleteMessage,
-            onUpdateSystemPrompt: setSystemPrompt,
-            onSwitchProject: handleLoadProject,
-            sessions: chatSessions,
-            currentSessionId: currentChatId,
-            isIncognito,
-            onSelectSession: handleSelectChat,
-            onNewSession: handleNewChat,
-            onDeleteSession: handleDeleteChat,
-            onDeleteAllSessions: handleDeleteAllChats,
-            onToggleIncognito: setIsIncognito,
-            allowWebSearch,
-            onToggleWebSearch: setAllowWebSearch,
-            scratchpad,
-            onUpdateScratchpad,
-            onDeleteScratchpad,
-            sessionMutations,
-            onMutationClick,
-            storyLanguage,
-            currentTheme,
-          }}
-        >
-          <Chat />
-        </ChatProvider>
+        {isChatOpen && (
+          <button
+            className="fixed inset-0 bg-brand-gray-950/60 z-30 cursor-default lg:hidden"
+            onClick={(): void => chatControls.setIsChatOpen(false)}
+            aria-label="Close chat"
+          ></button>
+        )}
+        <div className="relative z-40 flex flex-col h-full overflow-hidden flex-1 bg-inherit">
+          <ChatProvider
+            value={{
+              isChatOpen,
+              messages: chatMessages,
+              isLoading: isChatLoading,
+              isModelAvailable: isChatAvailable,
+              activeChatConfig,
+              systemPrompt,
+              onSendMessage: handleSendMessage,
+              onStop: handleStopChat,
+              onRegenerate: handleRegenerate,
+              onEditMessage: handleEditMessage,
+              onDeleteMessage: handleDeleteMessage,
+              onUpdateSystemPrompt: setSystemPrompt,
+              onSwitchProject: handleLoadProject,
+              sessions: chatSessions,
+              currentSessionId: currentChatId,
+              isIncognito,
+              onSelectSession: handleSelectChat,
+              onNewSession: handleNewChat,
+              onDeleteSession: handleDeleteChat,
+              onDeleteAllSessions: handleDeleteAllChats,
+              onToggleIncognito: setIsIncognito,
+              allowWebSearch,
+              onToggleWebSearch: setAllowWebSearch,
+              scratchpad,
+              onUpdateScratchpad,
+              onDeleteScratchpad,
+              sessionMutations,
+              onMutationClick,
+              storyLanguage,
+              currentTheme,
+            }}
+          >
+            <Chat />
+          </ChatProvider>
+        </div>
       </aside>
     );
   }

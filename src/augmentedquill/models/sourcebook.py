@@ -14,9 +14,24 @@ TypeScript types automatically.
 
 from __future__ import annotations
 
-from typing import List, Optional
+from pydantic import BaseModel, field_validator
 
-from pydantic import BaseModel
+from augmentedquill.models.temporal_utils import normalize_temporal_value
+
+
+def _normalize_optional_temporal_text(value: object) -> str | None:
+    """Normalize optional temporal text input while preserving legacy fallbacks."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        return None
+    stripped = value.strip()
+    if not stripped:
+        return None
+    try:
+        return normalize_temporal_value(stripped)
+    except ValueError:
+        return stripped
 
 
 class SourcebookRelation(BaseModel):
@@ -24,11 +39,20 @@ class SourcebookRelation(BaseModel):
 
     target_id: str
     relation: str
-    direction: Optional[str] = "forward"
-    start_chapter: Optional[str] = None
-    start_book: Optional[str] = None
-    end_chapter: Optional[str] = None
-    end_book: Optional[str] = None
+    direction: str | None = "forward"
+    start_scene: int | None = None
+    start_book: str | None = None
+    end_scene: int | None = None
+    end_book: str | None = None
+
+    @field_validator("start_scene", "end_scene", mode="before")
+    @classmethod
+    def _validate_scene_id(cls, value: object) -> int | None:
+        if value is None:
+            return None
+        if type(value) is int:
+            return value
+        raise ValueError("Scene IDs must be integers.")
 
 
 class SourcebookEntry(BaseModel):
@@ -36,45 +60,100 @@ class SourcebookEntry(BaseModel):
 
     id: str
     name: str
-    synonyms: List[str] = []
-    category: Optional[str] = None
+    synonyms: list[str] = []
+    category: str | None = None
     description: str
-    images: List[str] = []
-    keywords: List[str] = []
-    relations: List[SourcebookRelation] = []
+    images: list[str] = []
+    keywords: list[str] = []
+    relations: list[SourcebookRelation] = []
+    origin_date: str | None = (
+        None  # ISO 8601 birth/creation date for personal timeline age computation
+    )
+    destination_datetime: str | None = (
+        None  # For Time Travel entries: the absolute destination datetime
+    )
+    destination_relative: str | None = (
+        None  # For Time Travel entries: human-readable offset e.g. '30 years earlier'
+    )
+    creates_new_timeline: bool = (
+        False  # For Time Travel entries: whether a new timeline branch is created
+    )
+    timeline_id: str | None = (
+        None  # For Time Travel branch entries: stable ID of the branch timeline
+    )
+
+    @field_validator("origin_date", mode="before")
+    @classmethod
+    def _normalise_origin_date(cls, v: object) -> str | None:
+        return _normalize_optional_temporal_text(v)
+
+    @field_validator("destination_datetime", mode="before")
+    @classmethod
+    def _normalise_destination_datetime(cls, v: object) -> str | None:
+        return _normalize_optional_temporal_text(v)
 
 
 class SourcebookEntryCreate(BaseModel):
     """Represents the SourcebookEntryCreate type."""
 
     name: str
-    synonyms: List[str] = []
-    category: Optional[str] = None
+    synonyms: list[str] = []
+    category: str | None = None
     description: str
-    images: List[str] = []
-    relations: List[SourcebookRelation] = []
+    images: list[str] = []
+    relations: list[SourcebookRelation] = []
+    origin_date: str | None = None
+    destination_datetime: str | None = None
+    destination_relative: str | None = None
+    creates_new_timeline: bool = False
+    timeline_id: str | None = None
+
+    @field_validator("origin_date", mode="before")
+    @classmethod
+    def _normalise_origin_date(cls, v: object) -> str | None:
+        return _normalize_optional_temporal_text(v)
+
+    @field_validator("destination_datetime", mode="before")
+    @classmethod
+    def _normalise_destination_datetime(cls, v: object) -> str | None:
+        return _normalize_optional_temporal_text(v)
 
 
 class SourcebookEntryUpdate(BaseModel):
     """Represents the SourcebookEntryUpdate type."""
 
-    name: Optional[str] = None
-    synonyms: Optional[List[str]] = None
-    category: Optional[str] = None
-    description: Optional[str] = None
-    images: Optional[List[str]] = None
-    relations: Optional[List[SourcebookRelation]] = None
+    name: str | None = None
+    synonyms: list[str] | None = None
+    category: str | None = None
+    description: str | None = None
+    images: list[str] | None = None
+    relations: list[SourcebookRelation] | None = None
+    origin_date: str | None = None
+    destination_datetime: str | None = None
+    destination_relative: str | None = None
+    creates_new_timeline: bool | None = None
+    timeline_id: str | None = None
+
+    @field_validator("origin_date", mode="before")
+    @classmethod
+    def _normalise_origin_date(cls, v: object) -> str | None:
+        return _normalize_optional_temporal_text(v)
+
+    @field_validator("destination_datetime", mode="before")
+    @classmethod
+    def _normalise_destination_datetime(cls, v: object) -> str | None:
+        return _normalize_optional_temporal_text(v)
 
 
 class SourcebookKeywordsRequest(BaseModel):
     """Request payload for generating keywords from an entry description."""
 
-    name: Optional[str] = None
-    description: Optional[str] = None
-    synonyms: Optional[List[str]] = None
+    name: str | None = None
+    description: str | None = None
+    synonyms: list[str] | None = None
 
 
 class SourcebookKeywordsResponse(BaseModel):
     """Represents the SourcebookKeywordsResponse type."""
 
-    keywords: List[str]
+    keywords: list[str]

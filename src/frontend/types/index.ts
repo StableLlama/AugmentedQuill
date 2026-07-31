@@ -13,6 +13,13 @@
  *   import { Story } from '../types/domain';            // direct
  */
 
+/** Shared debug flag used across the application for tracing prose ranges. */
+declare global {
+  interface Window {
+    __AQ_DEBUG_RANGES?: boolean;
+  }
+}
+
 export * from './domain';
 export * from './chat';
 export * from './ui';

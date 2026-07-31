@@ -7,48 +7,66 @@
 
 """Defines the image tools unit so this responsibility stays isolated, testable, and easy to evolve."""
 
-from typing import Any
-
 import base64
 import uuid
 from pathlib import Path
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from augmentedquill.services.chat.chat_tool_decorator import (
     CHAT_ROLE,
     EDITING_ROLE,
+    ToolModel,
     chat_tool,
+    resolve_tool_role,
 )
 
 # Pydantic models for tool parameters
 
 
-class ListImagesParams(BaseModel):
-    """Parameters for list_images (no parameters needed)."""
-
-    pass
-
-
-class GenerateImageDescriptionParams(BaseModel):
-    """Parameters for generating image description."""
-
-    filename: str = Field(..., description="The filename of the image")
-
-
-class CreateImagePlaceholderParams(BaseModel):
-    """Parameters for creating an image placeholder."""
+class ManageImagesCreateData(ToolModel):
+    """Payload for creating image placeholders."""
 
     description: str = Field(..., description="Description of the desired image")
     title: str | None = Field(None, description="Optional title for the image")
 
 
-class SetImageMetadataParams(BaseModel):
-    """Parameters for setting image metadata."""
+class ManageImagesMetadataData(ToolModel):
+    """Payload for setting image metadata."""
 
     filename: str = Field(..., description="The filename of the image")
     title: str | None = Field(None, description="New title for the image")
     description: str | None = Field(None, description="New description for the image")
+
+
+class ManageImagesParams(ToolModel):
+    """Action router parameters for manage_images."""
+
+    action: Literal[
+        "list",
+        "generate_description",
+        "create_placeholder",
+        "set_metadata",
+    ] = Field(
+        ...,
+        description=(
+            "Image action: 'list', 'generate_description', 'create_placeholder', "
+            "or 'set_metadata'."
+        ),
+    )
+    filename: str | None = Field(
+        None,
+        description="Required for action='generate_description'.",
+    )
+    create_data: ManageImagesCreateData | None = Field(
+        None,
+        description="Required for action='create_placeholder'.",
+    )
+    metadata_data: ManageImagesMetadataData | None = Field(
+        None,
+        description="Required for action='set_metadata'.",
+    )
 
 
 # Helper function for generating image descriptions (not a tool itself)
@@ -62,8 +80,8 @@ async def _tool_generate_image_description(filename: str, payload: dict) -> str:
         get_user_prompt,
         load_model_prompt_overrides,
     )
-    from augmentedquill.services.projects.projects import get_active_project_dir
     from augmentedquill.services.llm import llm
+    from augmentedquill.services.projects.projects import get_active_project_dir
     from augmentedquill.utils.image_helpers import get_images_dir, update_image_metadata
 
     images_dir = get_images_dir()
@@ -154,87 +172,95 @@ async def _tool_generate_image_description(filename: str, payload: dict) -> str:
         return "Error: Failed to generate description."
 
     except Exception as e:
-        return f"Error generating description: {str(e)}"
+        return f"Error generating description: {e!s}"
 
 
 # Tool implementations with co-located schemas
 
 
 @chat_tool(
-    description="List all images in the project with their filenames, descriptions, titles, and placeholder status.",
+    description=(
+        "Unified image manager. Use action='list' to list project images, "
+        "action='generate_description' (filename required) to describe an image, "
+        "action='create_placeholder' (create_data required) to add a placeholder, "
+        "and action='set_metadata' (metadata_data required) to update image metadata."
+    ),
     allowed_roles=(CHAT_ROLE, EDITING_ROLE),
     capability="image-admin",
 )
-async def list_images(params: ListImagesParams, payload: dict, mutations: dict) -> Any:
-    """List Images."""
-    from augmentedquill.utils.image_helpers import get_project_images
-
-    imgs = get_project_images()
-    simple = [
-        {
-            "filename": i["filename"],
-            "description": i["description"],
-            "title": i.get("title", ""),
-            "is_placeholder": i["is_placeholder"],
+async def manage_images(
+    params: ManageImagesParams, payload: dict, mutations: dict
+) -> Any:
+    """Route image actions to existing image helper functions."""
+    role = resolve_tool_role(payload)
+    chat_only_actions = {"generate_description", "set_metadata"}
+    if role != CHAT_ROLE and params.action in chat_only_actions:
+        return {
+            "error": "Action unavailable for model role",
+            "details": {
+                "tool": "manage_images",
+                "action": params.action,
+                "model_role": role,
+                "allowed_roles": [CHAT_ROLE],
+            },
         }
-        for i in imgs
-    ]
-    return simple
 
+    if params.action == "list":
+        from augmentedquill.utils.image_helpers import get_project_images
 
-@chat_tool(
-    description="Generate a detailed description for an existing image using the EDIT LLM's vision capabilities.",
-    allowed_roles=(CHAT_ROLE,),
-    capability="image-admin",
-)
-async def generate_image_description(
-    params: GenerateImageDescriptionParams, payload: dict, mutations: dict
-) -> Any:
-    """Generate a textual description for an image using the image tool and update project state if successful."""
-    desc = await _tool_generate_image_description(params.filename, payload)
-    if not str(desc).startswith("Error:"):
+        imgs = get_project_images()
+        return [
+            {
+                "filename": i["filename"],
+                "description": i["description"],
+                "title": i.get("title", ""),
+                "is_placeholder": i["is_placeholder"],
+            }
+            for i in imgs
+        ]
+
+    if params.action == "generate_description":
+        if not params.filename:
+            return {"error": "filename is required when action='generate_description'."}
+        desc = await _tool_generate_image_description(params.filename, payload)
+        if not str(desc).startswith("Error:"):
+            mutations["story_changed"] = True
+        return {"description": desc}
+
+    if params.action == "create_placeholder":
+        if params.create_data is None:
+            return {
+                "error": "create_data is required when action='create_placeholder'."
+            }
+        from augmentedquill.utils.image_helpers import update_image_metadata
+
+        filename = f"placeholder_{uuid.uuid4().hex[:8]}.png"
+        update_image_metadata(
+            filename,
+            description=params.create_data.description,
+            title=params.create_data.title,
+        )
         mutations["story_changed"] = True
-    return {"description": desc}
+        return {
+            "filename": filename,
+            "description": params.create_data.description,
+            "title": params.create_data.title,
+        }
 
+    if params.action == "set_metadata":
+        if params.metadata_data is None:
+            return {"error": "metadata_data is required when action='set_metadata'."}
+        from augmentedquill.utils.image_helpers import update_image_metadata
 
-@chat_tool(
-    description="Create a new image placeholder with a description. Useful for noting images to be created later.",
-    allowed_roles=(CHAT_ROLE, EDITING_ROLE),
-    capability="image-admin",
-)
-async def create_image_placeholder(
-    params: CreateImagePlaceholderParams, payload: dict, mutations: dict
-) -> Any:
-    """Create Image Placeholder."""
-    from augmentedquill.utils.image_helpers import update_image_metadata
+        update_image_metadata(
+            params.metadata_data.filename,
+            description=params.metadata_data.description,
+            title=params.metadata_data.title,
+        )
+        mutations["story_changed"] = True
+        return {"ok": True}
 
-    filename = f"placeholder_{uuid.uuid4().hex[:8]}.png"
-    update_image_metadata(filename, description=params.description, title=params.title)
-    mutations["story_changed"] = True
-
-    return {
-        "filename": filename,
-        "description": params.description,
-        "title": params.title,
-    }
-
-
-@chat_tool(
-    description="Update the title and/or description metadata for an existing image. Provide only the fields you want to change.",
-    allowed_roles=(CHAT_ROLE,),
-    capability="image-admin",
-)
-async def set_image_metadata(
-    params: SetImageMetadataParams, payload: dict, mutations: dict
-) -> Any:
-    """Set Image Metadata."""
-    from augmentedquill.utils.image_helpers import update_image_metadata
-
-    update_image_metadata(
-        params.filename, description=params.description, title=params.title
-    )
-    mutations["story_changed"] = True
-    return {"ok": True}
+    return {"error": f"Unsupported action: {params.action}"}
 
 
 # ---------------------------------------------------------------------------
@@ -242,7 +268,7 @@ async def set_image_metadata(
 # ---------------------------------------------------------------------------
 
 
-class InsertImageInChapterParams(BaseModel):
+class InsertImageInChapterParams(ToolModel):
     """Parameters for inserting an image reference into a chapter."""
 
     chap_id: int = Field(..., description="The numeric ID of the chapter.")

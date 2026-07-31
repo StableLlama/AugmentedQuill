@@ -118,4 +118,107 @@ describe('chatApi', () => {
 
     fetchSpy.mockRestore();
   });
+
+  it('isolates consecutive prose streams with distinct stream ids', async () => {
+    const payload = {
+      messages: [
+        {
+          role: 'assistant' as const,
+          content: 'hello',
+          tool_calls: [],
+        },
+      ],
+      active_chapter_id: 1,
+      model_name: 'demo-model',
+    };
+
+    const encoder = new TextEncoder();
+    const firstReadChunk = encoder.encode(
+      'data: {"type":"prose_start","chap_id":1,"write_mode":"append"}\n\n' +
+        'data: {"type":"prose_chunk","chap_id":1,"write_mode":"append","accumulated":"The darkness might reveal."}\n\n'
+    );
+    const secondReadChunk = encoder.encode(
+      'data: {"type":"prose_start","chap_id":1,"write_mode":"append"}\n\n' +
+        'data: {"type":"prose_chunk","chap_id":1,"write_mode":"append","accumulated":"The darkness might reveal more."}\n\n' +
+        'data: {"type":"result","ok":true,"appended_messages":[]}\n\n'
+    );
+
+    let readIndex = 0;
+    const read = vi.fn(async () => {
+      readIndex += 1;
+      if (readIndex === 1) {
+        return { done: false, value: firstReadChunk };
+      }
+      if (readIndex === 2) {
+        await new Promise<void>((resolve: () => void) => setTimeout(resolve, 1));
+        return { done: false, value: secondReadChunk };
+      }
+      return { done: true, value: undefined };
+    });
+
+    const onProseChunk = vi.fn();
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      body: {
+        getReader: () => ({ read }),
+      },
+    } as unknown as Response);
+
+    await chatApi.executeTools(payload, onProseChunk);
+
+    expect(onProseChunk).toHaveBeenNthCalledWith(
+      1,
+      1,
+      'append',
+      'The darkness might reveal.',
+      1
+    );
+    expect(onProseChunk).toHaveBeenNthCalledWith(
+      2,
+      1,
+      'append',
+      'The darkness might reveal more.',
+      2
+    );
+
+    fetchSpy.mockRestore();
+  });
+
+  it('uses stream id 0 when prose_start is absent', async () => {
+    const payload = {
+      messages: [
+        {
+          role: 'assistant' as const,
+          content: 'hello',
+          tool_calls: [],
+        },
+      ],
+    };
+
+    const encoder = new TextEncoder();
+    const resultChunk = encoder.encode(
+      'data: {"type":"prose_chunk","chap_id":1,"write_mode":"append","accumulated":"Chunk only."}\n\n' +
+        'data: {"type":"result","ok":true,"appended_messages":[]}\n\n'
+    );
+    const read = vi
+      .fn()
+      .mockResolvedValueOnce({ done: false, value: resultChunk })
+      .mockResolvedValueOnce({ done: true, value: undefined });
+
+    const onProseChunk = vi.fn();
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      body: {
+        getReader: () => ({ read }),
+      },
+    } as unknown as Response);
+
+    await chatApi.executeTools(payload, onProseChunk);
+
+    expect(onProseChunk).toHaveBeenCalledWith(1, 'append', 'Chunk only.', 0);
+
+    fetchSpy.mockRestore();
+  });
 });

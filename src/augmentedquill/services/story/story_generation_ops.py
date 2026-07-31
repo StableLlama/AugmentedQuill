@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from augmentedquill.core.config import save_story_config
@@ -18,6 +19,9 @@ from augmentedquill.services.chat.chat_tool_decorator import (
     tool_message,
 )
 from augmentedquill.services.llm import llm
+from augmentedquill.services.scenes.scene_generation_service import (
+    auto_link_chapter_generation,
+)
 from augmentedquill.services.story.story_api_prompt_ops import (  # noqa: F401
     resolve_model_runtime,
 )
@@ -27,7 +31,6 @@ from augmentedquill.services.story.story_generation_common import (
     prepare_story_summary_generation,
     prepare_write_chapter_generation,
 )
-import json
 
 
 async def _complete_with_tool_calls(
@@ -214,6 +217,19 @@ async def write_chapter_from_summary(
 
     content = data.get("content", "")
     prepared["path"].write_text(content, encoding="utf-8")
+
+    try:
+        await auto_link_chapter_generation(
+            project_dir=active or prepared["path"].parent.parent,
+            chap_id=chap_id,
+            start_offset=0,
+            end_offset=len(content),
+            payload=payload,
+        )
+    except Exception:
+        # Scene linking should not block prose generation when linking fails.
+        pass
+
     return {"ok": True, "content": content}
 
 
@@ -246,5 +262,18 @@ async def continue_chapter_from_summary(
         + appended
     )
     prepared["path"].write_text(new_content, encoding="utf-8")
+
+    try:
+        append_start = len(new_content) - len(appended)
+        await auto_link_chapter_generation(
+            project_dir=active or prepared["path"].parent.parent,
+            chap_id=chap_id,
+            start_offset=max(0, append_start),
+            end_offset=len(new_content),
+            payload=payload,
+        )
+    except Exception:
+        # Scene linking should not block prose generation when linking fails.
+        pass
 
     return {"ok": True, "appended": appended, "content": new_content}

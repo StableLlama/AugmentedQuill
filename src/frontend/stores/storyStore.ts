@@ -15,7 +15,7 @@
 import { useCallback, useRef } from 'react';
 import { create, StoreApi } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
-import type { Chapter, StoryState, SourcebookEntry } from '../types';
+import type { Chapter, Scene, SceneId, StoryState, SourcebookEntry } from '../types';
 import type { StoryHistoryEntry } from '../features/story/historyUtils';
 
 // ---------------------------------------------------------------------------
@@ -35,6 +35,7 @@ export const INITIAL_STORY: StoryState = {
   books: [],
   sourcebook: [],
   conflicts: [],
+  scenes: [],
   currentChapterId: null,
   lastUpdated: Date.now(),
 };
@@ -65,6 +66,8 @@ export interface StoryStoreState {
   incrementLoadChapterSignal: () => void;
   setIsChapterLoading: (loading: boolean) => void;
   patchSourcebookEntry: (entry: SourcebookEntry | null, entryId?: string) => boolean;
+  /** Upsert or remove a scene in the store without going through history. */
+  patchScene: (scene: Scene | null, sceneId?: SceneId) => boolean;
 
   /** Atomically update story + history + baseline in a single state write. */
   pushHistoryState: (params: {
@@ -116,6 +119,7 @@ function buildInitialState(): Omit<
   | 'incrementLoadChapterSignal'
   | 'setIsChapterLoading'
   | 'patchSourcebookEntry'
+  | 'patchScene'
   | 'pushHistoryState'
   | 'jumpHistory'
   | 'setStreamingContent'
@@ -221,16 +225,25 @@ export const useStoryStore = create<StoryStoreState>()(
         next = prev.filter((e: SourcebookEntry): boolean => e.id !== entryId);
         if (next.length === prev.length) return false;
       } else {
-        const idx = prev.findIndex((e: SourcebookEntry): boolean => e.id === entry.id);
+        const idx = prev.findIndex(
+          (e: SourcebookEntry): boolean =>
+            e.id === entry.id || (entryId !== undefined && e.id === entryId)
+        );
         if (idx >= 0) {
           const sig = (e: SourcebookEntry): string =>
             JSON.stringify({
+              id: e.id,
               name: e.name,
               description: e.description,
               category: e.category,
               synonyms: e.synonyms,
               images: e.images,
               relations: e.relations,
+              origin_date: e.origin_date,
+              destination_datetime: e.destination_datetime,
+              destination_relative: e.destination_relative,
+              creates_new_timeline: e.creates_new_timeline,
+              timeline_id: e.timeline_id,
             });
           if (sig(prev[idx]) === sig(entry)) return false;
           next = [...prev];
@@ -245,6 +258,27 @@ export const useStoryStore = create<StoryStoreState>()(
       return true;
     },
 
+    patchScene: (scene: Scene | null, sceneId?: SceneId): boolean => {
+      const prev = get().story.scenes ?? [];
+      let next: Scene[];
+      if (scene === null) {
+        next = prev.filter((s: Scene): boolean => s.id !== sceneId);
+        if (next.length === prev.length) return false;
+      } else {
+        const idx = prev.findIndex((s: Scene): boolean => s.id === scene.id);
+        if (idx >= 0) {
+          next = [...prev];
+          next[idx] = scene;
+        } else {
+          next = [...prev, scene];
+        }
+      }
+      set((state: StoryStoreState) => ({
+        story: { ...state.story, scenes: next },
+      }));
+      return true;
+    },
+
     pushHistoryState: ({
       story,
       history,
@@ -255,7 +289,16 @@ export const useStoryStore = create<StoryStoreState>()(
       history: StoryHistoryEntry[];
       currentIndex: number;
       baselineState: StoryState;
-    }) => set({ story, history, currentIndex, baselineState }),
+    }) =>
+      set((state: StoryStoreState) => ({
+        story,
+        history,
+        currentIndex,
+        baselineState,
+        // Preserve currentChapterId across history pushes so the UI never
+        // flashes to a different chapter during debounced user edits.
+        currentChapterId: story.currentChapterId ?? state.currentChapterId ?? null,
+      })),
 
     jumpHistory: ({
       story,
@@ -415,6 +458,19 @@ export function useStoryChaptersListMeta(): StoryState['chapters'] {
 /** Subscribe to the books list. */
 export function useStoryBooks(): StoryState['books'] {
   return useStoryStore((s: StoryStoreState) => s.story.books);
+}
+
+/** Subscribe to the scenes list. */
+const EMPTY_SCENES: Scene[] = [];
+export function useScenes(): Scene[] {
+  return useStoryStore((s: StoryStoreState): Scene[] => s.story.scenes ?? EMPTY_SCENES);
+}
+
+/** Subscribe to a single scene by ID. */
+export function useSceneById(id: SceneId): Scene | undefined {
+  return useStoryStore((s: StoryStoreState): Scene | undefined =>
+    (s.story.scenes ?? EMPTY_SCENES).find((sc: Scene) => sc.id === id)
+  );
 }
 
 /** Subscribe to the sourcebook entries list. */

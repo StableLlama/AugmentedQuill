@@ -11,13 +11,12 @@ import asyncio
 from pathlib import Path
 
 from augmentedquill.api.v1.story_routes import generation_streaming
-import augmentedquill.services.llm.llm as llm
+from augmentedquill.services.llm import llm
 from augmentedquill.services.projects.projects import select_project
 from tests.unit.api.v1.api_test_case import ApiTestCase
 
 
 class StoryEndpointsTest(ApiTestCase):
-
     def _make_project(
         self,
         name: str = "novel",
@@ -122,6 +121,43 @@ class StoryEndpointsTest(ApiTestCase):
         self._make_project()
         r = self.client.put("/api/v1/chapters/999/summary", json={"summary": "X"})
         self.assertEqual(r.status_code, 404)
+
+    def test_project_select_story_payload_keeps_time_travel_fields(self):
+        sourcebook = {
+            "1985 -> 1955": {
+                "description": "Temporal jump",
+                "category": "Time Travel",
+                "synonyms": [],
+                "origin_date": "1985-11-05T20:00:00+00:00[UTC][u-ca=gregory]",
+                "destination_datetime": "1955-11-05T20:00:00+00:00[UTC][u-ca=gregory]",
+                "destination_relative": "30 years earlier",
+                "creates_new_timeline": True,
+                "timeline_id": "branch:16->10",
+            }
+        }
+        self._make_project(name="tt_payload", sourcebook=sourcebook)
+
+        r = self.client.post("/api/v1/projects/select", json={"name": "tt_payload"})
+        self.assertEqual(r.status_code, 200, r.text)
+
+        story = (r.json() or {}).get("story") or {}
+        entries = story.get("sourcebook") or []
+        tt_entry = next((e for e in entries if e.get("id") == "1985 -> 1955"), None)
+
+        self.assertIsNotNone(
+            tt_entry, f"Missing time travel entry in payload: {entries}"
+        )
+        self.assertEqual(
+            tt_entry.get("origin_date"),
+            "1985-11-05T20:00:00+00:00[UTC][u-ca=gregory]",
+        )
+        self.assertEqual(
+            tt_entry.get("destination_datetime"),
+            "1955-11-05T20:00:00+00:00[UTC][u-ca=gregory]",
+        )
+        self.assertEqual(tt_entry.get("destination_relative"), "30 years earlier")
+        self.assertTrue(tt_entry.get("creates_new_timeline"))
+        self.assertEqual(tt_entry.get("timeline_id"), "branch:16->10")
 
     # ---- Story LLM endpoints with fakes ----
     def _patch_llm(self):
@@ -333,11 +369,11 @@ class StoryEndpointsTest(ApiTestCase):
         # Response should be plain text and return non-empty content
         self.assertTrue(r.headers.get("content-type", "").startswith("text/plain"))
         text = r.text or ""
-        self.assertGreater(len(text.strip()), 0, f"empty response body: {repr(text)}")
+        self.assertGreater(len(text.strip()), 0, f"empty response body: {text!r}")
         self.assertEqual(
             text,
             "First chunk of suggestion and the rest of the paragraph.\n",
-            f"Unexpected response body: {repr(text)}",
+            f"Unexpected response body: {text!r}",
         )
 
     def test_suggest_filters_empty_sections(self):
@@ -396,7 +432,7 @@ class StoryEndpointsTest(ApiTestCase):
 
         self.assertTrue(r.headers.get("content-type", "").startswith("text/plain"))
         text = r.text or ""
-        self.assertGreater(len(text.strip()), 0, f"empty response body: {repr(text)}")
+        self.assertGreater(len(text.strip()), 0, f"empty response body: {text!r}")
 
     def test_suggest_mode_pure_uses_only_current_text(self):
         """Pure suggest mode should pass only current chapter text to the model."""
@@ -498,6 +534,83 @@ class StoryEndpointsTest(ApiTestCase):
         self.assertIn(
             "Instructed mode source text", seen_messages["value"][1]["content"]
         )
+
+    def test_sourcebook_relevance_uses_scene_lookup_without_llm(self):
+        pdir = self._make_project(
+            name="scene_relevance",
+            sourcebook={
+                "Hero": {
+                    "description": "Hero profile.",
+                    "category": "Character",
+                    "synonyms": [],
+                },
+                "Town": {
+                    "description": "Town profile.",
+                    "category": "Location",
+                    "synonyms": [],
+                },
+                "Villain": {
+                    "description": "Villain profile.",
+                    "category": "Character",
+                    "synonyms": [],
+                },
+            },
+        )
+
+        import json
+
+        story_path = pdir / "story.json"
+        story = json.loads(story_path.read_text(encoding="utf-8"))
+        story["scenes"] = {
+            "1": {
+                "summary": "Arrival",
+                "active_characters": ["Hero"],
+                "passive_characters": [],
+                "sourcebook_entry_ids": [],
+                "location": "Town",
+                "order_index": 1,
+                "prose_link": {
+                    "scope_type": "chapter",
+                    "chapter_id": "1",
+                    "start_offset": 0,
+                    "end_offset": 12,
+                },
+            },
+            "2": {
+                "summary": "Threat",
+                "active_characters": ["Villain"],
+                "passive_characters": [],
+                "sourcebook_entry_ids": [],
+                "location": "Town",
+                "order_index": 2,
+                "prose_link": {
+                    "scope_type": "chapter",
+                    "chapter_id": "1",
+                    "start_offset": 12,
+                    "end_offset": 24,
+                },
+            },
+        }
+        story_path.write_text(json.dumps(story), encoding="utf-8")
+
+        orig_complete = llm.unified_chat_complete
+
+        async def fail_if_called(**kwargs):  # type: ignore
+            raise AssertionError("sourcebook relevance should not call the LLM")
+
+        llm.unified_chat_complete = fail_if_called  # type: ignore
+
+        def _undo():
+            llm.unified_chat_complete = orig_complete  # type: ignore
+
+        self.addCleanup(_undo)
+
+        r = self.client.post(
+            "/api/v1/story/sourcebook/relevance",
+            json={"chap_id": 1, "current_text": "Arrival text"},
+        )
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json(), {"relevant": ["Hero", "Town", "Villain"]})
 
     def test_suggest_loop_detection_truncates_repetitive_output(self):
         """Loop detection truncates repetitive text to the last clean prefix without retrying."""

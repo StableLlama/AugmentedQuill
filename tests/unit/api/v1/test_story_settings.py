@@ -9,12 +9,13 @@
 
 import json
 from pathlib import Path
+
 from augmentedquill.services.projects.projects import select_project
+
 from .api_test_case import ApiTestCase
 
 
 class StorySettingsTest(ApiTestCase):
-
     def _make_project(self, name: str = "art_project") -> Path:
         ok, msg = select_project(name)
         self.assertTrue(ok, msg)

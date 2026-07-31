@@ -186,6 +186,10 @@
           "items": {
             "type": "string"
           }
+        },
+        "origin_date": {
+          "type": ["string", "null"],
+          "description": "ISO 8601 birth or creation date used to compute personal timeline age"
         }
       },
       "required": ["description", "category"]

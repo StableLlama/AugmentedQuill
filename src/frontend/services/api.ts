@@ -20,6 +20,9 @@ import { createSourcebookApi } from './apiClients/sourcebook';
 import { debugApi } from './apiClients/debug';
 import { createCheckpointsApi } from './apiClients/checkpoints';
 import { createSearchApi } from './apiClients/search';
+import { createScenesApi } from './apiClients/scenes';
+import { createAnnotationsApi } from './apiClients/annotations';
+import { createViewStateApi } from './apiClients/viewState';
 import { useStoryStore } from '../stores/storyStore';
 
 type ProjectApiClients = {
@@ -31,6 +34,9 @@ type ProjectApiClients = {
   sourcebook: ReturnType<typeof createSourcebookApi>;
   checkpoints: ReturnType<typeof createCheckpointsApi>;
   search: ReturnType<typeof createSearchApi>;
+  scenes: ReturnType<typeof createScenesApi>;
+  annotations: ReturnType<typeof createAnnotationsApi>;
+  viewState: ReturnType<typeof createViewStateApi>;
 };
 
 const projectApiCache = new Map<string, ProjectApiClients>();
@@ -63,6 +69,9 @@ function forProject(projectName: string): ProjectApiClients {
     sourcebook: createSourcebookApi(projectName),
     checkpoints: createCheckpointsApi(projectName),
     search: createSearchApi(projectName),
+    scenes: createScenesApi(projectName),
+    annotations: createAnnotationsApi(projectName),
+    viewState: createViewStateApi(projectName),
   };
   projectApiCache.set(projectName, scoped);
   return scoped;
@@ -241,5 +250,47 @@ export const api = {
     replaceSingle: (
       ...args: Parameters<ProjectApiClients['search']['replaceSingle']>
     ) => currentProjectApi().search.replaceSingle(...args),
+  },
+  scenes: {
+    list: (...args: Parameters<ProjectApiClients['scenes']['list']>) =>
+      currentProjectApi().scenes.list(...args),
+    create: (...args: Parameters<ProjectApiClients['scenes']['create']>) =>
+      currentProjectApi().scenes.create(...args),
+    get: (...args: Parameters<ProjectApiClients['scenes']['get']>) =>
+      currentProjectApi().scenes.get(...args),
+    update: (...args: Parameters<ProjectApiClients['scenes']['update']>) =>
+      currentProjectApi().scenes.update(...args),
+    delete: (...args: Parameters<ProjectApiClients['scenes']['delete']>) =>
+      currentProjectApi().scenes.delete(...args),
+    linkProse: (...args: Parameters<ProjectApiClients['scenes']['linkProse']>) =>
+      currentProjectApi().scenes.linkProse(...args),
+    batchLinkProse: (
+      ...args: Parameters<ProjectApiClients['scenes']['batchLinkProse']>
+    ) => currentProjectApi().scenes.batchLinkProse(...args),
+    unlinkProse: (...args: Parameters<ProjectApiClients['scenes']['unlinkProse']>) =>
+      currentProjectApi().scenes.unlinkProse(...args),
+    reorderProse: (...args: Parameters<ProjectApiClients['scenes']['reorderProse']>) =>
+      currentProjectApi().scenes.reorderProse(...args),
+    updateProseContent: (
+      ...args: Parameters<ProjectApiClients['scenes']['updateProseContent']>
+    ) => currentProjectApi().scenes.updateProseContent(...args),
+    detectBoundaries: (
+      ...args: Parameters<ProjectApiClients['scenes']['detectBoundaries']>
+    ) => currentProjectApi().scenes.detectBoundaries(...args),
+    autoLinkScope: (
+      ...args: Parameters<ProjectApiClients['scenes']['autoLinkScope']>
+    ) => currentProjectApi().scenes.autoLinkScope(...args),
+    writeScene: (...args: Parameters<ProjectApiClients['scenes']['writeScene']>) =>
+      currentProjectApi().scenes.writeScene(...args),
+  },
+  annotations: {
+    list: (...args: Parameters<ProjectApiClients['annotations']['list']>) =>
+      currentProjectApi().annotations.list(...args),
+    create: (...args: Parameters<ProjectApiClients['annotations']['create']>) =>
+      currentProjectApi().annotations.create(...args),
+    update: (...args: Parameters<ProjectApiClients['annotations']['update']>) =>
+      currentProjectApi().annotations.update(...args),
+    remove: (...args: Parameters<ProjectApiClients['annotations']['remove']>) =>
+      currentProjectApi().annotations.remove(...args),
   },
 };

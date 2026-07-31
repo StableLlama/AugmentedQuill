@@ -41,7 +41,7 @@ export interface LLMConfig {
   baseUrl: string;
   apiKey: string;
   apiKeyEnabled?: boolean;
-  timeout: number;
+  timeout: number; // timeout in seconds
   modelId: string;
   contextWindowTokens?: number;
   temperature?: number;
@@ -76,7 +76,7 @@ export const DEFAULT_LLM_CONFIG: LLMConfig = {
   baseUrl: 'https://api.openai.com/v1',
   apiKey: '',
   apiKeyEnabled: false,
-  timeout: 30000,
+  timeout: 30,
   modelId: 'gpt-4o',
   temperature: 0.7,
   topP: 0.95,
@@ -122,4 +122,4 @@ export interface ProviderCapabilities {
   supports_function_calling: boolean;
 }
 
-export type MetadataTab = 'summary' | 'notes' | 'private' | 'conflicts';
+export type MetadataTab = 'summary' | 'notes' | 'private' | 'conflicts' | 'scenes';

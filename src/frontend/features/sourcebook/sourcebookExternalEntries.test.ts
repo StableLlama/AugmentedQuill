@@ -788,6 +788,62 @@ describe('sourcebook baseline advance on manual save', () => {
   });
 });
 
+// ─── Sourcebook update history snapshot correctness ─────────────────────────
+
+describe('sourcebook updatedEntry snapshot correctness', () => {
+  type SbEntry = {
+    id: string;
+    destination_datetime?: string;
+  };
+  type StorySnapshot = { sourcebook: SbEntry[] };
+
+  const applyPatch = (story: StorySnapshot, entry: SbEntry): StorySnapshot => ({
+    sourcebook: story.sourcebook.map((e: SbEntry) => (e.id === entry.id ? entry : e)),
+  });
+
+  it('captures stale story when history push does not receive explicit patched state', () => {
+    // Models useStory.latestStoryRef still pointing to pre-patch story.
+    const latestStoryRefValue: StorySnapshot = {
+      sourcebook: [{ id: 'tt-1', destination_datetime: '1955-11-05T20:00:00Z' }],
+    };
+
+    const patchedStoreStory = applyPatch(latestStoryRefValue, {
+      id: 'tt-1',
+      destination_datetime: '2015-10-21T16:29:00Z',
+    });
+
+    // Old behavior: pushExternalHistoryEntry() without explicit state uses
+    // latestStoryRef (stale), overwriting the just-patched store state.
+    const pushedHistoryState = latestStoryRefValue;
+
+    expect(patchedStoreStory.sourcebook[0].destination_datetime).toBe(
+      '2015-10-21T16:29:00Z'
+    );
+    expect(pushedHistoryState.sourcebook[0].destination_datetime).toBe(
+      '1955-11-05T20:00:00Z'
+    );
+  });
+
+  it('uses patched store snapshot when explicit state is passed to history push', () => {
+    const latestStoryRefValue: StorySnapshot = {
+      sourcebook: [{ id: 'tt-1', destination_datetime: '1955-11-05T20:00:00Z' }],
+    };
+
+    const patchedStoreStory = applyPatch(latestStoryRefValue, {
+      id: 'tt-1',
+      destination_datetime: '2015-10-21T16:29:00Z',
+    });
+
+    // Fixed behavior: onSourcebookMutated passes the explicit patched store
+    // state, so history captures the updated sourcebook value.
+    const pushedHistoryState = patchedStoreStory;
+
+    expect(pushedHistoryState.sourcebook[0].destination_datetime).toBe(
+      '2015-10-21T16:29:00Z'
+    );
+  });
+});
+
 // ─── Sourcebook list-click opens diff for created entries ─────────────────────
 //
 // Verifies that clicking a green (AI-created) entry in the list correctly

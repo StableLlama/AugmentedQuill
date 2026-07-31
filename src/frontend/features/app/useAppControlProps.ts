@@ -19,11 +19,16 @@ import { useCallback, useMemo, useRef } from 'react';
 import { AppHeader } from '../layout/AppHeader';
 import { AppMainLayout } from '../layout/AppMainLayout';
 import type {
+  HeaderViewControls,
+  HeaderFormatControls,
+} from '../layout/layoutControlTypes';
+import type {
   EditorSettings,
   SourcebookEntry,
   StoryState,
   SuggestionGenerationMode,
 } from '../../types';
+import { useStoryStore } from '../../stores/storyStore';
 
 type AppHeaderProps = React.ComponentProps<typeof AppHeader>;
 type AppMainLayoutProps = React.ComponentProps<typeof AppMainLayout>;
@@ -41,18 +46,6 @@ type UseAppHeaderPropsParams = {
   nextRedoLabel?: string | null;
   canUndo: boolean;
   canRedo: boolean;
-  viewMode: AppHeaderProps['viewControls']['viewMode'];
-  setViewMode: AppHeaderProps['viewControls']['setViewMode'];
-  showWhitespace: boolean;
-  setShowWhitespace: (show: boolean) => void;
-  isViewMenuOpen: boolean;
-  setIsViewMenuOpen: (open: boolean) => void;
-  isFormatMenuOpen: boolean;
-  setIsFormatMenuOpen: (open: boolean) => void;
-  isMobileFormatMenuOpen: boolean;
-  setIsMobileFormatMenuOpen: (open: boolean) => void;
-  handleFormat: (format: string) => void;
-  getFormatButtonClass: (format: string) => string;
   openImagesDialog: () => void;
   setIsSettingsOpen: (open: boolean) => void;
   setIsImagesOpen: (open: boolean) => void;
@@ -79,6 +72,8 @@ type UseAppHeaderPropsParams = {
 };
 
 type UseAppMainLayoutPropsParams = {
+  viewControls: HeaderViewControls;
+  formatControls: HeaderFormatControls;
   isSidebarOpen: boolean;
   setIsSidebarOpen: (open: boolean) => void;
   currentChapterId: string | null;
@@ -112,8 +107,9 @@ type UseAppMainLayoutPropsParams = {
   patchSourcebook: (entry: SourcebookEntry | null, entryId?: string) => boolean;
   pushExternalHistoryEntry: (params: {
     label: string;
-    onUndo?: () => Promise<void>;
-    onRedo?: () => Promise<void>;
+    state?: StoryState;
+    onUndo?: () => Promise<void> | void;
+    onRedo?: () => Promise<void> | void;
     forceNewHistory?: boolean;
     entryId?: string;
   }) => void;
@@ -166,19 +162,7 @@ export function useAppHeaderProps(params: UseAppHeaderPropsParams): AppHeaderPro
     nextRedoLabel,
     canUndo,
     canRedo,
-    viewMode,
-    setViewMode,
-    showWhitespace,
-    setShowWhitespace,
-    isViewMenuOpen,
-    setIsViewMenuOpen,
-    isFormatMenuOpen,
-    setIsFormatMenuOpen,
-    isMobileFormatMenuOpen,
-    setIsMobileFormatMenuOpen,
-    handleFormat,
-    getFormatButtonClass,
-    openImagesDialog,
+    openImagesDialog: _openImagesDialog,
     setIsSettingsOpen,
     setIsImagesOpen,
     setIsDebugLogsOpen,
@@ -233,32 +217,6 @@ export function useAppHeaderProps(params: UseAppHeaderPropsParams): AppHeaderPro
       canRedo,
     ]
   );
-  const viewControls = useMemo(
-    () => ({
-      viewMode,
-      setViewMode,
-      showWhitespace,
-      setShowWhitespace,
-      isViewMenuOpen,
-      setIsViewMenuOpen,
-      isFormatMenuOpen,
-      setIsFormatMenuOpen,
-      isMobileFormatMenuOpen,
-      setIsMobileFormatMenuOpen,
-    }),
-    [
-      viewMode,
-      setViewMode,
-      showWhitespace,
-      setShowWhitespace,
-      isViewMenuOpen,
-      setIsViewMenuOpen,
-      isFormatMenuOpen,
-      setIsFormatMenuOpen,
-      isMobileFormatMenuOpen,
-      setIsMobileFormatMenuOpen,
-    ]
-  );
   return useMemo(
     () => ({
       storyTitle,
@@ -269,16 +227,6 @@ export function useAppHeaderProps(params: UseAppHeaderPropsParams): AppHeaderPro
         setIsDebugLogsOpen,
       },
       historyControls,
-      viewControls,
-      formatControls: {
-        handleFormat,
-        getFormatButtonClass,
-        isFormatMenuOpen,
-        setIsFormatMenuOpen,
-        isMobileFormatMenuOpen,
-        setIsMobileFormatMenuOpen,
-        onOpenImages: openImagesDialog,
-      },
       aiControls: {
         handleAiAction,
         isAiActionLoading,
@@ -309,20 +257,12 @@ export function useAppHeaderProps(params: UseAppHeaderPropsParams): AppHeaderPro
     }),
     [
       historyControls,
-      viewControls,
       searchControls,
       storyTitle,
       sidebarControls,
       setIsSettingsOpen,
       setIsImagesOpen,
       setIsDebugLogsOpen,
-      handleFormat,
-      getFormatButtonClass,
-      openImagesDialog,
-      isFormatMenuOpen,
-      setIsFormatMenuOpen,
-      isMobileFormatMenuOpen,
-      setIsMobileFormatMenuOpen,
       handleAiAction,
       isAiActionLoading,
       isWritingAvailable,
@@ -451,7 +391,13 @@ export function useAppMainLayoutProps(params: UseAppMainLayoutPropsParams): {
         if (existsInBaseline) {
           advanceBaselineToCurrentStory();
         }
-        pushExternalHistoryEntry({ ...mutation, forceNewHistory: true });
+        // Use the freshly patched store snapshot so history never captures a
+        // stale pre-patch sourcebook state.
+        pushExternalHistoryEntry({
+          ...mutation,
+          state: useStoryStore.getState().story,
+          forceNewHistory: true,
+        });
         return;
       }
       if (!existsInBaseline) {
@@ -592,6 +538,7 @@ export function useAppMainLayoutProps(params: UseAppMainLayoutPropsParams): {
       setShowWhitespace,
       baselineContent: editorBaselineContent,
       onOpenSearch: openSearch,
+      recordHistoryEntry: pushExternalHistoryEntry,
     }),
     [
       editorUpdateChapter,
@@ -620,6 +567,7 @@ export function useAppMainLayoutProps(params: UseAppMainLayoutPropsParams): {
       setShowWhitespace,
       editorBaselineContent,
       openSearch,
+      pushExternalHistoryEntry,
     ]
   );
   return {
@@ -630,9 +578,18 @@ export function useAppMainLayoutProps(params: UseAppMainLayoutPropsParams): {
         sidebarControls,
         editorControls,
         chatControls,
+        viewControls: params.viewControls,
+        formatControls: params.formatControls,
         instructionLanguages,
       }),
-      [sidebarControls, editorControls, chatControls, instructionLanguages]
+      [
+        sidebarControls,
+        editorControls,
+        chatControls,
+        params.viewControls,
+        params.formatControls,
+        instructionLanguages,
+      ]
     ),
   };
 }

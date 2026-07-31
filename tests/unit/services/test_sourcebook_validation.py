@@ -12,6 +12,17 @@ import os
 import tempfile
 from pathlib import Path
 from unittest import TestCase
+
+from augmentedquill.core.config import (
+    CURRENT_SCHEMA_VERSION,
+    _get_story_schema,
+    load_story_config,
+)
+from augmentedquill.services.chat.chat_tool_decorator import (
+    ensure_tool_registry_loaded,
+    get_tool_function,
+)
+from augmentedquill.services.projects.projects import select_project
 from augmentedquill.services.sourcebook.sourcebook_helpers import (
     sourcebook_create_entry,
     sourcebook_delete_entry,
@@ -19,11 +30,9 @@ from augmentedquill.services.sourcebook.sourcebook_helpers import (
     sourcebook_refresh_entry_keywords,
     sourcebook_update_entry,
 )
-from augmentedquill.services.chat.chat_tool_decorator import (
-    ensure_tool_registry_loaded,
-    get_tool_function,
+from augmentedquill.services.story.config_story_ops import (
+    normalize_validate_story_config,
 )
-from augmentedquill.services.projects.projects import select_project
 
 
 class SourcebookValidationTest(TestCase):
@@ -212,6 +221,181 @@ class SourcebookValidationTest(TestCase):
         result = sourcebook_update_entry("nonexistent", name="Foo")
         self.assertIn("error", result)
 
+    def test_normalize_tuple_style_sourcebook_relations_at_load(self):
+        merged = {
+            "metadata": {"version": CURRENT_SCHEMA_VERSION},
+            "project_title": "Test Project",
+            "format": "markdown",
+            "sourcebook": {},
+            "sourcebook_relations": [
+                {
+                    "relation": [
+                        "Dimitri (The Senior)",
+                        "is a senior student at",
+                        "The Boarding School",
+                    ],
+                    "source_id": "Dimitri (The Senior)",
+                    "target_id": "",
+                }
+            ],
+        }
+
+        normalized = normalize_validate_story_config(
+            merged=merged,
+            path_label="test",
+            current_schema_version=CURRENT_SCHEMA_VERSION,
+            schema_loader=_get_story_schema,
+        )
+
+        self.assertEqual(
+            normalized["sourcebook_relations"][0]["relation"],
+            "is a senior student at",
+        )
+        self.assertEqual(
+            normalized["sourcebook_relations"][0]["target_id"],
+            "The Boarding School",
+        )
+
+    def test_load_story_config_migrates_tuple_style_relations_to_current_version(self):
+        story_path = self.pdir / "story.json"
+        story_data = {
+            "metadata": {"version": 4},
+            "project_title": "Test Project",
+            "format": "markdown",
+            "sourcebook": {},
+            "sourcebook_relations": [
+                {
+                    "relation": [
+                        "Dimitri (The Senior)",
+                        "is a senior student at",
+                        "The Boarding School",
+                    ],
+                    "source_id": "Dimitri (The Senior)",
+                    "target_id": "",
+                }
+            ],
+        }
+        story_path.write_text(json.dumps(story_data), encoding="utf-8")
+
+        loaded = load_story_config(story_path)
+        self.assertEqual(
+            loaded.get("metadata", {}).get("version"), CURRENT_SCHEMA_VERSION
+        )
+        self.assertEqual(
+            loaded["sourcebook_relations"][0]["relation"],
+            "is a senior student at",
+        )
+        self.assertEqual(
+            loaded["sourcebook_relations"][0]["target_id"],
+            "The Boarding School",
+        )
+
+        persisted = json.loads(story_path.read_text(encoding="utf-8"))
+        self.assertEqual(
+            persisted.get("metadata", {}).get("version"), CURRENT_SCHEMA_VERSION
+        )
+        self.assertEqual(
+            persisted["sourcebook_relations"][0]["relation"],
+            "is a senior student at",
+        )
+        self.assertEqual(
+            persisted["sourcebook_relations"][0]["target_id"],
+            "The Boarding School",
+        )
+
+    def test_load_story_config_migrates_legacy_relation_bounds_to_scene_fields(self):
+        story_path = self.pdir / "story.json"
+        story_data = {
+            "metadata": {"version": 7},
+            "project_title": "Test Project",
+            "format": "markdown",
+            "sourcebook": {},
+            "sourcebook_relations": [
+                {
+                    "source_id": "Dimitri (The Senior)",
+                    "target_id": "The Boarding School",
+                    "relation": "is a senior student at",
+                    "start_chapter": "1",
+                    "end_chapter": "2",
+                    "start_book": "book-1",
+                    "end_book": "book-2",
+                }
+            ],
+        }
+        story_path.write_text(json.dumps(story_data), encoding="utf-8")
+
+        loaded = load_story_config(story_path)
+        self.assertEqual(
+            loaded.get("metadata", {}).get("version"), CURRENT_SCHEMA_VERSION
+        )
+        self.assertEqual(
+            loaded["sourcebook_relations"][0]["start_scene"],
+            1,
+        )
+        self.assertEqual(
+            loaded["sourcebook_relations"][0]["end_scene"],
+            2,
+        )
+        self.assertNotIn("start_chapter", loaded["sourcebook_relations"][0])
+        self.assertNotIn("end_chapter", loaded["sourcebook_relations"][0])
+        self.assertNotIn("start_book", loaded["sourcebook_relations"][0])
+        self.assertNotIn("end_book", loaded["sourcebook_relations"][0])
+
+        persisted = json.loads(story_path.read_text(encoding="utf-8"))
+        self.assertEqual(
+            persisted.get("metadata", {}).get("version"), CURRENT_SCHEMA_VERSION
+        )
+        self.assertEqual(
+            persisted["sourcebook_relations"][0]["start_scene"],
+            1,
+        )
+        self.assertEqual(
+            persisted["sourcebook_relations"][0]["end_scene"],
+            2,
+        )
+        self.assertNotIn("start_chapter", persisted["sourcebook_relations"][0])
+        self.assertNotIn("end_chapter", persisted["sourcebook_relations"][0])
+        self.assertNotIn("start_book", persisted["sourcebook_relations"][0])
+        self.assertNotIn("end_book", persisted["sourcebook_relations"][0])
+
+    def test_load_story_config_rejects_string_scene_ids(self):
+        story_path = self.pdir / "story.json"
+        story_data = {
+            "metadata": {"version": 8},
+            "project_title": "Test Project",
+            "format": "markdown",
+            "sourcebook": {},
+            "sourcebook_relations": [
+                {
+                    "source_id": "Dimitri (The Senior)",
+                    "target_id": "The Boarding School",
+                    "relation": "is a senior student at",
+                    "start_scene": "1",
+                    "end_scene": "2",
+                }
+            ],
+        }
+        story_path.write_text(json.dumps(story_data), encoding="utf-8")
+
+        with self.assertRaises(ValueError):
+            load_story_config(story_path)
+
+    def test_manage_sourcebook_relation_data_rejects_string_scene_ids(self):
+        from pydantic import ValidationError
+
+        from augmentedquill.services.chat.chat_tools.sourcebook_tools import (
+            ManageSourcebookRelationData,
+        )
+
+        with self.assertRaises(ValidationError):
+            ManageSourcebookRelationData(
+                source_id="A",
+                relation_type="knows",
+                target_id="B",
+                start_scene="1",
+                end_scene="2",
+            )
+
     def test_update_with_invalid_fields_returns_error(self):
         # Create valid entry
         entry = sourcebook_create_entry("UpdateTarget2", "Desc", "Character")
@@ -245,13 +429,14 @@ class SourcebookValidationTest(TestCase):
         self.assertIn("error", sourcebook_update_entry(None))
 
     def test_pydantic_schema_validates_images_on_create_tool(self):
-        from augmentedquill.services.chat.chat_tools.sourcebook_tools import (
-            CreateSourcebookEntryParams,
-        )
         from pydantic import ValidationError
 
+        from augmentedquill.services.chat.chat_tools.sourcebook_tools import (
+            ManageSourcebookEntryData,
+        )
+
         # Valid
-        params = CreateSourcebookEntryParams(
+        params = ManageSourcebookEntryData(
             name="Valid Model",
             description="Valid",
             category="Character",
@@ -260,14 +445,14 @@ class SourcebookValidationTest(TestCase):
         self.assertEqual(params.images, ["img1", "img2"])
 
         # Default is empty list
-        params2 = CreateSourcebookEntryParams(
+        params2 = ManageSourcebookEntryData(
             name="Valid Model 2", description="Valid", category="Character"
         )
         self.assertEqual(params2.images, [])
 
         # Invalid
         with self.assertRaises(ValidationError):
-            CreateSourcebookEntryParams(
+            ManageSourcebookEntryData(
                 name="Invalid Model",
                 description="Valid",
                 category="Character",
@@ -275,31 +460,32 @@ class SourcebookValidationTest(TestCase):
             )
 
     def test_pydantic_schema_validates_images_on_update_tool(self):
-        from augmentedquill.services.chat.chat_tools.sourcebook_tools import (
-            UpdateSourcebookEntryParams,
-        )
         from pydantic import ValidationError
 
+        from augmentedquill.services.chat.chat_tools.sourcebook_tools import (
+            ManageSourcebookUpdateData,
+        )
+
         # Valid
-        params = UpdateSourcebookEntryParams(name_or_id="id1", images=["img1"])
+        params = ManageSourcebookUpdateData(images=["img1"])
         self.assertEqual(params.images, ["img1"])
 
         # Default is None
-        params2 = UpdateSourcebookEntryParams(name_or_id="id1")
+        params2 = ManageSourcebookUpdateData()
         self.assertIsNone(params2.images)
 
         # Invalid
         with self.assertRaises(ValidationError):
-            UpdateSourcebookEntryParams(name_or_id="id1", images="not a list")
+            ManageSourcebookUpdateData(images="not a list")
 
     def test_chat_tool_update_without_fields_returns_error(self):
         ensure_tool_registry_loaded()
-        tool = get_tool_function("update_sourcebook_entry")
+        tool = get_tool_function("manage_sourcebook")
         self.assertIsNotNone(tool)
 
         response = self._run_async(
             tool(
-                {"name_or_id": "id1"},
+                {"action": "update", "name_or_id": "id1", "update_data": {}},
                 "call_test",
                 payload={},
                 mutations={},
@@ -307,7 +493,7 @@ class SourcebookValidationTest(TestCase):
         )
 
         self.assertIsInstance(response, dict)
-        self.assertEqual(response.get("name"), "update_sourcebook_entry")
+        self.assertEqual(response.get("name"), "manage_sourcebook")
         self.assertEqual(response.get("tool_call_id"), "call_test")
 
         content = response.get("content")
@@ -355,6 +541,62 @@ class SourcebookValidationTest(TestCase):
         )
         self.assertNotIn("error", updated)
         self.assertEqual(updated.get("keywords", []), [])
+
+    # -------------------------------------------------------------------------
+    # Time Travel category tests
+    # -------------------------------------------------------------------------
+
+    def test_create_time_travel_entry_succeeds(self):
+        """The 'Time Travel' category must be accepted by the backend."""
+        result = sourcebook_create_entry(
+            name="Journey to the Past",
+            description="A portal that sends the protagonist 30 years back.",
+            category="Time Travel",
+        )
+        self.assertNotIn("error", result)
+        self.assertEqual(result["category"], "Time Travel")
+
+    def test_create_time_travel_entry_case_insensitive(self):
+        """Category normalisation must accept 'time travel' (lowercase)."""
+        result = sourcebook_create_entry(
+            name="Future Leap",
+            description="Leaps 10 years forward.",
+            category="time travel",
+        )
+        self.assertNotIn("error", result)
+        self.assertEqual(result["category"], "Time Travel")
+
+    def test_create_time_travel_entry_with_fields(self):
+        """Time Travel specific fields are stored and returned correctly."""
+        result = sourcebook_create_entry(
+            name="Flux Capacitor",
+            description="Makes time travel possible at 88 mph.",
+            category="Time Travel",
+            destination_datetime="1955-11-05T00:00:00Z",
+            destination_relative="30 years earlier",
+            creates_new_timeline=True,
+        )
+        self.assertNotIn("error", result)
+        self.assertEqual(result.get("destination_datetime"), "1955-11-05T00:00:00Z")
+        self.assertEqual(result.get("destination_relative"), "30 years earlier")
+        self.assertTrue(result.get("creates_new_timeline"))
+
+    def test_update_time_travel_entry_fields(self):
+        """Time Travel specific fields can be updated."""
+        created = sourcebook_create_entry(
+            name="Time Vortex",
+            description="A swirling vortex.",
+            category="Time Travel",
+        )
+        self.assertNotIn("error", created)
+        updated = sourcebook_update_entry(
+            name_or_id=created["id"],
+            destination_relative="100 years forward",
+            creates_new_timeline=False,
+        )
+        self.assertNotIn("error", updated)
+        self.assertEqual(updated.get("destination_relative"), "100 years forward")
+        self.assertFalse(updated.get("creates_new_timeline"))
 
     def _get_entries(self):
         story_path = self.pdir / "story.json"

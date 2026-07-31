@@ -13,7 +13,7 @@ the frontend can import auto-generated TypeScript types.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -30,27 +30,27 @@ class LLMLogRequest(BaseModel):
 class LLMLogResponse(BaseModel):
     """Shape of the response portion of an LLM log entry."""
 
-    status_code: Optional[int] = None
+    status_code: int | None = None
     body: Any = None
-    streaming: Optional[bool] = None
-    chunks: Optional[list[Any]] = None
-    full_content: Optional[str] = None
-    thinking: Optional[str] = None
+    streaming: bool | None = None
+    chunks: list[Any] | None = None
+    full_content: str | None = None
+    thinking: str | None = None
     error: Any = None
     error_detail: Any = None
-    tool_calls: Optional[list[Any]] = None
+    tool_calls: list[Any] | None = None
 
 
 class DebugLogEntry(BaseModel):
     """A single LLM communication log entry."""
 
     id: str
-    caller_id: Optional[str] = None
-    model_type: Optional[str] = None
+    caller_id: str | None = None
+    model_type: str | None = None
     timestamp_start: str
-    timestamp_end: Optional[str] = None
+    timestamp_end: str | None = None
     request: LLMLogRequest
-    response: Optional[LLMLogResponse] = None
+    response: LLMLogResponse | None = None
 
 
 class DebugLogsResponse(BaseModel):

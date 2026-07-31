@@ -59,11 +59,11 @@ The toolbar at the top of the dialog offers two ways to inspect logs:
 
 ### Toolbar Actions
 
-| Button                                                                                                                      | Description                                                                                                 |
-| --------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| **Refresh** (<img src="assets/edit-2.svg" alt="Refresh icon" width="16" height="16" style="vertical-align:text-bottom;" />) | Re-fetches the log data from the server. Use this if you have been running requests in another browser tab. |
-| **Clear** (<img src="assets/trash-2.svg" alt="Trash icon" width="16" height="16" style="vertical-align:text-bottom;" />)    | Deletes all stored log entries after confirmation.                                                          |
-| **Close** (<img src="assets/x.svg" alt="Close icon" width="16" height="16" style="vertical-align:text-bottom;" />)          | Closes the dialog.                                                                                          |
+| Button                                                                                                                          | Description                                                                                                 |
+| ------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| **Refresh** (<img src="assets/refresh-cw.svg" alt="Refresh icon" width="16" height="16" style="vertical-align:text-bottom;" />) | Re-fetches the log data from the server. Use this if you have been running requests in another browser tab. |
+| **Clear** (<img src="assets/trash-2.svg" alt="Trash icon" width="16" height="16" style="vertical-align:text-bottom;" />)        | Deletes all stored log entries after confirmation.                                                          |
+| **Close** (<img src="assets/x.svg" alt="Close icon" width="16" height="16" style="vertical-align:text-bottom;" />)              | Closes the dialog.                                                                                          |
 
 ### LLM Raw Log Verbosity
 
@@ -94,4 +94,4 @@ JSON objects and arrays are collapsible — click the chevron next to any key to
 
 ---
 
-Next up: Apply everything you've learned in the [Tutorial: Writing Your First Story](09_tutorial_first_story.md).
+Next up: Read a strategic overview of the writing process in [Writing Your Story: A Practical Roadmap](10_writing_a_story.md).

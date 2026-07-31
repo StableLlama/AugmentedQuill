@@ -11,8 +11,8 @@
 
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
+import type { Scene, StoryState, Chapter, Book } from '../../types';
 
-import { StoryState } from '../../types';
 import { api } from '../../services/api';
 import { resetStoryStore, useStoryStore } from '../../stores/storyStore';
 import { useChatStore } from '../../stores/chatStore';
@@ -22,23 +22,41 @@ import {
   useStory,
 } from './useStory';
 
-vi.mock('../../services/api', () => ({
-  api: {
-    projects: {
-      list: vi.fn(),
-      select: vi.fn(),
+vi.mock('../../services/api', () => {
+  const scenesListMock = vi.fn();
+  const chaptersListMock = vi.fn();
+  const storyGetContentMock = vi.fn();
+  const forProjectMock = vi.fn(() => ({
+    chapters: { list: chaptersListMock },
+    story: { getContent: storyGetContentMock },
+    scenes: { list: scenesListMock },
+  }));
+
+  return {
+    api: {
+      projects: {
+        list: vi.fn(),
+        select: vi.fn(),
+      },
+      forProject: forProjectMock,
+      chapters: {
+        list: chaptersListMock,
+        get: vi.fn(),
+        create: vi.fn(),
+        delete: vi.fn(),
+        updateContent: vi.fn(),
+        updateTitle: vi.fn(),
+        updateSummary: vi.fn(),
+        updateMetadata: vi.fn(),
+      },
+      story: {
+        updateMetadata: vi.fn(),
+        updateContent: vi.fn(),
+        getContent: storyGetContentMock,
+      },
     },
-    chapters: {
-      list: vi.fn(),
-      get: vi.fn(),
-    },
-    story: {
-      updateMetadata: vi.fn(),
-      updateContent: vi.fn(),
-      getContent: vi.fn(),
-    },
-  },
-}));
+  };
+});
 
 const buildStory = (summary: string): StoryState => ({
   id: 'demo',
@@ -166,6 +184,58 @@ describe('resolveExternalHistorySourceState', () => {
   });
 });
 
+it('patchSourcebook updates the reactive story store immediately', async () => {
+  vi.mocked(api.projects.list).mockResolvedValue({
+    available: [],
+    current: null,
+  } as Awaited<ReturnType<typeof api.projects.list>>);
+  vi.mocked(api.projects.select).mockResolvedValue({ ok: false } as Awaited<
+    ReturnType<typeof api.projects.select>
+  >);
+
+  const hook = await hookWithStory('initial', [buildChapter('1', 'Hello')]);
+
+  act(() => {
+    useStoryStore.getState().setStory(
+      (prev: StoryState): StoryState => ({
+        ...prev,
+        sourcebook: [
+          {
+            id: 'tt-1',
+            name: '1985 -> 1955',
+            description: 'Temporal jump',
+            category: 'Time Travel',
+            synonyms: [],
+            images: [],
+            destination_datetime: '1955-11-05T20:00:00Z',
+            creates_new_timeline: false,
+          },
+        ],
+      })
+    );
+  });
+
+  act(() => {
+    const changed = hook.result.current.patchSourcebook({
+      id: 'tt-1',
+      name: '1985 -> 1955',
+      description: 'Temporal jump',
+      category: 'Time Travel',
+      synonyms: [],
+      images: [],
+      destination_datetime: '2015-10-21T16:29:00Z',
+      creates_new_timeline: true,
+    });
+    expect(changed).toBe(true);
+  });
+
+  const updated = useStoryStore
+    .getState()
+    .story.sourcebook?.find((entry: SourcebookEntry): boolean => entry.id === 'tt-1');
+  expect(updated?.destination_datetime).toBe('2015-10-21T16:29:00Z');
+  expect(updated?.creates_new_timeline).toBe(true);
+});
+
 it('clears chat session mutation tags when undo is used', async () => {
   vi.mocked(api.projects.list).mockResolvedValue({
     available: [],
@@ -194,6 +264,7 @@ it('clears chat session mutation tags when undo is used', async () => {
   expect(useChatStore.getState().sessionMutations).toEqual([]);
 });
 
+// eslint-disable-next-line max-lines-per-function
 describe('buildInitialStoryState', () => {
   it('hydrates story-level notes fields from selected project payload', () => {
     const state = buildInitialStoryState(
@@ -303,6 +374,323 @@ describe('buildInitialStoryState', () => {
     expect(onRedo2).toHaveBeenCalledTimes(1);
   });
 
+  it('supports undo/redo for scene-write style snapshots across project/scope matrices', async () => {
+    vi.mocked(api.projects.list).mockResolvedValue({
+      available: [],
+      current: null,
+    } as unknown as Awaited<ReturnType<typeof api.projects.list>>);
+    vi.mocked(api.projects.select).mockResolvedValue({
+      ok: false,
+    } as unknown as Awaited<ReturnType<typeof api.projects.select>>);
+
+    const buildMarkerDoc = (
+      targetIndex: number,
+      neighborsHaveText: boolean,
+      targetText: string
+    ): string => {
+      const sceneIds = [1, 2, 3];
+      return sceneIds
+        .map((sceneId: number, index: number): string => {
+          const prose =
+            index === targetIndex
+              ? targetText
+              : neighborsHaveText
+                ? `neighbor-${sceneId}`
+                : '';
+          return `<!--scene:${sceneId}:start-->${prose}<!--scene:${sceneId}:end-->`;
+        })
+        .join('\n');
+    };
+
+    const replaceScenePayload = (
+      content: string,
+      sceneId: number,
+      nextText: string
+    ): string =>
+      content.replace(
+        new RegExp(
+          `<!--scene:${sceneId}:start-->[\\s\\S]*?<!--scene:${sceneId}:end-->`
+        ),
+        `<!--scene:${sceneId}:start-->${nextText}<!--scene:${sceneId}:end-->`
+      );
+
+    const withStableTimestamp = (state: StoryState): StoryState => ({
+      ...state,
+      // lastUpdated is managed by store mutations and can differ while content is identical.
+      lastUpdated: 0,
+    });
+
+    type ProjectCase = {
+      name: string;
+      projectType: StoryState['projectType'];
+      selectedChapterModes: Array<'same' | 'different'>;
+      targetChapterId: string | null;
+      targetBookId: string | null;
+    };
+
+    const projectCases: ProjectCase[] = [
+      {
+        name: 'short-story',
+        projectType: 'short-story',
+        selectedChapterModes: ['same'],
+        targetChapterId: null,
+        targetBookId: null,
+      },
+      {
+        name: 'novel',
+        projectType: 'novel',
+        selectedChapterModes: ['same', 'different'],
+        targetChapterId: '2',
+        targetBookId: null,
+      },
+      {
+        name: 'series-first-book',
+        projectType: 'series',
+        selectedChapterModes: ['same', 'different'],
+        targetChapterId: '1',
+        targetBookId: 'book-1',
+      },
+      {
+        name: 'series-middle-book',
+        projectType: 'series',
+        selectedChapterModes: ['same', 'different'],
+        targetChapterId: '1',
+        targetBookId: 'book-2',
+      },
+      {
+        name: 'series-last-book',
+        projectType: 'series',
+        selectedChapterModes: ['same', 'different'],
+        targetChapterId: '1',
+        targetBookId: 'book-3',
+      },
+    ];
+
+    for (const projectCase of projectCases) {
+      for (const targetIndex of [0, 1, 2]) {
+        for (const neighborsHaveText of [false, true]) {
+          for (const selectedChapterMode of projectCase.selectedChapterModes) {
+            resetStoryStore();
+            useChatStore.setState({ sessionMutations: [] });
+            const hook = renderHook(() =>
+              useStory({
+                confirm: async () => true,
+                alert: () => {},
+              })
+            );
+
+            const targetSceneId = targetIndex + 1;
+            const initialDoc = buildMarkerDoc(
+              targetIndex,
+              neighborsHaveText,
+              `target-before-${targetSceneId}`
+            );
+            const generated = `generated-${projectCase.name}-${targetSceneId}-${neighborsHaveText ? 'neighbors' : 'empty'}-${selectedChapterMode}`;
+            const updatedDoc = replaceScenePayload(
+              initialDoc,
+              targetSceneId,
+              generated
+            );
+
+            const chapters =
+              projectCase.projectType === 'short-story'
+                ? []
+                : [
+                    {
+                      id: '1',
+                      title: 'Chapter 1',
+                      summary: '',
+                      content: 'chapter-1',
+                      filename: '0001.txt',
+                      book_id:
+                        projectCase.projectType === 'series'
+                          ? projectCase.targetBookId
+                          : undefined,
+                      notes: '',
+                      private_notes: '',
+                      conflicts: [],
+                    },
+                    {
+                      id: '2',
+                      title: 'Chapter 2',
+                      summary: '',
+                      content:
+                        projectCase.targetChapterId === '2' ? initialDoc : 'chapter-2',
+                      filename: '0002.txt',
+                      book_id:
+                        projectCase.projectType === 'series'
+                          ? projectCase.targetBookId
+                          : undefined,
+                      notes: '',
+                      private_notes: '',
+                      conflicts: [],
+                    },
+                  ];
+
+            const baseState: StoryState = {
+              ...buildStory(`base-${projectCase.name}`),
+              id: 'demo',
+              title: 'Demo',
+              projectType: projectCase.projectType,
+              chapters,
+              currentChapterId:
+                projectCase.projectType === 'short-story'
+                  ? null
+                  : selectedChapterMode === 'same'
+                    ? projectCase.targetChapterId
+                    : '1',
+              draft:
+                projectCase.projectType === 'short-story'
+                  ? {
+                      id: 'story',
+                      scope: 'story',
+                      title: 'Demo',
+                      summary: '',
+                      content: initialDoc,
+                      notes: '',
+                      private_notes: '',
+                      conflicts: [],
+                      filename: 'content.md',
+                    }
+                  : null,
+              books:
+                projectCase.projectType === 'series'
+                  ? [
+                      {
+                        id: 'book-1',
+                        title: 'Book 1',
+                        summary: '',
+                        chapters: [
+                          {
+                            id: '1',
+                            title: 'Book 1 Chapter 1',
+                            summary: '',
+                            content:
+                              projectCase.targetBookId === 'book-1'
+                                ? initialDoc
+                                : 'book-1-chapter-1',
+                            filename: '0001.txt',
+                            book_id: 'book-1',
+                            notes: '',
+                            private_notes: '',
+                            conflicts: [],
+                          },
+                        ],
+                      },
+                      {
+                        id: 'book-2',
+                        title: 'Book 2',
+                        summary: '',
+                        chapters: [
+                          {
+                            id: '1',
+                            title: 'Book 2 Chapter 1',
+                            summary: '',
+                            content:
+                              projectCase.targetBookId === 'book-2'
+                                ? initialDoc
+                                : 'book-2-chapter-1',
+                            filename: '0001.txt',
+                            book_id: 'book-2',
+                            notes: '',
+                            private_notes: '',
+                            conflicts: [],
+                          },
+                        ],
+                      },
+                      {
+                        id: 'book-3',
+                        title: 'Book 3',
+                        summary: '',
+                        chapters: [
+                          {
+                            id: '1',
+                            title: 'Book 3 Chapter 1',
+                            summary: '',
+                            content:
+                              projectCase.targetBookId === 'book-3'
+                                ? initialDoc
+                                : 'book-3-chapter-1',
+                            filename: '0001.txt',
+                            book_id: 'book-3',
+                            notes: '',
+                            private_notes: '',
+                            conflicts: [],
+                          },
+                        ],
+                      },
+                    ]
+                  : [],
+            };
+
+            const nextState: StoryState = {
+              ...baseState,
+              chapters: baseState.chapters.map((chapter: Chapter) => {
+                const isTargetChapter =
+                  projectCase.projectType !== 'short-story' &&
+                  chapter.id === projectCase.targetChapterId;
+                return isTargetChapter ? { ...chapter, content: updatedDoc } : chapter;
+              }),
+              draft:
+                projectCase.projectType === 'short-story' && baseState.draft
+                  ? { ...baseState.draft, content: updatedDoc }
+                  : baseState.draft,
+            };
+
+            vi.mocked(api.chapters.get).mockImplementation(async (id: number) => {
+              const chapterId = String(id);
+              const directChapter = baseState.chapters.find(
+                (c: Chapter) => c.id === chapterId
+              );
+              const seriesChapter =
+                directChapter ??
+                baseState.books
+                  .flatMap((book: Book) => book.chapters)
+                  .find((chapter: Chapter) => chapter.id === chapterId);
+
+              return {
+                content: seriesChapter?.content ?? '',
+                notes: seriesChapter?.notes ?? '',
+                private_notes: seriesChapter?.private_notes ?? '',
+                conflicts: seriesChapter?.conflicts ?? [],
+                title: seriesChapter?.title ?? '',
+                summary: seriesChapter?.summary ?? '',
+              } as unknown as Awaited<ReturnType<typeof api.chapters.get>>;
+            });
+
+            await act(async () => {
+              hook.result.current.loadStory(baseState);
+            });
+
+            act(() => {
+              hook.result.current.pushExternalHistoryEntry({
+                label: `scene-write-${projectCase.name}`,
+                state: nextState,
+                forceNewHistory: true,
+              });
+            });
+
+            await act(async () => {
+              await hook.result.current.undo();
+            });
+            expect(withStableTimestamp(hook.result.current.story)).toEqual(
+              withStableTimestamp(baseState)
+            );
+
+            await act(async () => {
+              await hook.result.current.redo();
+            });
+            expect(withStableTimestamp(hook.result.current.story)).toEqual(
+              withStableTimestamp(nextState)
+            );
+
+            hook.unmount();
+          }
+        }
+      }
+    }
+  });
+
   it('does not create history entries for repeated metadata autosaves but creates one final history entry on commit', async () => {
     const initialChapter = {
       id: '1',
@@ -362,7 +750,7 @@ describe('buildInitialStoryState', () => {
     expect(result.current.story.chapters[0].summary).toBe('final');
   });
 
-  it('does not add duplicate no-op history entries when same state is re-applied', async () => {
+  it('records a committed checkpoint when the same state is re-applied', async () => {
     const initialChapter = {
       id: '1',
       title: 'Intro',
@@ -385,7 +773,7 @@ describe('buildInitialStoryState', () => {
       result.current.loadStory({
         ...buildStory('a'),
         chapters: [initialChapter],
-        currentChapterId: '1',
+        currentChapterId: null,
       });
     });
 
@@ -399,7 +787,7 @@ describe('buildInitialStoryState', () => {
       await result.current.updateChapter('1', { summary: 'b' }, false, true);
     });
 
-    expect(result.current.historySize).toBe(2); // no-op duplicate suppressed
+    expect(result.current.historySize).toBe(3);
   });
 
   it('preserves selected chapter when undoing after editing a later chapter', async () => {
@@ -678,6 +1066,162 @@ describe('buildInitialStoryState', () => {
 
     expect(result.current.story.summary).toBe('Edited summary');
     expect(result.current.baselineState.summary).toBe('Edited summary');
+  });
+
+  it('refreshes scenes after creating a chapter so stale prose links are cleared', async () => {
+    vi.mocked(api.projects.list).mockResolvedValue({
+      available: [],
+      current: null,
+    } as Awaited<ReturnType<typeof api.projects.list>>);
+    vi.mocked(api.projects.select).mockResolvedValue({ ok: false } as Awaited<
+      ReturnType<typeof api.projects.select>
+    >);
+
+    const staleScene = {
+      id: 1,
+      summary: 'Stale scene',
+      prose_link: {
+        scope_type: 'chapter',
+        chapter_id: '1',
+        book_id: null,
+        start_offset: 0,
+        end_offset: 5,
+        content_hash: 'hash',
+        is_stale: false,
+      },
+      order_index: 1,
+      beats: [],
+      active_characters: [],
+      passive_characters: [],
+      sourcebook_entry_ids: [],
+      causes: [],
+      causes: [],
+      scene_time: null,
+      timeline_id: 'main',
+      tag_personal_datetimes: [],
+      pinboard_x: 100,
+      pinboard_y: 100,
+      status: 'active',
+    } as unknown as Scene;
+
+    const unlinkedScene = {
+      ...staleScene,
+      prose_link: null,
+    } as Scene;
+
+    vi.mocked(api.chapters.create).mockResolvedValue({
+      ok: true,
+      id: 1,
+      title: 'New Chapter',
+    } as Awaited<ReturnType<typeof api.chapters.create>>);
+    vi.mocked(api.chapters.list).mockResolvedValue({
+      chapters: [
+        {
+          id: 1,
+          title: 'New Chapter',
+          summary: '',
+          filename: '0001.txt',
+        },
+      ],
+    } as Awaited<ReturnType<typeof api.chapters.list>>);
+    vi.mocked(api.forProject('demo').scenes.list).mockResolvedValue([unlinkedScene]);
+
+    const { result } = renderHook(() =>
+      useStory({
+        confirm: async () => true,
+        alert: () => {},
+      })
+    );
+
+    act(() => {
+      result.current.loadStory({
+        ...buildStory('initial'),
+        id: 'demo',
+        title: 'Demo',
+        chapters: [],
+        scenes: [staleScene],
+      });
+    });
+
+    await act(async () => {
+      await result.current.addChapter('New Chapter');
+    });
+
+    expect(result.current.story.scenes[0]?.prose_link).toBeNull();
+  });
+
+  it('refreshes scenes after deleting a chapter so stale prose links are cleared', async () => {
+    vi.mocked(api.projects.list).mockResolvedValue({
+      available: [],
+      current: null,
+    } as Awaited<ReturnType<typeof api.projects.list>>);
+    vi.mocked(api.projects.select).mockResolvedValue({ ok: false } as Awaited<
+      ReturnType<typeof api.projects.select>
+    >);
+
+    const staleScene = {
+      id: 1,
+      summary: 'Stale scene',
+      prose_link: {
+        scope_type: 'chapter',
+        chapter_id: '1',
+        book_id: null,
+        start_offset: 0,
+        end_offset: 5,
+        content_hash: 'hash',
+        is_stale: false,
+      },
+      order_index: 1,
+      beats: [],
+      active_characters: [],
+      passive_characters: [],
+      sourcebook_entry_ids: [],
+      causes: [],
+      causes: [],
+      scene_time: null,
+      timeline_id: 'main',
+      tag_personal_datetimes: [],
+      pinboard_x: 100,
+      pinboard_y: 100,
+      status: 'active',
+    } as unknown as Scene;
+
+    const unlinkedScene = {
+      ...staleScene,
+      prose_link: null,
+    } as Scene;
+
+    vi.mocked(api.chapters.delete).mockResolvedValue({
+      ok: true,
+    } as Awaited<ReturnType<typeof api.chapters.delete>>);
+    vi.mocked(api.chapters.list).mockResolvedValue({
+      chapters: [],
+    } as Awaited<ReturnType<typeof api.chapters.list>>);
+    vi.mocked(api.forProject('demo').scenes.list).mockResolvedValue([unlinkedScene]);
+
+    const { result } = renderHook(() =>
+      useStory({
+        confirm: async () => true,
+        alert: () => {},
+      })
+    );
+
+    act(() => {
+      result.current.loadStory({
+        ...buildStory('initial'),
+        id: 'demo',
+        title: 'Demo',
+        chapters: [buildChapter('1', 'chapter')],
+        scenes: [staleScene],
+        currentChapterId: '1',
+      });
+    });
+
+    await act(async () => {
+      await result.current.deleteChapter('1');
+    });
+
+    expect(result.current.story.scenes[0]?.prose_link).toBeNull();
   });
 });
 
@@ -1056,5 +1600,339 @@ describe('advanceBaselineToCurrentStory', () => {
     // Diff should be between 'AI turn 1' (baseline) and 'AI turn 2' (current).
     expect(result.current.story.chapters[0]?.content).toBe('AI turn 2');
     expect(result.current.baselineState.chapters[0]?.content).toBe('AI turn 1');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// fetchStory scene loading
+// ---------------------------------------------------------------------------
+
+describe('fetchStory: scene loading on project open', () => {
+  // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
+  const buildSelectResponse = () => ({
+    ok: true,
+    story: {
+      project_type: 'novel',
+      title: 'Test Project',
+      summary: '',
+      style_tags: [],
+      image_style: '',
+      image_additional_info: '',
+      notes: '',
+      private_notes: '',
+      conflicts: [],
+      books: [],
+      sourcebook: [],
+    },
+  });
+
+  const buildScenes = (): Scene[] => [
+    {
+      id: 'scene-1',
+      summary: 'First scene',
+      beats: [],
+      prose_link: null,
+      active_characters: [],
+      passive_characters: [],
+      pinboard_x: 0,
+      pinboard_y: 0,
+      causes: [],
+      causes: [],
+    },
+    {
+      id: 'scene-2',
+      summary: 'Second scene',
+      beats: [],
+      prose_link: {
+        scope_type: 'chapter',
+        chapter_id: 'ch1',
+        start_offset: 0,
+        end_offset: 50,
+        content_hash: 'abc',
+      },
+      active_characters: [],
+      passive_characters: [],
+      pinboard_x: 100,
+      pinboard_y: 100,
+      causes: [],
+      causes: [],
+    },
+  ];
+
+  // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
+  const setupForFetch = (scenes: Scene[]) => {
+    vi.mocked(api.projects.list).mockResolvedValue({
+      available: ['my-project'],
+      current: 'my-project',
+    } as unknown as Awaited<ReturnType<typeof api.projects.list>>);
+
+    vi.mocked(api.projects.select).mockResolvedValue(
+      buildSelectResponse() as unknown as Awaited<
+        ReturnType<typeof api.projects.select>
+      >
+    );
+
+    const chaptersListMock = vi.fn().mockResolvedValue({ chapters: [] });
+    const storyGetContentMock = vi.fn().mockResolvedValue({ content: '' });
+    const scenesListMock = vi.fn().mockResolvedValue(scenes);
+
+    vi.mocked(api.forProject).mockReturnValue({
+      chapters: { list: chaptersListMock },
+      story: { getContent: storyGetContentMock },
+      scenes: { list: scenesListMock },
+    } as unknown as ReturnType<typeof api.forProject>);
+
+    return { scenesListMock };
+  };
+
+  it('populates store scenes when project is loaded for the first time (page reload)', async () => {
+    const scenes = buildScenes();
+    setupForFetch(scenes);
+
+    const { result } = renderHook(() => useStory());
+
+    // fetchStory is triggered by hasFetchedRef on mount; wait for async work.
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(result.current.story.scenes).toHaveLength(2);
+    expect(result.current.story.scenes[0].id).toBe('scene-1');
+    expect(result.current.story.scenes[1].id).toBe('scene-2');
+  });
+
+  it('populates store with empty array when project has no scenes', async () => {
+    setupForFetch([]);
+
+    const { result } = renderHook(() => useStory());
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(result.current.story.scenes).toEqual([]);
+  });
+
+  it('tolerates a scenes.list failure and stores an empty array', async () => {
+    vi.mocked(api.projects.list).mockResolvedValue({
+      available: ['my-project'],
+      current: 'my-project',
+    } as unknown as Awaited<ReturnType<typeof api.projects.list>>);
+
+    vi.mocked(api.projects.select).mockResolvedValue(
+      buildSelectResponse() as unknown as Awaited<
+        ReturnType<typeof api.projects.select>
+      >
+    );
+
+    vi.mocked(api.forProject).mockReturnValue({
+      chapters: { list: vi.fn().mockResolvedValue({ chapters: [] }) },
+      story: { getContent: vi.fn().mockResolvedValue({ content: '' }) },
+      scenes: { list: vi.fn().mockRejectedValue(new Error('network error')) },
+    } as unknown as ReturnType<typeof api.forProject>);
+
+    const { result } = renderHook(() => useStory());
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // A failure must not crash the app — scenes defaults to [].
+    expect(result.current.story.scenes).toEqual([]);
+  });
+
+  it('calls scenes.list exactly once per project load', async () => {
+    const scenes = buildScenes();
+    const { scenesListMock } = setupForFetch(scenes);
+
+    renderHook(() => useStory());
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // Each project open must trigger exactly one scenes.list call.
+    expect(scenesListMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps scenes populated after refreshStory (no full reload required)', async () => {
+    const scenes = buildScenes();
+    setupForFetch(scenes);
+
+    const { result } = renderHook(() => useStory());
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(result.current.story.scenes).toHaveLength(2);
+
+    await act(async () => {
+      await result.current.refreshStory();
+    });
+
+    expect(result.current.story.scenes).toHaveLength(2);
+    expect(result.current.story.scenes[0].id).toBe('scene-1');
+    expect(result.current.story.scenes[1].id).toBe('scene-2');
+  });
+
+  it('preserves existing scenes when refreshStory scenes.list fails', async () => {
+    const scenes = buildScenes();
+    const { scenesListMock } = setupForFetch(scenes);
+
+    const { result } = renderHook(() => useStory());
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(result.current.story.scenes).toHaveLength(2);
+
+    scenesListMock.mockRejectedValueOnce(new Error('refresh failed'));
+
+    await act(async () => {
+      await result.current.refreshStory();
+    });
+
+    expect(result.current.story.scenes).toHaveLength(2);
+    expect(result.current.story.scenes[0].id).toBe('scene-1');
+    expect(result.current.story.scenes[1].id).toBe('scene-2');
+  });
+});
+
+// ─── Spec: currentChapterId preserved across edits and undo/redo ────────────
+
+describe('Spec: currentChapterId stability', () => {
+  it('preserves currentChapterId when editing a non-first chapter', async () => {
+    const ch1 = buildChapter('1', 'First chapter content');
+    const ch2 = buildChapter('2', 'Second chapter content');
+    const { result } = await hookWithStory('test', [ch1, ch2]);
+
+    // Select chapter 2 (non-first)
+    await act(async () => {
+      result.current.selectChapter('2');
+    });
+    await act(async () => {});
+    expect(result.current.currentChapterId).toBe('2');
+
+    // Type some text in chapter 2
+    await act(async () => {
+      await result.current.updateChapter(
+        '2',
+        { content: 'Second chapter edited' },
+        false,
+        true,
+        true
+      );
+    });
+
+    // Chapter must NOT have switched
+    expect(result.current.currentChapterId).toBe('2');
+  });
+
+  it('preserves currentChapterId after edit + undo + edit cycle on non-first chapter', async () => {
+    const ch1 = buildChapter('1', 'Chapter one');
+    const ch2 = buildChapter('2', 'Chapter two original');
+    const { result } = await hookWithStory('test', [ch1, ch2]);
+
+    // Select chapter 2
+    await act(async () => {
+      result.current.selectChapter('2');
+    });
+    await act(async () => {});
+    expect(result.current.currentChapterId).toBe('2');
+
+    // First edit
+    await act(async () => {
+      await result.current.updateChapter(
+        '2',
+        { content: 'Chapter two edited v1' },
+        false,
+        true,
+        true
+      );
+    });
+    expect(result.current.currentChapterId).toBe('2');
+
+    // Undo
+    await act(async () => {
+      await result.current.undo();
+    });
+    expect(result.current.currentChapterId).toBe('2');
+
+    // Edit again (simulates typing after undo)
+    await act(async () => {
+      await result.current.updateChapter(
+        '2',
+        { content: 'Chapter two edited v2' },
+        false,
+        true,
+        true
+      );
+    });
+
+    // Chapter must still be 2
+    expect(result.current.currentChapterId).toBe('2');
+  });
+
+  it('preserves currentChapterId after multiple rapid edits on non-first chapter', async () => {
+    const ch1 = buildChapter('1', 'C1');
+    const ch2 = buildChapter('2', 'C2');
+    const ch3 = buildChapter('3', 'C3');
+    const { result } = await hookWithStory('test', [ch1, ch2, ch3]);
+
+    // Select chapter 3 (last chapter)
+    await act(async () => {
+      result.current.selectChapter('3');
+    });
+    await act(async () => {});
+    expect(result.current.currentChapterId).toBe('3');
+
+    // Simulate rapid typing: multiple updateChapter calls
+    for (const _content of ['C3 edit a', 'C3 edit ab', 'C3 edit abc']) {
+      await act(async () => {
+        await result.current.updateChapter(
+          '3',
+          { content: _content },
+          false,
+          true,
+          true
+        );
+      });
+      expect(result.current.currentChapterId).toBe('3');
+    }
+  });
+
+  it('currentChapterId survives pushHistoryState atomically', async () => {
+    // Direct store-level test: verify pushHistoryState preserves currentChapterId
+    const ch1 = buildChapter('1', 'Content 1');
+    const ch2 = buildChapter('2', 'Content 2');
+    const { result } = await hookWithStory('test', [ch1, ch2]);
+
+    await act(async () => {
+      result.current.selectChapter('2');
+    });
+
+    // Grab the store state directly
+    const store = useStoryStore.getState();
+    expect(store.currentChapterId).toBe('2');
+
+    // Simulate a pushHistoryState with a story that has NO currentChapterId
+    const storyWithoutChapterId = {
+      ...store.story,
+      currentChapterId: undefined as unknown as string | null,
+    };
+
+    act(() => {
+      store.pushHistoryState({
+        story: storyWithoutChapterId,
+        history: store.history,
+        currentIndex: store.currentIndex,
+        baselineState: store.baselineState,
+      });
+    });
+
+    // After push, currentChapterId must be preserved from the previous state
+    expect(useStoryStore.getState().currentChapterId).toBe('2');
   });
 });

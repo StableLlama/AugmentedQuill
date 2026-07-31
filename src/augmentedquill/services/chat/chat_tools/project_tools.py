@@ -7,17 +7,18 @@
 
 """Defines the project tools unit so this responsibility stays isolated, testable, and easy to evolve."""
 
-from typing import Any
-
 import json as _json
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, Field
 
 from augmentedquill.core.config import load_story_config
 from augmentedquill.services.chat.chat_tool_decorator import (
     CHAT_ROLE,
     EDITING_ROLE,
+    ToolModel,
     chat_tool,
+    resolve_tool_role,
 )
 from augmentedquill.services.projects.project_helpers import _project_overview
 from augmentedquill.services.projects.projects import (
@@ -30,41 +31,7 @@ from augmentedquill.services.projects.projects import (
 # Pydantic models for tool parameters
 
 
-class GetProjectOverviewParams(BaseModel):
-    """Parameters for get_project_overview."""
-
-    include_notes: bool = Field(
-        True,
-        description="If true, include per-chapter notes in the overview output (default true).",
-    )
-
-
-class CreateProjectParams(BaseModel):
-    """Parameters for creating a new project."""
-
-    name: str = Field(..., description="The project directory name")
-    project_type: str = Field(
-        "novel",
-        description="The project type: 'short-story', 'novel', or 'series'",
-    )
-
-
-class ListProjectsParams(BaseModel):
-    """Parameters for list_projects (no parameters needed)."""
-
-    pass
-
-
-class DeleteProjectParams(BaseModel):
-    """Parameters for deleting a project."""
-
-    name: str = Field(..., description="The project directory name to delete")
-    confirm: bool = Field(
-        False, description="Must be true to confirm deletion. Defaults to false."
-    )
-
-
-class DeleteBookParams(BaseModel):
+class DeleteBookParams(ToolModel):
     """Parameters for deleting a book from a series."""
 
     book_id: str = Field(..., description="The UUID of the book to delete")
@@ -73,14 +40,35 @@ class DeleteBookParams(BaseModel):
     )
 
 
-class CreateNewBookParams(BaseModel):
+class CreateNewBookParams(ToolModel):
     """Parameters for creating a new book in a series."""
 
     title: str = Field(..., description="The title of the new book")
 
 
-class ChangeProjectTypeParams(BaseModel):
-    """Parameters for changing project type."""
+class ManageProjectCreateData(ToolModel):
+    """Payload for project creation."""
+
+    name: str = Field(..., description="The project directory name")
+    project_type: str = Field(
+        "novel",
+        description="The project type: 'short-story', 'novel', or 'series'",
+        validation_alias=AliasChoices("project_type", "type"),
+    )
+
+
+class ManageProjectDeleteData(ToolModel):
+    """Payload for project deletion."""
+
+    name: str = Field(..., description="The project directory name to delete")
+    confirm: bool = Field(
+        False,
+        description="Must be true to confirm deletion. Defaults to false.",
+    )
+
+
+class ManageProjectTypeData(ToolModel):
+    """Payload for project type changes."""
 
     new_type: str = Field(
         ...,
@@ -88,72 +76,122 @@ class ChangeProjectTypeParams(BaseModel):
     )
 
 
+class ManageProjectParams(ToolModel):
+    """Action router parameters for manage_project."""
+
+    action: Literal["get_overview", "create", "list", "delete", "change_type"] = Field(
+        ...,
+        description=(
+            "Action to execute: 'get_overview', 'create', 'list', 'delete', or "
+            "'change_type'."
+        ),
+    )
+    include_notes: bool = Field(
+        True,
+        description="Used when action='get_overview'. Include per-chapter notes.",
+    )
+    create_data: ManageProjectCreateData | None = Field(
+        None,
+        description="Required when action='create'.",
+    )
+    delete_data: ManageProjectDeleteData | None = Field(
+        None,
+        description="Required when action='delete'.",
+    )
+    type_data: ManageProjectTypeData | None = Field(
+        None,
+        description="Required when action='change_type'.",
+    )
+
+
 # Tool implementations with co-located schemas
 
 
 @chat_tool(
-    description="Get project title, type, and a structured view of the current draft: the single chapter for a short story, the chapter list for a novel, or the books and chapters for a series. Use this to find the correct NUMERIC chapter IDs and UUID book IDs. Never assume an ID based on a title.",
+    description=(
+        "Unified project manager tool for short story/short-story, novel, and "
+        "series projects. Use action='get_overview' to inspect "
+        "current structure and IDs, action='list' to list projects, action='create' "
+        "to create a project (requires create_data), action='delete' to delete a "
+        "project (requires delete_data with confirm=true), and action='change_type' "
+        "to change project type (requires type_data)."
+    ),
     allowed_roles=(CHAT_ROLE, EDITING_ROLE),
-    capability="metadata-read",
-)
-async def get_project_overview(
-    params: GetProjectOverviewParams, payload: dict, mutations: dict
-) -> Any:
-    """Return project overview."""
-    data = _project_overview(include_notes=params.include_notes)
-    return data
-
-
-@chat_tool(
-    name="create_project",
-    description="Create a new project with the specified name and type ('short-story', 'novel', or 'series').",
-    allowed_roles=(CHAT_ROLE,),
     capability="project-admin",
 )
-async def create_project_tool(
-    params: CreateProjectParams, payload: dict, mutations: dict
+async def manage_project(
+    params: ManageProjectParams, payload: dict, mutations: dict
 ) -> Any:
-    """Create project tool."""
-    ok, msg = create_project(params.name, params.project_type)
-    if ok:
-        mutations["story_changed"] = True
-    return {"ok": ok, "message": msg}
-
-
-@chat_tool(
-    name="list_projects",
-    description="List all available projects with their names and titles.",
-    allowed_roles=(CHAT_ROLE,),
-    capability="project-admin",
-)
-async def list_projects_tool(
-    params: ListProjectsParams, payload: dict, mutations: dict
-) -> Any:
-    """List projects tool."""
-    projs = list_projects()
-    simple = [{"name": p["name"], "title": p["title"]} for p in projs]
-    return {"projects": simple}
-
-
-@chat_tool(
-    name="delete_project",
-    description="Delete a project permanently. Requires confirmation with confirm=true.",
-    allowed_roles=(CHAT_ROLE,),
-    capability="project-admin",
-)
-async def delete_project_tool(
-    params: DeleteProjectParams, payload: dict, mutations: dict
-) -> Any:
-    """Delete Project Tool."""
-    if not params.confirm:
+    """Route project-management actions to existing atomic project operations."""
+    role = resolve_tool_role(payload)
+    chat_only_actions = {"list", "create", "delete", "change_type"}
+    if role != CHAT_ROLE and params.action in chat_only_actions:
         return {
-            "status": "confirmation_required",
-            "message": "This operation deletes the project. Call again with confirm=true to proceed.",
+            "error": "Action unavailable for model role",
+            "details": {
+                "tool": "manage_project",
+                "action": params.action,
+                "model_role": role,
+                "allowed_roles": [CHAT_ROLE],
+            },
         }
-    ok, msg = delete_project(params.name)
-    if ok:
-        mutations["story_changed"] = True
-    return {"ok": ok, "message": msg}
+
+    if params.action == "get_overview":
+        return _project_overview(include_notes=params.include_notes)
+
+    if params.action == "list":
+        projs = list_projects()
+        return {"projects": [{"name": p["name"], "title": p["title"]} for p in projs]}
+
+    if params.action == "create":
+        if params.create_data is None:
+            return {"error": "create_data is required when action='create'."}
+        ok, msg = create_project(
+            params.create_data.name, params.create_data.project_type
+        )
+        if ok:
+            mutations["story_changed"] = True
+            created_name = ""
+            if isinstance(msg, str) and msg.startswith("Project created:"):
+                created_name = msg.split(":", 1)[1].strip()
+            if not created_name:
+                active = get_active_project_dir()
+                created_name = active.name if active else params.create_data.name
+            # Return the created directory name so clients can reliably switch
+            # even when the user provided title is sanitized for filesystem safety.
+            return {
+                "ok": True,
+                "message": msg,
+                "project_name": created_name,
+            }
+        return {"ok": ok, "message": msg}
+
+    if params.action == "delete":
+        if params.delete_data is None:
+            return {"error": "delete_data is required when action='delete'."}
+        if not params.delete_data.confirm:
+            return {
+                "status": "confirmation_required",
+                "message": "This operation deletes the project. Call again with confirm=true to proceed.",
+            }
+        ok, msg = delete_project(params.delete_data.name)
+        if ok:
+            mutations["story_changed"] = True
+        return {"ok": ok, "message": msg}
+
+    if params.action == "change_type":
+        if params.type_data is None:
+            return {"error": "type_data is required when action='change_type'."}
+        from augmentedquill.services.projects.projects import (
+            change_project_type as _change_type,
+        )
+
+        ok, msg = _change_type(params.type_data.new_type)
+        if ok:
+            mutations["story_changed"] = True
+        return {"ok": ok, "message": msg}
+
+    return {"error": f"Unsupported action: {params.action}"}
 
 
 @chat_tool(
@@ -207,22 +245,3 @@ async def create_new_book(
     bid = _create_book(params.title)
     mutations["story_changed"] = True
     return {"book_id": bid, "message": "Book created"}
-
-
-@chat_tool(
-    description="Change the project type between 'short-story', 'novel', and 'series'. This restructures the project organization.",
-    allowed_roles=(CHAT_ROLE,),
-    capability="project-admin",
-)
-async def change_project_type(
-    params: ChangeProjectTypeParams, payload: dict, mutations: dict
-) -> Any:
-    """Change Project Type."""
-    from augmentedquill.services.projects.projects import (
-        change_project_type as _change_type,
-    )
-
-    ok, msg = _change_type(params.new_type)
-    if ok:
-        mutations["story_changed"] = True
-    return {"ok": ok, "message": msg}

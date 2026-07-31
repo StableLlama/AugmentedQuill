@@ -30,6 +30,23 @@ type ReplaceChangeLocation = {
   label: string;
 };
 
+/** Parse tool args that may arrive as { raw: '{...json...}' }. */
+function normalizeToolArgs(args: Record<string, unknown>): Record<string, unknown> {
+  const raw = args.raw;
+  if (typeof raw !== 'string') {
+    return args;
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object') {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    // Keep original args when raw is malformed.
+  }
+  return args;
+}
+
 /** Build sourcebook mutation. */
 function buildSourcebookMutation(
   args: Record<string, unknown>,
@@ -60,6 +77,119 @@ function buildChapterMutation(
     targetId: chapId ? String(chapId) : undefined,
   };
 }
+
+const extractSceneIds = (args: Record<string, unknown>, result: unknown): string[] => {
+  const ids: string[] = [];
+
+  const pushId = (id: unknown): void => {
+    if (typeof id === 'string' && id.trim()) {
+      ids.push(id);
+    } else if (typeof id === 'number' && Number.isFinite(id)) {
+      ids.push(String(id));
+    }
+  };
+
+  const pushFromObject = (entry: unknown): void => {
+    if (!entry || typeof entry !== 'object') return;
+    const record = entry as Record<string, unknown>;
+    pushId(record.scene_id ?? record.id);
+  };
+
+  const pushFromArray = (entries: Array<unknown>): void => {
+    entries.forEach((entry: unknown): void => {
+      if (typeof entry === 'object' && entry !== null) {
+        pushFromObject(entry);
+      }
+    });
+  };
+
+  if (Array.isArray(result)) {
+    pushFromArray(result);
+  } else {
+    const resultRecord =
+      result && typeof result === 'object' ? (result as Record<string, unknown>) : null;
+
+    if (Array.isArray(resultRecord?.scenes)) {
+      pushFromArray(resultRecord.scenes);
+    }
+
+    if (Array.isArray(resultRecord?.scene_list)) {
+      pushFromArray(resultRecord.scene_list);
+    }
+
+    if (resultRecord?.scene && typeof resultRecord.scene === 'object') {
+      pushFromObject(resultRecord.scene);
+    }
+
+    pushId(resultRecord?.scene_id ?? resultRecord?.id);
+  }
+
+  const sceneArg = args.scene_id;
+  if (Array.isArray(sceneArg)) {
+    sceneArg.forEach(pushId);
+  } else {
+    pushId(sceneArg);
+  }
+
+  return [...new Set(ids)];
+};
+
+/** Build scene mutation. */
+function buildSceneMutation(
+  args: Record<string, unknown>,
+  result: Record<string, unknown> | Array<unknown>
+): SessionMutation | SessionMutation[] {
+  const sceneIds = extractSceneIds(args, result);
+  const updateData =
+    typeof args.update_data === 'object' && args.update_data
+      ? (args.update_data as Record<string, unknown>)
+      : null;
+  const changedFields = updateData
+    ? Object.keys(updateData).filter((field: string) => field.trim().length > 0)
+    : [];
+
+  if (sceneIds.length <= 1) {
+    return {
+      id: `scene-${Date.now()}-${Math.random()}`,
+      type: 'scene',
+      label: 'Scene',
+      targetId: sceneIds[0] ?? undefined,
+      sceneChangeHint:
+        changedFields.length > 0 ? { changedFields: [...changedFields] } : undefined,
+    };
+  }
+
+  return sceneIds.map(
+    (sceneId: string): SessionMutation => ({
+      id: `scene-${Date.now()}-${Math.random()}`,
+      type: 'scene',
+      label: 'Scene',
+      targetId: sceneId,
+      sceneChangeHint:
+        changedFields.length > 0 ? { changedFields: [...changedFields] } : undefined,
+    })
+  );
+}
+
+const isNoopSceneMutationResult = (result: unknown): boolean => {
+  if (Array.isArray(result)) {
+    return result.length === 0;
+  }
+  if (!result || typeof result !== 'object') {
+    return false;
+  }
+  const resultObj = result as Record<string, unknown>;
+  if (resultObj.changed === false) {
+    return true;
+  }
+  // Error results should NOT be treated as noop — the LLM reported an
+  // error and the user needs to see it.  We propagate the mutation so
+  // the chat UI can surface the failure.
+  if (typeof resultObj.error === 'string' && resultObj.error.length > 0) {
+    return false;
+  }
+  return false;
+};
 
 /** Build metadata fields. */
 export function buildMetadataFields(
@@ -133,6 +263,86 @@ export function buildMetadataFields(
  * `{ args, result }` pair into one or more `SessionMutation` objects.
  */
 export const MUTATION_TOOL_REGISTRY: Record<string, MutFactory> = {
+  manage_story_core: ({ args }: MutCallResult): SessionMutation[] | null => {
+    const normalizedArgs = normalizeToolArgs(args);
+    if (
+      normalizedArgs.action === 'update_metadata' ||
+      normalizedArgs.action === 'sync_summary'
+    ) {
+      const updateData =
+        typeof normalizedArgs.update_data === 'object' && normalizedArgs.update_data
+          ? (normalizedArgs.update_data as Record<string, unknown>)
+          : {};
+      return buildMetadataFields(
+        updateData,
+        normalizedArgs.action === 'sync_summary',
+        undefined,
+        undefined,
+        undefined
+      );
+    }
+    return null;
+  },
+  manage_sourcebook: ({ args, result }: MutCallResult): SessionMutation | null => {
+    const normalizedArgs = normalizeToolArgs(args);
+    const action = normalizedArgs.action;
+    if (
+      action === 'create' ||
+      action === 'update' ||
+      action === 'delete' ||
+      action === 'add_relation' ||
+      action === 'remove_relation'
+    ) {
+      return buildSourcebookMutation(normalizedArgs, result);
+    }
+    return null;
+  },
+  manage_images: ({ args }: MutCallResult): SessionMutation | null => {
+    const normalizedArgs = normalizeToolArgs(args);
+    if (
+      normalizedArgs.action === 'generate_description' ||
+      normalizedArgs.action === 'create_placeholder' ||
+      normalizedArgs.action === 'set_metadata'
+    ) {
+      return {
+        id: `img-${Date.now()}-${Math.random()}`,
+        type: 'story',
+        label: 'Images',
+      };
+    }
+    return null;
+  },
+  search_and_replace: ({
+    args,
+    result,
+  }: MutCallResult): SessionMutation | SessionMutation[] | null => {
+    const normalizedArgs = normalizeToolArgs(args);
+    if (normalizedArgs.action === 'replace') {
+      return MUTATION_TOOL_REGISTRY.replace_in_project({
+        args: normalizedArgs,
+        result,
+      });
+    }
+    return null;
+  },
+  manage_scenes: ({
+    args,
+    result,
+  }: MutCallResult): SessionMutation | SessionMutation[] | null => {
+    const normalizedArgs = normalizeToolArgs(args);
+    if (
+      normalizedArgs.action === 'create' ||
+      normalizedArgs.action === 'update' ||
+      normalizedArgs.action === 'delete'
+    ) {
+      if (isNoopSceneMutationResult(result)) {
+        return null;
+      }
+      return buildSceneMutation(normalizedArgs, result);
+    }
+    return null;
+  },
+
   // --- Sourcebook tools ---
   create_sourcebook_entry: ({ args, result }: MutCallResult): SessionMutation =>
     buildSourcebookMutation(args, result),
@@ -311,6 +521,13 @@ export const MUTATION_TOOL_REGISTRY: Record<string, MutFactory> = {
             subType,
           };
         }
+        case 'scene':
+          return {
+            id: `scene-replace-${targetId ?? 'unknown'}-${Date.now()}-${Math.random()}`,
+            type: 'scene' as const,
+            label: location.label,
+            targetId: targetId as string | undefined,
+          };
         case 'story':
           return {
             id: `story-replace-${Date.now()}-${Math.random()}`,
@@ -358,6 +575,16 @@ export const MUTATION_TOOL_REGISTRY: Record<string, MutFactory> = {
           type: 'book' as const,
           label: section,
           targetId: bookMatch[1],
+        };
+      }
+
+      const sceneMatch = section.match(/Scene\s+([^\s:]+)/i);
+      if (sceneMatch) {
+        return {
+          id: `scene-replace-${sceneMatch[1]}-${Date.now()}-${Math.random()}`,
+          type: 'scene' as const,
+          label: section,
+          targetId: sceneMatch[1],
         };
       }
 

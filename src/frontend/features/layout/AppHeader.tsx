@@ -14,7 +14,8 @@ import { useTranslation } from 'react-i18next';
 import { useTheme } from './ThemeContext';
 import {
   ChevronDown,
-  Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
   Redo,
@@ -33,13 +34,11 @@ import {
   HeaderAiControls,
   HeaderAppearanceControlsState,
   HeaderChatPanelControls,
-  HeaderFormatControls,
   HeaderHistoryControls,
   HeaderModelControls,
   HeaderSearchControls,
   HeaderSettingsControls,
   HeaderSidebarControls,
-  HeaderViewControls,
 } from './layoutControlTypes';
 import type { AppTheme } from '../../types/ui';
 
@@ -48,8 +47,6 @@ type AppHeaderProps = {
   sidebarControls: HeaderSidebarControls;
   settingsControls: HeaderSettingsControls;
   historyControls: HeaderHistoryControls;
-  viewControls: HeaderViewControls;
-  formatControls: HeaderFormatControls;
   aiControls: HeaderAiControls;
   modelControls: HeaderModelControls;
   appearanceControls: HeaderAppearanceControlsState;
@@ -192,8 +189,8 @@ const HeaderLeftControls: React.FC<HeaderLeftControlsProps> = ({
   settingsControls,
   historyControls,
   searchControls,
-  iconColor,
-  iconHover,
+  iconColor: _iconColor,
+  iconHover: _iconHover,
   dividerColor,
   currentTheme,
   t,
@@ -232,13 +229,19 @@ const HeaderLeftControls: React.FC<HeaderLeftControlsProps> = ({
 
   return (
     <div className="order-1 flex items-center gap-1 sm:gap-2 md:gap-3 min-w-0">
-      <button
+      <Button
+        theme={currentTheme}
+        variant="secondary"
+        size="sm"
         onClick={(): void => setIsSidebarOpen(!isSidebarOpen)}
-        className={`lg:hidden p-1 ${iconColor} ${iconHover}`}
-        aria-label={isSidebarOpen ? t('Close sidebar') : t('Open sidebar')}
+        icon={
+          isSidebarOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />
+        }
       >
-        <Menu size={24} />
-      </button>
+        <span className="hidden xl:inline">
+          {isSidebarOpen ? t('Hide') : t('Menu')}
+        </span>
+      </Button>
 
       <button
         type="button"
@@ -390,8 +393,6 @@ export const AppHeader: React.FC<AppHeaderProps> = React.memo(
     sidebarControls,
     settingsControls,
     historyControls,
-    viewControls,
-    formatControls,
     aiControls,
     modelControls,
     appearanceControls,
@@ -429,8 +430,7 @@ export const AppHeader: React.FC<AppHeaderProps> = React.memo(
         />
 
         <HeaderCenterControls
-          viewControls={viewControls}
-          formatControls={formatControls}
+          title={storyTitle}
           aiControls={aiControls}
           modelControls={modelControls}
           themeTokens={{

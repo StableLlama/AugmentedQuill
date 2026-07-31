@@ -9,18 +9,18 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import json
-from typing import Any, Dict
+from pathlib import Path
+from typing import Any
 
 from augmentedquill.core.config import load_story_config
-from augmentedquill.services.chat.chat_tool_decorator import MODEL_ROLES
-from augmentedquill.services.chat.chat_tools.chapter_tools import (
-    compose_current_chapter_state,
-)
 from augmentedquill.core.prompts import (
     get_system_message,
     load_model_prompt_overrides,
+)
+from augmentedquill.services.chat.chat_tool_decorator import MODEL_ROLES
+from augmentedquill.services.chat.chat_tools.chapter_tools import (
+    compose_current_chapter_state,
 )
 from augmentedquill.services.llm.llm_request_helpers import find_model_in_list
 
@@ -65,7 +65,7 @@ def _resolve_stream_selected_name(
 
 def resolve_stream_model_context(payload: dict, machine: dict) -> dict:
     """Resolve Stream Model Context."""
-    openai_cfg: Dict[str, Any] = machine.get("openai") or {}
+    openai_cfg: dict[str, Any] = machine.get("openai") or {}
     model_type = str((payload or {}).get("model_type") or "CHAT").strip().upper()
     if model_type not in ("CHAT", "WRITING", "EDITING"):
         model_type = "CHAT"

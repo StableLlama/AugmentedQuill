@@ -7,24 +7,25 @@
 
 """Defines the test project features unit so this responsibility stays isolated, testable, and easy to evolve."""
 
-import json
 import io
-import zipfile
+import json
 import os
 import tempfile
+import zipfile
 from pathlib import Path
 from unittest import TestCase
 
-from augmentedquill.services.projects.projects import (
-    create_project,
-    select_project,
-    change_project_type,
-    get_active_project_dir,
-)
-from augmentedquill.core.config import load_story_config
-from augmentedquill.services.projects.project_helpers import _project_overview
 from fastapi.testclient import TestClient
+
+from augmentedquill.core.config import load_story_config
 from augmentedquill.main import app
+from augmentedquill.services.projects.project_helpers import _project_overview
+from augmentedquill.services.projects.projects import (
+    change_project_type,
+    create_project,
+    get_active_project_dir,
+    select_project,
+)
 
 
 class ProjectFeaturesTest(TestCase):
@@ -269,6 +270,35 @@ class ProjectFeaturesTest(TestCase):
         overview = _project_overview(include_notes=True)
         self.assertEqual(overview["chapters"][0]["notes"], "Novel chapter note")
         self.assertNotIn("conflicts", overview["chapters"][0])
+
+    def test_project_overview_reports_scene_count(self):
+        create_project("test_scene_count", project_type="novel")
+        select_project("test_scene_count")
+        active = get_active_project_dir()
+
+        story = load_story_config(active / "story.json")
+        story["scenes"] = {
+            "scene_1": {"title": "Scene One"},
+            "scene_2": {"title": "Scene Two"},
+        }
+        (active / "story.json").write_text(json.dumps(story), encoding="utf-8")
+
+        overview = _project_overview()
+        self.assertEqual(overview["scene_count"], 2)
+
+    def test_project_overview_includes_story_summary_and_notes(self):
+        create_project("test_story_meta", project_type="novel")
+        select_project("test_story_meta")
+        active = get_active_project_dir()
+
+        story = load_story_config(active / "story.json")
+        story["story_summary"] = "A mystery unfolds"
+        story["notes"] = "Focus on character arc."
+        (active / "story.json").write_text(json.dumps(story), encoding="utf-8")
+
+        overview = _project_overview()
+        self.assertEqual(overview["story_summary"], "A mystery unfolds")
+        self.assertEqual(overview["notes"], "Focus on character arc.")
 
     def test_project_overview_include_notes_for_series(self):
         create_project("test_series_notes", project_type="series")

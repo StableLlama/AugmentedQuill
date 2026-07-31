@@ -9,7 +9,8 @@
 
 from typing import Any
 
-from fastapi import APIRouter, Path as FastAPIPath
+from fastapi import APIRouter
+from fastapi import Path as FastAPIPath
 from fastapi.responses import JSONResponse
 
 from augmentedquill.api.v1.dependencies import ProjectDep
@@ -19,9 +20,9 @@ from augmentedquill.models.chapters import (
     ChapterContentUpdate,
     ChapterCreate,
     ChapterMetadataUpdate,
+    ChaptersReorderRequest,
     ChapterSummaryUpdate,
     ChapterTitleUpdate,
-    ChaptersReorderRequest,
 )
 from augmentedquill.services.chapters.chapter_helpers import _chapter_by_id_or_404
 from augmentedquill.services.chapters.chapters_api_ops import (

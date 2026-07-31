@@ -14,6 +14,7 @@ import { useCallback, useEffect, useRef, startTransition } from 'react';
 import { useChatExecution } from '../chat/useChatExecution';
 import { useChatMessageActions } from '../chat/useChatMessageActions';
 import { useChatSessionManagement } from '../chat/useChatSessionManagement';
+import type { ChatToolCall, Scene } from '../../types';
 import { MUTATION_TOOL_REGISTRY } from '../chat/mutationToolRegistry';
 import type { SessionMutation } from '../chat';
 import { applySmartQuotes } from '../../utils/textUtils';
@@ -22,6 +23,8 @@ import type { PromptsState } from '../settings/usePrompts';
 import type { ChatToolExecutionResponse } from '../../services/apiTypes';
 import { useChatStore, ChatStoreState } from '../../stores/chatStore';
 import { useStoryStore } from '../../stores/storyStore';
+import type { SceneEditorDialogState } from '../../stores/uiStore';
+import type { SceneId } from '../../types';
 
 type CurrentChapterContext = {
   id: string;
@@ -55,8 +58,14 @@ type UseAppChatRuntimeParams = {
   requestToolCallLoopAccess: (
     count: number
   ) => Promise<'stop' | 'continue' | 'unlimited'>;
+  confirmDangerousToolCalls: (toolCalls: ChatToolCall[]) => Promise<boolean>;
   handleChapterSelect: (chapterId: string | null) => void;
   openAndExpandStory: () => void;
+  openSceneEditorDialog: (
+    sceneId: SceneId,
+    openedViaTrigger?: boolean,
+    mutationHint?: SceneEditorDialogState['mutationHint']
+  ) => void;
   openSourcebookEntryDialog: (entryId: string) => void;
   openStoryMetadataDialog: (tab?: MetadataTab) => void;
   openChapterMetadataDialog: (chapterId: string, initialTab?: MetadataTab) => void;
@@ -82,6 +91,64 @@ type ToolMutationPayload = ChatToolExecutionResponse & {
   }>;
 };
 
+type MutationNavigationCallbacks = {
+  handleChapterSelect: (chapterId: string | null) => void;
+  openAndExpandStory: () => void;
+  openSceneEditorDialog: (
+    sceneId: SceneId,
+    openedViaTrigger?: boolean,
+    mutationHint?: SceneEditorDialogState['mutationHint']
+  ) => void;
+  openSourcebookEntryDialog: (entryId: string) => void;
+  openStoryMetadataDialog: (tab?: MetadataTab) => void;
+  openChapterMetadataDialog: (chapterId: string, initialTab?: MetadataTab) => void;
+};
+
+/** Route a mutation badge click to the corresponding UI navigation intent. */
+export function handleSessionMutationClick(
+  mutation: SessionMutation,
+  {
+    handleChapterSelect,
+    openAndExpandStory,
+    openSceneEditorDialog,
+    openSourcebookEntryDialog,
+    openStoryMetadataDialog,
+    openChapterMetadataDialog,
+  }: MutationNavigationCallbacks
+): void {
+  if (mutation.type === 'chapter') {
+    openAndExpandStory();
+    handleChapterSelect(mutation.targetId ?? null);
+  } else if (mutation.type === 'scene') {
+    openAndExpandStory();
+    handleChapterSelect(null);
+    if (mutation.targetId) {
+      const sceneId = Number(mutation.targetId);
+      if (Number.isInteger(sceneId)) {
+        openSceneEditorDialog(sceneId, true, mutation.sceneChangeHint ?? null);
+      }
+    }
+  } else if (mutation.type === 'story') {
+    openAndExpandStory();
+    handleChapterSelect(null);
+  } else if (mutation.type === 'metadata') {
+    openAndExpandStory();
+    if (mutation.targetId && mutation.targetId !== 'story') {
+      handleChapterSelect(mutation.targetId);
+      openChapterMetadataDialog(
+        mutation.targetId,
+        mutation.subType as MetadataTab | undefined
+      );
+    } else {
+      openStoryMetadataDialog(mutation.subType as MetadataTab | undefined);
+    }
+  } else if (mutation.type === 'sourcebook') {
+    if (mutation.targetId) {
+      openSourcebookEntryDialog(mutation.targetId);
+    }
+  }
+}
+
 export function useAppChatRuntime({
   storyId,
   storyRef,
@@ -96,8 +163,10 @@ export function useAppChatRuntime({
   updateChapter,
   pushExternalHistoryEntry,
   requestToolCallLoopAccess,
+  confirmDangerousToolCalls,
   handleChapterSelect,
   openAndExpandStory,
+  openSceneEditorDialog,
   openSourcebookEntryDialog,
   openStoryMetadataDialog,
   openChapterMetadataDialog,
@@ -130,6 +199,80 @@ export function useAppChatRuntime({
   }, [advanceBaselineToCurrentStory, setSessionMutations]);
 
   const onToolMutations = useCallback((muts: ToolMutationPayload): void => {
+    const parseRawArgs = (args: Record<string, unknown>): Record<string, unknown> => {
+      if (typeof args.raw !== 'string') {
+        return args;
+      }
+      try {
+        const parsed = JSON.parse(args.raw);
+        if (parsed && typeof parsed === 'object') {
+          return parsed as Record<string, unknown>;
+        }
+      } catch {
+        return args;
+      }
+      return args;
+    };
+
+    const buildScenePreviousValues = (
+      targetId: string | undefined,
+      changedFields: string[]
+    ): Record<string, unknown> | undefined => {
+      if (!targetId || changedFields.length === 0) {
+        return undefined;
+      }
+      const scene = (useStoryStore.getState().story.scenes ?? []).find(
+        (candidate: Scene): boolean => String(candidate.id) === targetId
+      );
+      if (!scene) {
+        return undefined;
+      }
+
+      const previous: Record<string, unknown> = {};
+      changedFields.forEach((field: string): void => {
+        switch (field) {
+          case 'summary':
+            previous.summary = scene.summary;
+            break;
+          case 'beats':
+            previous.beats = scene.beats;
+            break;
+          case 'active_characters':
+            previous.active_characters = scene.active_characters;
+            break;
+          case 'passive_characters':
+            previous.passive_characters = scene.passive_characters;
+            break;
+          case 'sourcebook_entry_ids':
+            previous.sourcebook_entry_ids = scene.sourcebook_entry_ids;
+            break;
+          case 'causes':
+          case 'causes_patch':
+            previous.causes = scene.causes;
+            break;
+          case 'scene_time':
+            previous.scene_time = scene.scene_time;
+            break;
+          case 'timeline_id':
+            previous.timeline_id = scene.timeline_id;
+            break;
+          case 'color_tag':
+            previous.color_tag = scene.color_tag;
+            break;
+          case 'status':
+            previous.status = scene.status;
+            break;
+          case 'tag_personal_datetimes':
+            previous.tag_personal_datetimes = scene.tag_personal_datetimes;
+            break;
+          default:
+            break;
+        }
+      });
+
+      return Object.keys(previous).length > 0 ? previous : undefined;
+    };
+
     const newMuts: SessionMutation[] = [];
     (muts?._call_results || []).forEach(
       (res: {
@@ -141,14 +284,35 @@ export function useAppChatRuntime({
         if (!factory) {
           return;
         }
-        const produced = factory({ args: res.args || {}, result: res.result || {} });
-        (Array.isArray(produced) ? produced : [produced]).forEach(
-          (item: SessionMutation | null): void => {
-            if (item) {
-              newMuts.push(item);
+        const normalizedArgs = parseRawArgs(res.args || {});
+        const produced = factory({ args: normalizedArgs, result: res.result || {} });
+
+        const producedItems = (Array.isArray(produced) ? produced : [produced]).map(
+          (item: SessionMutation | null): SessionMutation | null => {
+            if (!item || item.type !== 'scene' || res.name !== 'manage_scenes') {
+              return item;
             }
+            if (String(normalizedArgs.action || '') !== 'update') {
+              return item;
+            }
+            const hintedFields = item.sceneChangeHint?.changedFields ?? [];
+            if (hintedFields.length === 0) {
+              return item;
+            }
+            return {
+              ...item,
+              sceneChangeHint: {
+                changedFields: [...hintedFields],
+                previousValues: buildScenePreviousValues(item.targetId, hintedFields),
+              },
+            };
           }
         );
+        producedItems.forEach((item: SessionMutation | null): void => {
+          if (item) {
+            newMuts.push(item);
+          }
+        });
       }
     );
     if (!newMuts.length) {
@@ -157,15 +321,42 @@ export function useAppChatRuntime({
     setSessionMutations((prev: SessionMutation[]): SessionMutation[] => {
       const combined = [...prev];
       newMuts.forEach((mutation: SessionMutation): void => {
-        const exists = combined.some(
+        const existingIndex = combined.findIndex(
           (entry: SessionMutation): boolean =>
             entry.type === mutation.type &&
             entry.label === mutation.label &&
             entry.targetId === mutation.targetId
         );
-        if (!exists) {
+        if (existingIndex < 0) {
           combined.push(mutation);
+          return;
         }
+
+        const existing = combined[existingIndex];
+        if (mutation.type !== 'scene') {
+          return;
+        }
+
+        const mergedFields = Array.from(
+          new Set([
+            ...(existing.sceneChangeHint?.changedFields ?? []),
+            ...(mutation.sceneChangeHint?.changedFields ?? []),
+          ])
+        );
+
+        if (mergedFields.length === 0) {
+          return;
+        }
+
+        combined[existingIndex] = {
+          ...existing,
+          sceneChangeHint: {
+            changedFields: mergedFields,
+            previousValues:
+              existing.sceneChangeHint?.previousValues ??
+              mutation.sceneChangeHint?.previousValues,
+          },
+        };
       });
       return combined;
     });
@@ -253,7 +444,12 @@ export function useAppChatRuntime({
     refreshProjects,
     refreshStory,
     onProseChunk: useCallback(
-      (chapterId: number, writeMode: string, accumulated: string): void => {
+      (
+        chapterId: number,
+        writeMode: string,
+        accumulated: string,
+        streamId: number
+      ): void => {
         if (!useChatStore.getState().isChatLoading) {
           return;
         }
@@ -269,7 +465,7 @@ export function useAppChatRuntime({
           return;
         }
 
-        const streamKey = `${chapterId}:${writeMode}`;
+        const streamKey = `${chapterId}:${writeMode}:${streamId}`;
         const previous = prosePreviewStateRef.current[streamKey];
         const restarted =
           !previous ||
@@ -317,6 +513,7 @@ export function useAppChatRuntime({
       params: Parameters<NonNullable<typeof pushExternalHistoryEntry>>[0]
     ): void | undefined => pushExternalHistoryEntry?.(params),
     requestToolCallLoopAccess,
+    confirmDangerousToolCalls,
   });
 
   const handleSendMessageWithReset = useCallback(
@@ -336,28 +533,14 @@ export function useAppChatRuntime({
     (mutation: SessionMutation): void => {
       startTransition((): void => {
         requestAnimationFrame((): void => {
-          if (mutation.type === 'chapter') {
-            openAndExpandStory();
-            handleChapterSelect(mutation.targetId ?? null);
-          } else if (mutation.type === 'story') {
-            openAndExpandStory();
-            handleChapterSelect(null);
-          } else if (mutation.type === 'metadata') {
-            openAndExpandStory();
-            if (mutation.targetId && mutation.targetId !== 'story') {
-              handleChapterSelect(mutation.targetId);
-              openChapterMetadataDialog(
-                mutation.targetId,
-                mutation.subType as MetadataTab | undefined
-              );
-            } else {
-              openStoryMetadataDialog(mutation.subType as MetadataTab | undefined);
-            }
-          } else if (mutation.type === 'sourcebook') {
-            if (mutation.targetId) {
-              openSourcebookEntryDialog(mutation.targetId);
-            }
-          }
+          handleSessionMutationClick(mutation, {
+            handleChapterSelect,
+            openAndExpandStory,
+            openSceneEditorDialog,
+            openSourcebookEntryDialog,
+            openStoryMetadataDialog,
+            openChapterMetadataDialog,
+          });
         });
       });
     },

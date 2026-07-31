@@ -81,9 +81,11 @@ class ChatApiProxyOpsTest(IsolatedAsyncioTestCase):
         self.assertIn(b'"raw":"plain"', out.body)
 
     async def test_http_transport_failure_maps_to_upstream_error(self):
-        with patch(
-            "augmentedquill.services.chat.chat_api_proxy_ops.logged_request",
-            new=AsyncMock(side_effect=httpx.ReadTimeout("timeout")),
+        with (
+            patch(
+                "augmentedquill.services.chat.chat_api_proxy_ops.logged_request",
+                new=AsyncMock(side_effect=httpx.ReadTimeout("timeout")),
+            ),
+            self.assertRaises(UpstreamError),
         ):
-            with self.assertRaises(UpstreamError):
-                await proxy_openai_models({"base_url": "https://example.invalid/v1"})
+            await proxy_openai_models({"base_url": "https://example.invalid/v1"})

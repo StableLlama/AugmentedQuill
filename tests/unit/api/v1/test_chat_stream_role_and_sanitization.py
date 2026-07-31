@@ -10,6 +10,8 @@
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from augmentedquill.services.chat.chat_tool_decorator import get_registered_tool_schemas
+
 from .chat_stream_test_base import ChatStreamTestBase
 
 
@@ -32,18 +34,34 @@ class TestChatStreamRoleAndSanitization(ChatStreamTestBase):
         mock_client_instance.stream.return_value = mock_stream_ctx
 
         async def fake_aiter_lines():
-            yield "data: " + json.dumps(
-                {"choices": [{"delta": {"content": "Let me check."}}]}
-            ) + "\n\n"
-            yield "data: " + json.dumps(
-                {"choices": [{"delta": {"content": " [TOOL_CALL]list_"}}]}
-            ) + "\n\n"
-            yield "data: " + json.dumps(
-                {"choices": [{"delta": {"content": "images()[/TOOL_CALL] "}}]}
-            ) + "\n\n"
-            yield "data: " + json.dumps(
-                {"choices": [{"delta": {"content": "Done."}}]}
-            ) + "\n\n"
+            yield (
+                "data: "
+                + json.dumps({"choices": [{"delta": {"content": "Let me check."}}]})
+                + "\n\n"
+            )
+            yield (
+                "data: "
+                + json.dumps(
+                    {"choices": [{"delta": {"content": " [TOOL_CALL]manage_"}}]}
+                )
+                + "\n\n"
+            )
+            yield (
+                "data: "
+                + json.dumps(
+                    {
+                        "choices": [
+                            {"delta": {"content": 'images(action="list")[/TOOL_CALL] '}}
+                        ]
+                    }
+                )
+                + "\n\n"
+            )
+            yield (
+                "data: "
+                + json.dumps({"choices": [{"delta": {"content": "Done."}}]})
+                + "\n\n"
+            )
             yield "data: [DONE]\n\n"
 
         mock_response.aiter_lines.side_effect = fake_aiter_lines
@@ -67,14 +85,14 @@ class TestChatStreamRoleAndSanitization(ChatStreamTestBase):
             if "tool_calls" in evt:
                 tool_calls.extend(evt["tool_calls"])
 
-        self.assertNotIn("list_images", content_text)
+        self.assertNotIn("manage_images", content_text)
         self.assertNotIn("[TOOL_CALL]", content_text)
         self.assertIn("Let me check.", content_text)
         self.assertIn("Done.", content_text)
 
         self.assertTrue(len(tool_calls) > 0)
-        found_tool = any(tc["function"]["name"] == "list_images" for tc in tool_calls)
-        self.assertTrue(found_tool, "Did not find list_images tool call")
+        found_tool = any(tc["function"]["name"] == "manage_images" for tc in tool_calls)
+        self.assertTrue(found_tool, "Did not find manage_images tool call")
 
     def test_stream_advertises_role_filtered_tools(self):
         captured: dict = {}
@@ -101,8 +119,8 @@ class TestChatStreamRoleAndSanitization(ChatStreamTestBase):
         }
         self.assertIn("replace_text_in_chapter", tool_names)
         self.assertIn("recommend_metadata_updates", tool_names)
-        self.assertIn("update_story_metadata", tool_names)
-        self.assertNotIn("create_sourcebook_entry", tool_names)
+        self.assertIn("manage_story_core", tool_names)
+        self.assertNotIn("manage_scratchpad", tool_names)
 
     def test_writing_stream_has_no_tools(self):
         captured: dict = {}
@@ -127,6 +145,66 @@ class TestChatStreamRoleAndSanitization(ChatStreamTestBase):
         self.assertFalse(captured.get("supports_function_calling"))
         self.assertIsNone(captured.get("tools"))
 
+    def test_chat_stream_narrows_tools_for_scene_reorder_intent(self):
+        captured: dict = {}
+
+        async def fake_stream(**kwargs):
+            captured.update(kwargs)
+            yield {"content": "ok"}
+
+        with patch(
+            "augmentedquill.api.v1.chat.llm.unified_chat_stream",
+            side_effect=fake_stream,
+        ):
+            response = self.client.post(
+                "/api/v1/chat/stream",
+                json={
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": "Please move scene 5 before scene 2 and relink chapter scopes.",
+                        }
+                    ],
+                    "model_type": "CHAT",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        tool_names = {
+            tool["function"]["name"] for tool in (captured.get("tools") or [])
+        }
+        self.assertIn("manage_scenes", tool_names)
+        self.assertIn("undo_last_tool_changes", tool_names)
+
+    def test_chat_stream_keeps_full_tools_when_intent_is_ambiguous(self):
+        captured: dict = {}
+
+        async def fake_stream(**kwargs):
+            captured.update(kwargs)
+            yield {"content": "ok"}
+
+        with patch(
+            "augmentedquill.api.v1.chat.llm.unified_chat_stream",
+            side_effect=fake_stream,
+        ):
+            response = self.client.post(
+                "/api/v1/chat/stream",
+                json={
+                    "messages": [{"role": "user", "content": "Hello there"}],
+                    "model_type": "CHAT",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        expected = {
+            tool["function"]["name"]
+            for tool in get_registered_tool_schemas(
+                model_type="CHAT", project_type="novel"
+            )
+        }
+        actual = {tool["function"]["name"] for tool in (captured.get("tools") or [])}
+        self.assertSetEqual(expected, actual)
+
     @patch("augmentedquill.services.llm.llm.httpx.AsyncClient")
     def test_editing_model_tools(self, MockClientClass):
         mock_client_instance = MagicMock()
@@ -144,19 +222,31 @@ class TestChatStreamRoleAndSanitization(ChatStreamTestBase):
         mock_client_instance.stream.return_value = mock_stream_ctx
 
         async def fake_aiter_lines():
-            yield "data: " + json.dumps(
-                {"choices": [{"delta": {"content": "Edit start "}}]}
-            ) + "\n\n"
-            yield "data: " + json.dumps(
-                {
-                    "choices": [
-                        {"delta": {"content": "[TOOL_CALL]list_images()[/TOOL_CALL]"}}
-                    ]
-                }
-            ) + "\n\n"
-            yield "data: " + json.dumps(
-                {"choices": [{"delta": {"content": " Edit end"}}]}
-            ) + "\n\n"
+            yield (
+                "data: "
+                + json.dumps({"choices": [{"delta": {"content": "Edit start "}}]})
+                + "\n\n"
+            )
+            yield (
+                "data: "
+                + json.dumps(
+                    {
+                        "choices": [
+                            {
+                                "delta": {
+                                    "content": '[TOOL_CALL]manage_images(action="list")[/TOOL_CALL]'
+                                }
+                            }
+                        ]
+                    }
+                )
+                + "\n\n"
+            )
+            yield (
+                "data: "
+                + json.dumps({"choices": [{"delta": {"content": " Edit end"}}]})
+                + "\n\n"
+            )
             yield "data: [DONE]\n\n"
 
         mock_response.aiter_lines.side_effect = fake_aiter_lines
@@ -180,7 +270,7 @@ class TestChatStreamRoleAndSanitization(ChatStreamTestBase):
 
         self.assertNotIn("[TOOL_CALL]", content_text)
         self.assertTrue(
-            any(tc["function"]["name"] == "list_images" for tc in tool_calls)
+            any(tc["function"]["name"] == "manage_images" for tc in tool_calls)
         )
         self.assertIn("Edit start", content_text)
         self.assertIn("Edit end", content_text)
@@ -202,28 +292,36 @@ class TestChatStreamRoleAndSanitization(ChatStreamTestBase):
         mock_client_instance.stream.return_value = mock_stream_ctx
 
         async def fake_aiter_lines():
-            yield "data: " + json.dumps(
-                {
-                    "choices": [
-                        {
-                            "delta": {
-                                "content": "<|channel|>analysis<|message|>We need to get metadata."  # noqa: E501
+            yield (
+                "data: "
+                + json.dumps(
+                    {
+                        "choices": [
+                            {
+                                "delta": {
+                                    "content": "<|channel|>analysis<|message|>We need to get metadata."
+                                }
                             }
-                        }
-                    ]
-                }
-            ) + "\n\n"
-            yield "data: " + json.dumps(
-                {
-                    "choices": [
-                        {
-                            "delta": {
-                                "content": '<|end|><|start|>assistant<|channel|>commentary to=functions.get_chapter_metadata <|constrain|>json<|message|>{\\"chap_id\\": 2}'
+                        ]
+                    }
+                )
+                + "\n\n"
+            )
+            yield (
+                "data: "
+                + json.dumps(
+                    {
+                        "choices": [
+                            {
+                                "delta": {
+                                    "content": '<|end|><|start|>assistant<|channel|>commentary to=functions.get_chapter_metadata <|constrain|>json<|message|>{\\"chap_id\\": 2}'
+                                }
                             }
-                        }
-                    ]
-                }
-            ) + "\n\n"
+                        ]
+                    }
+                )
+                + "\n\n"
+            )
             yield "data: [DONE]\n\n"
 
         mock_response.aiter_lines.side_effect = fake_aiter_lines

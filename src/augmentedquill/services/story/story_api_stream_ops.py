@@ -13,12 +13,12 @@ import asyncio
 import json
 from collections.abc import AsyncIterator, Callable
 
-from augmentedquill.services.llm import llm
 from augmentedquill.services.chat.chat_tool_decorator import (
     EDITING_ROLE,
     execute_registered_tool,
     tool_message,
 )
+from augmentedquill.services.llm import llm
 
 
 async def stream_unified_chat_content(

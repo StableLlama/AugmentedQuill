@@ -10,7 +10,7 @@
  */
 
 import { describe, expect, it, vi, afterEach } from 'vitest';
-import { fetchJson } from './shared';
+import { fetchJson, deleteJson, patchJson } from './shared';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -58,6 +58,104 @@ describe('fetchJson', () => {
 
     await expect(fetchJson('/broken', undefined, 'fallback')).rejects.toThrow(
       '{"msg":"bad request"}'
+    );
+  });
+});
+
+describe('deleteJson', () => {
+  it('resolves with undefined for 204 No Content responses', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(null, { status: 204 })
+    );
+
+    const result = await deleteJson('/item/1', 'fallback');
+
+    expect(result).toBeUndefined();
+  });
+
+  it('resolves with undefined for empty 200 body', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('', { status: 200 }));
+
+    const result = await deleteJson('/item/1', 'fallback');
+
+    expect(result).toBeUndefined();
+  });
+
+  it('parses JSON body when server returns a 200 with content', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+
+    const result = await deleteJson<{ ok: boolean }>('/item/1', 'fallback');
+
+    expect(result).toEqual({ ok: true });
+  });
+
+  it('throws the detail message on a 4xx error', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ detail: 'not found' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+
+    await expect(deleteJson('/item/99', 'fallback error')).rejects.toThrow('not found');
+  });
+
+  it('falls back to the provided error message when the error body is empty', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('', { status: 500 }));
+
+    await expect(deleteJson('/item/1', 'delete failed')).rejects.toThrow(
+      'delete failed'
+    );
+  });
+});
+
+describe('patchJson', () => {
+  it('sends a PATCH request with a JSON body and returns parsed response', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ updated: true }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+
+    const result = await patchJson<{ updated: boolean }>(
+      '/item/1',
+      { text: 'new' },
+      'fallback'
+    );
+
+    expect(result).toEqual({ updated: true });
+    const call = (fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      RequestInit,
+    ];
+    expect(call[1].method).toBe('PATCH');
+    expect(JSON.parse(call[1].body as string)).toEqual({ text: 'new' });
+  });
+
+  it('throws the detail message on a 4xx error', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ detail: 'scene not found' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+
+    await expect(patchJson('/item/1', {}, 'update failed')).rejects.toThrow(
+      'scene not found'
+    );
+  });
+
+  it('falls back to the provided error message when the error body is empty', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('', { status: 422 }));
+
+    await expect(patchJson('/item/1', {}, 'patch failed')).rejects.toThrow(
+      'patch failed'
     );
   });
 });

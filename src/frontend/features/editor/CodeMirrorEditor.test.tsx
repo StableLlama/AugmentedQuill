@@ -15,7 +15,7 @@
 // @vitest-environment jsdom
 
 import React from 'react';
-import { render, act, cleanup } from '@testing-library/react';
+import { render, act, cleanup, fireEvent } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { EditorView } from '@codemirror/view';
@@ -200,6 +200,29 @@ describe('CodeMirrorEditor', () => {
     });
 
     expect(ref.current?.state.doc.toString()).toBe(value);
+  });
+
+  it('strips scene marker comments from document when hideSceneMarkers is enabled', async () => {
+    const ref = React.createRef<EditorView | null>();
+    const value = '<!--scene:3:start-->Visible prose<!--scene:3:end-->';
+    const { container } = render(
+      <CodeMirrorEditor
+        ref={ref}
+        value={value}
+        onChange={vi.fn()}
+        viewMode="raw"
+        hideSceneMarkers={true}
+      />
+    );
+
+    await act(async () => {});
+
+    // Markers are stripped from the document; only prose remains
+    expect(ref.current?.state.doc.toString()).not.toContain('<!--scene:3:start-->');
+    expect(ref.current?.state.doc.toString()).not.toContain('<!--scene:3:end-->');
+    expect(ref.current?.state.doc.toString()).toContain('Visible prose');
+    expect(container.textContent ?? '').toContain('Visible prose');
+    expect(container.textContent ?? '').not.toContain('<!--scene:3:start-->');
   });
 
   it('toggling showWhitespace does not crash or corrupt the document', async () => {
@@ -660,5 +683,364 @@ describe('CodeMirrorEditor', () => {
         expect(await softbreakKey('a  \n\n\nb', 4, 'Delete')).toBe('a  \n\nb');
       });
     });
+  });
+});
+
+// ─── Prose-link highlight + boundary handles ──────────────────────────────────
+
+import {
+  setProseHighlightEffect,
+  proseHighlightField,
+  type ProseHighlightRange,
+} from './CodeMirrorEditor';
+
+describe('prose-link highlight plugin', () => {
+  /**
+   * Render the editor, dispatch a setProseHighlightEffect, and return the
+   * container so tests can query the DOM for handle elements.
+   */
+  async function mountWithHighlights(
+    ranges: ProseHighlightRange[]
+  ): Promise<{ container: HTMLElement; view: EditorView }> {
+    const ref = React.createRef<EditorView | null>();
+    // 'Hello world' = 11 chars; ranges use [0,5) and [6,11)
+    const { container } = await act(async () =>
+      render(<CodeMirrorEditor ref={ref} value="Hello world" onChange={vi.fn()} />)
+    );
+    act(() => {
+      ref.current!.dispatch({ effects: setProseHighlightEffect.of(ranges) });
+    });
+    return { container, view: ref.current! };
+  }
+
+  it('renders a start handle with correct class and no text content (bar via CSS)', async () => {
+    const { container } = await mountWithHighlights([
+      { sceneId: 's1', from: 0, to: 5 },
+    ]);
+    const startHandle = container.querySelector('.cm-prose-handle-start');
+    expect(startHandle).not.toBeNull();
+    // The marker is a vertical bar rendered via CSS ::before; DOM should be clean.
+    expect(startHandle?.textContent).toBe('');
+    expect(startHandle?.getAttribute('title')).toBe('Drag to move scene start');
+  });
+
+  it('renders an end handle with correct class and no text content (bar via CSS)', async () => {
+    const { container } = await mountWithHighlights([
+      { sceneId: 's1', from: 0, to: 5 },
+    ]);
+    const endHandle = container.querySelector('.cm-prose-handle-end');
+    expect(endHandle).not.toBeNull();
+    expect(endHandle?.textContent).toBe('');
+    expect(endHandle?.getAttribute('title')).toBe('Drag to move scene end');
+  });
+
+  it('renders two start handles and two end handles for two separate ranges', async () => {
+    const { container } = await mountWithHighlights([
+      { sceneId: 's1', from: 0, to: 5 },
+      { sceneId: 's2', from: 6, to: 11 },
+    ]);
+    expect(container.querySelectorAll('.cm-prose-handle-start')).toHaveLength(2);
+    expect(container.querySelectorAll('.cm-prose-handle-end')).toHaveLength(2);
+  });
+
+  it('renders both ranges when they have touching boundaries (end of A == start of B)', async () => {
+    // This is the critical regression case: end of scene-a is exactly the start
+    // of scene-b.  The Decoration.set sort=true flag prevents the ordering crash.
+    const { container } = await mountWithHighlights([
+      { sceneId: 'a', from: 0, to: 5 },
+      { sceneId: 'b', from: 5, to: 11 },
+    ]);
+    // Both mark decorations must be present — if the sort bug were present the
+    // whole DecorationSet would silently become empty and no handles render.
+    expect(container.querySelectorAll('.cm-prose-handle')).toHaveLength(4); // 2×start + 2×end
+    const marks = container.querySelectorAll('.cm-prose-link-highlight');
+    expect(marks.length).toBeGreaterThanOrEqual(1); // at least one highlighted span
+  });
+
+  it('orders handles end-then-start when two scenes share a boundary position', async () => {
+    // The end widget uses side:-1 and the start widget uses side:1 so that at
+    // the same position the end handle sorts before the start handle.
+    const { container } = await mountWithHighlights([
+      { sceneId: 'a', from: 0, to: 5 },
+      { sceneId: 'b', from: 5, to: 11 },
+    ]);
+    const handles = container.querySelectorAll('.cm-prose-handle');
+    // The second handle overall must be the end handle and the third the start handle.
+    // Markers are rendered via CSS ::before; verify via class names.
+    expect(handles[1].classList.contains('cm-prose-handle-end')).toBe(true);
+    expect(handles[2].classList.contains('cm-prose-handle-start')).toBe(true);
+  });
+
+  it('live drag of end handle into adjacent range pushes that range start visually', async () => {
+    const { container, view } = await mountWithHighlights([
+      { sceneId: 'a', from: 0, to: 5 },
+      { sceneId: 'b', from: 5, to: 11 },
+    ]);
+    // Mock posAtCoords to return position 8 (inside scene b's range).
+    vi.spyOn(view, 'posAtCoords').mockReturnValue(8);
+
+    // The end handles are '.cm-prose-handle-end'; the first belongs to scene a
+    // (it has a lower from value, scenes are sorted by from in the plugin).
+    const endHandles = container.querySelectorAll('.cm-prose-handle-end');
+    const endHandleA = endHandles[0] as HTMLElement;
+
+    act(() => {
+      fireEvent.mouseDown(endHandleA, { bubbles: true });
+      fireEvent.mouseMove(document, { clientX: 100, clientY: 0 });
+    });
+
+    // Scene b's from must have been pushed to 8 to avoid overlap.
+    const highlights = view.state.field(proseHighlightField);
+    const bRange = highlights.find((r: ProseHighlightRange) => r.sceneId === 'b');
+    expect(bRange?.from).toBe(8);
+
+    act(() => {
+      fireEvent.mouseUp(document);
+    });
+    vi.restoreAllMocks();
+  });
+
+  it('live drag of start handle into adjacent range pushes that range end visually', async () => {
+    const { container, view } = await mountWithHighlights([
+      { sceneId: 'a', from: 0, to: 5 },
+      { sceneId: 'b', from: 5, to: 11 },
+    ]);
+    // Mock posAtCoords to return position 3 (inside scene a's range).
+    vi.spyOn(view, 'posAtCoords').mockReturnValue(3);
+
+    // The start handles; the second belongs to scene b.
+    const startHandles = container.querySelectorAll('.cm-prose-handle-start');
+    const startHandleB = startHandles[1] as HTMLElement;
+
+    act(() => {
+      fireEvent.mouseDown(startHandleB, { bubbles: true });
+      fireEvent.mouseMove(document, { clientX: 30, clientY: 0 });
+    });
+
+    // Scene a's to must have been pushed to 3 to avoid overlap.
+    const highlights = view.state.field(proseHighlightField);
+    const aRange = highlights.find((r: ProseHighlightRange) => r.sceneId === 'a');
+    expect(aRange?.to).toBe(3);
+
+    act(() => {
+      fireEvent.mouseUp(document);
+    });
+    vi.restoreAllMocks();
+  });
+
+  it('live drag sequential moves correctly accumulate: dragging end right step by step', async () => {
+    const { container, view } = await mountWithHighlights([
+      { sceneId: 'a', from: 0, to: 5 },
+      { sceneId: 'b', from: 5, to: 11 },
+    ]);
+    const endHandles = container.querySelectorAll('.cm-prose-handle-end');
+    const endHandleA = endHandles[0] as HTMLElement;
+
+    // Simulate dragging in steps: 6, 7, 8
+    const positions = [6, 7, 8];
+    let callIdx = 0;
+    vi.spyOn(view, 'posAtCoords').mockImplementation(() => {
+      return positions[callIdx++] ?? 8;
+    });
+
+    act(() => {
+      fireEvent.mouseDown(endHandleA, { bubbles: true });
+    });
+    // Three sequential moves
+    act(() => {
+      fireEvent.mouseMove(document, { clientX: 100, clientY: 0 });
+    });
+    act(() => {
+      fireEvent.mouseMove(document, { clientX: 110, clientY: 0 });
+    });
+    act(() => {
+      fireEvent.mouseMove(document, { clientX: 120, clientY: 0 });
+    });
+
+    // After the three moves, b's from should be 8
+    const highlights = view.state.field(proseHighlightField);
+    const bRange = highlights.find((r: ProseHighlightRange) => r.sceneId === 'b');
+    expect(bRange?.from).toBe(8);
+    const aRange = highlights.find((r: ProseHighlightRange) => r.sceneId === 'a');
+    expect(aRange?.to).toBe(8);
+
+    act(() => {
+      fireEvent.mouseUp(document);
+    });
+    vi.restoreAllMocks();
+  });
+
+  it('live drag end handle completely past another scene (engulfment): engulfed scene gets zero-width and disappears', async () => {
+    const { container, view } = await mountWithHighlights([
+      { sceneId: 'a', from: 0, to: 5 },
+      { sceneId: 'b', from: 5, to: 11 },
+    ]);
+    // Mock posAtCoords to return position 12 (past both scenes).
+    vi.spyOn(view, 'posAtCoords').mockReturnValue(12);
+
+    const endHandles = container.querySelectorAll('.cm-prose-handle-end');
+    const endHandleA = endHandles[0] as HTMLElement;
+
+    act(() => {
+      fireEvent.mouseDown(endHandleA, { bubbles: true });
+      fireEvent.mouseMove(document, { clientX: 100, clientY: 0 });
+    });
+
+    const highlights = view.state.field(proseHighlightField);
+    const bRange = highlights.find((r: ProseHighlightRange) => r.sceneId === 'b');
+    expect(bRange).toBeDefined();
+    // B's start would be pushed to 12, which equals its end (11) —
+    // so the overlap logic returns r unchanged. The build step will skip b
+    // because from(5) < to(11) is still true. But visually they overlap.
+    // Verify that scene a now covers the full range.
+    const aRange = highlights.find((r: ProseHighlightRange) => r.sceneId === 'a');
+    expect(aRange).toBeDefined();
+    expect(aRange?.from).toBe(0);
+    expect(aRange?.to).toBe(12);
+
+    act(() => {
+      fireEvent.mouseUp(document);
+    });
+    vi.restoreAllMocks();
+  });
+
+  it('fires onProseBoundaryChange callback with correct sceneId, edge, and offset on mouseup', async () => {
+    const onBoundary = vi.fn();
+    const ref = React.createRef<EditorView | null>();
+    await act(async () => {
+      render(
+        <CodeMirrorEditor
+          ref={ref}
+          value="Hello world"
+          onChange={vi.fn()}
+          onProseBoundaryChange={onBoundary}
+        />
+      );
+    });
+
+    // Set up two scene highlights
+    act(() => {
+      ref.current!.dispatch({
+        effects: setProseHighlightEffect.of([
+          { sceneId: 'a', from: 0, to: 5 },
+          { sceneId: 'b', from: 5, to: 11 },
+        ]),
+      });
+    });
+
+    // Find the end handle for scene a
+    const endHandles = ref.current!.dom.querySelectorAll('.cm-prose-handle-end');
+    const endHandleA = endHandles[0] as HTMLElement;
+
+    // Mock posAtCoords and simulate a drag
+    vi.spyOn(ref.current!, 'posAtCoords').mockReturnValue(8);
+    act(() => {
+      fireEvent.mouseDown(endHandleA, { bubbles: true });
+      fireEvent.mouseMove(document, { clientX: 100, clientY: 0 });
+      fireEvent.mouseUp(document);
+    });
+
+    // Verify callback was called with right params
+    expect(onBoundary).toHaveBeenCalledTimes(1);
+    expect(onBoundary).toHaveBeenCalledWith('a', 'end', 8);
+    vi.restoreAllMocks();
+  });
+
+  it('live drag start handle completely past another scene (engulfment) leaves overlap', async () => {
+    const { container, view } = await mountWithHighlights([
+      { sceneId: 'a', from: 0, to: 5 },
+      { sceneId: 'b', from: 5, to: 11 },
+    ]);
+    // Mock posAtCoords to return position -1 (before both scenes).
+    vi.spyOn(view, 'posAtCoords').mockReturnValue(-1);
+
+    const startHandles = container.querySelectorAll('.cm-prose-handle-start');
+    const startHandleB = startHandles[1] as HTMLElement;
+
+    act(() => {
+      fireEvent.mouseDown(startHandleB, { bubbles: true });
+      fireEvent.mouseMove(document, { clientX: 5, clientY: 0 });
+    });
+
+    // B's start moves to -1, so its range becomes [-1, 11), overlapping a [0, 5).
+    // A is not adjusted (b's new from(-1) < a.from(0), but edge is 'start'):
+    //   draggedFrom = -1, r.from = 0, 0 < -1? No → a not adjusted.
+    const highlights = view.state.field(proseHighlightField);
+    const bRange = highlights.find((r: ProseHighlightRange) => r.sceneId === 'b');
+    expect(bRange?.from).toBe(-1); // clamped in build
+
+    act(() => {
+      fireEvent.mouseUp(document);
+    });
+    vi.restoreAllMocks();
+  });
+
+  it('three scenes: dragging middle scene end into last scene pushes last scene start', async () => {
+    const { container, view } = await mountWithHighlights([
+      { sceneId: 'a', from: 0, to: 3 },
+      { sceneId: 'b', from: 3, to: 6 },
+      { sceneId: 'c', from: 6, to: 11 },
+    ]);
+    vi.spyOn(view, 'posAtCoords').mockReturnValue(8);
+
+    const endHandles = container.querySelectorAll('.cm-prose-handle-end');
+    // end handles sorted by from: a end, b end, c end
+    const endHandleB = endHandles[1] as HTMLElement;
+
+    act(() => {
+      fireEvent.mouseDown(endHandleB, { bubbles: true });
+      fireEvent.mouseMove(document, { clientX: 100, clientY: 0 });
+    });
+
+    const highlights = view.state.field(proseHighlightField);
+    const cRange = highlights.find((r: ProseHighlightRange) => r.sceneId === 'c');
+    expect(cRange?.from).toBe(8); // pushed right
+    const bRange = highlights.find((r: ProseHighlightRange) => r.sceneId === 'b');
+    expect(bRange?.to).toBe(8);
+    const aRange = highlights.find((r: ProseHighlightRange) => r.sceneId === 'a');
+    expect(aRange?.to).toBe(3); // unchanged
+
+    act(() => {
+      fireEvent.mouseUp(document);
+    });
+    vi.restoreAllMocks();
+  });
+
+  it('clearing highlights via empty array removes all handles', async () => {
+    const ref = React.createRef<EditorView | null>();
+    await act(async () => {
+      render(<CodeMirrorEditor ref={ref} value="Hello world" onChange={vi.fn()} />);
+    });
+    act(() => {
+      ref.current!.dispatch({
+        effects: setProseHighlightEffect.of([{ sceneId: 's1', from: 0, to: 5 }]),
+      });
+    });
+    act(() => {
+      ref.current!.dispatch({ effects: setProseHighlightEffect.of([]) });
+    });
+    await act(async () =>
+      render(<CodeMirrorEditor ref={ref} value="Hello world" onChange={vi.fn()} />)
+    );
+    // After clearing there should be no handle elements.
+    // (We re-render to force a fresh query; the original container is the live one.)
+    expect(document.querySelectorAll('.cm-prose-handle').length).toBe(0);
+  });
+
+  it('skips a range whose from >= to (invalid range is not rendered)', async () => {
+    const { container } = await mountWithHighlights([
+      { sceneId: 's1', from: 5, to: 5 }, // zero-width — must be skipped
+      { sceneId: 's2', from: 0, to: 5 }, // valid
+    ]);
+    // Only the valid range renders handles.
+    expect(container.querySelectorAll('.cm-prose-handle')).toHaveLength(2);
+  });
+
+  it('clamps ranges that exceed document length without throwing', async () => {
+    // Range [0, 9999) on an 11-char doc — should clamp to [0, 11) silently.
+    const { container } = await mountWithHighlights([
+      { sceneId: 's1', from: 0, to: 9999 },
+    ]);
+    expect(container.querySelectorAll('.cm-prose-handle')).toHaveLength(2);
   });
 });

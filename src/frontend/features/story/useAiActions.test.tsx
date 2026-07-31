@@ -13,9 +13,11 @@
 
 import { StrictMode, type ReactNode } from 'react';
 import { renderHook, act, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useAiActions } from './useAiActions';
+import type { WritingUnit, Scene } from '../../types';
+import { api } from '../../services/api';
 import { streamAiAction } from '../../services/openaiService';
 import type { CancelSignal } from '../../services/openaiService';
 import { useStoryStore } from '../../stores/storyStore';
@@ -27,6 +29,14 @@ vi.mock('../../services/openaiService', () => ({
 
 vi.mock('../../services/errorNotifier', () => ({
   notifyError: vi.fn(),
+}));
+
+vi.mock('../../services/api', () => ({
+  api: {
+    scenes: {
+      autoLinkScope: vi.fn(),
+    },
+  },
 }));
 
 const baseUnit = {
@@ -50,9 +60,10 @@ type StreamAiActionImpl = (
 ) => Promise<string>;
 
 const makeParams = (
-  updateChapter: ReturnType<typeof vi.fn> = vi.fn().mockResolvedValue(undefined)
+  updateChapter: ReturnType<typeof vi.fn> = vi.fn().mockResolvedValue(undefined),
+  currentUnit: WritingUnit = baseUnit
 ): {
-  currentUnit: typeof baseUnit;
+  currentUnit: WritingUnit;
   prompts: {
     system_messages: Record<string, string>;
     user_prompts: Record<string, string>;
@@ -63,7 +74,7 @@ const makeParams = (
   updateChapter: ReturnType<typeof vi.fn>;
   getErrorMessage: (error: unknown, fallback: string) => string;
 } => ({
-  currentUnit: baseUnit,
+  currentUnit,
   prompts: { system_messages: {}, user_prompts: {} },
   isEditingAvailable: true,
   isWritingAvailable: true,
@@ -76,12 +87,46 @@ const strictWrapper = ({ children }: { children: ReactNode }): ReactNode => (
   <StrictMode>{children}</StrictMode>
 );
 
+function makeLinkedScene(
+  id: number,
+  proseLink: {
+    scope_type: 'chapter' | 'story';
+    chapter_id?: string | null;
+    start_offset: number;
+    end_offset: number;
+  }
+): Scene {
+  return {
+    id,
+    summary: `Scene ${id}`,
+    beats: [],
+    active_characters: [],
+    passive_characters: [],
+    causes: [],
+    pinboard_x: 0,
+    pinboard_y: 0,
+    status: 'active' as const,
+    prose_link: proseLink,
+  };
+}
+
 describe('useAiActions', () => {
+  let patchSceneSpy: ReturnType<typeof vi.spyOn>;
+
   beforeEach(() => {
     vi.clearAllMocks();
+    patchSceneSpy = vi.spyOn(useStoryStore.getState(), 'patchScene');
+    vi.mocked(api.scenes.autoLinkScope).mockResolvedValue({
+      assignments: [],
+      scenes: [],
+    });
     // Reset stores between tests.
     useStoryStore.getState().setStreamingContent(null);
     useChatStore.getState().setIsProseStreamingFrozen(false);
+  });
+
+  afterEach(() => {
+    patchSceneSpy.mockRestore();
   });
 
   it('resets isAiActionLoading after canceling a chapter stream in StrictMode', async () => {
@@ -204,6 +249,7 @@ describe('useAiActions', () => {
 
   it('does not force a paragraph break when final extend content continues the current sentence', async () => {
     const updateChapter = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(api.scenes.autoLinkScope).mockResolvedValue({ scenes: [] });
     vi.mocked(streamAiAction).mockResolvedValue('continued text.');
 
     const { result } = renderHook(() => useAiActions(makeParams(updateChapter)));
@@ -215,6 +261,137 @@ describe('useAiActions', () => {
     expect(updateChapter).toHaveBeenCalledWith('1', {
       content: 'Existing content continued text.',
     });
+  });
+
+  it('fills the last empty scene marker span before appending during chapter extend', async () => {
+    const updateChapter = vi.fn().mockResolvedValue(undefined);
+    const chapterWithEmptyLastScene: WritingUnit = {
+      ...baseUnit,
+      content:
+        'Prefix <!--scene:1:start-->Filled<!--scene:1:end--><!--scene:2:start--><!--scene:2:end--> Suffix',
+    };
+    vi.mocked(streamAiAction).mockResolvedValue('Newly generated scene text.');
+    vi.mocked(api.scenes.autoLinkScope).mockResolvedValue({ scenes: [] });
+
+    const { result } = renderHook(() =>
+      useAiActions(makeParams(updateChapter, chapterWithEmptyLastScene))
+    );
+
+    await act(async () => {
+      await result.current.handleAiAction('chapter', 'extend');
+    });
+
+    const expectedContent =
+      'Prefix <!--scene:1:start-->Filled<!--scene:1:end--><!--scene:2:start-->Newly generated scene text.<!--scene:2:end--> Suffix';
+    expect(updateChapter).toHaveBeenCalledWith('1', {
+      content: expectedContent,
+    });
+    expect(api.scenes.autoLinkScope).toHaveBeenCalledWith({
+      scope_type: 'chapter',
+      chapter_id: '1',
+      book_id: null,
+      current_text: expectedContent,
+    });
+  });
+
+  it('patches all auto-linked scenes returned after a chapter rewrite', async () => {
+    const updateChapter = vi.fn().mockResolvedValue(undefined);
+    const linkedA = makeLinkedScene(1, {
+      scope_type: 'chapter',
+      chapter_id: '1',
+      start_offset: 0,
+      end_offset: 12,
+    });
+    const linkedB = makeLinkedScene(2, {
+      scope_type: 'chapter',
+      chapter_id: '1',
+      start_offset: 12,
+      end_offset: 24,
+    });
+    vi.mocked(streamAiAction).mockResolvedValue('Rewritten body text.');
+    vi.mocked(api.scenes.autoLinkScope).mockResolvedValue({
+      assignments: [],
+      scenes: [linkedA, linkedB],
+    });
+
+    const { result } = renderHook(() => useAiActions(makeParams(updateChapter)));
+
+    await act(async () => {
+      await result.current.handleAiAction('chapter', 'rewrite');
+    });
+
+    expect(api.scenes.autoLinkScope).toHaveBeenCalledWith({
+      scope_type: 'chapter',
+      chapter_id: '1',
+      book_id: null,
+      current_text: 'Rewritten body text.',
+    });
+    expect(patchSceneSpy).toHaveBeenCalledWith(linkedA);
+    expect(patchSceneSpy).toHaveBeenCalledWith(linkedB);
+  });
+
+  it('patches returned scenes after a chapter extend relink', async () => {
+    const updateChapter = vi.fn().mockResolvedValue(undefined);
+    const linked = makeLinkedScene(3, {
+      scope_type: 'chapter',
+      chapter_id: '1',
+      start_offset: 0,
+      end_offset: 29,
+    });
+    vi.mocked(streamAiAction).mockResolvedValue('continued text.');
+    vi.mocked(api.scenes.autoLinkScope).mockResolvedValue({
+      assignments: [],
+      scenes: [linked],
+    });
+
+    const { result } = renderHook(() => useAiActions(makeParams(updateChapter)));
+
+    await act(async () => {
+      await result.current.handleAiAction('chapter', 'extend');
+    });
+
+    expect(api.scenes.autoLinkScope).toHaveBeenCalledWith({
+      scope_type: 'chapter',
+      chapter_id: '1',
+      book_id: null,
+      current_text: 'Existing content continued text.',
+    });
+    expect(patchSceneSpy).toHaveBeenCalledWith(linked);
+  });
+
+  it('uses story scope for auto-link relink after a story rewrite', async () => {
+    const updateChapter = vi.fn().mockResolvedValue(undefined);
+    const linked = makeLinkedScene(4, {
+      scope_type: 'story',
+      start_offset: 0,
+      end_offset: 18,
+    });
+    vi.mocked(streamAiAction).mockResolvedValue('Story-level rewrite.');
+    vi.mocked(api.scenes.autoLinkScope).mockResolvedValue({
+      assignments: [],
+      scenes: [linked],
+    });
+
+    const { result } = renderHook(() =>
+      useAiActions(
+        makeParams(updateChapter, {
+          ...baseUnit,
+          id: 'story',
+          scope: 'story',
+          title: 'Story',
+        })
+      )
+    );
+
+    await act(async () => {
+      await result.current.handleAiAction('chapter', 'rewrite');
+    });
+
+    expect(api.scenes.autoLinkScope).toHaveBeenCalledWith({
+      scope_type: 'story',
+      current_text: 'Story-level rewrite.',
+    });
+    expect(patchSceneSpy).toHaveBeenCalledWith(linked);
   });
 
   it('sets isProseStreamingFrozen when partial content is committed on cancel', async () => {

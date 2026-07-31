@@ -8,6 +8,7 @@
 """Unit tests for the JSON repair utility."""
 
 import json
+
 from augmentedquill.utils.json_repair import (
     apply_typographic_quotes,
     repair_json_quotes,

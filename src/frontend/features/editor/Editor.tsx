@@ -17,11 +17,13 @@ import React, {
   useState,
 } from 'react';
 import { EditorView } from '@codemirror/view';
+import type { StateEffect } from '@codemirror/state';
 import {
   EditorSettings,
   SuggestionGenerationMode,
   ViewMode,
   WritingUnit,
+  SceneId,
 } from '../../types';
 import { Upload } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -31,7 +33,18 @@ import { useSearchHighlight } from '../search/SearchHighlightContext';
 import { useChatStore, ChatStoreState } from '../../stores/chatStore';
 import { useStoryStore } from '../../stores/storyStore';
 import type { StoryStoreState } from '../../stores/storyStore';
-import { CodeMirrorEditor } from './CodeMirrorEditor';
+import {
+  CodeMirrorEditor,
+  setProseHighlightEffect,
+  type ProseHighlightRange,
+  type ProseBoundaryCallback,
+} from './CodeMirrorEditor';
+import { setAnnotationRangesEffect, type AnnotationRange } from './annotationPlugin';
+import {
+  setAnnotationClickCallback,
+  setAnnotationCursorCallback,
+} from './annotationPlugin';
+import { transferInternalMarkers } from './internalTags';
 import { EditorSuggestionPanel } from './EditorSuggestionPanel';
 import { EditorMobileToolbar } from './EditorMobileToolbar';
 import { EditorProvider } from './EditorContext';
@@ -50,6 +63,12 @@ const STREAM_FOLLOW_ATTACH_DISTANCE_PX = 200;
 // URL sanitizer — re-exported for backward compat with Editor.url.test.ts
 export { isSafeImageUrl } from './editorUtils';
 import { isSafeImageUrl } from './editorUtils';
+import { isRangeVisible } from '../../utils/scrollUtils';
+
+// Pending highlights stored when editorViewRef is null during Editor
+// remount (e.g. chapter loading skeleton).  Module-level so they
+// survive Editor unmount/remount cycles.
+let gPendingHighlights: ProseHighlightRange[] | null = null;
 
 interface EditorProps {
   chapter: WritingUnit;
@@ -97,6 +116,44 @@ export interface EditorHandle {
   format: (type: string) => void;
   openImageManager?: () => void;
   jumpToPosition: (start: number, end: number) => void;
+  getEditorView: () => EditorView | null;
+  /**
+   * Register a callback that fires on every cursor/selection change in the
+   * editor.  Pass null to unsubscribe.  Only one external subscriber is
+   * supported at a time (last caller wins).
+   */
+  setOnCursorChange: (cb: ((anchor: number, head: number) => void) | null) => void;
+  /**
+   * Apply background-highlight decorations to multiple prose ranges without
+   * moving the cursor or creating a text selection.  Scrolls to the first
+   * range.  Replaces any previously active highlights.
+   */
+  setProseHighlights: (entries: ProseHighlightRange[]) => void;
+  /** Remove all prose-link highlight decorations. */
+  clearProseHighlight: () => void;
+  /**
+   * Register a callback that fires when the user drags a prose-link boundary
+   * handle to a new position.  Pass null to unsubscribe.
+   */
+  setOnProseBoundaryChange: (cb: ProseBoundaryCallback | null) => void;
+  /** Push a new set of annotation highlight ranges to the editor. */
+  setAnnotationRanges: (ranges: AnnotationRange[]) => void;
+  /**
+   * Register a callback that fires when the user clicks on an annotation
+   * decoration in the editor (annotationId) or on unannotated text (null).
+   * Pass null to unsubscribe.
+   */
+  setOnAnnotationClick: (cb: ((annotationId: string | null) => void) | null) => void;
+  /**
+   * Register a callback that fires when the editor cursor moves into or out
+   * of annotated text, reporting the annotation under the cursor (or null
+   * when the cursor is outside every annotation).  Pass null to unsubscribe.
+   */
+  setOnAnnotationCursorChange: (
+    cb: ((annotationId: string | null) => void) | null
+  ) => void;
+  /** Return current selection (anchor/head) or null when editor is unavailable. */
+  getSelection: () => { anchor: number; head: number } | null;
 }
 
 /* eslint-disable complexity */
@@ -123,6 +180,12 @@ export const Editor = React.memo(
       // CodeMirror EditorView — persists across all view modes
       const editorViewRef = useRef<EditorView | null>(null);
       const paperDivRef = useRef<HTMLDivElement>(null);
+      // External cursor-change subscriber (e.g. ScenesPanelContainer)
+      const externalCursorCallbackRef = useRef<
+        ((anchor: number, head: number) => void) | null
+      >(null);
+      // External prose-boundary-drag subscriber (e.g. ScenesPanelContainer)
+      const proseBoundaryCallbackRef = useRef<ProseBoundaryCallback | null>(null);
       const showInlineTitle = true;
       const { getRanges } = useSearchHighlight();
       const chapterSearchHighlightRanges = getRanges(
@@ -149,39 +212,51 @@ export const Editor = React.memo(
       // Track the diff baseline locally so we can clear it immediately when the
       // user types — preventing newly typed text from appearing as diff insertions.
       // Re-adopt the prop whenever a new non-undefined baseline arrives (AI write).
+      // Normalize empty string to undefined: an empty baseline means "no baseline
+      // to diff against", not "diff against the empty string".
+      const normalizeBaseline = (raw: string | undefined): string | undefined =>
+        raw && raw.length > 0 ? raw : undefined;
       const [localBaseline, setLocalBaseline] = useState<string | undefined>(
-        baselineContent
+        normalizeBaseline(baselineContent)
       );
-      const prevBaselineRef = useRef<string | undefined>(baselineContent);
+      const prevBaselineRef = useRef<string | undefined>(
+        normalizeBaseline(baselineContent)
+      );
       // Keep the last non-undefined baseline so undo can restore the diff view.
-      const savedBaselineRef = useRef<string | undefined>(baselineContent);
+      const savedBaselineRef = useRef<string | undefined>(
+        normalizeBaseline(baselineContent)
+      );
       const lastChapterIdRef = useRef(chapter.id);
+      // Tracks the last full content (with markers) that was saved to the backend.
+      // Used to re-inject markers after user edits strip them from the editor doc.
+      const lastSavedFullContentRef = useRef(chapter.content);
 
       useEffect((): void => {
+        const normalized = normalizeBaseline(baselineContent);
         const isChapterSwitch = chapter.id !== lastChapterIdRef.current;
         if (isChapterSwitch) {
           lastChapterIdRef.current = chapter.id;
-          prevBaselineRef.current = baselineContent;
-          setLocalBaseline(baselineContent);
-          if (baselineContent !== undefined && baselineContent !== chapter.content) {
-            savedBaselineRef.current = baselineContent;
-          } else if (baselineContent === undefined) {
+          prevBaselineRef.current = normalized;
+          setLocalBaseline(normalized);
+          if (normalized !== undefined && normalized !== chapter.content) {
+            savedBaselineRef.current = normalized;
+          } else if (normalized === undefined) {
             savedBaselineRef.current = undefined;
           }
           return;
         }
 
-        if (baselineContent !== prevBaselineRef.current) {
-          prevBaselineRef.current = baselineContent;
-          setLocalBaseline(baselineContent);
+        if (normalized !== prevBaselineRef.current) {
+          prevBaselineRef.current = normalized;
+          setLocalBaseline(normalized);
           // Only preserve as the real AI baseline when baselineContent differs from
           // chapter.content. When isUserEdit=true, pushState sets baselineContent
           // equal to chapter.content (no diff), so we must not overwrite the saved
           // AI baseline with the user-edited value — otherwise Ctrl+Z would restore
           // that wrong baseline instead of the original AI-written baseline.
-          if (baselineContent !== undefined && baselineContent !== chapter.content) {
-            savedBaselineRef.current = baselineContent;
-          } else if (baselineContent === undefined) {
+          if (normalized !== undefined && normalized !== chapter.content) {
+            savedBaselineRef.current = normalized;
+          } else if (normalized === undefined) {
             savedBaselineRef.current = undefined;
           }
         }
@@ -224,6 +299,7 @@ export const Editor = React.memo(
 
         if (isChapterSwitch) {
           deferredStreamingContentRef.current = null;
+          lastSavedFullContentRef.current = chapter.content;
         }
 
         // During active streaming the streaming-slot effect below owns
@@ -244,6 +320,10 @@ export const Editor = React.memo(
         if (isChapterSwitch || (!editorFocused && !shouldDeferStreamingSync)) {
           localContentRef.current = chapter.content;
           setLocalContent(chapter.content);
+          if (!isChapterSwitch) {
+            // AI/undo/redo updated the content externally — update our marker baseline
+            lastSavedFullContentRef.current = chapter.content;
+          }
         }
       }, [chapter.id, chapter.content, proseStreamingActive]);
 
@@ -307,7 +387,7 @@ export const Editor = React.memo(
         isAiLoading,
         isWritingAvailable = true,
         onCancelAiAction,
-        isProseStreaming = false,
+        isProseStreaming: _isProseStreaming = false,
       } = aiControls;
 
       const {
@@ -510,6 +590,37 @@ export const Editor = React.memo(
         return (): void => window.removeEventListener('keydown', onKeyDown, true);
       }, [maybeHandleSuggestionHotkey]);
 
+      // Provide prose-drag data so scene cards can receive dropped prose
+      // selections.  onDragStart is called from CodeMirrorEditor's container
+      // div as the dragstart event bubbles up from CM's contentDOM.  By that
+      // point CM6's own handler has already run and set
+      // effectAllowed = "copyMove"; we override it to "all" so that drop
+      // targets can use any dropEffect (including "link").
+      const handleCmDragStart = useCallback(
+        (e: DragEvent, view: EditorView): void => {
+          const sel = view.state.selection.main;
+          if (sel.empty) return;
+          const text = view.state.doc.sliceString(sel.from, sel.to);
+          const payload = JSON.stringify({
+            scopeType: chapter.scope,
+            chapterId: chapter.scope === 'chapter' ? chapter.id : undefined,
+            bookId: (chapter as { book_id?: string }).book_id,
+            startOffset: sel.from,
+            endOffset: sel.to,
+            text,
+          });
+          if (e.dataTransfer) {
+            e.dataTransfer.setData('text/plain', text);
+            e.dataTransfer.setData('application/aq-prose-selection', payload);
+            // Must be set AFTER CM6's own handler (which sets "copyMove") so
+            // that our override wins.  The container-div React handler fires
+            // after CM6's contentDOM handler due to event bubbling order.
+            e.dataTransfer.effectAllowed = 'all';
+          }
+        },
+        [chapter]
+      );
+
       const format = (type: string): void => {
         const view = editorViewRef.current;
         if (!view) return;
@@ -602,11 +713,83 @@ export const Editor = React.memo(
         jumpToPosition: (start: number, end: number): void => {
           const view = editorViewRef.current;
           if (!view) return;
+          const docLen = view.state.doc.length;
+          const safeEnd = Math.min(Math.max(start, end), docLen);
+          const safeStart = Math.min(Math.max(0, start), safeEnd);
           view.dispatch({
-            selection: { anchor: start, head: end },
+            selection: { anchor: safeStart, head: safeEnd },
             scrollIntoView: true,
           });
           view.focus();
+        },
+        getEditorView: (): EditorView | null => editorViewRef.current,
+        setOnCursorChange: (
+          cb: ((anchor: number, head: number) => void) | null
+        ): void => {
+          externalCursorCallbackRef.current = cb;
+        },
+        setProseHighlights: (entries: ProseHighlightRange[]): void => {
+          const view = editorViewRef.current;
+          if (view) {
+            gPendingHighlights = null;
+            const effects: StateEffect<unknown>[] = [
+              setProseHighlightEffect.of(entries),
+            ];
+            if (entries.length > 0) {
+              const { from, to } = entries[0];
+              if (!isRangeVisible(from, to, view.visibleRanges)) {
+                effects.push(EditorView.scrollIntoView(from));
+              }
+            }
+            view.dispatch({ effects });
+          } else {
+            // EditorView not created yet — store and retry after effects
+            gPendingHighlights = entries;
+            const capturedRef = editorViewRef;
+            setTimeout((): void => {
+              const rv = capturedRef.current;
+              if (!rv || !gPendingHighlights) return;
+              const pending = gPendingHighlights;
+              gPendingHighlights = null;
+              const rEffects: StateEffect<unknown>[] = [
+                setProseHighlightEffect.of(pending),
+              ];
+              if (pending.length > 0) {
+                const { from, to } = pending[0];
+                if (!isRangeVisible(from, to, rv.visibleRanges)) {
+                  rEffects.push(EditorView.scrollIntoView(from));
+                }
+              }
+              rv.dispatch({ effects: rEffects });
+            }, 0);
+          }
+        },
+        clearProseHighlight: (): void => {
+          editorViewRef.current?.dispatch({
+            effects: setProseHighlightEffect.of([]),
+          });
+        },
+        setOnProseBoundaryChange: (cb: ProseBoundaryCallback | null): void => {
+          proseBoundaryCallbackRef.current = cb;
+        },
+        setAnnotationRanges: (ranges: AnnotationRange[]): void => {
+          editorViewRef.current?.dispatch({
+            effects: setAnnotationRangesEffect.of(ranges),
+          });
+        },
+        setOnAnnotationClick: (
+          cb: ((annotationId: string | null) => void) | null
+        ): void => {
+          setAnnotationClickCallback(cb);
+        },
+        setOnAnnotationCursorChange: (
+          cb: ((annotationId: string | null) => void) | null
+        ): void => {
+          setAnnotationCursorCallback(cb);
+        },
+        getSelection: (): { anchor: number; head: number } | null => {
+          const sel = editorViewRef.current?.state.selection.main;
+          return sel ? { anchor: sel.anchor, head: sel.head } : null;
         },
       }));
 
@@ -631,6 +814,24 @@ export const Editor = React.memo(
         // Light/Mixed mode: warm editor background — use a soft semi-transparent
         // highlight so selected text stays readable without being too vivid
         selectionBg = 'rgba(99,102,241,0.22)';
+      }
+
+      // Prose-link highlight: the page warm hue pushed to high saturation and
+      // consistently lower lightness so the highlighted passage stands out at
+      // every brightness level.  Both formulas use a fixed lightness delta from
+      // the page so the contrast is stable regardless of the slider position.
+      let proseHighlightBg: string;
+      if (settings.theme === 'dark') {
+        // Dark page: hsl(24, 10%, b%) where b = brightness*20 (10–20%).
+        // Highlight is always ~22 points brighter with rich saturation.
+        const b = settings.brightness * 20;
+        proseHighlightBg = `hsl(24, 65%, ${Math.min(b + 22, 44)}%)`;
+      } else {
+        // Light/Mixed page: hsl(38, 25%, brightness*100%).
+        // Highlight is always 28 points darker with rich saturation so it
+        // never blends into the background, even at low brightness settings.
+        const pageL = settings.brightness * 100;
+        proseHighlightBg = `hsl(38, 88%, ${Math.max(pageL - 28, 20)}%)`;
       }
 
       const isMonospace = viewMode === 'raw';
@@ -828,6 +1029,7 @@ export const Editor = React.memo(
                       language={language}
                       spellCheck={spellCheck}
                       onOpenSearch={onOpenSearch}
+                      onDragStart={handleCmDragStart}
                       onChange={(val: string, isUndoRedo?: boolean): void => {
                         setLocalContent(val);
                         localContentRef.current = val;
@@ -849,10 +1051,26 @@ export const Editor = React.memo(
                           clearTimeout(contentDebounceRef.current);
                         }
                         contentDebounceRef.current = setTimeout((): void => {
-                          onChange(chapter.id, { content: val }, isUndoRedo);
+                          // Re-inject internal markers (scene + annotation) that
+                          // were stripped from the editor document when
+                          // hideSceneMarkers is true.  The backend expects content
+                          // with markers so markers are preserved across saves.
+                          const contentWithMarkers = transferInternalMarkers(
+                            lastSavedFullContentRef.current,
+                            val
+                          );
+                          lastSavedFullContentRef.current = contentWithMarkers;
+                          onChange(
+                            chapter.id,
+                            { content: contentWithMarkers },
+                            isUndoRedo
+                          );
                         }, DEBOUNCE_MS);
                       }}
-                      onSelectionChange={scheduleCheckContext}
+                      onSelectionChange={(anchor: number, head: number): void => {
+                        scheduleCheckContext();
+                        externalCursorCallbackRef.current?.(anchor, head);
+                      }}
                       viewMode={
                         viewMode === 'wysiwyg'
                           ? 'visual'
@@ -864,9 +1082,32 @@ export const Editor = React.memo(
                       showDiff={settings.showDiff}
                       streamingMode={streamingModeActive}
                       baselineValue={localBaseline}
+                      showDiffToolbar={
+                        localBaseline !== undefined && localBaseline !== chapter.content
+                      }
+                      onAcceptDiff={(): void => {
+                        setLocalBaseline(undefined);
+                      }}
+                      onRejectDiff={(): void => {
+                        if (savedBaselineRef.current !== undefined) {
+                          setLocalContent(savedBaselineRef.current);
+                          localContentRef.current = savedBaselineRef.current;
+                          setLocalBaseline(undefined);
+                        }
+                      }}
                       searchHighlightRanges={chapterSearchHighlightRanges}
                       enterBehavior="softbreak"
+                      isLight={settings.theme === 'light'}
                       selectionBg={selectionBg}
+                      proseHighlightBg={proseHighlightBg}
+                      hideSceneMarkers={true}
+                      onProseBoundaryChange={(
+                        sceneId: SceneId,
+                        edge: 'start' | 'end',
+                        offset: number
+                      ): void => {
+                        proseBoundaryCallbackRef.current?.(sceneId, edge, offset);
+                      }}
                       placeholder={
                         chapter.scope === 'story'
                           ? 'Start writing your story here...'

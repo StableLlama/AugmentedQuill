@@ -1,0 +1,308 @@
+// Copyright (C) 2026 StableLlama
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+
+/**
+ * Purpose: Shared scene sorting utilities used by NarrativeView and
+ * ConvergenceMapView. Extracted to avoid duplication.
+ */
+
+import type { Scene, SceneId } from '../../types';
+import type { Chapter, Book } from '../../types/domain';
+import { parseZonedDateTime } from '../../utils/temporal';
+
+export type ProjectType = 'short-story' | 'novel' | 'series';
+
+export function sceneIdCompare(a: SceneId, b: SceneId): number {
+  if (typeof a === 'number' && typeof b === 'number') {
+    return a - b;
+  }
+  return String(a).localeCompare(String(b));
+}
+
+function normalizeId(value: unknown): string | null {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  return null;
+}
+
+/** Build a map from chapter id → display order index, using the correct
+ *  sequence for the project type (flat list for novel; books-first for series). */
+// eslint-disable-next-line complexity
+export function buildChapterOrderMap(
+  projectType: ProjectType,
+  chapters: Chapter[],
+  books: Book[]
+): Map<string, number> {
+  const map = new Map<string, number>();
+
+  if (projectType === 'series' && books.length > 0) {
+    const assignedChapterIds = new Set<string>();
+    let idx = 0;
+
+    const chaptersByBookId = new Map<string, Chapter[]>();
+    for (const chapter of chapters) {
+      const chapterBookId = normalizeId(chapter.book_id);
+      if (!chapterBookId) continue;
+      const current = chaptersByBookId.get(chapterBookId) ?? [];
+      current.push(chapter);
+      chaptersByBookId.set(chapterBookId, current);
+    }
+
+    for (const book of books) {
+      const seenInBook = new Set<string>();
+      for (const ch of book.chapters) {
+        const chapterId = normalizeId(ch.id);
+        if (
+          !chapterId ||
+          seenInBook.has(chapterId) ||
+          assignedChapterIds.has(chapterId)
+        ) {
+          continue;
+        }
+        map.set(chapterId, idx++);
+        seenInBook.add(chapterId);
+        assignedChapterIds.add(chapterId);
+      }
+
+      const bookId = normalizeId(book.id);
+      const chaptersForBook = bookId ? (chaptersByBookId.get(bookId) ?? []) : [];
+      for (const chapter of chaptersForBook) {
+        const chapterId = normalizeId(chapter.id);
+        if (
+          !chapterId ||
+          seenInBook.has(chapterId) ||
+          assignedChapterIds.has(chapterId)
+        ) {
+          continue;
+        }
+        map.set(chapterId, idx++);
+        seenInBook.add(chapterId);
+        assignedChapterIds.add(chapterId);
+      }
+    }
+
+    for (const chapter of chapters) {
+      const chapterId = normalizeId(chapter.id);
+      if (!chapterId || assignedChapterIds.has(chapterId)) continue;
+      map.set(chapterId, idx++);
+      assignedChapterIds.add(chapterId);
+    }
+  } else {
+    let idx = 0;
+    for (const ch of chapters) {
+      const chapterId = normalizeId(ch.id);
+      if (!chapterId || map.has(chapterId)) continue;
+      map.set(chapterId, idx++);
+    }
+  }
+
+  return map;
+}
+
+export function normalizeChapterId(chapterId: unknown): string {
+  if (typeof chapterId === 'number' && Number.isFinite(chapterId)) {
+    return String(chapterId);
+  }
+  if (typeof chapterId === 'string') {
+    const trimmed = chapterId.trim();
+    if (trimmed.length === 0) return '';
+    if (/^\d+$/.test(trimmed)) {
+      return String(parseInt(trimmed, 10));
+    }
+    return trimmed;
+  }
+  return '';
+}
+
+function scopeSortBucket(link: Scene['prose_link']): number {
+  if (!link) return 3;
+  if (link.scope_type === 'story') return 0;
+  if (link.scope_type === 'chapter') return 1;
+  if (link.scope_type === 'unlinked') return 2;
+  return 3;
+}
+
+function getProseLinkChapterIndex(
+  link: Scene['prose_link'],
+  chapterOrderMap: Map<string, number>
+): number | null {
+  if (!link || link.scope_type !== 'chapter') return null;
+  return chapterOrderMap.get(normalizeChapterId(link.chapter_id)) ?? Infinity;
+}
+
+function areProseLinksInSameScope(
+  linkA: Scene['prose_link'],
+  linkB: Scene['prose_link']
+): boolean {
+  if (!linkA || !linkB || linkA.scope_type !== linkB.scope_type) return false;
+  return (
+    linkA.scope_type === 'story' ||
+    normalizeChapterId(linkA.chapter_id) === normalizeChapterId(linkB.chapter_id)
+  );
+}
+
+function compareProseLinkStartOffsets(sceneA: Scene, sceneB: Scene): number | null {
+  if (!areProseLinksInSameScope(sceneA.prose_link, sceneB.prose_link)) return null;
+
+  const startA = sceneA.prose_link?.start_offset;
+  const startB = sceneB.prose_link?.start_offset;
+  if (!Number.isFinite(startA) || !Number.isFinite(startB) || startA === startB) {
+    return null;
+  }
+  return Number(startA) - Number(startB);
+}
+
+function getNarrativeOrderIndex(scene: Scene): number | null {
+  if (typeof scene.order_index === 'number' && Number.isFinite(scene.order_index)) {
+    return scene.order_index;
+  }
+  return null;
+}
+
+export function sceneSortKey(
+  scene: Scene,
+  _chapterOrderMap: Map<string, number>
+): number {
+  const start = scene.prose_link?.start_offset;
+  return Number.isFinite(start) ? Number(start) : Infinity;
+}
+
+export function proseSort(
+  sceneA: Scene,
+  sceneB: Scene,
+  chapterOrderMap: Map<string, number>
+): number {
+  const orderIndexA = getNarrativeOrderIndex(sceneA);
+  const orderIndexB = getNarrativeOrderIndex(sceneB);
+  if (
+    (sceneA.prose_link?.scope_type === 'unlinked' ||
+      !sceneA.prose_link ||
+      sceneB.prose_link?.scope_type === 'unlinked' ||
+      !sceneB.prose_link) &&
+    orderIndexA !== null &&
+    orderIndexB !== null
+  ) {
+    if (orderIndexA !== orderIndexB) {
+      return orderIndexA - orderIndexB;
+    }
+  }
+
+  const scopeBucketA = scopeSortBucket(sceneA.prose_link);
+  const scopeBucketB = scopeSortBucket(sceneB.prose_link);
+  if (scopeBucketA !== scopeBucketB) return scopeBucketA - scopeBucketB;
+
+  // Linked chapter scenes are grouped by chapter display order first.
+  const chIdxA = getProseLinkChapterIndex(sceneA.prose_link, chapterOrderMap);
+  const chIdxB = getProseLinkChapterIndex(sceneB.prose_link, chapterOrderMap);
+
+  if (chIdxA !== null && chIdxB !== null && chIdxA !== chIdxB) {
+    return chIdxA < chIdxB ? -1 : 1;
+  }
+
+  const startOffsetComparison = compareProseLinkStartOffsets(sceneA, sceneB);
+  if (startOffsetComparison !== null) {
+    return startOffsetComparison;
+  }
+
+  // Same scope: sort by stable marker-derived key.
+  const aKey = sceneSortKey(sceneA, chapterOrderMap);
+  const bKey = sceneSortKey(sceneB, chapterOrderMap);
+  if (aKey !== bKey) return aKey - bKey;
+
+  // Fallback: by scene ID
+  return sceneIdCompare(sceneA.id, sceneB.id);
+}
+
+export function getSceneEpochNanoseconds(scene: Scene): bigint | null {
+  const temporalString = scene.scene_time?.temporal_zoned_datetime;
+  const parsed = parseZonedDateTime(temporalString);
+  return parsed?.epochNanoseconds ?? null;
+}
+
+export function chronologicalSort(
+  sceneA: Scene,
+  sceneB: Scene,
+  chapterOrderMap: Map<string, number>,
+  sceneEpochNanosecondsById: Map<SceneId, bigint>
+): number {
+  const epochA = sceneEpochNanosecondsById.get(sceneA.id);
+  const epochB = sceneEpochNanosecondsById.get(sceneB.id);
+  const hasTimeA = epochA !== undefined;
+  const hasTimeB = epochB !== undefined;
+  const hasLinkA = Boolean(sceneA.prose_link);
+  const hasLinkB = Boolean(sceneB.prose_link);
+  const isExtraA = !hasLinkA && !hasTimeA;
+  const isExtraB = !hasLinkB && !hasTimeB;
+
+  // "Not yet linked" extras (no prose link and no valid time) must always
+  // stay at the very end in Chronological mode.
+  if (isExtraA !== isExtraB) return isExtraA ? 1 : -1;
+
+  if (hasTimeA && hasTimeB) {
+    if (epochA < epochB) return -1;
+    if (epochA > epochB) return 1;
+    return proseSort(sceneA, sceneB, chapterOrderMap);
+  }
+
+  // When one or both scenes have no valid time, keep chronology stable by
+  // falling back to prose order so untimed scenes can interleave naturally.
+  return proseSort(sceneA, sceneB, chapterOrderMap);
+}
+
+export function computeCauseOrderViolations(scenes: Scene[]): Set<SceneId> {
+  const orderById = new Map<SceneId, number>();
+  scenes.forEach((scene: Scene, index: number) => orderById.set(scene.id, index));
+
+  const violatingSceneIds = new Set<SceneId>();
+
+  for (const scene of scenes) {
+    const sceneIndex = orderById.get(scene.id);
+    if (sceneIndex === undefined) continue;
+
+    for (const effectId of scene.causes ?? []) {
+      const effectIndex = orderById.get(effectId);
+      if (effectIndex === undefined) continue;
+      if (sceneIndex > effectIndex) {
+        violatingSceneIds.add(scene.id);
+        violatingSceneIds.add(effectId);
+      }
+    }
+  }
+
+  return violatingSceneIds;
+}
+
+export function computeTemporalCauseViolations(scenes: Scene[]): Set<SceneId> {
+  const epochById = new Map<SceneId, bigint>();
+  for (const scene of scenes) {
+    const epoch = getSceneEpochNanoseconds(scene);
+    if (epoch !== null) {
+      epochById.set(scene.id, epoch);
+    }
+  }
+
+  const violatingSceneIds = new Set<SceneId>();
+
+  for (const scene of scenes) {
+    const sourceEpoch = epochById.get(scene.id);
+    if (sourceEpoch === undefined) continue;
+
+    for (const effectId of scene.causes ?? []) {
+      const effectEpoch = epochById.get(effectId);
+      if (effectEpoch === undefined) continue;
+      if (sourceEpoch > effectEpoch) {
+        violatingSceneIds.add(scene.id);
+        violatingSceneIds.add(effectId);
+      }
+    }
+  }
+
+  return violatingSceneIds;
+}

@@ -12,7 +12,7 @@
 
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { AppTheme, SourcebookEntry, SourcebookRelation } from '../../types';
+import { AppTheme, SourcebookEntry, SourcebookRelation, SceneId } from '../../types';
 import { ProjectImage } from '../../services/apiTypes';
 import { SourcebookRelationDialog } from './SourcebookRelationDialog';
 import {
@@ -44,6 +44,12 @@ interface SourcebookEntryDialogViewProps {
   category: string;
   synonyms: string[];
   newSynonym: string;
+  originDate: string | null;
+  destinationDatetime: string | null;
+  destinationRelative: string;
+  createsNewTimeline: boolean;
+  timelineId: string;
+  timelineOptions: Array<{ id: string; label: string }>;
   images: string[];
   relations: SourcebookRelation[];
   relationNameMap: Record<string, string>;
@@ -78,6 +84,11 @@ interface SourcebookEntryDialogViewProps {
   onSynonymInputChange: (value: string) => void;
   onAddSynonym: () => void;
   onRemoveSynonym: (index: number) => void;
+  onOriginDateChange: (value: string | null) => void;
+  onDestinationDatetimeChange: (value: string | null) => void;
+  onDestinationRelativeChange: (value: string) => void;
+  onCreatesNewTimelineChange: (value: boolean) => void;
+  onTimelineIdChange: (value: string) => void;
   onToggleImagesExpanded: () => void;
   onOpenImagePicker: () => void;
   onToggleImage: (filename: string) => void;
@@ -92,6 +103,7 @@ interface SourcebookEntryDialogViewProps {
   onSaveRelation: (relation: SourcebookRelation) => void;
   onCloseRelationDialog: () => void;
   onCloseImagePicker: () => void;
+  sceneReferences: Array<{ id: SceneId; summary: string; roles: string[] }>;
 }
 
 export const SourcebookEntryDialogView: React.FC<SourcebookEntryDialogViewProps> = (
@@ -150,6 +162,17 @@ export const SourcebookEntryDialogView: React.FC<SourcebookEntryDialogViewProps>
     onSynonymInputChange,
     onAddSynonym,
     onRemoveSynonym,
+    originDate,
+    destinationDatetime,
+    destinationRelative,
+    createsNewTimeline,
+    timelineId,
+    timelineOptions,
+    onOriginDateChange,
+    onDestinationDatetimeChange,
+    onDestinationRelativeChange,
+    onCreatesNewTimelineChange,
+    onTimelineIdChange,
     onToggleImagesExpanded,
     onOpenImagePicker,
     onToggleImage,
@@ -164,6 +187,7 @@ export const SourcebookEntryDialogView: React.FC<SourcebookEntryDialogViewProps>
     onSaveRelation,
     onCloseRelationDialog,
     onCloseImagePicker,
+    sceneReferences,
   } = props;
   return createPortal(
     <>
@@ -201,6 +225,12 @@ export const SourcebookEntryDialogView: React.FC<SourcebookEntryDialogViewProps>
               category={category}
               synonyms={synonyms}
               newSynonym={newSynonym}
+              originDate={originDate}
+              destinationDatetime={destinationDatetime}
+              destinationRelative={destinationRelative}
+              createsNewTimeline={createsNewTimeline}
+              timelineId={timelineId}
+              timelineOptions={timelineOptions}
               inputBorderClass={inputBorderClass}
               inputBgClass={inputBgClass}
               labelClass={labelClass}
@@ -212,6 +242,11 @@ export const SourcebookEntryDialogView: React.FC<SourcebookEntryDialogViewProps>
               onSynonymInputChange={onSynonymInputChange}
               onAddSynonym={onAddSynonym}
               onRemoveSynonym={onRemoveSynonym}
+              onOriginDateChange={onOriginDateChange}
+              onDestinationDatetimeChange={onDestinationDatetimeChange}
+              onDestinationRelativeChange={onDestinationRelativeChange}
+              onCreatesNewTimelineChange={onCreatesNewTimelineChange}
+              onTimelineIdChange={onTimelineIdChange}
             />
 
             <SourcebookEntryImagesSection
@@ -262,6 +297,45 @@ export const SourcebookEntryDialogView: React.FC<SourcebookEntryDialogViewProps>
               onDescriptionChange={onDescriptionChange}
               onToggleKeywordsPanel={onToggleKeywordsPanel}
             />
+
+            <div className="space-y-2">
+              <label
+                className={`text-xs font-semibold uppercase tracking-wider ${labelClass}`}
+              >
+                {t('Scenes')}
+              </label>
+              <div
+                className={`rounded-md border ${inputBorderClass} ${inputBgClass} p-3 space-y-2`}
+              >
+                {sceneReferences.length === 0 ? (
+                  <p className={`text-xs ${descriptionTextClass}`}>
+                    {t('This entry is not linked to any scene.')}
+                  </p>
+                ) : (
+                  sceneReferences.map(
+                    (sceneReference: {
+                      id: SceneId;
+                      summary: string;
+                      roles: string[];
+                    }) => (
+                      <div
+                        key={sceneReference.id}
+                        className="text-xs flex items-center justify-between gap-2"
+                      >
+                        <span className={descriptionTextClass}>
+                          {sceneReference.summary || String(sceneReference.id)}
+                        </span>
+                        <span
+                          className={`text-[10px] px-1.5 py-0.5 rounded border ${inputBorderClass} ${labelClass}`}
+                        >
+                          {sceneReference.roles.join(', ')}
+                        </span>
+                      </div>
+                    )
+                  )
+                )}
+              </div>
+            </div>
           </div>
 
           <SourcebookEntryFooter

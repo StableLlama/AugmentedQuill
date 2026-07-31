@@ -117,6 +117,10 @@ npm run check:generated-types
 
 ## 7. Style And Conventions
 
+### Test driven development (TDD)
+
+Implement test cases to cover the user specification first and then implement the solution. Finish with implementing test cases that cover every valid input as well as those that have bad input to test correct error handling, so that any regression is easily detected.
+
 ### Required file headers
 
 - Every new/modified `.py`, `.ts`, `.tsx`, `.js` file must include:
@@ -191,10 +195,11 @@ python tools/check_copyright.py .
 
 ## 9.5 Project File Schema Evolution Rules
 
-- Changes to project/story files must either be backward compatible or explicitly bump the config/schema version.
+- Changes to project/story files must either be intrinsic backward compatible or explicitly bump the config/schema version.
 - Any version bump must include an automatic conversion function from the prior version.
 - Conversions must be chainable step-by-step (for example v2 -> v3 -> v4) so older versions can be upgraded safely through intermediate migrations.
 - Never introduce a breaking project-file format change without a tested migration path.
+- Never introduce code that handles older versions of the files, always relay on the files having the current version and the version conversion scripts are used to make the files compatible. Do not use in project code for backward compatability.
 
 ## 10. Security And Operational Guardrails
 
@@ -205,7 +210,7 @@ python tools/check_copyright.py .
 ## 11. Agent Workflow Heuristics
 
 - Read only what is needed for the current task.
-- Prefer surgical edits over broad rewrites.
+- Prefer surgical edits over broad rewrites. But also do not hesitate a rewrite when that increases maintainability and prevents duplication.
 - After edits, run relevant checks and report concrete outcomes.
 - If failures are unrelated to your change, report them clearly instead of silently changing unrelated code.
 - Preserve existing style and naming in touched files.

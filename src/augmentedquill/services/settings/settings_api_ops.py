@@ -9,9 +9,9 @@
 
 from __future__ import annotations
 
-from typing import Any
-from pathlib import Path
 import json
+from pathlib import Path
+from typing import Any
 
 from augmentedquill.core.config import load_story_config, save_story_config
 from augmentedquill.services.chapters.chapter_helpers import _normalize_chapter_entry
@@ -221,9 +221,7 @@ def clean_machine_openai_cfg_for_put(
             f"Duplicate model name(s) not allowed: {', '.join(sorted(set(dups)))}",
         )
 
-    if not selected:
-        selected = cleaned_models[0].get("name", "")
-    elif selected not in [model.get("name") for model in cleaned_models]:
+    if not selected or selected not in [model.get("name") for model in cleaned_models]:
         selected = cleaned_models[0].get("name", "")
 
     available_names = [model.get("name") for model in cleaned_models]

@@ -7,15 +7,17 @@
 
 """Defines the test sourcebook unit so this responsibility stays isolated, testable, and easy to evolve."""
 
-import tempfile
 import os
+import tempfile
 from pathlib import Path
 from unittest import TestCase
+
 from augmentedquill.services.sourcebook.sourcebook_helpers import (
+    sourcebook_add_relation,
     sourcebook_create_entry,
+    sourcebook_delete_entry,
     sourcebook_get_entry,
     sourcebook_search_entries,
-    sourcebook_delete_entry,
 )
 
 
@@ -101,3 +103,94 @@ class SourcebookTest(TestCase):
         self.assertTrue(deleted)
 
         self.assertIsNone(sourcebook_get_entry(entry["id"]))
+
+    def test_sourcebook_relation_uses_integer_scene_bounds(self):
+        first = sourcebook_create_entry(
+            name="FirstCharacter",
+            description="A test character.",
+            category="character",
+            synonyms=["First"],
+        )
+        second = sourcebook_create_entry(
+            name="SecondCharacter",
+            description="Another test character.",
+            category="character",
+            synonyms=["Second"],
+        )
+
+        result = sourcebook_add_relation(
+            source_id=first["id"],
+            relation_type="knows",
+            target_id=second["id"],
+            start_scene=1,
+            end_scene=2,
+        )
+
+        self.assertTrue(result.get("ok"))
+        entry = sourcebook_get_entry(first["id"])
+        self.assertIsNotNone(entry)
+        relations = entry.get("relations") or []
+        self.assertEqual(len(relations), 1)
+        self.assertEqual(relations[0].get("start_scene"), 1)
+        self.assertEqual(relations[0].get("end_scene"), 2)
+        self.assertNotIn("start_chapter", relations[0])
+        self.assertNotIn("end_chapter", relations[0])
+
+    def test_sourcebook_relation_rejects_string_scene_ids(self):
+        first = sourcebook_create_entry(
+            name="FirstCharacter",
+            description="A test character.",
+            category="character",
+            synonyms=["First"],
+        )
+        second = sourcebook_create_entry(
+            name="SecondCharacter",
+            description="Another test character.",
+            category="character",
+            synonyms=["Second"],
+        )
+
+        result = sourcebook_add_relation(
+            source_id=first["id"],
+            relation_type="knows",
+            target_id=second["id"],
+            start_scene="1",
+            end_scene="2",
+        )
+
+        self.assertIn("error", result)
+        self.assertEqual(
+            result["error"], "Invalid start_scene: scene IDs must be integers."
+        )
+
+    def test_sourcebook_relation_accepts_integer_scene_ids(self):
+        first = sourcebook_create_entry(
+            name="FirstCharacter",
+            description="A test character.",
+            category="character",
+            synonyms=["First"],
+        )
+        second = sourcebook_create_entry(
+            name="SecondCharacter",
+            description="Another test character.",
+            category="character",
+            synonyms=["Second"],
+        )
+
+        result = sourcebook_add_relation(
+            source_id=first["id"],
+            relation_type="knows",
+            target_id=second["id"],
+            start_scene=1,
+            end_scene=2,
+        )
+
+        self.assertTrue(result.get("ok"))
+        entry = sourcebook_get_entry(first["id"])
+        self.assertIsNotNone(entry)
+        relations = entry.get("relations") or []
+        self.assertEqual(len(relations), 1)
+        self.assertEqual(relations[0].get("start_scene"), 1)
+        self.assertEqual(relations[0].get("end_scene"), 2)
+        self.assertNotIn("start_chapter", relations[0])
+        self.assertNotIn("end_chapter", relations[0])

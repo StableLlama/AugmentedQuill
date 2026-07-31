@@ -833,11 +833,10 @@ export interface paths {
     put?: never;
     /**
      * Api Story Sourcebook Relevance
-     * @description Ask the WRITING model which sourcebook entries are relevant.
+     * @description Return scene-derived sourcebook entries relevant to the active prose end.
      *
-     *     This is a lightweight helper used by the frontend to keep checkboxes
-     *     in sync.  It is deliberately separate from the prose suggestion call so
-     *     that we can run it in the background on every text change.
+     *     This runs in the background while the user types, so it must stay
+     *     deterministic, cheap, and free of LLM latency.
      */
     post: operations['api_story_sourcebook_relevance_api_v1_projects__project_name__story_sourcebook_relevance_post'];
     delete?: never;
@@ -960,6 +959,29 @@ export interface paths {
      * @description Stream generic AI Actions (Extend/Rewrite/Summary update).
      */
     post: operations['api_story_action_stream_api_v1_projects__project_name__story_action_stream_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/projects/{project_name}/chapters/{chap_id}/rewrite-and-relink': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Api Chapter Rewrite And Relink
+     * @description Atomically rewrite a chapter and auto-link scenes in one transaction.
+     *
+     *     This endpoint streams the generated content and persists it,
+     *     then performs scene auto-linking on the resulting text.
+     */
+    post: operations['api_chapter_rewrite_and_relink_api_v1_projects__project_name__chapters__chap_id__rewrite_and_relink_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -1547,6 +1569,320 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/projects/{project_name}/scenes': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Scenes
+     * @description List all scenes for the project, with staleness flags on prose links.
+     */
+    get: operations['get_scenes_api_v1_projects__project_name__scenes_get'];
+    put?: never;
+    /**
+     * Create New Scene
+     * @description Create a new scene.
+     */
+    post: operations['create_new_scene_api_v1_projects__project_name__scenes_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/projects/{project_name}/scenes/{scene_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Single Scene
+     * @description Fetch a single scene by ID.
+     */
+    get: operations['get_single_scene_api_v1_projects__project_name__scenes__scene_id__get'];
+    /**
+     * Update Existing Scene
+     * @description Update an existing scene (partial – only provided fields are changed).
+     */
+    put: operations['update_existing_scene_api_v1_projects__project_name__scenes__scene_id__put'];
+    post?: never;
+    /**
+     * Delete Existing Scene
+     * @description Delete a scene and remove it from all order constraints.
+     */
+    delete: operations['delete_existing_scene_api_v1_projects__project_name__scenes__scene_id__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/projects/{project_name}/scenes/{scene_id}/link-prose': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Link Scene Prose
+     * @description Assign a prose-text range to a scene using inline file markers.
+     */
+    post: operations['link_scene_prose_api_v1_projects__project_name__scenes__scene_id__link_prose_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/projects/{project_name}/scenes/batch-link-prose': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Batch Link Scene Prose
+     * @description Atomically unlink and relink multiple scenes in one scope.
+     *
+     *     All assignments are processed in a single pass so touching boundaries
+     *     do not get replayed through repeated single-scene edits that can split
+     *     freshly inserted markers.
+     */
+    post: operations['batch_link_scene_prose_api_v1_projects__project_name__scenes_batch_link_prose_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/projects/{project_name}/scenes/{scene_id}/unlink-prose': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Unlink Scene Prose
+     * @description Remove the prose link from a scene, preserving its narrative position.
+     *
+     *     Returns all scenes affected in the same prose scope.
+     */
+    post: operations['unlink_scene_prose_api_v1_projects__project_name__scenes__scene_id__unlink_prose_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/projects/{project_name}/scenes/reorder-prose': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Reorder Scene Prose Route
+     * @description Reorder linked prose blocks and persist marker-aware offsets.
+     */
+    post: operations['reorder_scene_prose_route_api_v1_projects__project_name__scenes_reorder_prose_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/projects/{project_name}/scenes/{scene_id}/prose-content': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Update Scene Prose Content
+     * @description Replace the text between a scene's inline start/end markers.
+     */
+    patch: operations['update_scene_prose_content_api_v1_projects__project_name__scenes__scene_id__prose_content_patch'];
+    trace?: never;
+  };
+  '/api/v1/projects/{project_name}/scenes/detect-boundaries': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Detect Boundaries For Scenes
+     * @description Detect scene boundaries in a prose segment and relink affected scenes.
+     */
+    post: operations['detect_boundaries_for_scenes_api_v1_projects__project_name__scenes_detect_boundaries_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/projects/{project_name}/scenes/{scene_id}/write': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Write Scene Prose
+     * @description Generate prose for one scene and automatically link generated boundaries.
+     */
+    post: operations['write_scene_prose_api_v1_projects__project_name__scenes__scene_id__write_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/projects/{project_name}/scenes/auto-link-scope': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Auto Link Saved Scope
+     * @description Auto-link a saved prose scope to the scenes that belong to it.
+     */
+    post: operations['auto_link_saved_scope_api_v1_projects__project_name__scenes_auto_link_scope_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/projects/{project_name}/annotations': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Api List Annotations
+     * @description List all annotations for the project.
+     */
+    get: operations['api_list_annotations_api_v1_projects__project_name__annotations_get'];
+    put?: never;
+    /**
+     * Api Create Annotation
+     * @description Create a new inline annotation.
+     */
+    post: operations['api_create_annotation_api_v1_projects__project_name__annotations_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/projects/{project_name}/annotations/scope': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Api List Annotations For Scope
+     * @description List annotations for a specific prose scope.
+     */
+    get: operations['api_list_annotations_for_scope_api_v1_projects__project_name__annotations_scope_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/projects/{project_name}/annotations/{annotation_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Api Get Annotation
+     * @description Fetch a single annotation by ID.
+     */
+    get: operations['api_get_annotation_api_v1_projects__project_name__annotations__annotation_id__get'];
+    /**
+     * Api Update Annotation
+     * @description Update an annotation's comment.
+     */
+    put: operations['api_update_annotation_api_v1_projects__project_name__annotations__annotation_id__put'];
+    post?: never;
+    /**
+     * Api Delete Annotation
+     * @description Delete an annotation and remove its inline markers.
+     */
+    delete: operations['api_delete_annotation_api_v1_projects__project_name__annotations__annotation_id__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/projects/{project_name}/view-state': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get View State
+     * @description Return the saved view state for the project, with defaults for missing fields.
+     */
+    get: operations['get_view_state_api_v1_projects__project_name__view_state_get'];
+    /**
+     * Put View State
+     * @description Persist view state for the project.
+     */
+    put: operations['put_view_state_api_v1_projects__project_name__view_state_put'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/health': {
     parameters: {
       query?: never;
@@ -1588,6 +1924,65 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    /**
+     * AnnotationResponse
+     * @description A single annotation with runtime offsets attached.
+     */
+    AnnotationResponse: {
+      /** Id */
+      id: string;
+      /** Comment */
+      comment: string;
+      /** Scope Type */
+      scope_type: string;
+      /** Chapter Id */
+      chapter_id?: string | null;
+      /** Book Id */
+      book_id?: string | null;
+      /** Start Offset */
+      start_offset?: number | null;
+      /** End Offset */
+      end_offset?: number | null;
+    };
+    /**
+     * AutoLinkScopeRequest
+     * @description Body for auto-linking a saved prose scope to its scenes.
+     */
+    AutoLinkScopeRequest: {
+      /**
+       * Scope Type
+       * @default chapter
+       * @enum {string}
+       */
+      scope_type: 'story' | 'chapter' | 'unlinked';
+      /** Chapter Id */
+      chapter_id?: string | null;
+      /** Book Id */
+      book_id?: string | null;
+      /** Scene Ids */
+      scene_ids?: number[];
+      /**
+       * Start Offset
+       * @default 0
+       */
+      start_offset: number;
+      /** End Offset */
+      end_offset?: number | null;
+      /** Prose Text */
+      prose_text?: string | null;
+      /** Current Text */
+      current_text: string;
+    };
+    /**
+     * AutoLinkScopeResponse
+     * @description Response for auto-linking a saved prose scope to its scenes.
+     */
+    AutoLinkScopeResponse: {
+      /** Assignments */
+      assignments?: components['schemas']['SceneBoundaryAssignment'][];
+      /** Scenes */
+      scenes?: components['schemas']['Scene'][];
+    };
     /** Body_api_projects_images_upload_api_v1_projects_images_upload_post */
     Body_api_projects_images_upload_api_v1_projects_images_upload_post: {
       /** File */
@@ -1871,6 +2266,42 @@ export interface components {
     CheckpointLoadDeleteRequest: {
       /** Timestamp */
       timestamp: string;
+    };
+    /**
+     * CreateAnnotationRequest
+     * @description Payload for creating a new annotation.
+     */
+    CreateAnnotationRequest: {
+      /**
+       * Scope Type
+       * @description 'story', 'chapter', or 'unlinked'
+       */
+      scope_type: string;
+      /**
+       * Chapter Id
+       * @description Chapter ID for chapter scope
+       */
+      chapter_id?: string | null;
+      /**
+       * Book Id
+       * @description Book ID for nested chapter scope
+       */
+      book_id?: string | null;
+      /**
+       * Start Offset
+       * @description Raw character offset (markers included)
+       */
+      start_offset: number;
+      /**
+       * End Offset
+       * @description Raw character offset (markers included)
+       */
+      end_offset: number;
+      /**
+       * Comment
+       * @description Human-readable annotation comment
+       */
+      comment: string;
     };
     /**
      * DebugLogEntry
@@ -2524,6 +2955,584 @@ export interface components {
       match_index: number;
     };
     /**
+     * Scene
+     * @description A narrative scene used for structural story planning.
+     *
+     *     Active characters, passive characters, location, and time are stored as
+     *     sourcebook entry IDs so the frontend can look them up by reference.
+     *
+     *     ``causes`` stores IDs of other scenes that this scene causally precedes.
+     *     These are not narrative order indexes; they are dependency constraints that
+     *     allow the pinboard to highlight cause/effect relationships.
+     *
+     *     ``pinboard_x`` / ``pinboard_y`` store the card's free-form position on the
+     *     pinboard canvas, in logical (unscaled) units.
+     */
+    Scene: {
+      /** Id */
+      id: number;
+      /**
+       * Summary
+       * @default
+       */
+      summary: string;
+      /**
+       * Beats
+       * @default []
+       */
+      beats: components['schemas']['SceneBeat'][];
+      /**
+       * Active Characters
+       * @default []
+       */
+      active_characters: string[];
+      /**
+       * Passive Characters
+       * @default []
+       */
+      passive_characters: string[];
+      /**
+       * Sourcebook Entry Ids
+       * @default []
+       */
+      sourcebook_entry_ids: string[];
+      /** Location */
+      location?: string | null;
+      /** Time */
+      time?: string | null;
+      scene_time?: components['schemas']['SceneChronologyTime'] | null;
+      /**
+       * Timeline Id
+       * @default main
+       */
+      timeline_id: string;
+      /** Color Tag */
+      color_tag?: string | null;
+      prose_link?: components['schemas']['SceneProseLink'] | null;
+      /**
+       * Causes
+       * @default []
+       */
+      causes: number[];
+      /**
+       * Pinboard X
+       * @default 100
+       */
+      pinboard_x: number;
+      /**
+       * Pinboard Y
+       * @default 100
+       */
+      pinboard_y: number;
+      /**
+       * Status
+       * @default active
+       */
+      status: string;
+      /** Tag Personal Datetimes */
+      tag_personal_datetimes?: components['schemas']['SceneTagPersonalDatetime'][];
+      /**
+       * Annotations
+       * @description Optional inline annotations associated with this scene.
+       */
+      annotations?: components['schemas']['SceneAnnotation'][];
+    };
+    /**
+     * SceneAnnotation
+     * @description Inline annotation metadata mirrored from prose markers.
+     */
+    SceneAnnotation: {
+      /**
+       * Id
+       * @description Stable annotation identifier.
+       */
+      id: string;
+      /**
+       * Comment
+       * @description Human-readable annotation comment.
+       */
+      comment: string;
+      /**
+       * Scope Type
+       * @description Scope where the annotation lives.
+       * @default story
+       * @enum {string}
+       */
+      scope_type: 'story' | 'chapter' | 'unlinked';
+      /**
+       * Chapter Id
+       * @description Chapter ID when scope_type='chapter'.
+       */
+      chapter_id?: string | null;
+      /**
+       * Book Id
+       * @description Book ID when scope_type='chapter' and the chapter is nested.
+       */
+      book_id?: string | null;
+    };
+    /**
+     * SceneBatchLinkProseRequest
+     * @description Batch variant: atomically unlink and relink multiple scenes in one scope.
+     *
+     *     ``assignments`` are processed together with ``relink_scope_prose`` so
+     *     touching boundaries are never replayed through sequential single-scene
+     *     edits that can split freshly inserted markers.
+     */
+    SceneBatchLinkProseRequest: {
+      /**
+       * Scope Type
+       * @default story
+       */
+      scope_type: string;
+      /** Chapter Id */
+      chapter_id?: string | null;
+      /** Book Id */
+      book_id?: string | null;
+      /** Assignments */
+      assignments?: components['schemas']['SceneBoundaryAssignment'][];
+      /** Unlink Ids */
+      unlink_ids?: number[];
+    };
+    /**
+     * SceneBeat
+     * @description A single beat within a scene – a discrete micro-action or plot step.
+     */
+    SceneBeat: {
+      /**
+       * Id
+       * @description Stable beat identifier. Usually generated automatically.
+       */
+      id?: string;
+      /**
+       * Text
+       * @description Short description of the beat's action or event.
+       */
+      text: string;
+      /** @description Optional link from this beat to a specific prose range. */
+      prose_link?: components['schemas']['SceneProseLink'] | null;
+    };
+    /**
+     * SceneBoundaryAssignment
+     * @description One scene-to-prose boundary mapping in absolute offsets.
+     */
+    SceneBoundaryAssignment: {
+      /** Scene Id */
+      scene_id: number;
+      /** Start Offset */
+      start_offset: number;
+      /** End Offset */
+      end_offset: number;
+    };
+    /**
+     * SceneChronologyTime
+     * @description Scene-local timeline point represented as a Temporal ZonedDateTime string.
+     */
+    SceneChronologyTime: {
+      /**
+       * Temporal Zoned Datetime
+       * @description Normalized ISO 8601 timestamp for the scene's chronology.
+       */
+      temporal_zoned_datetime: string;
+      /**
+       * Value
+       * @description Optional shorthand scene time string accepted by the tool. When provided, it is normalized into temporal_zoned_datetime.
+       */
+      value?: string | null;
+    };
+    /**
+     * SceneCreateRequest
+     * @description Payload for creating a new scene.
+     */
+    SceneCreateRequest: {
+      /**
+       * Summary
+       * @description Scene summary / label. Scenes do not have a separate title field; use this field instead. Keep it short, specific, and suitable for a scene card heading.
+       * @default
+       */
+      summary: string;
+      /**
+       * Beats
+       * @description Optional ordered beats inside the scene. Use when the scene needs a micro-beat breakdown.
+       */
+      beats?: components['schemas']['SceneBeat'][];
+      /**
+       * Active Characters
+       * @description Character IDs actively participating in the scene. Use sourcebook/character IDs, not display names, when available.
+       */
+      active_characters?: string[];
+      /**
+       * Passive Characters
+       * @description Character IDs present but not actively driving the scene. Use sourcebook/character IDs, not display names, when available.
+       */
+      passive_characters?: string[];
+      /**
+       * Sourcebook Entry Ids
+       * @description Sourcebook entry IDs needed to ground the scene's facts, setting, or canon references. Always include relevant sourcebook entries when creating a scene so the scene remains connected to existing world knowledge.
+       */
+      sourcebook_entry_ids?: string[];
+      /**
+       * Location
+       * @description Location identifier or location name for where the scene occurs.
+       */
+      location?: string | null;
+      /**
+       * Time
+       * @description Human-readable scene time string when a formal chronology is not needed.
+       */
+      time?: string | null;
+      /** @description Formal timeline position for the scene. Always set this when the scene can be placed on the story timeline; if an exact timestamp is not known, use causes to capture relative chronology. Accepts ISO-like timestamps and normalizes them. */
+      scene_time?: components['schemas']['SceneChronologyTime'] | null;
+      /**
+       * Timeline Id
+       * @description Explicit timeline identity for this scene. Use 'main' for the primary timeline and stable IDs for branch timelines.
+       * @default main
+       */
+      timeline_id: string;
+      /**
+       * Color Tag
+       * @description Optional color label for the scene card, usually a hex string.
+       */
+      color_tag?: string | null;
+      /** @description Optional prose link showing which content file the scene is linked to prose. Use this when the scene is already anchored to prose. */
+      prose_link?: components['schemas']['SceneProseLink'] | null;
+      /**
+       * Causes
+       * @description IDs of scenes that this scene causally precedes. Use this to record cause/effect relationships without changing narrative order directly.
+       * @example [
+       *       1,
+       *       2
+       *     ]
+       */
+      causes?: number[];
+      /**
+       * Pinboard X
+       * @description Pinboard X position in logical canvas units.
+       * @default 100
+       */
+      pinboard_x: number;
+      /**
+       * Pinboard Y
+       * @description Pinboard Y position in logical canvas units.
+       * @default 100
+       */
+      pinboard_y: number;
+      /**
+       * Status
+       * @description Scene lifecycle status such as active, inactive, or draft.
+       * @default active
+       */
+      status: string;
+      /**
+       * Tag Personal Datetimes
+       * @description Per-tag personal age overrides used for time-travel or age-specific ordering. Leave empty unless you need those overrides.
+       */
+      tag_personal_datetimes?: components['schemas']['SceneTagPersonalDatetime'][];
+    };
+    /**
+     * SceneDetectBoundariesRequest
+     * @description Payload for boundary detection + optional automatic scene relinking.
+     */
+    SceneDetectBoundariesRequest: {
+      /**
+       * Scope Type
+       * @default chapter
+       * @enum {string}
+       */
+      scope_type: 'story' | 'chapter' | 'unlinked';
+      /** Chapter Id */
+      chapter_id?: string | null;
+      /** Book Id */
+      book_id?: string | null;
+      /** Scene Ids */
+      scene_ids?: number[];
+      /**
+       * Start Offset
+       * @default 0
+       */
+      start_offset: number;
+      /** End Offset */
+      end_offset?: number | null;
+      /** Prose Text */
+      prose_text?: string | null;
+    };
+    /**
+     * SceneDetectBoundariesResponse
+     * @description Result of boundary detection + link updates.
+     */
+    SceneDetectBoundariesResponse: {
+      /** Assignments */
+      assignments?: components['schemas']['SceneBoundaryAssignment'][];
+      /** Scenes */
+      scenes?: components['schemas']['Scene'][];
+    };
+    /**
+     * SceneLinkProseRequest
+     * @description Payload for assigning a prose-text range to a scene.
+     *
+     *     The offsets are UTF-8 character positions within the referenced content
+     *     file.  Validation against existing scene links happens in the service.
+     */
+    SceneLinkProseRequest: {
+      /**
+       * Scope Type
+       * @default story
+       */
+      scope_type: string;
+      /** Chapter Id */
+      chapter_id?: string | null;
+      /** Book Id */
+      book_id?: string | null;
+      /** Start Offset */
+      start_offset: number;
+      /** End Offset */
+      end_offset: number;
+    };
+    /**
+     * SceneProseLink
+     * @description A link between a scene (or beat) and a specific content file.
+     *
+     *         ``scope_type`` distinguishes between:
+     *     - ``'story'`` – the main story content file (short-story projects)
+     *     - ``'chapter'`` – a specific chapter file (novel / series projects)
+     *         - ``'unlinked'`` – internal planning prose for scenes not attached to
+     *             story/chapter content
+     *
+     *     Only the file identity is persisted.  ``start_offset`` and ``end_offset``
+     *     are character positions derived at read time by parsing the inline HTML
+     *     comment markers embedded in the content file (see ``scene_markers.py``).
+     *     They are populated by the service layer before returning scenes to the API
+     *     and are excluded from disk storage.
+     */
+    SceneProseLink: {
+      /**
+       * Scope Type
+       * @description Which content scope the scene is linked to: 'story', 'chapter', or internal 'unlinked'.
+       * @enum {string}
+       */
+      scope_type: 'story' | 'chapter' | 'unlinked';
+      /**
+       * Chapter Id
+       * @description Chapter ID when scope_type='chapter'. Leave empty for story or unlinked scope.
+       */
+      chapter_id?: string | null;
+      /**
+       * Book Id
+       * @description Book ID when the linked prose belongs to a book chapter. Leave empty for story or unlinked scope.
+       */
+      book_id?: string | null;
+      /**
+       * Start Offset
+       * @description Computed start offset within the linked content file.
+       */
+      start_offset?: number | null;
+      /**
+       * End Offset
+       * @description Computed end offset within the linked content file.
+       */
+      end_offset?: number | null;
+    };
+    /**
+     * SceneReorderProseRequest
+     * @description Payload for reordering scenes within a linked prose scope.
+     */
+    SceneReorderProseRequest: {
+      /** Source Scene Id */
+      source_scene_id: number;
+      /** Target Scene Id */
+      target_scene_id: number;
+      /**
+       * Place Before
+       * @default true
+       */
+      place_before: boolean;
+    };
+    /**
+     * SceneReorderProseResponse
+     * @description Result of a prose reorder transaction.
+     */
+    SceneReorderProseResponse: {
+      /** Scenes */
+      scenes: components['schemas']['Scene'][];
+      /** Scope Type */
+      scope_type: string;
+      /** Chapter Id */
+      chapter_id?: string | null;
+      /** Book Id */
+      book_id?: string | null;
+      /** Scope Start */
+      scope_start: number;
+      /** Scope End */
+      scope_end: number;
+      /** Rebuilt Text */
+      rebuilt_text: string;
+    };
+    /**
+     * SceneTagPersonalDatetime
+     * @description Personal age override for a single scene tag.
+     *
+     *     ``role`` is ``'active'``, ``'passive'``, or ``'sourcebook'``.
+     *     ``ref`` is the character name (for active/passive) or sourcebook entry ID
+     *     (for sourcebook).
+     *     ``index`` is the 0-based position within the role's list – this allows
+     *     the same character to appear multiple times in one scene (e.g. a time
+     *     traveller meeting their younger self).
+     *     ``personal_age`` is a human-readable age string such as ``'17y'``,
+     *     ``'17y 3m'``, ``'5m 12d'``, or ``'30d'``.
+     */
+    SceneTagPersonalDatetime: {
+      /**
+       * Role
+       * @description Which tag list this override applies to.
+       * @enum {string}
+       */
+      role: 'active' | 'passive' | 'sourcebook';
+      /**
+       * Ref
+       * @description Character name or sourcebook entry ID for the tag.
+       */
+      ref: string;
+      /**
+       * Index
+       * @description 0-based position within the chosen tag list. Use this when the same character appears multiple times.
+       * @default 0
+       */
+      index: number;
+      /**
+       * Personal Age
+       * @description Human-readable age such as '17y', '17y 3m', or '30d'.
+       */
+      personal_age: string;
+    };
+    /**
+     * SceneUpdateProseContentRequest
+     * @description Payload for replacing the prose text between a scene's inline markers.
+     */
+    SceneUpdateProseContentRequest: {
+      /** Text */
+      text: string;
+    };
+    /**
+     * SceneUpdateRequest
+     * @description Payload for updating an existing scene.
+     */
+    SceneUpdateRequest: {
+      /**
+       * Summary
+       * @description Replacement scene label/summary. Use this instead of a title.
+       */
+      summary?: string | null;
+      /**
+       * Beats
+       * @description Full replacement beat list for the scene.
+       */
+      beats?: components['schemas']['SceneBeat'][] | null;
+      /**
+       * Active Characters
+       * @description Full replacement list of active character IDs.
+       */
+      active_characters?: string[] | null;
+      /**
+       * Passive Characters
+       * @description Full replacement list of passive character IDs.
+       */
+      passive_characters?: string[] | null;
+      /**
+       * Sourcebook Entry Ids
+       * @description Full replacement list of sourcebook entry IDs.
+       */
+      sourcebook_entry_ids?: string[] | null;
+      /**
+       * Location
+       * @description Replacement location identifier or name.
+       */
+      location?: string | null;
+      /**
+       * Time
+       * @description Replacement human-readable time string.
+       */
+      time?: string | null;
+      /** @description Replacement formal chronology timestamp for the scene. */
+      scene_time?: components['schemas']['SceneChronologyTime'] | null;
+      /**
+       * Timeline Id
+       * @description Replacement explicit timeline identity for the scene.
+       */
+      timeline_id?: string | null;
+      /**
+       * Color Tag
+       * @description Replacement card color tag.
+       */
+      color_tag?: string | null;
+      /** @description Replacement prose link for the scene. */
+      prose_link?: components['schemas']['SceneProseLink'] | null;
+      /**
+       * Causes
+       * @description Replacement list of scene IDs that this scene causally precedes.
+       * @example [
+       *       1,
+       *       2
+       *     ]
+       */
+      causes?: number[] | null;
+      /**
+       * Pinboard X
+       * @description Replacement pinboard X position.
+       */
+      pinboard_x?: number | null;
+      /**
+       * Pinboard Y
+       * @description Replacement pinboard Y position.
+       */
+      pinboard_y?: number | null;
+      /**
+       * Status
+       * @description Replacement lifecycle status such as active, inactive, or draft.
+       */
+      status?: string | null;
+      /**
+       * Tag Personal Datetimes
+       * @description Replacement per-tag personal age overrides. Use None to leave the field unchanged, or an explicit list to replace it.
+       */
+      tag_personal_datetimes?:
+        | components['schemas']['SceneTagPersonalDatetime'][]
+        | null;
+    };
+    /**
+     * SceneWriteRequest
+     * @description Payload for generating prose for one scene and linking the result.
+     */
+    SceneWriteRequest: {
+      /** Scope Type */
+      scope_type?: ('story' | 'chapter' | 'unlinked') | null;
+      /** Chapter Id */
+      chapter_id?: string | null;
+      /** Book Id */
+      book_id?: string | null;
+      /**
+       * Include Following Scenes
+       * @default 1
+       */
+      include_following_scenes: number;
+      /**
+       * Detect Boundaries
+       * @default true
+       */
+      detect_boundaries: boolean;
+    };
+    /**
+     * SceneWriteResponse
+     * @description Result of writing one scene and relinking affected scenes.
+     */
+    SceneWriteResponse: {
+      scene: components['schemas']['Scene'];
+      /** Generated Text */
+      generated_text: string;
+      /** Assignments */
+      assignments?: components['schemas']['SceneBoundaryAssignment'][];
+      /** Scenes */
+      scenes?: components['schemas']['Scene'][];
+    };
+    /**
      * SearchMatch
      * @description A single occurrence of the query in a body of text.
      */
@@ -2679,6 +3688,19 @@ export interface components {
        * @default []
        */
       relations: components['schemas']['SourcebookRelation'][];
+      /** Origin Date */
+      origin_date?: string | null;
+      /** Destination Datetime */
+      destination_datetime?: string | null;
+      /** Destination Relative */
+      destination_relative?: string | null;
+      /**
+       * Creates New Timeline
+       * @default false
+       */
+      creates_new_timeline: boolean;
+      /** Timeline Id */
+      timeline_id?: string | null;
     };
     /**
      * SourcebookEntryCreate
@@ -2706,6 +3728,19 @@ export interface components {
        * @default []
        */
       relations: components['schemas']['SourcebookRelation'][];
+      /** Origin Date */
+      origin_date?: string | null;
+      /** Destination Datetime */
+      destination_datetime?: string | null;
+      /** Destination Relative */
+      destination_relative?: string | null;
+      /**
+       * Creates New Timeline
+       * @default false
+       */
+      creates_new_timeline: boolean;
+      /** Timeline Id */
+      timeline_id?: string | null;
     };
     /**
      * SourcebookEntryUpdate
@@ -2724,6 +3759,16 @@ export interface components {
       images?: string[] | null;
       /** Relations */
       relations?: components['schemas']['SourcebookRelation'][] | null;
+      /** Origin Date */
+      origin_date?: string | null;
+      /** Destination Datetime */
+      destination_datetime?: string | null;
+      /** Destination Relative */
+      destination_relative?: string | null;
+      /** Creates New Timeline */
+      creates_new_timeline?: boolean | null;
+      /** Timeline Id */
+      timeline_id?: string | null;
     };
     /**
      * SourcebookKeywordsRequest
@@ -2759,12 +3804,12 @@ export interface components {
        * @default forward
        */
       direction: string | null;
-      /** Start Chapter */
-      start_chapter?: string | null;
+      /** Start Scene */
+      start_scene?: number | null;
       /** Start Book */
       start_book?: string | null;
-      /** End Chapter */
-      end_chapter?: string | null;
+      /** End Scene */
+      end_scene?: number | null;
       /** End Book */
       end_book?: string | null;
     };
@@ -2848,6 +3893,8 @@ export interface components {
       private_notes?: string | null;
       /** Tags */
       tags?: string[] | null;
+      /** Annotations */
+      annotations?: unknown[] | null;
       /** Image Style */
       image_style?: string | null;
       /** Image Additional Info */
@@ -2863,6 +3910,8 @@ export interface components {
       llm_prefs?: components['schemas']['StoryLLMPrefs'] | null;
       /** Chapters */
       chapters?: components['schemas']['StoryChapterSummary'][] | null;
+      /** Scenes */
+      scenes?: components['schemas']['Scene'][] | null;
     };
     /**
      * StorySourcebookEntry
@@ -2885,6 +3934,16 @@ export interface components {
       keywords?: string[] | null;
       /** Relations */
       relations?: unknown[] | null;
+      /** Origin Date */
+      origin_date?: string | null;
+      /** Destination Datetime */
+      destination_datetime?: string | null;
+      /** Destination Relative */
+      destination_relative?: string | null;
+      /** Creates New Timeline */
+      creates_new_timeline?: boolean | null;
+      /** Timeline Id */
+      timeline_id?: string | null;
     };
     /**
      * StorySummaryResponse
@@ -2910,6 +3969,14 @@ export interface components {
       /** Detail */
       detail?: string | null;
     };
+    /**
+     * UpdateAnnotationRequest
+     * @description Payload for updating an annotation's comment.
+     */
+    UpdateAnnotationRequest: {
+      /** Comment */
+      comment: string;
+    };
     /** ValidationError */
     ValidationError: {
       /** Location */
@@ -2922,6 +3989,44 @@ export interface components {
       input?: unknown;
       /** Context */
       ctx?: Record<string, never>;
+    };
+    /**
+     * ViewStatePayload
+     * @description View state for a single project.
+     *
+     *     All fields are optional so partial updates are safe; the service layer
+     *     fills missing fields with defaults on load.
+     */
+    ViewStatePayload: {
+      /** Current Chapter Id */
+      current_chapter_id?: string | null;
+      /**
+       * Scroll Position
+       * @default 0
+       */
+      scroll_position: number;
+      /**
+       * Workspace Mode
+       * @default page
+       */
+      workspace_mode: string;
+      /**
+       * Scenes View Type
+       * @default narrative
+       */
+      scenes_view_type: string;
+    };
+    /**
+     * ViewStateResponse
+     * @description Response body for view state endpoints.
+     */
+    ViewStateResponse: {
+      /**
+       * Ok
+       * @default true
+       */
+      ok: boolean;
+      view_state?: components['schemas']['ViewStatePayload'] | null;
     };
     /**
      * OkResponse
@@ -4501,6 +5606,39 @@ export interface operations {
       };
     };
   };
+  api_chapter_rewrite_and_relink_api_v1_projects__project_name__chapters__chap_id__rewrite_and_relink_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        chap_id: number;
+        /** @description Directory name of the project */
+        project_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   api_story_title_api_v1_projects__project_name__story_title_post: {
     parameters: {
       query?: never;
@@ -5507,6 +6645,736 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['ReplaceResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_scenes_api_v1_projects__project_name__scenes_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Directory name of the project */
+        project_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Scene'][];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  create_new_scene_api_v1_projects__project_name__scenes_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Directory name of the project */
+        project_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SceneCreateRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Scene'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_single_scene_api_v1_projects__project_name__scenes__scene_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        scene_id: number;
+        /** @description Directory name of the project */
+        project_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Scene'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  update_existing_scene_api_v1_projects__project_name__scenes__scene_id__put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        scene_id: number;
+        /** @description Directory name of the project */
+        project_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SceneUpdateRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Scene'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  delete_existing_scene_api_v1_projects__project_name__scenes__scene_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        scene_id: number;
+        /** @description Directory name of the project */
+        project_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  link_scene_prose_api_v1_projects__project_name__scenes__scene_id__link_prose_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        scene_id: number;
+        /** @description Directory name of the project */
+        project_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SceneLinkProseRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Scene'][];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  batch_link_scene_prose_api_v1_projects__project_name__scenes_batch_link_prose_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Directory name of the project */
+        project_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SceneBatchLinkProseRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Scene'][];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  unlink_scene_prose_api_v1_projects__project_name__scenes__scene_id__unlink_prose_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        scene_id: number;
+        /** @description Directory name of the project */
+        project_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Scene'][];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  reorder_scene_prose_route_api_v1_projects__project_name__scenes_reorder_prose_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Directory name of the project */
+        project_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SceneReorderProseRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SceneReorderProseResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  update_scene_prose_content_api_v1_projects__project_name__scenes__scene_id__prose_content_patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        scene_id: number;
+        /** @description Directory name of the project */
+        project_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SceneUpdateProseContentRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Scene'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  detect_boundaries_for_scenes_api_v1_projects__project_name__scenes_detect_boundaries_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Directory name of the project */
+        project_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SceneDetectBoundariesRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SceneDetectBoundariesResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  write_scene_prose_api_v1_projects__project_name__scenes__scene_id__write_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        scene_id: number;
+        /** @description Directory name of the project */
+        project_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SceneWriteRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SceneWriteResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  auto_link_saved_scope_api_v1_projects__project_name__scenes_auto_link_scope_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Directory name of the project */
+        project_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['AutoLinkScopeRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AutoLinkScopeResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  api_list_annotations_api_v1_projects__project_name__annotations_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Directory name of the project */
+        project_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AnnotationResponse'][];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  api_create_annotation_api_v1_projects__project_name__annotations_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Directory name of the project */
+        project_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateAnnotationRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AnnotationResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  api_list_annotations_for_scope_api_v1_projects__project_name__annotations_scope_get: {
+    parameters: {
+      query?: {
+        scope_type?: string;
+        chapter_id?: string | null;
+        book_id?: string | null;
+      };
+      header?: never;
+      path: {
+        /** @description Directory name of the project */
+        project_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AnnotationResponse'][];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  api_get_annotation_api_v1_projects__project_name__annotations__annotation_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        annotation_id: string;
+        /** @description Directory name of the project */
+        project_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AnnotationResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  api_update_annotation_api_v1_projects__project_name__annotations__annotation_id__put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        annotation_id: string;
+        /** @description Directory name of the project */
+        project_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateAnnotationRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AnnotationResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  api_delete_annotation_api_v1_projects__project_name__annotations__annotation_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        annotation_id: string;
+        /** @description Directory name of the project */
+        project_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_view_state_api_v1_projects__project_name__view_state_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Directory name of the project */
+        project_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ViewStateResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  put_view_state_api_v1_projects__project_name__view_state_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Directory name of the project */
+        project_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ViewStatePayload'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ViewStateResponse'];
         };
       };
       /** @description Validation Error */

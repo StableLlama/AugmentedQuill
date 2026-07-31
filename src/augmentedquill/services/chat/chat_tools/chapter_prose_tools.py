@@ -7,25 +7,128 @@
 
 """Defines the chapter prose tools unit so this responsibility stays isolated, testable, and easy to evolve."""
 
-from typing import Any
+import calendar
 import json
+import re
+from datetime import UTC, datetime
+from typing import Any
 
-from pydantic import AliasChoices, BaseModel, Field
+from pydantic import AliasChoices, Field
 
 from augmentedquill.core.config import load_story_config
 from augmentedquill.core.prompts import get_user_prompt
-from augmentedquill.utils.json_repair import apply_typographic_quotes
 from augmentedquill.services.chapters.chapter_helpers import _chapter_by_id_or_404
 from augmentedquill.services.chat.chat_tool_decorator import (
     CHAT_ROLE,
     EDITING_ROLE,
+    ToolModel,
     chat_tool,
 )
+from augmentedquill.services.chat.chat_tools.chapter_tools import MARKER
 from augmentedquill.services.projects.projects import (
     get_active_project_dir,
+)
+from augmentedquill.services.projects.projects import (
     write_chapter_content as _write_chapter_content,
 )
-from augmentedquill.services.chat.chat_tools.chapter_tools import MARKER
+from augmentedquill.utils.json_repair import apply_typographic_quotes
+
+_BRACKET_TOKEN_RE = re.compile(r"\[[^\]]+\]")
+
+
+def _current_utc_datetime() -> datetime:
+    return datetime.now(UTC)
+
+
+def _parse_origin_datetime(origin_date: str) -> datetime | None:
+    cleaned = _BRACKET_TOKEN_RE.sub("", origin_date.strip())
+    if not cleaned:
+        return None
+    if "T" not in cleaned:
+        cleaned = f"{cleaned}T00:00:00+00:00"
+    elif cleaned.endswith("Z"):
+        cleaned = f"{cleaned[:-1]}+00:00"
+
+    try:
+        parsed = datetime.fromisoformat(cleaned)
+    except ValueError:
+        return None
+
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def _replace_year_safe(value: datetime, year: int) -> datetime:
+    if value.month == 2 and value.day == 29 and not calendar.isleap(year):
+        return value.replace(year=year, day=28)
+    return value.replace(year=year)
+
+
+def _add_months_safe(value: datetime, months: int) -> datetime:
+    month_index = value.month - 1 + months
+    target_year = value.year + month_index // 12
+    target_month = month_index % 12 + 1
+    max_day = calendar.monthrange(target_year, target_month)[1]
+    return value.replace(
+        year=target_year, month=target_month, day=min(value.day, max_day)
+    )
+
+
+def _format_age_text(origin_dt: datetime, reference_dt: datetime) -> str | None:
+    if origin_dt > reference_dt:
+        return None
+
+    years = reference_dt.year - origin_dt.year
+    anniversary = _replace_year_safe(origin_dt, origin_dt.year + years)
+    if anniversary > reference_dt:
+        years -= 1
+        anniversary = _replace_year_safe(origin_dt, origin_dt.year + years)
+
+    months = 0
+    cursor = anniversary
+    while True:
+        next_cursor = _add_months_safe(cursor, 1)
+        if next_cursor <= reference_dt:
+            months += 1
+            cursor = next_cursor
+            continue
+        break
+
+    days = (reference_dt.date() - cursor.date()).days
+
+    if years >= 3:
+        return f"{years} years old"
+    if years >= 1:
+        month_unit = "month" if months == 1 else "months"
+        return f"{years} years and {months} {month_unit} old"
+    if months >= 1:
+        day_unit = "day" if days == 1 else "days"
+        return f"{months} months and {days} {day_unit} old"
+    day_unit = "day" if days == 1 else "days"
+    return f"{days} {day_unit} old"
+
+
+def _format_sourcebook_entry_age_prompt(entry: dict, language: str) -> str:
+    origin_date = str(entry.get("origin_date") or "").strip()
+    if not origin_date:
+        return ""
+
+    origin_dt = _parse_origin_datetime(origin_date)
+    if not origin_dt:
+        return ""
+
+    reference_dt = _current_utc_datetime()
+    age_text = _format_age_text(origin_dt, reference_dt)
+    if not age_text:
+        return ""
+
+    return get_user_prompt(
+        "sourcebook_entry_age",
+        language=language,
+        age_text=age_text,
+        as_of_date=reference_dt.date().isoformat(),
+    )
 
 
 def _count_leading_newlines(text: str) -> int:
@@ -110,13 +213,18 @@ def _format_sourcebook_entry_prompt(entry: dict, language: str) -> str:
         category=category,
         description=description,
     )
+    age_line = _format_sourcebook_entry_age_prompt(entry, language=language)
     relations_line = get_user_prompt(
         "sourcebook_entry_relations",
         language=language,
         relation_text=relation_text,
     )
 
-    return f"{summary}\n{relations_line}"
+    parts = [summary]
+    if age_line:
+        parts.append(age_line)
+    parts.append(relations_line)
+    return "\n".join(parts)
 
 
 def _build_sourcebook_entries_context(entry_names: list[str], language: str) -> str:
@@ -154,7 +262,7 @@ def _build_sourcebook_entries_context(entry_names: list[str], language: str) -> 
 # ============================================================================
 
 
-class CallWritingLlmParams(BaseModel):
+class CallWritingLlmParams(ToolModel):
     """Represents the CallWritingLlmParams type."""
 
     instruction: str = Field(
@@ -200,8 +308,8 @@ async def call_writing_llm(
     """Execute the writing LLM tool with provided parameters and return the generated prose."""
     from augmentedquill.core.config import BASE_DIR, load_machine_config
     from augmentedquill.core.prompts import (
-        get_user_prompt,
         get_system_message,
+        get_user_prompt,
         load_model_prompt_overrides,
     )
     from augmentedquill.services.llm import llm
@@ -477,7 +585,7 @@ async def call_writing_llm(
 # ============================================================================
 
 
-class CallEditingAssistantParams(BaseModel):
+class CallEditingAssistantParams(ToolModel):
     """Represents the CallEditingAssistantParams type."""
 
     task: str = Field(
@@ -504,17 +612,17 @@ async def call_editing_assistant(
     params: CallEditingAssistantParams, payload: dict, mutations: dict
 ) -> Any:
     """Execute the editing assistant tool and return revised prose based on the provided instructions."""
-    from augmentedquill.services.llm import llm
+    from augmentedquill.core.config import BASE_DIR, load_machine_config
+    from augmentedquill.core.prompts import (
+        get_system_message,
+        get_user_prompt,
+        load_model_prompt_overrides,
+    )
     from augmentedquill.services.chat.chat_tool_decorator import (
         execute_registered_tool,
         get_registered_tool_schemas,
     )
-    from augmentedquill.core.prompts import (
-        get_user_prompt,
-        load_model_prompt_overrides,
-        get_system_message,
-    )
-    from augmentedquill.core.config import load_machine_config, BASE_DIR
+    from augmentedquill.services.llm import llm
 
     # Resolve EDITING model
     base_url, api_key, model_id, timeout_s, model_name = llm.resolve_openai_credentials(

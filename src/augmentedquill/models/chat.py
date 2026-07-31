@@ -12,7 +12,7 @@ Pydantic models for chat-related API responses.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -39,8 +39,8 @@ class ChatToolBatchMutationResponse(BaseModel):
     and ``POST /api/v1/chat/tools/redo/{batch_id}``."""
 
     ok: bool
-    batch_id: Optional[str] = None
-    detail: Optional[str] = None
+    batch_id: str | None = None
+    detail: str | None = None
 
 
 class ChapterBeforeContentResponse(BaseModel):
@@ -58,9 +58,9 @@ class ChatListItem(BaseModel):
     """Summary of a saved chat session returned in the chat list."""
 
     id: str
-    name: Optional[str] = None
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
+    name: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
 
 
 class ChatListResponse(BaseModel):
@@ -73,15 +73,15 @@ class ChatDetailResponse(BaseModel):
     """Response body for ``GET /api/v1/chats/{chat_id}``."""
 
     id: str
-    name: Optional[str] = None
-    messages: Optional[list[Any]] = None
-    systemPrompt: Optional[str] = None
-    allowWebSearch: Optional[bool] = None
-    scratchpad: Optional[str] = None
-    editing_scratchpad: Optional[str] = None
-    projectContextRevision: Optional[int] = None
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
+    name: str | None = None
+    messages: list[Any] | None = None
+    systemPrompt: str | None = None
+    allowWebSearch: bool | None = None
+    scratchpad: str | None = None
+    editing_scratchpad: str | None = None
+    projectContextRevision: int | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
 
 
 class OkResponse(BaseModel):

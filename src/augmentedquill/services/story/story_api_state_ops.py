@@ -11,12 +11,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from augmentedquill.services.exceptions import BadRequestError, PersistenceError
 from augmentedquill.core.config import load_story_config
 from augmentedquill.services.chapters.chapter_helpers import (
     _chapter_by_id_or_404,
     _normalize_chapter_entry,
 )
+from augmentedquill.services.exceptions import BadRequestError, PersistenceError
 from augmentedquill.services.projects.projects import get_active_project_dir
 
 

@@ -139,19 +139,12 @@ class StoryActionsTest(ApiTestCase):
 
         self.assertIsNotNone(StoryActionsTest.captured_messages)
         self.assertGreaterEqual(len(StoryActionsTest.captured_messages), 1)
-        self.assertEqual(StoryActionsTest.captured_messages[-1]["role"], "assistant")
-        self.assertEqual(
-            StoryActionsTest.captured_messages[-1]["content"], "# Ch 1\n\n"
+        self.assertEqual(StoryActionsTest.captured_messages[-1]["role"], "user")
+        self.assertIn(
+            "Task: Continue or rewrite the current draft",
+            StoryActionsTest.captured_messages[-1]["content"],
         )
-        self.assertEqual(
-            StoryActionsTest.captured_extra_body,
-            {
-                "chat_template_kwargs": {
-                    "continue_final_message": True,
-                    "enable_thinking": False,
-                }
-            },
-        )
+        self.assertIsNone(StoryActionsTest.captured_extra_body)
 
         # Verify NO persistence
         new_content = chap_f.read_text(encoding="utf-8")

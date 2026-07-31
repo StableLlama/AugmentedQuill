@@ -13,64 +13,69 @@ API endpoints for chat sessions and conversational interactions with the LLM wri
 import asyncio
 import base64
 import datetime
+import json as _json
 import re
-import augmentedquill.services.llm.llm as llm
-from fastapi import APIRouter, Request, HTTPException
-from fastapi.responses import JSONResponse, StreamingResponse
+from collections import OrderedDict
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse, StreamingResponse
+
+import augmentedquill.services.chat.chat_api_proxy_ops as _chat_api_proxy_ops
 from augmentedquill.api.v1.dependencies import ProjectDep
+from augmentedquill.api.v1.request_body import parse_json_object_body
 from augmentedquill.core.config import (
+    DEFAULT_STORY_CONFIG_PATH,
     load_machine_config,
     load_story_config,
-    DEFAULT_STORY_CONFIG_PATH,
 )
-from augmentedquill.services.llm.llm import add_llm_log, create_log_entry
-from augmentedquill.services.chat.chat_tool_decorator import (
-    execute_registered_tool,
-    get_registered_tool_schemas,
-    tool_message,
-    CHAT_ROLE,
-    WRITING_ROLE,
+from augmentedquill.models.chat import (
+    ChapterBeforeContentResponse,
+    ChatDetailResponse,
+    ChatInitialStateResponse,
+    ChatListItem,
+    ChatListResponse,
+    ChatToolBatchMutationResponse,
+    OkResponse,
 )
 from augmentedquill.services.chat.chat_api_helpers import (
     inject_chat_attachments,
     inject_project_images,
     normalize_chat_messages,
 )
-from augmentedquill.services.chat.chat_api_stream_ops import (
-    resolve_stream_model_context,
-    ensure_system_message_if_missing,
-    resolve_story_llm_prefs,
-    inject_chat_user_context,
+from augmentedquill.services.chat.chat_api_session_ops import (
+    delete_active_chat,
+    delete_all_active_chats,
+    list_active_chats,
+    load_active_chat,
+    save_active_chat,
 )
+from augmentedquill.services.chat.chat_api_stream_ops import (
+    ensure_system_message_if_missing,
+    inject_chat_user_context,
+    resolve_story_llm_prefs,
+    resolve_stream_model_context,
+)
+from augmentedquill.services.chat.chat_tool_decorator import (
+    CHAT_ROLE,
+    WRITING_ROLE,
+    execute_registered_tool,
+    get_registered_tool_schemas,
+    tool_message,
+)
+from augmentedquill.services.llm import llm
+from augmentedquill.services.llm.llm import add_llm_log, create_log_entry
 from augmentedquill.services.projects.project_snapshots import (
     capture_project_snapshot,
     restore_project_snapshot,
 )
-from augmentedquill.services.projects.projects import use_project_context
-from augmentedquill.services.chat.chat_api_session_ops import (
-    list_active_chats,
-    load_active_chat,
-    save_active_chat,
-    delete_active_chat,
-    delete_all_active_chats,
-)
-import augmentedquill.services.chat.chat_api_proxy_ops as _chat_api_proxy_ops
-import json as _json
-from typing import Any, Dict
-from augmentedquill.models.chat import (
-    ChatInitialStateResponse,
-    ChatToolBatchMutationResponse,
-    ChapterBeforeContentResponse,
-    ChatListItem,
-    ChatListResponse,
-    ChatDetailResponse,
-    OkResponse,
+from augmentedquill.services.projects.projects import (
+    get_active_project_dir,
+    use_project_context,
 )
 from augmentedquill.utils.json_repair import try_parse_json_robust
-from augmentedquill.api.v1.request_body import parse_json_object_body
 from augmentedquill.utils.path_utils import safe_child_path
 
 router = APIRouter(tags=["Chat"])
@@ -81,6 +86,279 @@ httpx = _chat_api_proxy_ops.httpx
 
 _CHAT_TOOL_BATCH_DIR = ".aq_history/chat_tool_batches"
 _BATCH_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,80}$")
+
+_TOOLS_ALWAYS_INCLUDED_FOR_NARROWING = frozenset({"undo_last_tool_changes"})
+
+# High-confidence intent signatures that are safe to narrow.
+_INTENT_TOOL_CLOSURE_RULES: tuple[tuple[re.Pattern[str], frozenset[str]], ...] = (
+    (
+        re.compile(
+            r"\b(scene|scenes)\b.*\b(move|reorder|re-order|before|after|relink|re-link|scope|chapter)\b"
+            r"|\b(move|reorder|re-order|relink|re-link)\b.*\b(scene|scenes)\b",
+            re.IGNORECASE,
+        ),
+        frozenset({"manage_scenes"}),
+    ),
+    (
+        re.compile(r"\b(scene|scenes)\b.*\b(list|show|get|read)\b", re.IGNORECASE),
+        frozenset({"manage_scenes"}),
+    ),
+    (
+        re.compile(
+            r"\b(chapter|chapters)\b.*\b(summary|summaries|metadata|heading|content|write)\b"
+            r"|\b(summary|summaries|metadata|heading|content)\b.*\b(chapter|chapters)\b",
+            re.IGNORECASE,
+        ),
+        frozenset(
+            {
+                "get_chapter_metadata",
+                "update_chapter_metadata",
+                "get_chapter_summaries",
+                "get_chapter_content",
+                "get_current_chapter_id",
+                "write_chapter_summary",
+                "write_chapter_heading",
+                "sync_summary",
+            }
+        ),
+    ),
+    (
+        re.compile(
+            r"\b(sourcebook|character|location|worldbuilding|world-building)\b",
+            re.IGNORECASE,
+        ),
+        frozenset({"manage_sourcebook"}),
+    ),
+    (
+        re.compile(
+            r"\b(image|images|cover|art|illustration|illustrate)\b", re.IGNORECASE
+        ),
+        frozenset({"manage_images"}),
+    ),
+    (
+        re.compile(r"\b(search|replace|find all|regex)\b", re.IGNORECASE),
+        frozenset({"search_and_replace"}),
+    ),
+)
+
+
+def _extract_latest_user_text(messages: list[dict[str, Any]]) -> str:
+    """Extract the latest user textual content for deterministic intent routing."""
+    for msg in reversed(messages):
+        if str(msg.get("role") or "").lower() != "user":
+            continue
+        content = msg.get("content")
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            text_parts: list[str] = []
+            for part in content:
+                if not isinstance(part, dict):
+                    continue
+                if str(part.get("type") or "") == "text":
+                    text_val = part.get("text")
+                    if isinstance(text_val, str):
+                        text_parts.append(text_val)
+            return "\n".join(text_parts)
+    return ""
+
+
+def _extract_recent_user_text(
+    messages: list[dict[str, Any]], max_user_messages: int = 3
+) -> str:
+    """Extract recent user text across turns to preserve follow-up intent context."""
+    max_user_messages = max(max_user_messages, 1)
+
+    collected: list[str] = []
+    for msg in reversed(messages):
+        if str(msg.get("role") or "").lower() != "user":
+            continue
+        content = msg.get("content")
+        if isinstance(content, str) and content.strip():
+            collected.append(content)
+        elif isinstance(content, list):
+            text_parts: list[str] = []
+            for part in content:
+                if not isinstance(part, dict):
+                    continue
+                if str(part.get("type") or "") == "text":
+                    text_val = part.get("text")
+                    if isinstance(text_val, str) and text_val.strip():
+                        text_parts.append(text_val)
+            if text_parts:
+                collected.append("\n".join(text_parts))
+        if len(collected) >= max_user_messages:
+            break
+
+    return "\n".join(reversed(collected))
+
+
+def _narrow_story_tools_for_messages(
+    story_tools: list[dict[str, Any]] | None,
+    messages: list[dict[str, Any]],
+    tool_choice: Any,
+) -> list[dict[str, Any]] | None:
+    """Narrow tool list for high-confidence intents, else keep full list.
+
+    The selector is deterministic and conservative:
+    - If no confident intent is detected, return full tools.
+    - If narrowing would result in an empty/missing required set, return full tools.
+    - Explicit client tool_choice overrides bypass narrowing.
+    """
+    if not story_tools:
+        return story_tools
+
+    # Respect explicit tool-choice directives from clients.
+    if tool_choice not in (None, "", "auto"):
+        return story_tools
+
+    intent_context_text = _extract_recent_user_text(messages)
+    if not intent_context_text.strip():
+        return story_tools
+
+    required_tool_names: set[str] = set()
+    for pattern, required in _INTENT_TOOL_CLOSURE_RULES:
+        if pattern.search(intent_context_text):
+            required_tool_names.update(required)
+
+    if not required_tool_names:
+        return story_tools
+
+    required_tool_names.update(_TOOLS_ALWAYS_INCLUDED_FOR_NARROWING)
+    available_tool_names = {
+        str((tool.get("function") or {}).get("name") or "") for tool in story_tools
+    }
+
+    # Fallback to full set if mandatory closure tools are not available in this role/project.
+    if not required_tool_names.intersection(available_tool_names):
+        return story_tools
+
+    selected = [
+        tool
+        for tool in story_tools
+        if str((tool.get("function") or {}).get("name") or "") in required_tool_names
+    ]
+    # Safety fallback: never send an empty or effectively empty narrowed set.
+    if not selected:
+        return story_tools
+
+    return selected
+
+
+def _is_manage_scenes_update_batch(
+    tool_calls: list, project_language: str, model_type: str
+) -> bool:
+    """Return true when a tool-call batch is exclusively manage_scenes updates."""
+    if model_type != CHAT_ROLE or len(tool_calls) < 2:
+        return False
+
+    for call in tool_calls:
+        if not isinstance(call, dict):
+            return False
+        func = call.get("function") or {}
+        name = (func.get("name") if isinstance(func, dict) else None) or ""
+        if str(name) != "manage_scenes":
+            return False
+        args_raw = (func.get("arguments") if isinstance(func, dict) else None) or "{}"
+        try:
+            args_obj = (
+                try_parse_json_robust(args_raw, language=project_language)
+                if isinstance(args_raw, str)
+                else (args_raw or {})
+            )
+        except (ValueError, TypeError):
+            return False
+        if not isinstance(args_obj, dict):
+            return False
+        if str(args_obj.get("action") or "").strip().lower() != "update":
+            return False
+    return True
+
+
+def _aggregate_manage_scenes_update_batch_payload(
+    buffered_messages: list[dict],
+) -> tuple[Any | None, bool]:
+    """Aggregate manage_scenes update messages into one payload.
+
+    Returns (payload, ok). When ok is false, caller should fall back to raw messages.
+    """
+    content_scenes_by_id: OrderedDict[int, dict[str, Any]] = OrderedDict()
+    scene_list_by_id: OrderedDict[int, dict[str, Any]] = OrderedDict()
+    saw_content = False
+    saw_placement = False
+
+    for msg in buffered_messages:
+        if not isinstance(msg, dict):
+            return None, False
+        content_raw = msg.get("content")
+        if not isinstance(content_raw, str):
+            return None, False
+        try:
+            payload = _json.loads(content_raw)
+        except (TypeError, ValueError):
+            return None, False
+
+        if isinstance(payload, dict) and payload.get("error"):
+            return None, False
+
+        if isinstance(payload, list):
+            saw_placement = True
+            for entry in payload:
+                if not isinstance(entry, dict):
+                    continue
+                scene_id = int(entry.get("scene_id") or 0)
+                if scene_id <= 0:
+                    continue
+                if scene_id in scene_list_by_id:
+                    del scene_list_by_id[scene_id]
+                scene_list_by_id[scene_id] = entry
+            continue
+
+        if isinstance(payload, dict) and "scene" in payload and "scene_list" in payload:
+            scene_obj = payload.get("scene")
+            scene_list = payload.get("scene_list")
+            if isinstance(scene_obj, dict):
+                scene_id = int(scene_obj.get("id") or 0)
+                if scene_id > 0:
+                    if scene_id in content_scenes_by_id:
+                        del content_scenes_by_id[scene_id]
+                    content_scenes_by_id[scene_id] = scene_obj
+                    saw_content = True
+            if isinstance(scene_list, list):
+                saw_placement = True
+                for entry in scene_list:
+                    if not isinstance(entry, dict):
+                        continue
+                    scene_id = int(entry.get("scene_id") or 0)
+                    if scene_id <= 0:
+                        continue
+                    if scene_id in scene_list_by_id:
+                        del scene_list_by_id[scene_id]
+                    scene_list_by_id[scene_id] = entry
+            continue
+
+        if isinstance(payload, dict) and int(payload.get("id") or 0) > 0:
+            scene_id = int(payload.get("id") or 0)
+            if scene_id in content_scenes_by_id:
+                del content_scenes_by_id[scene_id]
+            content_scenes_by_id[scene_id] = payload
+            saw_content = True
+            continue
+
+        return None, False
+
+    content_scenes = list(content_scenes_by_id.values())
+    scene_list = list(scene_list_by_id.values())
+    if saw_placement and saw_content:
+        return {
+            "scenes": content_scenes,
+            "scene_list": scene_list,
+        }, True
+    if saw_placement:
+        return scene_list, True
+    if saw_content:
+        return content_scenes, True
+    return None, False
 
 
 async def _run_tool_calls(
@@ -105,27 +383,33 @@ async def _run_tool_calls(
         story_cfg = load_story_config(active_dir / "story.json") or {}
         project_language = str(story_cfg.get("language", "en") or "en")
 
-    with use_project_context(active_dir):
-        for call in tool_calls:
-            if not isinstance(call, dict):
-                continue
-            call_id = str(call.get("id") or "")
-            func = call.get("function") or {}
-            name = (func.get("name") if isinstance(func, dict) else None) or ""
-            args_raw = (
-                func.get("arguments") if isinstance(func, dict) else None
-            ) or "{}"
-            try:
-                args_obj = (
-                    try_parse_json_robust(args_raw, language=project_language)
-                    if isinstance(args_raw, str)
-                    else (args_raw or {})
-                )
-            except (ValueError, TypeError):
-                args_obj = {}
-            if not name or not call_id:
-                continue
-            tool_names.append(name)
+    current_active_dir = active_dir
+    aggregate_manage_scenes_updates = _is_manage_scenes_update_batch(
+        tool_calls=tool_calls,
+        project_language=project_language,
+        model_type=model_type,
+    )
+    manage_scenes_update_buffer: list[dict] = []
+    for call in tool_calls:
+        if not isinstance(call, dict):
+            continue
+        call_id = str(call.get("id") or "")
+        func = call.get("function") or {}
+        name = (func.get("name") if isinstance(func, dict) else None) or ""
+        args_raw = (func.get("arguments") if isinstance(func, dict) else None) or "{}"
+        try:
+            args_obj = (
+                try_parse_json_robust(args_raw, language=project_language)
+                if isinstance(args_raw, str)
+                else (args_raw or {})
+            )
+        except (ValueError, TypeError):
+            args_obj = {}
+        if not name or not call_id:
+            continue
+        tool_names.append(name)
+
+        with use_project_context(current_active_dir):
             msg = await execute_registered_tool(
                 name,
                 args_obj,
@@ -134,9 +418,34 @@ async def _run_tool_calls(
                 mutations,
                 tool_role=model_type,
             )
-            if isinstance(msg, dict) and "role" not in msg:
-                msg = tool_message(name, call_id, msg)
+        if isinstance(msg, dict) and "role" not in msg:
+            msg = tool_message(name, call_id, msg)
+        if aggregate_manage_scenes_updates:
+            manage_scenes_update_buffer.append(msg)
+        else:
             appended.append(msg)
+
+        # Follow project switches initiated by tools (e.g., manage_project/create)
+        # so subsequent tool calls in the same batch operate on the new project.
+        switched_project_dir = get_active_project_dir()
+        if switched_project_dir is not None:
+            current_active_dir = switched_project_dir
+
+    if aggregate_manage_scenes_updates:
+        aggregated_payload, ok = _aggregate_manage_scenes_update_batch_payload(
+            manage_scenes_update_buffer
+        )
+        if ok and aggregated_payload is not None and manage_scenes_update_buffer:
+            aggregate_call_id = str(
+                manage_scenes_update_buffer[-1].get("tool_call_id")
+                or manage_scenes_update_buffer[-1].get("id")
+                or "batch_manage_scenes_update"
+            )
+            appended.append(
+                tool_message("manage_scenes", aggregate_call_id, aggregated_payload)
+            )
+        else:
+            appended.extend(manage_scenes_update_buffer)
 
     return appended, mutations, tool_names
 
@@ -164,8 +473,8 @@ def _snapshot_storage_dir(project_dir: Path, batch_id: str) -> Path:
 
 def _compute_changed_chapter_ids(
     project_dir: Path,
-    before: Dict[str, str],
-    after: Dict[str, str],
+    before: dict[str, str],
+    after: dict[str, str],
 ) -> list[int]:
     """Return the virtual chapter IDs whose file content differs between snapshots."""
     from augmentedquill.services.chapters.chapter_helpers import _scan_chapter_files
@@ -181,9 +490,10 @@ def _compute_changed_chapter_ids(
 def _store_chat_tool_batch_snapshot(
     project_dir: Path,
     batch_id: str,
-    before_snapshot: Dict[str, str],
-    after_snapshot: Dict[str, str],
+    before_snapshot: dict[str, str],
+    after_snapshot: dict[str, str],
     tool_names: list[str],
+    before_chapter_id_paths: dict[str, str],
 ) -> list[int]:
     """Persist before/after snapshots for reversible tool-call batches.
 
@@ -200,6 +510,7 @@ def _store_chat_tool_batch_snapshot(
         "created_at": datetime.datetime.now().isoformat(),
         "tool_names": tool_names,
         "changed_chapter_ids": changed_chapter_ids,
+        "chapter_id_paths": before_chapter_id_paths,
         "before": before_snapshot,
         "after": after_snapshot,
     }
@@ -207,7 +518,7 @@ def _store_chat_tool_batch_snapshot(
     return changed_chapter_ids
 
 
-def _load_chat_tool_batch_snapshot(project_dir: Path, batch_id: str) -> Dict[str, Any]:
+def _load_chat_tool_batch_snapshot(project_dir: Path, batch_id: str) -> dict[str, Any]:
     """Load chat tool batch snapshot."""
     batch_file = _snapshot_storage_dir(project_dir, batch_id) / "batch.json"
     if not batch_file.exists():
@@ -244,9 +555,7 @@ async def api_get_chat() -> ChatInitialStateResponse:
     selected = openai_cfg.get("selected", "") if isinstance(openai_cfg, dict) else ""
     # Coerce to a valid selection
     if model_names:
-        if not selected:
-            selected = model_names[0]
-        elif selected not in model_names:
+        if not selected or selected not in model_names:
             selected = model_names[0]
 
     return {
@@ -299,11 +608,18 @@ async def api_chat_tools(
             tool_calls = t
 
     active_project_dir = project_dir
-    before_snapshot: Dict[str, str] | None = None
+    before_snapshot: dict[str, str] | None = None
+    before_chapter_id_paths: dict[str, str] | None = None
     batch_id: str | None = None
 
     if active_project_dir and tool_calls:
         before_snapshot = capture_project_snapshot(active_project_dir)
+        from augmentedquill.services.chapters.chapter_helpers import _scan_chapter_files
+
+        before_chapter_id_paths = {
+            str(vid): str(abs_path.relative_to(active_project_dir))
+            for vid, abs_path in _scan_chapter_files(active_project_dir)
+        }
         batch_id = f"batch-{uuid4().hex}"
 
     async def _gen() -> Any:
@@ -390,6 +706,7 @@ async def api_chat_tools(
             active_project_dir
             and batch_id
             and before_snapshot is not None
+            and before_chapter_id_paths is not None
             and mutations.get("story_changed")
         ):
             after_snapshot = capture_project_snapshot(active_project_dir)
@@ -399,6 +716,7 @@ async def api_chat_tools(
                 before_snapshot,
                 after_snapshot,
                 tool_names,
+                before_chapter_id_paths,
             )
             mutations["tool_batch"] = {
                 "batch_id": batch_id,
@@ -473,20 +791,34 @@ async def api_chat_batch_chapter_before(
     from augmentedquill.services.chapters.chapter_helpers import _scan_chapter_files
 
     batch = _load_chat_tool_batch_snapshot(project_dir, batch_id)
-    before_snapshot: Dict[str, str] = batch.get("before") or {}
+    before_snapshot: dict[str, str] = batch.get("before") or {}
+    chapter_id_paths = batch.get("chapter_id_paths") or {}
+
+    original_rel_path: str | None = None
+    if isinstance(chapter_id_paths, dict):
+        original_rel_path = chapter_id_paths.get(str(chapter_id))
 
     chapter_files = _scan_chapter_files(project_dir)
-    rel_path: str | None = None
+    current_rel_path: str | None = None
     for vid, abs_path in chapter_files:
         if vid == chapter_id:
-            rel_path = str(abs_path.relative_to(project_dir))
+            current_rel_path = str(abs_path.relative_to(project_dir))
             break
 
-    if rel_path is None:
-        raise HTTPException(status_code=404, detail="Chapter not found in project")
+    candidates = [path for path in (current_rel_path, original_rel_path) if path]
+    rel_path: str | None = None
+    content_b64: str | None = None
+    for candidate in candidates:
+        content_b64 = before_snapshot.get(candidate)
+        if content_b64 is not None:
+            rel_path = candidate
+            break
 
-    content_b64 = before_snapshot.get(rel_path)
-    if content_b64 is None:
+    if rel_path is None or content_b64 is None:
+        # If the chapter exists now but had no prior snapshot entry, it was
+        # likely created during the batch. In that case the baseline is empty.
+        if current_rel_path is not None:
+            return ChapterBeforeContentResponse(content="")
         raise HTTPException(
             status_code=404, detail="Chapter not found in batch before-snapshot"
         )
@@ -623,7 +955,7 @@ async def api_chat_stream(
     if model_max_tokens is None:
         model_max_tokens = max_tokens
 
-    extra_body: Dict[str, Any] = {}
+    extra_body: dict[str, Any] = {}
     for key in (
         "top_p",
         "presence_penalty",
@@ -674,6 +1006,16 @@ async def api_chat_stream(
         # If the client explicitly requests "none", do not send tools.
         # This prevents some models from hallucinating tool usage even when told not to.
         if tool_choice == "none":
+            pass
+        elif model_type == CHAT_ROLE:
+            # Temporarily disable automatic tool narrowing so the model can
+            # choose from the full available tool set and we can confirm
+            # whether scene cleanup is being blocked by filtering.
+            # story_tools = _narrow_story_tools_for_messages(
+            #     story_tools=story_tools,
+            #     messages=req_messages,
+            #     tool_choice=tool_choice,
+            # )
             pass
     if model_type == WRITING_ROLE:
         story_tools = None

@@ -13,18 +13,84 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../layout/ThemeContext';
 import { FileText, Book, Info, ScrollText } from 'lucide-react';
+import {
+  useScenes,
+  useStoryBooks,
+  useStoryChaptersListMeta,
+} from '../../../stores/storyStore';
+import type { Chapter, Scene, Book as StoryBook } from '../../../types';
 
 export type SessionMutation = {
   id: string;
-  type: 'story' | 'chapter' | 'sourcebook' | 'metadata' | 'book';
+  type: 'story' | 'chapter' | 'scene' | 'sourcebook' | 'metadata' | 'book';
   label: string;
   targetId?: string; // chapter ID, entry ID, etc.
   subType?: string; // further field detail if applicable (e.g. metadata tab)
+  sceneChangeHint?: {
+    changedFields?: string[];
+    previousValues?: Record<string, unknown>;
+  };
 };
 
 interface MutationTagsProps {
   mutations: SessionMutation[];
   onMutationClick: (mutation: SessionMutation) => void;
+}
+
+function buildSceneMutationLabel(
+  mutation: SessionMutation,
+  scenes: Scene[],
+  chapters: Chapter[],
+  books: StoryBook[]
+): string {
+  if (mutation.type !== 'scene' || !mutation.targetId) {
+    return mutation.label;
+  }
+
+  const sceneIndex = scenes.findIndex((scene: Scene): boolean => {
+    const targetId = mutation.targetId;
+    return targetId != null && scene.id === Number(targetId);
+  });
+  if (sceneIndex < 0) {
+    return mutation.label;
+  }
+
+  const sceneNumber = sceneIndex + 1;
+  const scene = scenes[sceneIndex];
+  const proseLink = scene.prose_link;
+  if (!proseLink || proseLink.scope_type !== 'chapter' || !proseLink.chapter_id) {
+    return `Scene ${sceneNumber}`;
+  }
+
+  const chapterIndex = chapters.findIndex(
+    (chapter: Chapter): boolean => chapter.id === proseLink.chapter_id
+  );
+  if (chapterIndex < 0) {
+    return `Scene ${sceneNumber}`;
+  }
+
+  const chapterNumberGlobal = chapterIndex + 1;
+  const chapter = chapters[chapterIndex];
+  const resolvedBookId = proseLink.book_id ?? chapter.book_id;
+  if (!resolvedBookId) {
+    return `Chapter ${chapterNumberGlobal} / Scene ${sceneNumber}`;
+  }
+
+  const bookIndex = books.findIndex(
+    (book: StoryBook): boolean => book.id === resolvedBookId
+  );
+  if (bookIndex < 0) {
+    return `Chapter ${chapterNumberGlobal} / Scene ${sceneNumber}`;
+  }
+
+  const chapterNumberInBook =
+    books[bookIndex].chapters.findIndex(
+      (bookChapter: Chapter): boolean => bookChapter.id === proseLink.chapter_id
+    ) + 1;
+  const chapterNumber =
+    chapterNumberInBook > 0 ? chapterNumberInBook : chapterNumberGlobal;
+
+  return `Book ${bookIndex + 1} / Chapter ${chapterNumber} / Scene ${sceneNumber}`;
 }
 
 export const MutationTags: React.FC<MutationTagsProps> = ({
@@ -33,6 +99,9 @@ export const MutationTags: React.FC<MutationTagsProps> = ({
 }: MutationTagsProps): React.ReactElement | null => {
   const { isLight } = useTheme();
   const { t } = useTranslation();
+  const scenes = useScenes();
+  const chapters = useStoryChaptersListMeta();
+  const books = useStoryBooks() ?? [];
 
   if (mutations.length === 0) return null;
 
@@ -46,6 +115,7 @@ export const MutationTags: React.FC<MutationTagsProps> = ({
     switch (type) {
       case 'story':
       case 'chapter':
+      case 'scene':
         return <FileText size={12} />;
       case 'book':
         return <Book size={12} />;
@@ -64,6 +134,11 @@ export const MutationTags: React.FC<MutationTagsProps> = ({
         <button
           type="button"
           key={m.id}
+          title={
+            m.type === 'scene' && m.targetId
+              ? t('Scene ID: {{id}}', { id: m.targetId })
+              : undefined
+          }
           onClick={(event: React.MouseEvent<HTMLButtonElement, MouseEvent>): void => {
             event.preventDefault();
             onMutationClick(m);
@@ -71,7 +146,11 @@ export const MutationTags: React.FC<MutationTagsProps> = ({
           className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[10px] font-medium transition-colors ${bgClass} ${textClass} ${hoverClass}`}
         >
           {getIcon(m.type)}
-          <span>{t(m.label)}</span>
+          <span>
+            {m.type === 'scene'
+              ? buildSceneMutationLabel(m, scenes, chapters, books)
+              : t(m.label)}
+          </span>
         </button>
       ))}
     </div>

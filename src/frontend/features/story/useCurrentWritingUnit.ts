@@ -51,6 +51,18 @@ export function useCurrentWritingUnit({
           ? { ...activeChapter, scope: 'chapter' as const }
           : null;
 
+    if (typeof window !== 'undefined' && window.__AQ_DEBUG_RANGES) {
+      const ch = activeChapter;
+      if (ch) {
+        console.log('[AQ:useCurrentWritingUnit] RECOMPUTING currentChapter');
+        console.log('  chapter id:', ch.id, 'content length:', ch.content?.length ?? 0);
+        console.log(
+          '  has scene:13:end?',
+          ch.content?.includes('<!--scene:13:end-->') ?? false
+        );
+      }
+    }
+
     const currentChapterContext = activeChapter
       ? {
           id: activeChapter.id,

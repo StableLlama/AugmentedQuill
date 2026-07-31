@@ -15,16 +15,17 @@ Public API is kept stable while implementations are split into:
 
 from __future__ import annotations
 
-from typing import Any, Dict, AsyncIterator, Tuple
 import os
+from collections.abc import AsyncIterator
+from typing import Any
 
 import httpx
 
 from augmentedquill.core.config import load_machine_config
 from augmentedquill.services.chat.chat_tool_decorator import MODEL_ROLES
+from augmentedquill.services.llm import llm_completion_ops as _llm_completion_ops
 from augmentedquill.services.llm import llm_logging as _llm_logging
 from augmentedquill.services.llm import llm_stream_ops as _llm_stream_ops
-from augmentedquill.services.llm import llm_completion_ops as _llm_completion_ops
 from augmentedquill.services.llm.llm_request_helpers import find_model_in_list
 from augmentedquill.utils import llm_parsing as _llm_parsing
 
@@ -48,7 +49,7 @@ _PROVIDERS = ("openai", "anthropic", "google")
 
 
 def _find_selected_model_name(
-    payload: Dict[str, Any], machine: Dict[str, Any], model_type: str | None = None
+    payload: dict[str, Any], machine: dict[str, Any], model_type: str | None = None
 ) -> str | None:
     """Resolve the selected model name from payload or provider-specific selections."""
     selected_name = payload.get("model_name")
@@ -77,7 +78,7 @@ def _find_selected_model_name(
 
 
 def get_selected_model_name(
-    payload: Dict[str, Any], model_type: str | None = None
+    payload: dict[str, Any], model_type: str | None = None
 ) -> str | None:
     """Get the selected model name based on payload and model_type."""
     machine = load_machine_config() or {}
@@ -85,9 +86,9 @@ def get_selected_model_name(
 
 
 def resolve_openai_credentials(
-    payload: Dict[str, Any],
+    payload: dict[str, Any],
     model_type: str | None = None,
-) -> Tuple[str, str | None, str, int, str | None]:
+) -> tuple[str, str | None, str, int, str | None]:
     """Resolve (base_url, api_key, model_id, timeout_s) from machine config and overrides.
 
     Precedence:

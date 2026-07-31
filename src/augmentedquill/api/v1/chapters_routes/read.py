@@ -7,15 +7,16 @@
 
 """Defines the read unit so this responsibility stays isolated, testable, and easy to evolve."""
 
-from fastapi import APIRouter, HTTPException, Path as FastAPIPath
+from fastapi import APIRouter, HTTPException
+from fastapi import Path as FastAPIPath
 
 from augmentedquill.api.v1.dependencies import ProjectDep
+from augmentedquill.models.chapters import ChapterDetailResponse, ChaptersListResponse
 from augmentedquill.services.chapters.chapter_helpers import _chapter_by_id_or_404
 from augmentedquill.services.chapters.chapters_api_ops import (
     chapter_detail_payload,
     list_chapters_payload,
 )
-from augmentedquill.models.chapters import ChaptersListResponse, ChapterDetailResponse
 
 router = APIRouter(prefix="/projects/{project_name}", tags=["Chapters"])
 

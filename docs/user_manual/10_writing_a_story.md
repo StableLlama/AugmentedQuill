@@ -223,3 +223,7 @@ Writing a novel is a big commitment. These percentages are rough estimates of **
 - **Phase 5 (Polishing): 10%**
 
 > 🧠 Tip: If you’re using AugmentedQuill, the AI tools are designed to help you trim time from the Drafting and Editing phases, but the biggest gains come from having a solid plan and clear story goals.
+
+---
+
+Next up: Plan advanced story structure in [Scenes, Annotations, and Structural Improvements](13_scenes_and_annotations.md).

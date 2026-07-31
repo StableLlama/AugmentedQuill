@@ -9,14 +9,17 @@
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
-from augmentedquill.services.chat.chat_tool_decorator import CHAT_ROLE  # noqa: F401
+from augmentedquill.services.chat.chat_tool_decorator import (
+    CHAT_ROLE,  # noqa: F401
+    ToolModel,
+)
 
 # Pydantic models for tool parameters
 
 
-class ReorderChaptersParams(BaseModel):
+class ReorderChaptersParams(ToolModel):
     """Parameters for reordering chapters."""
 
     chapter_ids: list[int] = Field(
@@ -28,7 +31,7 @@ class ReorderChaptersParams(BaseModel):
     )
 
 
-class ReorderBooksParams(BaseModel):
+class ReorderBooksParams(ToolModel):
     """Parameters for reordering books in a series."""
 
     book_ids: list[str] = Field(

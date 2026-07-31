@@ -16,7 +16,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-import augmentedquill.main as main
+from augmentedquill import main
 from augmentedquill.services.projects.projects import select_project
 
 

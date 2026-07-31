@@ -11,43 +11,23 @@ API endpoints for project-related operations including creation, deletion, and m
 """
 
 from typing import Any
-from fastapi import APIRouter, UploadFile, File
+
+from fastapi import APIRouter, File, UploadFile
 from fastapi.responses import JSONResponse
-from augmentedquill.services.projects.projects_api_manage_ops import (
-    projects_listing_payload,
-    delete_project_response,
-    select_project_response,
-    create_project_response,
-    convert_project_response,
-    create_book_response,
-    delete_book_response,
-    restore_book_response,
-)
-from augmentedquill.services.projects.projects_api_asset_ops import (
-    update_image_description_response,
-    create_image_placeholder_response,
-    upload_image_response,
-    delete_image_response,
-    restore_image_response,
-    get_image_file_response,
-    export_project_response,
-    import_project_response,
-)
-from augmentedquill.services.projects.export_epub import export_project_epub_response
 
 from augmentedquill.models.projects import (
-    ProjectDeleteRequest,
-    ProjectSelectRequest,
-    ProjectCreateRequest,
-    ProjectConvertRequest,
     BookCreateRequest,
     BookDeleteRequest,
     BookRestoreRequest,
+    ImageDeleteRequest,
     ImageDescriptionUpdateRequest,
     ImagePlaceholderRequest,
-    ImageDeleteRequest,
     ImageRestoreRequest,
+    ProjectConvertRequest,
+    ProjectCreateRequest,
+    ProjectDeleteRequest,
     ProjectListResponse,
+    ProjectSelectRequest,
 )
 from augmentedquill.models.story import (
     BookMutationResponse,
@@ -55,6 +35,27 @@ from augmentedquill.models.story import (
     ProjectImageInfo,
     ProjectMutationResponse,
     ProjectSelectResponse,
+)
+from augmentedquill.services.projects.export_epub import export_project_epub_response
+from augmentedquill.services.projects.projects_api_asset_ops import (
+    create_image_placeholder_response,
+    delete_image_response,
+    export_project_response,
+    get_image_file_response,
+    import_project_response,
+    restore_image_response,
+    update_image_description_response,
+    upload_image_response,
+)
+from augmentedquill.services.projects.projects_api_manage_ops import (
+    convert_project_response,
+    create_book_response,
+    create_project_response,
+    delete_book_response,
+    delete_project_response,
+    projects_listing_payload,
+    restore_book_response,
+    select_project_response,
 )
 from augmentedquill.utils.image_helpers import get_project_images
 

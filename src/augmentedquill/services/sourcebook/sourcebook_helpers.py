@@ -7,13 +7,14 @@
 
 """Defines the sourcebook helpers unit so this responsibility stays isolated, testable, and easy to evolve."""
 
-from typing import Any, Dict, List, Literal, Optional
 import re
-from augmentedquill.services.projects.projects import get_active_project_dir
+from typing import Any, Literal
+
 from augmentedquill.core.config import (
     load_story_config,
     save_story_config,
 )
+from augmentedquill.services.projects.projects import get_active_project_dir
 from augmentedquill.services.sourcebook.sourcebook_keyword_service import (
     _keyword_budget,
     _normalize_keyword_value,
@@ -35,6 +36,7 @@ KNOWN_SOURCEBOOK_CATEGORIES: tuple[str, ...] = (
     "Event",
     "Lore",
     "Other",
+    "Time Travel",
 )
 
 _CATEGORY_NORMALIZATION_MAP = {
@@ -54,14 +56,82 @@ def _get_entry_relations(entry_id: str, story: dict) -> list[dict]:
             rel["target_id"] = rel.pop("target_id", "")
             rel.pop("source_id", None)
             rel["direction"] = "forward"
+            if rel.get("start_scene") is not None:
+                rel["start_scene"] = rel.get("start_scene")
+            if rel.get("end_scene") is not None:
+                rel["end_scene"] = rel.get("end_scene")
             out.append(rel)
         elif r.get("target_id") == entry_id:
             rel = dict(r)
             rel["target_id"] = rel.pop("source_id", "")
             rel.pop("source_id", None)
             rel["direction"] = "reverse"
+            if rel.get("start_scene") is not None:
+                rel["start_scene"] = rel.get("start_scene")
+            if rel.get("end_scene") is not None:
+                rel["end_scene"] = rel.get("end_scene")
             out.append(rel)
     return out
+
+
+def _normalize_relation_input(entry_id: str, relation: dict) -> dict:
+    """Normalize a sourcebook relation payload from tool data."""
+    if not isinstance(relation, dict):
+        raise ValueError("Invalid relation: relation must be an object.")
+
+    normalized: dict[str, str | int | None] = {}
+    raw_relation = relation.get("relation")
+
+    if isinstance(raw_relation, list):
+        if len(raw_relation) != 3 or not all(
+            isinstance(item, str) for item in raw_relation
+        ):
+            raise ValueError(
+                "Invalid relation shape: expected [source, relation, target] strings."
+            )
+        source, relation_type, target = [item.strip() for item in raw_relation]
+        normalized["relation"] = relation_type
+
+        direction = (
+            str(relation.get("direction", "forward") or "forward").strip().lower()
+        )
+        if direction == "reverse":
+            normalized["source_id"] = target
+            normalized["target_id"] = entry_id
+        else:
+            if source.lower() == entry_id.lower():
+                normalized["source_id"] = entry_id
+                normalized["target_id"] = target
+            elif target.lower() == entry_id.lower():
+                normalized["source_id"] = source
+                normalized["target_id"] = entry_id
+                normalized["direction"] = "reverse"
+            else:
+                normalized["source_id"] = entry_id
+                normalized["target_id"] = target
+    else:
+        normalized["relation"] = str(raw_relation or "")
+        direction = (
+            str(relation.get("direction", "forward") or "forward").strip().lower()
+        )
+        if direction == "reverse":
+            normalized["source_id"] = relation.get("target_id") or relation.get(
+                "source_id"
+            )
+            normalized["target_id"] = entry_id
+            normalized["direction"] = "reverse"
+        else:
+            normalized["source_id"] = entry_id
+            normalized["target_id"] = relation.get("target_id")
+
+    for key in ("start_scene", "end_scene", "start_book", "end_book"):
+        if key in relation and relation.get(key) is not None:
+            value = relation.get(key)
+            if key in ("start_scene", "end_scene") and not isinstance(value, int):
+                raise ValueError("Invalid relation: scene IDs must be integers.")
+            normalized[key] = value
+
+    return normalized
 
 
 def _update_global_relations(
@@ -81,20 +151,21 @@ def _update_global_relations(
 
     # Add new relations
     for r in new_relations:
-        d = r.get("direction", "forward")
+        normalized = _normalize_relation_input(entry_id, r)
+        d = normalized.get("direction", "forward")
         new_r = {
-            "relation": r.get("relation", ""),
-            "start_chapter": r.get("start_chapter"),
-            "end_chapter": r.get("end_chapter"),
-            "start_book": r.get("start_book"),
-            "end_book": r.get("end_book"),
+            "relation": normalized.get("relation", ""),
+            "start_scene": normalized.get("start_scene"),
+            "end_scene": normalized.get("end_scene"),
+            "start_book": normalized.get("start_book"),
+            "end_book": normalized.get("end_book"),
         }
         if d == "reverse":
-            new_r["source_id"] = r.get("target_id", "")
+            new_r["source_id"] = normalized.get("source_id", "")
             new_r["target_id"] = entry_id
         else:
             new_r["source_id"] = entry_id
-            new_r["target_id"] = r.get("target_id", "")
+            new_r["target_id"] = normalized.get("target_id", "")
 
         filtered_rels.append({k: v for k, v in new_r.items() if v is not None})
 
@@ -105,8 +176,8 @@ def sourcebook_add_relation(
     source_id: str,
     relation_type: str,
     target_id: str,
-    start_chapter: str | None = None,
-    end_chapter: str | None = None,
+    start_scene: int | None = None,
+    end_scene: int | None = None,
     start_book: str | None = None,
     end_book: str | None = None,
 ) -> dict:
@@ -136,10 +207,14 @@ def sourcebook_add_relation(
         "relation": relation_type,
         "target_id": target_id,
     }
-    if start_chapter:
-        new_rel["start_chapter"] = start_chapter
-    if end_chapter:
-        new_rel["end_chapter"] = end_chapter
+    if start_scene is not None:
+        if type(start_scene) is not int:
+            return {"error": "Invalid start_scene: scene IDs must be integers."}
+        new_rel["start_scene"] = start_scene
+    if end_scene is not None:
+        if type(end_scene) is not int:
+            return {"error": "Invalid end_scene: scene IDs must be integers."}
+        new_rel["end_scene"] = end_scene
     if start_book:
         new_rel["start_book"] = start_book
     if end_book:
@@ -224,6 +299,11 @@ def _normalize_entry_data(e_data: dict) -> dict:
         "synonyms": synonyms,
         "images": images,
         "keywords": keywords,
+        "origin_date": e_data.get("origin_date"),
+        "destination_datetime": e_data.get("destination_datetime"),
+        "destination_relative": e_data.get("destination_relative"),
+        "creates_new_timeline": e_data.get("creates_new_timeline", False),
+        "timeline_id": e_data.get("timeline_id"),
     }
 
 
@@ -237,7 +317,7 @@ def _get_story_data(active: Any = None) -> Any:
     return story, story_path
 
 
-def sourcebook_list_entries(active: Any = None) -> List[Dict]:
+def sourcebook_list_entries(active: Any = None) -> list[dict]:
     """Sourcebook List Entries."""
     story, _ = _get_story_data(active)
     if not story:
@@ -283,7 +363,7 @@ def sourcebook_search_entries(
     match_mode: SOURCEBOOK_SEARCH_MODE = "extensive",
     split_query_fallback: bool = False,
     active: Any = None,
-) -> List[Dict]:
+) -> list[dict]:
     """Search sourcebook entries with direct/extensive matching and optional split fallback."""
     story, _ = _get_story_data(active)
     if not story:
@@ -336,7 +416,7 @@ def sourcebook_search_entries(
     return fallback_results
 
 
-def sourcebook_get_entry(name_or_id: str, active: Any = None) -> Optional[Dict]:
+def sourcebook_get_entry(name_or_id: str, active: Any = None) -> dict | None:
     """Sourcebook Get Entry."""
     if not name_or_id:
         return None
@@ -366,12 +446,17 @@ def sourcebook_create_entry(
     name: str,
     description: str,
     category: str = None,
-    synonyms: List[str] | object = _UNSET,
-    images: List[str] | object = _UNSET,
-    keywords: List[str] | object = _UNSET,
-    relations: List[dict] | object = _UNSET,
+    synonyms: list[str] | object = _UNSET,
+    images: list[str] | object = _UNSET,
+    keywords: list[str] | object = _UNSET,
+    relations: list[dict] | object = _UNSET,
+    origin_date: str | None = None,
+    destination_datetime: str | None = None,
+    destination_relative: str | None = None,
+    creates_new_timeline: bool = False,
+    timeline_id: str | None = None,
     active: Any = None,
-) -> Dict:
+) -> dict:
     """Create a sourcebook entry for the active project."""
     if not name or not isinstance(name, str) or not name.strip():
         return {"error": "Invalid name: Name must be a non-empty string."}
@@ -456,6 +541,18 @@ def sourcebook_create_entry(
         "keywords": cleaned_keywords,
         "relations": cleaned_relations,
     }
+    if origin_date is not None:
+        new_entry_data["origin_date"] = origin_date
+    if destination_datetime is not None:
+        new_entry_data["destination_datetime"] = destination_datetime
+    if destination_relative is not None:
+        new_entry_data["destination_relative"] = destination_relative
+    if creates_new_timeline:
+        new_entry_data["creates_new_timeline"] = creates_new_timeline
+        if isinstance(timeline_id, str) and timeline_id.strip():
+            new_entry_data["timeline_id"] = timeline_id.strip()
+        else:
+            new_entry_data["timeline_id"] = f"branch:{name}"
 
     sb_dict[name] = new_entry_data
     story["sourcebook"] = sb_dict
@@ -495,12 +592,17 @@ def sourcebook_update_entry(
     name: str = None,
     description: str = None,
     category: str = None,
-    synonyms: List[str] = None,
-    images: List[str] = None,
-    keywords: List[str] = None,
-    relations: List[Dict] = None,
+    synonyms: list[str] = None,
+    images: list[str] = None,
+    keywords: list[str] = None,
+    relations: list[dict] = None,
+    origin_date: str | None | object = _UNSET,
+    destination_datetime: str | None | object = _UNSET,
+    destination_relative: str | None | object = _UNSET,
+    creates_new_timeline: bool | None | object = _UNSET,
+    timeline_id: str | None | object = _UNSET,
     active: Any = None,
-) -> Dict:
+) -> dict:
     """Sourcebook Update Entry."""
     if not name_or_id:
         return {"error": "Invalid identifier: name_or_id is required."}
@@ -621,6 +723,46 @@ def sourcebook_update_entry(
     )
     if keywords is None and fields_affecting_keywords_changed:
         entry_data["keywords"] = []
+
+    if origin_date is not _UNSET:
+        if origin_date is None:
+            entry_data.pop("origin_date", None)
+        else:
+            entry_data["origin_date"] = origin_date
+
+    if destination_datetime is not _UNSET:
+        if destination_datetime is None:
+            entry_data.pop("destination_datetime", None)
+        else:
+            entry_data["destination_datetime"] = destination_datetime
+
+    if destination_relative is not _UNSET:
+        if destination_relative is None:
+            entry_data.pop("destination_relative", None)
+        else:
+            entry_data["destination_relative"] = destination_relative
+
+    if creates_new_timeline is not _UNSET:
+        if creates_new_timeline is None:
+            entry_data.pop("creates_new_timeline", None)
+        else:
+            entry_data["creates_new_timeline"] = creates_new_timeline
+            if creates_new_timeline and not isinstance(
+                entry_data.get("timeline_id"), str
+            ):
+                entry_data["timeline_id"] = f"branch:{found_key}"
+
+    if timeline_id is not _UNSET:
+        if timeline_id is None:
+            entry_data.pop("timeline_id", None)
+        elif isinstance(timeline_id, str):
+            trimmed = timeline_id.strip()
+            if trimmed:
+                entry_data["timeline_id"] = trimmed
+            else:
+                entry_data.pop("timeline_id", None)
+        else:
+            return {"error": "Invalid timeline_id: timeline_id must be a string."}
 
     sb_dict[found_key] = entry_data
     story["sourcebook"] = sb_dict

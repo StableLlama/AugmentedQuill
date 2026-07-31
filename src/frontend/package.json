@@ -7,12 +7,13 @@
     "dev": "vite",
     "typecheck": "tsc --noEmit",
     "check:exports": "tsc --noEmit --noUnusedLocals --noUnusedParameters",
-    "check:dead-exports": "ts-prune -p tsconfig.json",
     "check:bundle-budget": "node scripts/checkBundleBudget.mjs",
     "build": "npm run typecheck && vite build && npm run check:bundle-budget",
     "preview": "vite preview",
     "lint": "eslint . --ext .ts,.tsx",
     "test": "vitest run",
+    "test:e2e": "playwright test",
+    "test:e2e:fixture": "cd tests/e2e/fixture && vite --port 5199",
     "test:accessibility": "vitest run features/layout/ConfirmDialog.test.tsx features/chat/ToolCallLimitDialog.test.tsx features/story/MetadataEditorDialog.test.tsx features/settings/settings/SettingsMachine.test.tsx",
     "generate:types": "node scripts/generateTypes.mjs",
     "check:generated-types": "node scripts/generateTypes.mjs && git diff --exit-code types/api.generated.ts"
@@ -23,6 +24,7 @@
   "dependencies": {
     "@codemirror/lang-markdown": "^6.5.0",
     "@google/genai": "^1.50.1",
+    "@js-temporal/polyfill": "^0.5.1",
     "@lezer/highlight": "^1.2.3",
     "@radix-ui/react-tooltip": "^1.2.8",
     "@testing-library/dom": "^10.4.1",
@@ -46,6 +48,7 @@
     "protobufjs": "^7.5.5"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.0",
     "@tailwindcss/postcss": "^4.2.4",
     "@testing-library/react": "^16.3.2",
     "@types/dompurify": "^3.2.0",
@@ -55,12 +58,11 @@
     "@typescript-eslint/parser": "^8.59.0",
     "@vitejs/plugin-react": "^6.0.1",
     "autoprefixer": "^10.5.0",
-    "eslint": "^9.39.4",
-    "eslint-plugin-jsx-a11y": "^6.8.0",
+    "eslint": "^10.8.0",
+    "eslint-plugin-jsx-a11y": "^6.4.1",
     "jsdom": "^29.1.0",
     "prettier": "^3.8.3",
     "tailwindcss": "^4.2.2",
-    "ts-prune": "^0.10.3",
     "typescript": "~6.0.3",
     "vite": "^8.0.10",
     "vitest": "^4.1.5"

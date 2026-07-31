@@ -78,7 +78,12 @@ export function useAppUiActions({
   const handleChapterSelect = useCallback(
     (id: string | null): void => {
       selectChapter(id);
-      setIsSidebarOpen(false);
+      if (typeof window !== 'undefined') {
+        const isDesktop = window.matchMedia('(min-width: 1024px)').matches;
+        if (!isDesktop) {
+          setIsSidebarOpen(false);
+        }
+      }
     },
     [selectChapter, setIsSidebarOpen]
   );

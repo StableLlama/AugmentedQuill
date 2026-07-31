@@ -23,28 +23,28 @@ const exampleProviders: AppSettings['providers'] = [
     baseUrl: 'https://api.example.com/v1',
     apiKey: 'key1',
     modelId: 'foo',
-    timeout: 10000,
+    timeout: 10,
   },
   {
     id: 'b',
     baseUrl: 'https://api.example.com/v1',
     apiKey: 'key1',
     modelId: 'foo',
-    timeout: 10000,
+    timeout: 10,
   },
   {
     id: 'c',
     baseUrl: 'https://api.example.com/v1',
     apiKey: 'key1',
     modelId: 'bar',
-    timeout: 10000,
+    timeout: 10,
   },
   {
     id: 'd',
     baseUrl: 'https://other.invalid',
     apiKey: 'key2',
     modelId: 'foo',
-    timeout: 10000,
+    timeout: 10,
   },
   {
     id: 'e',
@@ -52,7 +52,7 @@ const exampleProviders: AppSettings['providers'] = [
     apiKey: 'key1',
     apiKeyEnabled: false,
     modelId: 'foo',
-    timeout: 10000,
+    timeout: 10,
   },
 ];
 

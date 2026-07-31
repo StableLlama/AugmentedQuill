@@ -9,18 +9,19 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict
+from collections.abc import Callable
+from typing import Any
 
 import jsonschema
 
 
 def normalize_validate_story_config(
     *,
-    merged: Dict[str, Any],
+    merged: dict[str, Any],
     path_label: str,
     current_schema_version: int,
-    schema_loader: Callable[[int], Dict[str, Any]],
-) -> Dict[str, Any]:
+    schema_loader: Callable[[int], dict[str, Any]],
+) -> dict[str, Any]:
     """Normalize story data to current invariants and validate against schema."""
     metadata = merged.get("metadata")
     if not isinstance(metadata, dict):
@@ -39,6 +40,34 @@ def normalize_validate_story_config(
     if not merged.get("format"):
         merged["format"] = "markdown"
 
+    sourcebook_relations = merged.get("sourcebook_relations")
+    if isinstance(sourcebook_relations, list):
+        normalized_relations = []
+        for relation in sourcebook_relations:
+            if not isinstance(relation, dict):
+                normalized_relations.append(relation)
+                continue
+
+            raw_relation = relation.get("relation")
+            if isinstance(raw_relation, list) and len(raw_relation) == 3:
+                source, relation_text, target = raw_relation
+                source = source.strip() if isinstance(source, str) else ""
+                relation_text = (
+                    relation_text.strip() if isinstance(relation_text, str) else ""
+                )
+                target = target.strip() if isinstance(target, str) else ""
+
+                normalized_relation = dict(relation)
+                normalized_relation["relation"] = relation_text
+                if not normalized_relation.get("source_id"):
+                    normalized_relation["source_id"] = source
+                if not normalized_relation.get("target_id"):
+                    normalized_relation["target_id"] = target
+                normalized_relations.append(normalized_relation)
+            else:
+                normalized_relations.append(relation)
+        merged["sourcebook_relations"] = normalized_relations
+
     if not isinstance(merged.get("project_type"), str):
         if isinstance(merged.get("books"), list) and merged.get("books"):
             merged["project_type"] = "series"
@@ -53,7 +82,7 @@ def normalize_validate_story_config(
 
     sourcebook = merged.get("sourcebook")
     if isinstance(sourcebook, list):
-        sourcebook_dict: Dict[str, Any] = {}
+        sourcebook_dict: dict[str, Any] = {}
         for entry in sourcebook:
             if isinstance(entry, dict) and isinstance(entry.get("name"), str):
                 name = entry["name"]
@@ -118,7 +147,7 @@ def normalize_validate_story_config(
     return merged
 
 
-def clean_story_config_for_disk(config: Dict[str, Any]) -> Dict[str, Any]:
+def clean_story_config_for_disk(config: dict[str, Any]) -> dict[str, Any]:
     """Strip runtime-only fields and normalize sourcebook shape before persistence."""
 
     def _clean_for_disk(data: Any, current_key: Any = None) -> Any:
@@ -126,7 +155,9 @@ def clean_story_config_for_disk(config: Dict[str, Any]) -> Dict[str, Any]:
         if isinstance(data, dict):
             res = {}
             for k, v in data.items():
-                if k == "id":
+                # Keep ids for annotation records; all other runtime ids are
+                # stripped for persisted story config compatibility.
+                if k == "id" and current_key != "annotations":
                     continue
                 if current_key == "sourcebook":
                     entry_data = _clean_for_disk(v)
@@ -149,7 +180,7 @@ def clean_story_config_for_disk(config: Dict[str, Any]) -> Dict[str, Any]:
                         }
                         res[name] = entry_copy
                 return res
-            return [_clean_for_disk(x) for x in data]
+            return [_clean_for_disk(x, current_key) for x in data]
         return data
 
     return _clean_for_disk(config)

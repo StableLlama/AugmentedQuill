@@ -9,10 +9,10 @@
 
 from fastapi import APIRouter
 
-from augmentedquill.api.v1.chapters_routes.read import router as chapters_read_router
 from augmentedquill.api.v1.chapters_routes.mutate import (
     router as chapters_mutate_router,
 )
+from augmentedquill.api.v1.chapters_routes.read import router as chapters_read_router
 
 router = APIRouter(tags=["Chapters"])
 router.include_router(chapters_read_router)

@@ -457,7 +457,7 @@ export const SourcebookListView: React.FC<SourcebookListViewProps> = ({
         <SourcebookHoverCard
           entry={hoveredEntry}
           position={tooltipPos}
-          isLight={isLight}
+          bgClass={isLight ? 'bg-white' : 'bg-brand-gray-900'}
           borderClass={borderClass}
           textClass={textClass}
           subTextClass={subTextClass}

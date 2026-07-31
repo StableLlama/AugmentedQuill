@@ -94,4 +94,4 @@ Paste the copied prompt into your preferred image generation tool (Stable Diffus
 
 ---
 
-Next up: Discover your AI writing partner in [The AI Chat Assistant](07_ai_chat_assistant.md).
+Next up: Customize the look and feel in [Appearance and Display](08_appearance_and_display.md).

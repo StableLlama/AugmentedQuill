@@ -7,10 +7,10 @@
 
 """Defines the test image features unit so this responsibility stays isolated, testable, and easy to evolve."""
 
-import os
-import json
-import tempfile
 import base64
+import json
+import os
+import tempfile
 from pathlib import Path
 from unittest import TestCase
 from unittest.mock import AsyncMock, patch
@@ -18,15 +18,15 @@ from unittest.mock import AsyncMock, patch
 from fastapi.testclient import TestClient
 
 from augmentedquill.main import create_app
-from augmentedquill.services.projects.projects import select_project, create_project
-from augmentedquill.utils.image_helpers import (
-    delete_image_metadata,
-    load_image_metadata,
-    get_project_images,
-    update_image_metadata,
-)
 from augmentedquill.services.chat.chat_api_helpers import inject_project_images
 from augmentedquill.services.chat.chat_tool_dispatcher import exec_chat_tool
+from augmentedquill.services.projects.projects import create_project, select_project
+from augmentedquill.utils.image_helpers import (
+    delete_image_metadata,
+    get_project_images,
+    load_image_metadata,
+    update_image_metadata,
+)
 
 
 class ImageFeaturesTest(TestCase):
@@ -295,17 +295,19 @@ class ImageFeaturesTest(TestCase):
             call_id = "call_123"
             mutations = {}
 
-            # Test Tool 1: list_images
-            res = await exec_chat_tool("list_images", {}, call_id, payload, mutations)
+            # Test Tool 1: manage_images list
+            res = await exec_chat_tool(
+                "manage_images", {"action": "list"}, call_id, payload, mutations
+            )
             content = json.loads(res["content"])
             # Should have ref.png from previous test? No, clean dir each setUp.
             # But wait, we just created desc_test.jpg
             self.assertEqual(content[0]["filename"], "desc_test.jpg")
 
-            # Test Tool 2: generate_image_description
+            # Test Tool 2: manage_images generate_description
             res = await exec_chat_tool(
-                "generate_image_description",
-                {"filename": "desc_test.jpg"},
+                "manage_images",
+                {"action": "generate_description", "filename": "desc_test.jpg"},
                 call_id,
                 payload,
                 mutations,
@@ -328,10 +330,13 @@ class ImageFeaturesTest(TestCase):
             self.assertEqual(user_msg[1]["type"], "image_url")
             self.assertIn("data:image/jpeg;base64,", user_msg[1]["image_url"]["url"])
 
-            # Test Tool 3: create_image_placeholder
+            # Test Tool 3: manage_images create_placeholder
             res = await exec_chat_tool(
-                "create_image_placeholder",
-                {"description": "A ghost", "title": "Ghost"},
+                "manage_images",
+                {
+                    "action": "create_placeholder",
+                    "create_data": {"description": "A ghost", "title": "Ghost"},
+                },
                 call_id,
                 payload,
                 mutations,

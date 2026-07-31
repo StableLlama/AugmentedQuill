@@ -35,7 +35,10 @@ export interface ChatContextValue {
   onEditMessage: (id: string, newText: string) => void;
   onDeleteMessage: (id: string) => void;
   onUpdateSystemPrompt: (newPrompt: string) => void;
-  onSwitchProject: (projectId: string) => Promise<void>;
+  onSwitchProject: (
+    projectId: string,
+    options?: { preserveActiveChatSession?: boolean }
+  ) => Promise<void>;
   /** Merged list of incognito + persistent chat sessions. */
   sessions: ChatSession[];
   currentSessionId: string | null;

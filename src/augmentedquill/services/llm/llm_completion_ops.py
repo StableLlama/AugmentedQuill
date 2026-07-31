@@ -9,34 +9,35 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, AsyncIterator
-import os
 import json
+import os
+from collections.abc import AsyncIterator
+from typing import Any
 
 from augmentedquill.core.config import (
-    load_story_config,
     DEFAULT_STORY_CONFIG_PATH,
     load_machine_config,
-)
-from augmentedquill.services.projects.projects import get_active_project_dir
-from augmentedquill.utils.llm_parsing import (
-    parse_complete_assistant_output,
+    load_story_config,
 )
 from augmentedquill.services.llm.llm_http_ops import (
     logged_request,
     logged_stream_request,
 )
 from augmentedquill.services.llm.llm_request_helpers import (
-    get_story_llm_preferences,
+    apply_native_tool_calling_mode,
     build_headers,
     build_timeout,
-    apply_native_tool_calling_mode,
+    get_story_llm_preferences,
+)
+from augmentedquill.services.projects.projects import get_active_project_dir
+from augmentedquill.utils.llm_parsing import (
+    parse_complete_assistant_output,
 )
 
 
 def _enforce_writing_no_thinking(
-    extra_body: Dict[str, Any], model_type: str | None
-) -> Dict[str, Any]:
+    extra_body: dict[str, Any], model_type: str | None
+) -> dict[str, Any]:
     """Ensure WRITING requests never enable provider thinking templates."""
     if model_type != "WRITING":
         return extra_body
@@ -371,7 +372,7 @@ async def openai_chat_complete(
     url = str(base_url).rstrip("/") + "/chat/completions"
     headers = build_headers(api_key)
 
-    body: Dict[str, Any] = {
+    body: dict[str, Any] = {
         "model": model_id,
         "messages": messages,
         "temperature": temperature,
@@ -380,7 +381,7 @@ async def openai_chat_complete(
         body["max_tokens"] = max_tokens
 
     model_extra = _build_model_extra_body(model_cfg)
-    merged_extra: Dict[str, Any] = dict(model_extra)
+    merged_extra: dict[str, Any] = dict(model_extra)
     request_extra = dict(extra_body or {})
     for key, value in request_extra.items():
         if (
@@ -427,7 +428,7 @@ async def openai_completions(
     url = str(base_url).rstrip("/") + "/completions"
     headers = build_headers(api_key)
 
-    body: Dict[str, Any] = {
+    body: dict[str, Any] = {
         "model": model_id,
         "prompt": prompt,
         "temperature": temperature,
@@ -471,7 +472,7 @@ async def openai_chat_complete_stream(
 
     headers = build_headers(api_key)
 
-    body: Dict[str, Any] = {
+    body: dict[str, Any] = {
         "model": model_id,
         "messages": messages,
         "temperature": temperature,
@@ -548,7 +549,7 @@ async def openai_completions_stream(
 
     headers = build_headers(api_key)
 
-    body: Dict[str, Any] = {
+    body: dict[str, Any] = {
         "model": model_id,
         "prompt": prompt,
         "temperature": temperature,

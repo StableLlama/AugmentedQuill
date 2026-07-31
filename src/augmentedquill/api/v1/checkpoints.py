@@ -7,19 +7,20 @@
 
 """Defines the checkpoints unit so this responsibility stays isolated, testable, and easy to evolve."""
 
-from datetime import datetime
 import re
 import shutil
+from datetime import datetime
 from pathlib import Path
-from pydantic import BaseModel
+
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 from augmentedquill.api.v1.dependencies import ProjectDep
-from augmentedquill.api.v1.http_responses import ok_json, error_json
+from augmentedquill.api.v1.http_responses import error_json, ok_json
 from augmentedquill.services.projects.project_snapshots import (
-    snapshot_to_directory,
     restore_from_directory,
+    snapshot_to_directory,
 )
 from augmentedquill.utils.path_utils import safe_child_path
 
@@ -123,7 +124,7 @@ async def api_load_checkpoint(
         restore_from_directory(project_dir, target_dir)
         return ok_json(ok=True)
     except (OSError, ValueError, RuntimeError) as e:
-        return error_json(f"Failed to load checkpoint: {str(e)}", status_code=500)
+        return error_json(f"Failed to load checkpoint: {e!s}", status_code=500)
 
 
 @router.post("/checkpoints/delete")

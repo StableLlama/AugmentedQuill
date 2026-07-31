@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stablellama.ai/schemas/story-v7.schema.json",
+  "type": "object",
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "integer"
+        }
+      },
+      "required": ["version"]
+    },
+    "project_title": {
+      "type": "string",
+      "description": "Title of the project"
+    },
+    "format": {
+      "type": "string",
+      "description": "Story file format"
+    },
+    "project_type": {
+      "type": "string",
+      "description": "Project type"
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Tags for the project"
+    },
+    "sourcebook": {
+      "type": "object",
+      "patternProperties": {
+        ".*": {
+          "$ref": "#/$defs/sourcebook_entry"
+        }
+      },
+      "description": "Sourcebook entries"
+    },
+    "story_summary": {
+      "type": "string",
+      "description": "Summary of the story"
+    },
+    "sourcebook_relations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/story_relation"
+      },
+      "description": "Global list of all sourcebook relations"
+    }
+  },
+  "required": ["project_title", "format", "metadata"],
+  "$defs": {
+    "chapter": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "filename": {
+          "type": "string"
+        },
+        "conflicts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "description": {
+                "type": "string"
+              },
+              "resolution": {
+                "type": "string"
+              }
+            },
+            "required": ["description", "resolution"]
+          }
+        },
+        "notes": {
+          "type": "string"
+        },
+        "private_notes": {
+          "type": "string"
+        }
+      },
+      "required": ["title"]
+    },
+    "book": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "chapters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/chapter"
+          }
+        }
+      },
+      "required": ["title", "chapters"]
+    },
+    "sourcebook_entry": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string"
+        },
+        "synonyms": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "images": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "origin_date": {
+          "type": ["string", "null"],
+          "description": "ISO 8601 birth or creation date used to compute personal timeline age"
+        }
+      },
+      "required": ["description", "category"]
+    },
+    "story_relation": {
+      "type": "object",
+      "properties": {
+        "source_id": {
+          "type": "string"
+        },
+        "target_id": {
+          "type": "string"
+        },
+        "relation": {
+          "type": "string"
+        },
+        "start_chapter": {
+          "type": ["string", "null"]
+        },
+        "start_book": {
+          "type": ["string", "null"]
+        },
+        "end_chapter": {
+          "type": ["string", "null"]
+        },
+        "end_book": {
+          "type": ["string", "null"]
+        }
+      },
+      "required": ["source_id", "target_id", "relation"]
+    }
+  }
+}

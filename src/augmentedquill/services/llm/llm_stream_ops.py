@@ -9,31 +9,32 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, AsyncIterator
 import json as _json
 import os
+from collections.abc import AsyncIterator
+from typing import Any
 
 import httpx
 
 from augmentedquill.core.config import (
     load_machine_config,
 )
-from augmentedquill.services.llm.llm_http_ops import logged_stream_request
 from augmentedquill.services.chat.chat_tool_decorator import EDITING_ROLE
+from augmentedquill.services.llm.llm_http_ops import logged_stream_request
 from augmentedquill.services.llm.llm_request_helpers import (
     apply_native_tool_calling_mode,
 )
-from augmentedquill.utils.stream_helpers import ChannelFilter
 from augmentedquill.utils.llm_parsing import (
     parse_complete_assistant_output,
     parse_stream_channel_fragments,
     parse_tool_calls_from_content,
 )
+from augmentedquill.utils.stream_helpers import ChannelFilter
 
 
 def _enforce_writing_no_thinking(
-    extra_body: Dict[str, Any], model_type: str | None
-) -> Dict[str, Any]:
+    extra_body: dict[str, Any], model_type: str | None
+) -> dict[str, Any]:
     """Ensure WRITING requests never enable provider thinking templates."""
     if model_type != "WRITING":
         return extra_body
@@ -130,9 +131,9 @@ async def unified_chat_stream(
 ) -> AsyncIterator[dict]:
     """Unified Chat Stream."""
     from augmentedquill.services.llm.llm_completion_ops import (
+        _build_model_extra_body,
         _resolve_machine_model_cfg,
         _resolve_temperature_max_tokens,
-        _build_model_extra_body,
     )
 
     _validate_base_url(base_url, skip_validation=skip_validation)
@@ -172,11 +173,11 @@ async def unified_chat_stream(
     merged_extra_body = _enforce_writing_no_thinking(merged_extra_body, model_type)
 
     url = str(base_url).rstrip("/") + "/chat/completions"
-    headers: Dict[str, str] = {"Content-Type": "application/json"}
+    headers: dict[str, str] = {"Content-Type": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
 
-    body: Dict[str, Any] = {
+    body: dict[str, Any] = {
         "model": model_id,
         "messages": messages,
         "temperature": temperature,
@@ -252,7 +253,6 @@ async def unified_chat_stream(
                 body=current_body,
                 timeout=httpx.Timeout(float(timeout_s or 60)),
             ) as (resp, request_log_entry):
-
                 if resp.status_code >= 400:
                     error_content = await resp.aread()
                     if not is_fallback and supports_function_calling:
@@ -286,6 +286,14 @@ async def unified_chat_stream(
                         response_data = await resp.json()
                         if request_log_entry:
                             request_log_entry["response"]["body"] = response_data
+                            if response_data.get("usage") is not None:
+                                request_log_entry["response"]["usage"] = response_data[
+                                    "usage"
+                                ]
+
+                        usage = response_data.get("usage")
+                        if usage is not None:
+                            yield {"usage": usage}
 
                         choices = response_data.get("choices", [])
                         if choices:
@@ -390,7 +398,11 @@ async def unified_chat_stream(
                             chunk = _json.loads(data_str)
                             if request_log_entry:
                                 request_log_entry["response"]["chunks"].append(chunk)
-
+                            usage = chunk.get("usage")
+                            if usage is not None:
+                                if request_log_entry:
+                                    request_log_entry["response"]["usage"] = usage
+                                yield {"usage": usage}
                             choices = chunk.get("choices", [])
                             if not choices:
                                 continue
@@ -467,7 +479,7 @@ async def unified_chat_stream(
                 break
 
         except Exception as e:
-            err_text = str(e).strip() or f"{type(e).__name__}: {repr(e)}"
+            err_text = str(e).strip() or f"{type(e).__name__}: {e!r}"
             if request_log_entry:
                 request_log_entry["response"]["error_detail"] = err_text
                 request_log_entry["response"][

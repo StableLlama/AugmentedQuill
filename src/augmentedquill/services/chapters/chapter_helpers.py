@@ -9,15 +9,15 @@
 
 import re
 from pathlib import Path
-from typing import List, Tuple, Dict, Any
+from typing import Any
 
-from augmentedquill.services.exceptions import NotFoundError
 from augmentedquill.core.config import load_story_config
+from augmentedquill.services.exceptions import NotFoundError
 
 
 def _scan_chapter_files(
     active: Path | None = None,
-) -> List[Tuple[str, Path]]:
+) -> list[tuple[str, Path]]:
     """Return list of (global_id, path) for chapter files.
 
     For Medium projects: global_id is likely the string of int '1', '2'.
@@ -85,7 +85,7 @@ def _scan_chapter_files(
     chapters_dir = active / "chapters"
     if not chapters_dir.exists() or not chapters_dir.is_dir():
         return []
-    items: List[Tuple[int, Path]] = []
+    items: list[tuple[int, Path]] = []
     for p in chapters_dir.glob("*.txt"):
         if not p.is_file():
             continue
@@ -102,7 +102,7 @@ def _scan_chapter_files(
     return [(i + 1, p) for i, (_, p) in enumerate(items)]
 
 
-def _load_chapter_titles(count: int, active: Path | None = None) -> List[str]:
+def _load_chapter_titles(count: int, active: Path | None = None) -> list[str]:
     """Load chapter titles from story.json chapters array if present.
     Do not pad; callers decide fallbacks (e.g., filename).
     """
@@ -117,7 +117,7 @@ def _load_chapter_titles(count: int, active: Path | None = None) -> List[str]:
     return titles[:count]
 
 
-def _normalize_chapter_entry(entry: Any) -> Dict[str, Any]:
+def _normalize_chapter_entry(entry: Any) -> dict[str, Any]:
     """Ensures a chapter entry is a dict with 'title', 'summary', 'filename'.
     Preserves other existing keys. Handles JS '[object Object]' leak.
     """

@@ -10,14 +10,20 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, List
+from typing import Any
 
 from augmentedquill.core.config import load_story_config, save_story_config
-from augmentedquill.services.projects.project_locks import run_locked
 from augmentedquill.services.chapters.chapter_helpers import (
     _chapter_by_id_or_404,
     _get_chapter_metadata_entry,
     _scan_chapter_files,
+)
+from augmentedquill.services.projects.project_locks import run_locked
+from augmentedquill.services.scenes.scene_markers import (
+    parse_scene_spans,
+    remove_markers,
+    transfer_scene_markers,
+    validate_scene_marker_tokens,
 )
 from augmentedquill.utils.json_repair import apply_typographic_quotes
 
@@ -27,6 +33,8 @@ def write_chapter_content_in_project(
 ) -> None:
     """Write content to a chapter by its ID."""
     _, path, _ = _chapter_by_id_or_404(chap_id, active=active)
+    existing_content = path.read_text(encoding="utf-8") if path.exists() else ""
+    validate_scene_marker_tokens(existing_content)
 
     story_root = path
     for _ in range(5):
@@ -39,7 +47,9 @@ def write_chapter_content_in_project(
     project_lang = str(story.get("language", "en") or "en")
 
     converted_content = apply_typographic_quotes(content, language=project_lang)
-    path.write_text(converted_content, encoding="utf-8")
+    preserved = transfer_scene_markers(existing_content, converted_content)
+    validate_scene_marker_tokens(preserved)
+    path.write_text(preserved, encoding="utf-8")
 
 
 def update_chapter_metadata_in_project(
@@ -179,7 +189,7 @@ def remove_chapter_conflict_in_project(active: Path, chap_id: int, index: int) -
 
 
 def reorder_chapter_conflicts_in_project(
-    active: Path, chap_id: int, new_indices: List[int]
+    active: Path, chap_id: int, new_indices: list[int]
 ) -> None:
     """Reorder conflicts in a chapter providing the new sequence of indices."""
     story, story_path, target = _get_chapter_target_and_story(active, chap_id)
@@ -234,6 +244,55 @@ def delete_chapter_in_project(active: Path, chap_id: int) -> None:
     _, path, _ = _chapter_by_id_or_404(chap_id, active=active)
     files = _scan_chapter_files(active)
 
+    def _migrate_scene_markers_before_delete() -> None:
+        if not path.exists():
+            return
+
+        same_scope_files = [
+            f_path for _, f_path in files if f_path.parent == path.parent
+        ]
+        try:
+            removed_index = same_scope_files.index(path)
+        except ValueError:
+            return
+
+        destination_path: Path | None = None
+        if removed_index > 0:
+            destination_path = same_scope_files[removed_index - 1]
+        elif removed_index + 1 < len(same_scope_files):
+            destination_path = same_scope_files[removed_index + 1]
+
+        if destination_path is None or not destination_path.exists():
+            return
+
+        source_content = path.read_text(encoding="utf-8")
+        validate_scene_marker_tokens(source_content)
+        moved_scene_ids = {span.scene_id for span in parse_scene_spans(source_content)}
+        if not moved_scene_ids:
+            return
+
+        destination_content = destination_path.read_text(encoding="utf-8")
+        validate_scene_marker_tokens(destination_content)
+        destination_without_duplicates = remove_markers(
+            destination_content, moved_scene_ids
+        )
+
+        source_payload = source_content.strip("\n")
+        if not source_payload:
+            return
+
+        if destination_without_duplicates:
+            separator = (
+                "\n\n" if not destination_without_duplicates.endswith("\n") else "\n"
+            )
+            merged_content = (
+                f"{destination_without_duplicates}{separator}{source_payload}"
+            )
+        else:
+            merged_content = source_payload
+        destination_path.write_text(merged_content, encoding="utf-8")
+
+    _migrate_scene_markers_before_delete()
     path.unlink()
     p_type = story.get("project_type", "novel")
 
