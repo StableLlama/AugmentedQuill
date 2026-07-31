@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import List
 
 from augmentedquill.core.config import load_story_config, save_story_config
 from augmentedquill.services.projects.project_locks import run_locked
@@ -94,7 +93,7 @@ def update_story_metadata_in_project(
     active: Path,
     title: str = None,
     summary: str = None,
-    tags: List[str] = None,
+    tags: list[str] = None,
     notes: str = None,
     private_notes: str = None,
     conflicts: list | None = None,

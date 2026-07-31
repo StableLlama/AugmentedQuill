@@ -10,8 +10,9 @@
 from typing import Any
 
 from fastapi import APIRouter
-from augmentedquill.services.llm import llm_logging
+
 from augmentedquill.models.debug import DebugLogEntry, DebugLogsResponse
+from augmentedquill.services.llm import llm_logging
 
 router = APIRouter(prefix="/debug", tags=["debug"])
 

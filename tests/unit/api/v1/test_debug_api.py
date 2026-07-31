@@ -9,8 +9,8 @@
 
 from fastapi.testclient import TestClient
 
-from augmentedquill.services.llm import llm_logging
 from augmentedquill.main import app
+from augmentedquill.services.llm import llm_logging
 
 client = TestClient(app)
 

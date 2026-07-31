@@ -7,33 +7,18 @@
 
 """Defines the story tools unit so this responsibility stays isolated, testable, and easy to evolve."""
 
+import os
 from typing import Any, Literal
 
-import os
-
 from pydantic import Field
-from augmentedquill.services.chat.chat_tool_decorator import ToolModel
 
 from augmentedquill.core.config import load_story_config
 from augmentedquill.services.chat.chat_session_helpers import load_chat, save_chat
 from augmentedquill.services.chat.chat_tool_decorator import (
     CHAT_ROLE,
     EDITING_ROLE,
+    ToolModel,
     chat_tool,
-)
-from augmentedquill.services.projects.project_helpers import _snap_to_boundary
-from augmentedquill.services.projects.projects import (
-    get_active_project_dir,
-    read_book_content as _read_book_content,
-    read_story_content as _read_story_content,
-    update_book_metadata as _update_book_metadata,
-    update_story_metadata as _update_story_metadata,
-    write_book_content as _write_book_content,
-    write_story_content as _write_story_content,
-    read_scratchpad as _read_scratchpad,
-    write_scratchpad as _write_scratchpad,
-    read_editing_scratchpad as _read_editing_scratchpad,
-    write_editing_scratchpad as _write_editing_scratchpad,
 )
 from augmentedquill.services.chat.chat_tools.metadata_patching import (
     ConflictEntry,
@@ -43,6 +28,40 @@ from augmentedquill.services.chat.chat_tools.metadata_patching import (
     apply_conflict_list_patch,
     apply_string_list_patch,
     apply_text_patch,
+)
+from augmentedquill.services.projects.project_helpers import _snap_to_boundary
+from augmentedquill.services.projects.projects import (
+    get_active_project_dir,
+)
+from augmentedquill.services.projects.projects import (
+    read_book_content as _read_book_content,
+)
+from augmentedquill.services.projects.projects import (
+    read_editing_scratchpad as _read_editing_scratchpad,
+)
+from augmentedquill.services.projects.projects import (
+    read_scratchpad as _read_scratchpad,
+)
+from augmentedquill.services.projects.projects import (
+    read_story_content as _read_story_content,
+)
+from augmentedquill.services.projects.projects import (
+    update_book_metadata as _update_book_metadata,
+)
+from augmentedquill.services.projects.projects import (
+    update_story_metadata as _update_story_metadata,
+)
+from augmentedquill.services.projects.projects import (
+    write_book_content as _write_book_content,
+)
+from augmentedquill.services.projects.projects import (
+    write_editing_scratchpad as _write_editing_scratchpad,
+)
+from augmentedquill.services.projects.projects import (
+    write_scratchpad as _write_scratchpad,
+)
+from augmentedquill.services.projects.projects import (
+    write_story_content as _write_story_content,
 )
 
 # Pydantic models for tool parameters
@@ -104,8 +123,6 @@ class WriteBookContentParams(ToolModel):
 
 class ReadEditingScratchpadParams(ToolModel):
     """Parameters for reading the EDITING scratchpad (no parameters needed)."""
-
-    pass
 
 
 class WriteEditingScratchpadParams(ToolModel):

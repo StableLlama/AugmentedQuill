@@ -12,8 +12,6 @@ All routes are scoped under ``/projects/{project_name}/annotations``.
 
 from __future__ import annotations
 
-from typing import List, Optional
-
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
@@ -39,18 +37,18 @@ class AnnotationResponse(BaseModel):
     id: str
     comment: str
     scope_type: str
-    chapter_id: Optional[str] = None
-    book_id: Optional[str] = None
-    start_offset: Optional[int] = None
-    end_offset: Optional[int] = None
+    chapter_id: str | None = None
+    book_id: str | None = None
+    start_offset: int | None = None
+    end_offset: int | None = None
 
 
 class CreateAnnotationRequest(BaseModel):
     """Payload for creating a new annotation."""
 
     scope_type: str = Field(..., description="'story', 'chapter', or 'unlinked'")
-    chapter_id: Optional[str] = Field(None, description="Chapter ID for chapter scope")
-    book_id: Optional[str] = Field(None, description="Book ID for nested chapter scope")
+    chapter_id: str | None = Field(None, description="Chapter ID for chapter scope")
+    book_id: str | None = Field(None, description="Book ID for nested chapter scope")
     start_offset: int = Field(
         ..., description="Raw character offset (markers included)"
     )
@@ -67,19 +65,19 @@ class UpdateAnnotationRequest(BaseModel):
 # ─── Routes ──────────────────────────────────────────────────────────────────
 
 
-@router.get("/annotations", response_model=List[AnnotationResponse])
-async def api_list_annotations(project_dir: ProjectDep) -> List[AnnotationResponse]:
+@router.get("/annotations", response_model=list[AnnotationResponse])
+async def api_list_annotations(project_dir: ProjectDep) -> list[AnnotationResponse]:
     """List all annotations for the project."""
     return [AnnotationResponse(**a) for a in list_annotations(project_dir)]
 
 
-@router.get("/annotations/scope", response_model=List[AnnotationResponse])
+@router.get("/annotations/scope", response_model=list[AnnotationResponse])
 async def api_list_annotations_for_scope(
     project_dir: ProjectDep,
     scope_type: str = "story",
-    chapter_id: Optional[str] = None,
-    book_id: Optional[str] = None,
-) -> List[AnnotationResponse]:
+    chapter_id: str | None = None,
+    book_id: str | None = None,
+) -> list[AnnotationResponse]:
     """List annotations for a specific prose scope."""
     return [
         AnnotationResponse(**a)

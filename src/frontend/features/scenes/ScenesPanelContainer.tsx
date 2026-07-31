@@ -221,7 +221,6 @@ async function streamEditorReplace(
   });
 }
 
-// eslint-disable-next-line max-lines-per-function
 export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
   editorRef,
   currentChapter,
@@ -349,7 +348,14 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
   );
 
   const recordSceneHistory = useCallback(
-    (label: string, nextScenes: Scene[]): void => {
+    (
+      label: string,
+      nextScenes: Scene[],
+      handlers?: {
+        onUndo?: () => Promise<void> | void;
+        onRedo?: () => Promise<void> | void;
+      }
+    ): void => {
       if (!recordHistoryEntry) {
         return;
       }
@@ -364,6 +370,8 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
       recordHistoryEntry({
         label,
         state: { ...storyRef.current, scenes: nextScenes, currentChapterId: currentId },
+        onUndo: handlers?.onUndo,
+        onRedo: handlers?.onRedo,
         forceNewHistory: true,
       });
     },
@@ -601,9 +609,44 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
   // ---- Delete from editor ----
   const handleDeleteScene = useCallback(async (): Promise<void> => {
     if (!editingSceneId) return;
+    const deletedScene = scenes.find((s: Scene): boolean => s.id === editingSceneId);
     await api.scenes.delete(editingSceneId);
     patchScene(null, editingSceneId);
-    recordSceneHistory('Delete scene', applyScenePatch(scenes, null, editingSceneId));
+    // Persist the undo: re-creating the scene on the backend so a reload does
+    // not permanently lose it (BUG-6).  The backend assigns a fresh id on
+    // restore, so the in-memory copy restored from history is replaced with the
+    // backend-persisted scene to keep ids consistent.
+    const activeId = { current: editingSceneId };
+    recordSceneHistory('Delete scene', applyScenePatch(scenes, null, editingSceneId), {
+      onUndo: async (): Promise<void> => {
+        if (!deletedScene) return;
+        const restored = (await api.scenes.create({
+          summary: deletedScene.summary,
+          beats: deletedScene.beats,
+          active_characters: deletedScene.active_characters,
+          passive_characters: deletedScene.passive_characters,
+          sourcebook_entry_ids: deletedScene.sourcebook_entry_ids,
+          location: deletedScene.location,
+          time: deletedScene.time,
+          scene_time: deletedScene.scene_time,
+          timeline_id: deletedScene.timeline_id,
+          color_tag: deletedScene.color_tag,
+          status: deletedScene.status,
+          pinboard_x: deletedScene.pinboard_x,
+          pinboard_y: deletedScene.pinboard_y,
+          causes: deletedScene.causes,
+        })) as Scene;
+        activeId.current = restored.id;
+        // Remove the stale (old-id) scene restored from history and add the
+        // backend-persisted scene in its place.
+        patchScene(null, deletedScene.id);
+        patchScene(restored);
+      },
+      onRedo: async (): Promise<void> => {
+        await api.scenes.delete(activeId.current);
+        patchScene(null, activeId.current);
+      },
+    });
     setEditingSceneId(null);
   }, [editingSceneId, patchScene, recordSceneHistory, scenes]);
 
@@ -1263,34 +1306,68 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
       // replace in the editor (the backend may return a different end_offset).
       const proseLink =
         scenes.find((s: Scene) => s.id === editingSceneId)?.prose_link ?? null;
+      // Guard: only scenes with a real content scope (story/chapter) have prose
+      // that lives in an editor document.  Unlinked-scope scenes (brand-new
+      // scenes) must not be written into any chapter — doing so corrupts the
+      // chapter text at a wrong offset (BUG-1).
+      if (!proseLink || proseLink.scope_type === 'unlinked') return;
+
+      const previousText = getLinkedProseText(proseLink) ?? '';
+      const matchesCurrentScope =
+        currentChapter != null && linkMatchesCurrentChapter(proseLink, currentChapter);
+
       const updated = await api.scenes.updateProseContent(editingSceneId, text);
       patchScene(updated as Scene);
       recordSceneHistory(
         'Edit scene linked prose',
-        applyScenePatch(scenes, updated as Scene)
+        applyScenePatch(scenes, updated as Scene),
+        {
+          // Persist the revert to the backend so the prose actually changes
+          // back (not just the in-memory story state) — BUG-2.
+          onUndo: async (): Promise<void> => {
+            const reverted = await api.scenes.updateProseContent(
+              editingSceneId,
+              previousText
+            );
+            patchScene(reverted as Scene);
+          },
+          onRedo: async (): Promise<void> => {
+            const redone = await api.scenes.updateProseContent(editingSceneId, text);
+            patchScene(redone as Scene);
+          },
+        }
       );
       // Reflect the change immediately in the editor so the writer sees the
-      // updated text without having to close and reopen the chapter.
-      // prose_link offsets are marker-inclusive; convert to visible space
-      // because the editor document is marker-stripped (hideSceneMarkers=true).
-      if (proseLink && editorRef?.current && currentChapter?.content) {
-        const view: EditorView | null = editorRef.current.getEditorView();
-        if (view) {
-          const fullContent = currentChapter.content;
-          const docLen = view.state.doc.length;
-          const from = Math.min(
-            toVisibleOffset(fullContent, Number(proseLink.start_offset ?? 0)),
-            docLen
-          );
-          const to = Math.min(
-            toVisibleOffset(fullContent, proseLink.end_offset ?? docLen),
-            docLen
-          );
-          view.dispatch({ changes: { from, to, insert: text } });
-        }
+      // updated text without having to close and reopen the chapter.  Update
+      // the store's full content (scene markers included) instead of
+      // dispatching into the CodeMirror document: a raw dispatch leaves the
+      // editor's marker baseline (lastSavedFullContentRef) stale, so the next
+      // debounced autosave re-injects markers against the OLD text, drops the
+      // scene marker, and corrupts the chapter file (BUG-2).  The editor
+      // re-syncs externally from the store and skips onChange for external
+      // value syncs, so no autosave overwrites the backend.
+      // prose_link offsets are marker-inclusive in the full content.
+      if (matchesCurrentScope && currentChapter?.content) {
+        const fullContent = currentChapter.content;
+        const start = Math.min(Number(proseLink.start_offset ?? 0), fullContent.length);
+        const end = Math.min(
+          Math.max(Number(proseLink.end_offset ?? start), start),
+          fullContent.length
+        );
+        updateCurrentChapterContent(
+          `${fullContent.slice(0, start)}${text}${fullContent.slice(end)}`
+        );
       }
     },
-    [editingSceneId, patchScene, recordSceneHistory, scenes, editorRef, currentChapter]
+    [
+      editingSceneId,
+      patchScene,
+      recordSceneHistory,
+      scenes,
+      currentChapter,
+      getLinkedProseText,
+      updateCurrentChapterContent,
+    ]
   );
 
   // eslint-disable-next-line complexity

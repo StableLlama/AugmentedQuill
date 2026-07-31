@@ -8,8 +8,8 @@
 """Defines the build backend unit so this responsibility stays isolated, testable, and easy to evolve."""
 
 import os
-import sys
 import subprocess
+import sys
 
 
 def main():

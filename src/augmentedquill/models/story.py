@@ -15,9 +15,10 @@ auto-generated TypeScript types.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel
+
 from augmentedquill.models.scene import Scene
 
 # ---------------------------------------------------------------------------
@@ -28,48 +29,48 @@ from augmentedquill.models.scene import Scene
 class StoryLLMPrefs(BaseModel):
     """Per-project LLM preference overrides embedded in story data."""
 
-    prompt_overrides: Optional[dict[str, str]] = None
-    temperature: Optional[float] = None
-    max_tokens: Optional[int] = None
+    prompt_overrides: dict[str, str] | None = None
+    temperature: float | None = None
+    max_tokens: int | None = None
 
 
 class StoryChapterSummary(BaseModel):
     """Lightweight chapter descriptor embedded in the story payload."""
 
-    title: Optional[str] = None
-    summary: Optional[str] = None
-    filename: Optional[str] = None
-    book_id: Optional[str] = None
-    notes: Optional[str] = None
-    private_notes: Optional[str] = None
-    conflicts: Optional[list[Any]] = None
+    title: str | None = None
+    summary: str | None = None
+    filename: str | None = None
+    book_id: str | None = None
+    notes: str | None = None
+    private_notes: str | None = None
+    conflicts: list[Any] | None = None
 
 
 class StoryBook(BaseModel):
     """Book descriptor embedded in the story payload."""
 
-    id: Optional[str] = None
-    folder: Optional[str] = None
-    title: Optional[str] = None
-    chapters: Optional[list[StoryChapterSummary]] = None
+    id: str | None = None
+    folder: str | None = None
+    title: str | None = None
+    chapters: list[StoryChapterSummary] | None = None
 
 
 class StorySourcebookEntry(BaseModel):
     """Minimal sourcebook entry embedded in the story payload."""
 
-    id: Optional[str] = None
-    name: Optional[str] = None
-    category: Optional[str] = None
-    description: Optional[str] = None
-    synonyms: Optional[list[str]] = None
-    images: Optional[list[str]] = None
-    keywords: Optional[list[str]] = None
-    relations: Optional[list[Any]] = None
-    origin_date: Optional[str] = None
-    destination_datetime: Optional[str] = None
-    destination_relative: Optional[str] = None
-    creates_new_timeline: Optional[bool] = None
-    timeline_id: Optional[str] = None
+    id: str | None = None
+    name: str | None = None
+    category: str | None = None
+    description: str | None = None
+    synonyms: list[str] | None = None
+    images: list[str] | None = None
+    keywords: list[str] | None = None
+    relations: list[Any] | None = None
+    origin_date: str | None = None
+    destination_datetime: str | None = None
+    destination_relative: str | None = None
+    creates_new_timeline: bool | None = None
+    timeline_id: str | None = None
 
 
 class StoryPayload(BaseModel):
@@ -81,22 +82,22 @@ class StoryPayload(BaseModel):
     has filled in for a given project.
     """
 
-    project_title: Optional[str] = None
-    story_summary: Optional[str] = None
-    language: Optional[str] = None
-    notes: Optional[str] = None
-    private_notes: Optional[str] = None
-    tags: Optional[list[str]] = None
-    annotations: Optional[list[Any]] = None
-    image_style: Optional[str] = None
-    image_additional_info: Optional[str] = None
-    project_type: Optional[str] = None
-    books: Optional[list[StoryBook]] = None
-    sourcebook: Optional[list[StorySourcebookEntry]] = None
-    conflicts: Optional[list[Any]] = None
-    llm_prefs: Optional[StoryLLMPrefs] = None
-    chapters: Optional[list[StoryChapterSummary]] = None
-    scenes: Optional[list[Scene]] = None
+    project_title: str | None = None
+    story_summary: str | None = None
+    language: str | None = None
+    notes: str | None = None
+    private_notes: str | None = None
+    tags: list[str] | None = None
+    annotations: list[Any] | None = None
+    image_style: str | None = None
+    image_additional_info: str | None = None
+    project_type: str | None = None
+    books: list[StoryBook] | None = None
+    sourcebook: list[StorySourcebookEntry] | None = None
+    conflicts: list[Any] | None = None
+    llm_prefs: StoryLLMPrefs | None = None
+    chapters: list[StoryChapterSummary] | None = None
+    scenes: list[Scene] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -115,30 +116,30 @@ class ProjectRegistryEntry(BaseModel):
 class ProjectRegistry(BaseModel):
     """Registry summary returned alongside project mutations."""
 
-    current: Optional[str] = None
-    recent: Optional[list[str]] = None
-    available: Optional[list[ProjectRegistryEntry]] = None
+    current: str | None = None
+    recent: list[str] | None = None
+    available: list[ProjectRegistryEntry] | None = None
 
 
 class ProjectSelectResponse(BaseModel):
     """Response body for ``POST /api/v1/projects/select``."""
 
     ok: bool
-    message: Optional[str] = None
-    registry: Optional[ProjectRegistry] = None
-    story: Optional[StoryPayload] = None
-    error: Optional[str] = None
-    error_message: Optional[str] = None
+    message: str | None = None
+    registry: ProjectRegistry | None = None
+    story: StoryPayload | None = None
+    error: str | None = None
+    error_message: str | None = None
 
 
 class ProjectMutationResponse(BaseModel):
     """Generic response for project create/delete/convert operations."""
 
     ok: bool
-    message: Optional[str] = None
-    detail: Optional[str] = None
-    registry: Optional[ProjectRegistry] = None
-    story: Optional[StoryPayload] = None
+    message: str | None = None
+    detail: str | None = None
+    registry: ProjectRegistry | None = None
+    story: StoryPayload | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -162,10 +163,10 @@ class ProjectImageInfo(BaseModel):
     """Describes a single project image or image placeholder."""
 
     filename: str
-    url: Optional[str] = None
-    description: Optional[str] = None
-    title: Optional[str] = None
-    is_placeholder: Optional[bool] = None
+    url: str | None = None
+    description: str | None = None
+    title: str | None = None
+    is_placeholder: bool | None = None
 
 
 class ListImagesResponse(BaseModel):
@@ -178,16 +179,16 @@ class ImageFilenameResponse(BaseModel):
     """Response body for endpoints that return a single filename."""
 
     ok: bool
-    filename: Optional[str] = None
-    detail: Optional[str] = None
+    filename: str | None = None
+    detail: str | None = None
 
 
 class BookMutationResponse(BaseModel):
     """Response body for book create/delete/restore endpoints."""
 
     ok: bool
-    message: Optional[str] = None
-    book_id: Optional[str] = None
-    restore_id: Optional[str] = None
-    story: Optional[StoryPayload] = None
-    detail: Optional[str] = None
+    message: str | None = None
+    book_id: str | None = None
+    restore_id: str | None = None
+    story: StoryPayload | None = None
+    detail: str | None = None

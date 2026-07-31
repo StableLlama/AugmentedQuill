@@ -7,14 +7,13 @@
 
 """Tests for prompt loading and language support."""
 
+import json
 from unittest import TestCase
 
-import json
-
 from augmentedquill.core.prompts import (
+    get_available_languages,
     get_system_message,
     get_user_prompt,
-    get_available_languages,
 )
 
 

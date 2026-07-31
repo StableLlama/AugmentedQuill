@@ -7,24 +7,25 @@
 
 """Defines the test project features unit so this responsibility stays isolated, testable, and easy to evolve."""
 
-import json
 import io
-import zipfile
+import json
 import os
 import tempfile
+import zipfile
 from pathlib import Path
 from unittest import TestCase
 
-from augmentedquill.services.projects.projects import (
-    create_project,
-    select_project,
-    change_project_type,
-    get_active_project_dir,
-)
-from augmentedquill.core.config import load_story_config
-from augmentedquill.services.projects.project_helpers import _project_overview
 from fastapi.testclient import TestClient
+
+from augmentedquill.core.config import load_story_config
 from augmentedquill.main import app
+from augmentedquill.services.projects.project_helpers import _project_overview
+from augmentedquill.services.projects.projects import (
+    change_project_type,
+    create_project,
+    get_active_project_dir,
+    select_project,
+)
 
 
 class ProjectFeaturesTest(TestCase):

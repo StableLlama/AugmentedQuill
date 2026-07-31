@@ -9,7 +9,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Callable
+from collections.abc import Callable
+from typing import Any
 
 import httpx
 
@@ -18,7 +19,7 @@ def get_story_llm_preferences(
     *,
     config_dir: Any,
     get_active_project_dir: Callable[[], Any],
-    load_story_config: Callable[[Any], Dict[str, Any] | None],
+    load_story_config: Callable[[Any], dict[str, Any] | None],
 ) -> tuple[float, int | None]:
     """Load story-level LLM preferences and normalize values."""
     story = (
@@ -34,9 +35,9 @@ def get_story_llm_preferences(
     return temperature, max_tokens
 
 
-def build_headers(api_key: str | None) -> Dict[str, str]:
+def build_headers(api_key: str | None) -> dict[str, str]:
     """Build headers."""
-    headers: Dict[str, str] = {"Content-Type": "application/json"}
+    headers: dict[str, str] = {"Content-Type": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
     return headers
@@ -65,12 +66,12 @@ def find_model_in_list(models: list, selected_name: str | None) -> dict | None:
 
 
 def apply_native_tool_calling_mode(
-    extra_body: Dict[str, Any] | None,
+    extra_body: dict[str, Any] | None,
     *,
     supports_function_calling: bool,
     tools: list[dict] | None,
     tool_choice: str | None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Force provider request options that keep native tool calling stable.
 
     Some OpenAI-compatible backends switch to template-driven thinking output when

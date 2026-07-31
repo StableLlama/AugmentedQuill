@@ -8,11 +8,12 @@
 """Defines the test metadata endpoints unit so this responsibility stays isolated, testable, and easy to evolve."""
 
 import json
+
 from augmentedquill.services.projects.projects import (
-    select_project,
     create_new_book,
-    create_project,
     create_new_chapter,
+    create_project,
+    select_project,
 )
 from tests.unit.api.v1.api_test_case import ApiTestCase
 

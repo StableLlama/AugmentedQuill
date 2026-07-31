@@ -7,13 +7,16 @@
 
 """Defines the web search tools unit so this responsibility stays isolated, testable, and easy to evolve."""
 
-from typing import Any
 import asyncio
+from typing import Any
 
 from pydantic import Field
-from augmentedquill.services.chat.chat_tool_decorator import ToolModel
 
-from augmentedquill.services.chat.chat_tool_decorator import CHAT_ROLE, chat_tool
+from augmentedquill.services.chat.chat_tool_decorator import (
+    CHAT_ROLE,
+    ToolModel,
+    chat_tool,
+)
 
 
 class WebSearchParams(ToolModel):

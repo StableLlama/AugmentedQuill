@@ -299,7 +299,7 @@ class TestChatStreamRoleAndSanitization(ChatStreamTestBase):
                         "choices": [
                             {
                                 "delta": {
-                                    "content": "<|channel|>analysis<|message|>We need to get metadata."  # noqa: E501
+                                    "content": "<|channel|>analysis<|message|>We need to get metadata."
                                 }
                             }
                         ]

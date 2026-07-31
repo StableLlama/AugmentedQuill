@@ -7,17 +7,16 @@
 
 """Defines the project tools unit so this responsibility stays isolated, testable, and easy to evolve."""
 
+import json as _json
 from typing import Any, Literal
 
-import json as _json
-
 from pydantic import AliasChoices, Field
-from augmentedquill.services.chat.chat_tool_decorator import ToolModel
 
 from augmentedquill.core.config import load_story_config
 from augmentedquill.services.chat.chat_tool_decorator import (
     CHAT_ROLE,
     EDITING_ROLE,
+    ToolModel,
     chat_tool,
     resolve_tool_role,
 )

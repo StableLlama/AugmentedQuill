@@ -13,10 +13,9 @@ import json
 import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List
 
 
-def list_chats(project_path: Path) -> List[Dict]:
+def list_chats(project_path: Path) -> list[dict]:
     """List Chats."""
     chats_dir = project_path / "chats"
     if not chats_dir.exists():
@@ -43,7 +42,7 @@ def list_chats(project_path: Path) -> List[Dict]:
     return results
 
 
-def load_chat(project_path: Path, chat_id: str) -> Dict | None:
+def load_chat(project_path: Path, chat_id: str) -> dict | None:
     """Load Chat."""
     chat_file = project_path / "chats" / f"{chat_id}.json"
     if not chat_file.exists():
@@ -54,7 +53,7 @@ def load_chat(project_path: Path, chat_id: str) -> Dict | None:
         return None
 
 
-def save_chat(project_path: Path, chat_id: str, chat_data: Dict) -> None:
+def save_chat(project_path: Path, chat_id: str, chat_data: dict) -> None:
     """Save Chat."""
     chats_dir = project_path / "chats"
     (chats_dir).mkdir(parents=True, exist_ok=True)

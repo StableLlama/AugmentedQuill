@@ -9,29 +9,30 @@
 
 from typing import Any
 
-from fastapi import APIRouter, Request, Path as FastAPIPath
+from fastapi import APIRouter, Request
+from fastapi import Path as FastAPIPath
 from fastapi.responses import JSONResponse
 
 from augmentedquill.api.v1.dependencies import ProjectDep
+from augmentedquill.api.v1.story_routes.common import (
+    StoryBadRequestError,
+    map_story_exception,
+    parse_json_body,
+)
 from augmentedquill.core.config import save_story_config
+from augmentedquill.models.story import StoryContentResponse
 from augmentedquill.services.exceptions import ServiceError
 from augmentedquill.services.projects.project_helpers import (
     normalize_story_for_frontend,
 )
 from augmentedquill.services.projects.projects import (
     read_story_content,
-    write_story_content,
     update_book_metadata,
     update_story_metadata,
+    write_story_content,
 )
-from augmentedquill.models.story import StoryContentResponse
 from augmentedquill.services.story.story_api_state_ops import (
     get_active_story_or_raise,
-)
-from augmentedquill.api.v1.story_routes.common import (
-    parse_json_body,
-    map_story_exception,
-    StoryBadRequestError,
 )
 
 router = APIRouter(prefix="/projects/{project_name}", tags=["Story"])

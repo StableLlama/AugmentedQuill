@@ -8,18 +8,24 @@
 """Defines the generation streaming unit so this responsibility stays isolated, testable, and easy to evolve."""
 
 import asyncio
-
+import json
+import re
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
-import json
-import re
 
 from augmentedquill.api.v1.dependencies import ProjectDep
+from augmentedquill.api.v1.story_routes.common import parse_json_body
 from augmentedquill.core.config import BASE_DIR, save_story_config
 from augmentedquill.core.prompts import get_system_message, get_user_prompt
+from augmentedquill.services.chat.chat_tool_decorator import WRITING_ROLE
+from augmentedquill.services.exceptions import ServiceError
 from augmentedquill.services.llm import llm
+from augmentedquill.services.projects.projects import read_story_content
+from augmentedquill.services.scenes.scene_generation_service import (
+    auto_link_scope_text,
+)
 from augmentedquill.services.story.story_api_prompt_ops import (
     resolve_model_runtime,
 )
@@ -30,7 +36,10 @@ from augmentedquill.services.story.story_api_state_ops import (
     get_normalized_chapters,
     read_text_or_raise,
 )
-from augmentedquill.services.projects.projects import read_story_content
+from augmentedquill.services.story.story_api_stream_ops import (
+    stream_collect_and_persist,
+    stream_unified_chat_content,
+)
 from augmentedquill.services.story.story_generation_common import (
     _restore_summary_for_rewrite,
     gather_writing_context,
@@ -42,16 +51,6 @@ from augmentedquill.services.story.story_generation_common import (
     prepare_write_chapter_generation,
     sanitize_prompt,
 )
-from augmentedquill.services.story.story_api_stream_ops import (
-    stream_collect_and_persist,
-    stream_unified_chat_content,
-)
-from augmentedquill.services.scenes.scene_generation_service import (
-    auto_link_scope_text,
-)
-from augmentedquill.services.exceptions import ServiceError
-from augmentedquill.services.chat.chat_tool_decorator import WRITING_ROLE
-from augmentedquill.api.v1.story_routes.common import parse_json_body
 
 router = APIRouter(prefix="/projects/{project_name}", tags=["Story"])
 
@@ -122,7 +121,7 @@ def _has_repeated_ngram_loop(
             return True
 
     contiguous_window = ngram_size * 3
-    for idx in range(0, len(tokens) - contiguous_window + 1):
+    for idx in range(len(tokens) - contiguous_window + 1):
         a = tuple(tokens[idx : idx + ngram_size])
         b = tuple(tokens[idx + ngram_size : idx + (2 * ngram_size)])
         c = tuple(tokens[idx + (2 * ngram_size) : idx + (3 * ngram_size)])
@@ -332,7 +331,7 @@ async def _collect_suggestion_candidate(
             )
         except StopAsyncIteration:
             break
-        except asyncio.TimeoutError:
+        except TimeoutError:
             # Some providers can emit one token and then keep the stream open.
             # Finalize what we have instead of leaving the suggestion request hanging.
             break
@@ -427,7 +426,7 @@ async def _stream_suggestion_candidate(
             )
         except StopAsyncIteration:
             break
-        except asyncio.TimeoutError:
+        except TimeoutError:
             break
 
         if not chunk:

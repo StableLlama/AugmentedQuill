@@ -11,14 +11,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Dict, List
 
 import jsonschema
 
 from augmentedquill.core.config import SCHEMAS_DIR
 
 
-def _validate_registry(data: Dict, path_label: str) -> None:
+def _validate_registry(data: dict, path_label: str) -> None:
     """Validate registry data against projects.schema.json.
 
     Raises ValueError so callers are forced to handle a corrupt registry.
@@ -33,7 +32,7 @@ def _validate_registry(data: Dict, path_label: str) -> None:
         ) from exc
 
 
-def load_registry_from_path(registry_path: Path) -> Dict:
+def load_registry_from_path(registry_path: Path) -> dict:
     """Load Registry From Path."""
     if not registry_path.exists():
         return {"current": "", "recent": []}
@@ -52,11 +51,11 @@ def load_registry_from_path(registry_path: Path) -> Dict:
     }
 
 
-def save_registry_to_path(registry_path: Path, current: str, recent: List[str]) -> None:
+def save_registry_to_path(registry_path: Path, current: str, recent: list[str]) -> None:
     """Save Registry To Path."""
     registry_path.parent.mkdir(parents=True, exist_ok=True)
     seen = set()
-    deduped: List[str] = []
+    deduped: list[str] = []
     for path_value in [current] + recent:
         path_str = str(path_value)
         if path_str and path_str not in seen:
@@ -71,11 +70,11 @@ def save_registry_to_path(registry_path: Path, current: str, recent: List[str]) 
 def set_active_project_in_registry(
     registry_path: Path,
     project_path: Path,
-    current_registry: Dict,
-) -> tuple[str, List[str]]:
+    current_registry: dict,
+) -> tuple[str, list[str]]:
     """Set Active Project In Registry."""
     current = str(project_path)
-    recent: List[str] = []
+    recent: list[str] = []
     for item in current_registry.get("recent", []) or []:
         if not item:
             continue
@@ -88,7 +87,7 @@ def set_active_project_in_registry(
     return current, [current] + recent
 
 
-def get_active_project_dir_from_registry(current_registry: Dict) -> Path | None:
+def get_active_project_dir_from_registry(current_registry: dict) -> Path | None:
     """Get Active Project Dir From Registry."""
     cur = current_registry.get("current") or ""
     if cur:

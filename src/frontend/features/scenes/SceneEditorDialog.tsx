@@ -136,6 +136,17 @@ function getScopedBaselineContent(
   return null;
 }
 
+/**
+ * A scene is only "linked to prose" when its link points at a real content
+ * scope (story/chapter).  Brand-new scenes are created by the backend with a
+ * zero-width internal `unlinked` scope link; those must be treated as NOT
+ * linked so the dialog shows the drag-to-link hint instead of an editable
+ * "Linked Prose" field and an "Unlink prose" button.
+ */
+function isLinkedProseLink(link: SceneProseLink | null | undefined): boolean {
+  return link != null && link.scope_type !== 'unlinked';
+}
+
 type AgeInfo = {
   compact: string;
   detailed: string;
@@ -1399,7 +1410,7 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
   const performSave = async (): Promise<void> => {
     setIsSaving(true);
     try {
-      if (proseDirty && proseLink && onSaveProseContent) {
+      if (proseDirty && isLinkedProseLink(proseLink) && onSaveProseContent) {
         await onSaveProseContent(localProseText);
       }
       const tagPersonalDatetimes: SceneTagPersonalDatetime[] = [
@@ -2386,7 +2397,7 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
                 {isWritingScene ? t('Writing Scene...') : t('Write Scene')}
               </button>
             )}
-            {proseLink ? (
+            {isLinkedProseLink(proseLink) ? (
               <>
                 {getLinkedProseText ? (
                   <div className="rounded-md border border-brand-gray-300 dark:border-brand-gray-700 overflow-hidden">

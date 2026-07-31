@@ -11,7 +11,7 @@ import asyncio
 from pathlib import Path
 
 from augmentedquill.api.v1.story_routes import generation_streaming
-import augmentedquill.services.llm.llm as llm
+from augmentedquill.services.llm import llm
 from augmentedquill.services.projects.projects import select_project
 from tests.unit.api.v1.api_test_case import ApiTestCase
 
@@ -369,11 +369,11 @@ class StoryEndpointsTest(ApiTestCase):
         # Response should be plain text and return non-empty content
         self.assertTrue(r.headers.get("content-type", "").startswith("text/plain"))
         text = r.text or ""
-        self.assertGreater(len(text.strip()), 0, f"empty response body: {repr(text)}")
+        self.assertGreater(len(text.strip()), 0, f"empty response body: {text!r}")
         self.assertEqual(
             text,
             "First chunk of suggestion and the rest of the paragraph.\n",
-            f"Unexpected response body: {repr(text)}",
+            f"Unexpected response body: {text!r}",
         )
 
     def test_suggest_filters_empty_sections(self):
@@ -432,7 +432,7 @@ class StoryEndpointsTest(ApiTestCase):
 
         self.assertTrue(r.headers.get("content-type", "").startswith("text/plain"))
         text = r.text or ""
-        self.assertGreater(len(text.strip()), 0, f"empty response body: {repr(text)}")
+        self.assertGreater(len(text.strip()), 0, f"empty response body: {text!r}")
 
     def test_suggest_mode_pure_uses_only_current_text(self):
         """Pure suggest mode should pass only current chapter text to the model."""

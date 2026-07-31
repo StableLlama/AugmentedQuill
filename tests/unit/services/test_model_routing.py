@@ -12,7 +12,8 @@ import os
 import tempfile
 from pathlib import Path
 from unittest import TestCase
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
+
 from fastapi.testclient import TestClient
 
 

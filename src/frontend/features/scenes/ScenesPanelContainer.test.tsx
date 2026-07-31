@@ -685,6 +685,37 @@ describe('handleDeleteScene', () => {
     // our mock won't run again, so we verify the observable store update instead.
     expect(patchSceneMock).toHaveBeenCalledTimes(1);
   });
+
+  it('records an undo handler that re-creates the deleted scene on the backend', async () => {
+    const scene = makeScene({ id: 'del-1', summary: 'Deleted scene' });
+    apiMock.scenes.delete.mockResolvedValueOnce(undefined);
+    const restored = makeScene({ id: 'new-1', summary: 'Deleted scene' });
+    apiMock.scenes.create.mockResolvedValueOnce(restored);
+
+    await renderAndOpenDialog([scene], {
+      recordHistoryEntry: recordHistoryEntryMock,
+    });
+
+    await act(async () => {
+      await dlg().onDelete();
+    });
+
+    const entry = recordHistoryEntryMock.mock.calls
+      .map((call: [{ label: string; onUndo?: () => Promise<void> | void }]) => call[0])
+      .find((e: { label: string }) => e.label === 'Delete scene');
+    expect(entry).toBeTruthy();
+    expect(entry!.onUndo).toBeTypeOf('function');
+
+    apiMock.scenes.create.mockClear();
+    await act(async () => {
+      await entry!.onUndo!();
+    });
+
+    // Undo must re-create the scene on the backend so it survives a reload
+    // (BUG-6) and reconcile the in-memory scene list.
+    expect(apiMock.scenes.create).toHaveBeenCalled();
+    expect(patchSceneMock).toHaveBeenCalled();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -796,7 +827,71 @@ describe('handleSaveProseContent', () => {
     expect(patchSceneMock).toHaveBeenCalled();
   });
 
-  it('dispatches a CodeMirror replace transaction so the editor reflects the new text', async () => {
+  it('replaces the linked prose in the current chapter content and preserves the scene markers', async () => {
+    // Scene "ps" is linked to the word "Bravo" inside the current chapter.  The
+    // full (marker-inclusive) content is stored in the story store; the editor
+    // strips markers for display and re-injects them on save from the store.
+    // Saving prose must update the STORE content (markers intact) rather than
+    // dispatch a raw editor transaction, otherwise the editor's debounced
+    // autosave re-injects markers against a stale baseline and drops them,
+    // corrupting the chapter file (BUG-2).
+    const markerStart = '<!--scene:ps:start-->';
+    const markerEnd = '<!--scene:ps:end-->';
+    const prefix = 'Alpha ';
+    const content = `${prefix}${markerStart}Bravo${markerEnd} Charlie`;
+    const startOffset = prefix.length + markerStart.length;
+    const proseLink = makeProseLink({
+      scope_type: 'chapter',
+      chapter_id: 'ch-1',
+      start_offset: startOffset,
+      end_offset: startOffset + 'Bravo'.length,
+    });
+    const scene = makeScene({ id: 'ps', prose_link: proseLink });
+    const updatedScene = makeScene({
+      id: 'ps',
+      prose_link: { ...proseLink, end_offset: 30 },
+    });
+    apiMock.scenes.updateProseContent.mockResolvedValueOnce(updatedScene);
+    storyState.chapters = [
+      {
+        id: 'ch-1',
+        scope: 'chapter',
+        title: 'Chapter 1',
+        summary: '',
+        content,
+      },
+    ];
+    setStoryMock.mockImplementation((updater: (prev: unknown) => unknown) => {
+      const next = updater(storyState);
+      Object.assign(storyState, next as object);
+    });
+    const { ref } = makeEditorRef();
+
+    await renderAndOpenDialog([scene], {
+      editorRef: ref,
+      currentChapter: {
+        id: 'ch-1',
+        scope: 'chapter',
+        title: 'Chapter 1',
+        content,
+      },
+    });
+
+    await act(async () => {
+      await dlg().onSaveProseContent!('Zulu');
+    });
+
+    // The chapter content must reflect the new prose with the scene markers
+    // fully preserved (no marker corruption).
+    expect(storyState.chapters[0].content).toBe(
+      'Alpha <!--scene:ps:start-->Zulu<!--scene:ps:end--> Charlie'
+    );
+  });
+
+  it('does NOT modify the current chapter content for a scene linked to another scope (prevents mid-word corruption)', async () => {
+    // Story-scoped link while a chapter editor is open: the offsets belong to
+    // the story content, not the chapter — writing them into the chapter would
+    // corrupt the chapter text (BUG-1).
     const proseLink = makeProseLink({ start_offset: 6, end_offset: 11 });
     const scene = makeScene({ id: 'ps', prose_link: proseLink });
     const updatedScene = makeScene({
@@ -804,7 +899,16 @@ describe('handleSaveProseContent', () => {
       prose_link: { ...proseLink, end_offset: 9 },
     });
     apiMock.scenes.updateProseContent.mockResolvedValueOnce(updatedScene);
-    const { ref, dispatch } = makeEditorRef('Hello world!');
+    storyState.chapters = [
+      {
+        id: 'ch-1',
+        scope: 'chapter',
+        title: 'Chapter 1',
+        summary: '',
+        content: 'Hello world!',
+      },
+    ];
+    const { ref } = makeEditorRef('Hello world!');
 
     await renderAndOpenDialog([scene], {
       editorRef: ref,
@@ -820,29 +924,75 @@ describe('handleSaveProseContent', () => {
       await dlg().onSaveProseContent!('earth');
     });
 
-    expect(dispatch).toHaveBeenCalled();
+    // Backend prose is still updated, but the chapter store content must not
+    // be touched with offsets that belong to the story scope.
+    expect(apiMock.scenes.updateProseContent).toHaveBeenCalled();
+    expect(setStoryMock).not.toHaveBeenCalled();
+    expect(storyState.chapters[0].content).toBe('Hello world!');
   });
 
-  it('does NOT dispatch an editor transaction when the scene has no prose link', async () => {
+  it('does NOT update any chapter content when the scene has no prose link', async () => {
     const scene = makeScene({ id: 'ps', prose_link: null });
     const updatedScene = makeScene({ id: 'ps', prose_link: null });
     apiMock.scenes.updateProseContent.mockResolvedValueOnce(updatedScene);
-    const { ref, dispatch } = makeEditorRef();
+    storyState.chapters = [
+      {
+        id: 'ch-1',
+        scope: 'chapter',
+        title: 'Chapter 1',
+        summary: '',
+        content: 'Hello world!',
+      },
+    ];
+    const { ref } = makeEditorRef();
 
-    await renderAndOpenDialog([scene], { editorRef: ref });
+    await renderAndOpenDialog([scene], {
+      editorRef: ref,
+      currentChapter: {
+        id: 'ch-1',
+        scope: 'chapter',
+        title: 'Chapter 1',
+        content: 'Hello world!',
+      },
+    });
 
     await act(async () => {
       await dlg().onSaveProseContent!('anything');
     });
 
-    expect(dispatch).not.toHaveBeenCalled();
+    expect(setStoryMock).not.toHaveBeenCalled();
   });
 
-  it('does NOT dispatch when the editor view is unavailable (getEditorView returns null)', async () => {
-    const proseLink = makeProseLink();
+  it('updates the current chapter content without requiring an editor view', async () => {
+    // The prose update must not depend on a live editor view — the store is
+    // the source of truth and the editor re-syncs from it.
+    const proseLink = makeProseLink({
+      scope_type: 'chapter',
+      chapter_id: 'ch-1',
+      start_offset: 0,
+      end_offset: 5,
+    });
     const scene = makeScene({ id: 'ps', prose_link: proseLink });
-    const updatedScene = makeScene({ id: 'ps', prose_link: proseLink });
+    const updatedScene = makeScene({
+      id: 'ps',
+      prose_link: { ...proseLink, end_offset: 3 },
+    });
     apiMock.scenes.updateProseContent.mockResolvedValueOnce(updatedScene);
+    storyState.chapters = [
+      {
+        id: 'ch-1',
+        scope: 'chapter',
+        title: 'Chapter 1',
+        summary: '',
+        content: 'Hello world!',
+      },
+    ];
+    setStoryMock.mockImplementation((updater: (prev: unknown) => unknown) => {
+      const next = updater(storyState);
+      Object.assign(storyState, next as object);
+    });
+    // A ref whose getEditorView returns null proves the store update does not
+    // depend on a live editor view.
     const nullViewRef: React.RefObject<EditorHandle | null> = {
       current: {
         setOnCursorChange: vi.fn(),
@@ -853,23 +1003,50 @@ describe('handleSaveProseContent', () => {
       },
     };
 
-    await renderAndOpenDialog([scene], { editorRef: nullViewRef });
-
-    await act(async () => {
-      await dlg().onSaveProseContent!('text');
+    await renderAndOpenDialog([scene], {
+      editorRef: nullViewRef,
+      currentChapter: {
+        id: 'ch-1',
+        scope: 'chapter',
+        title: 'Chapter 1',
+        content: 'Hello world!',
+      },
     });
 
-    // Must still patch the store even without a view
+    await act(async () => {
+      await dlg().onSaveProseContent!('Hi');
+    });
+
+    // Must still patch the store scene AND update the chapter content.
     expect(patchSceneMock).toHaveBeenCalled();
+    expect(storyState.chapters[0].content).toBe('Hi world!');
   });
 
-  it('clamps the replacement range to the document length', async () => {
-    const proseLink = makeProseLink({ start_offset: 0, end_offset: 99999 });
+  it('clamps the prose offsets to the current chapter content length', async () => {
+    const proseLink = makeProseLink({
+      scope_type: 'chapter',
+      chapter_id: 'ch-1',
+      start_offset: 0,
+      end_offset: 99999,
+    });
     const scene = makeScene({ id: 'ps', prose_link: proseLink });
     const updatedScene = makeScene({ id: 'ps', prose_link: proseLink });
     apiMock.scenes.updateProseContent.mockResolvedValueOnce(updatedScene);
     const shortDoc = 'Short.';
-    const { ref, dispatch } = makeEditorRef(shortDoc);
+    storyState.chapters = [
+      {
+        id: 'ch-1',
+        scope: 'chapter',
+        title: 'Chapter 1',
+        summary: '',
+        content: shortDoc,
+      },
+    ];
+    setStoryMock.mockImplementation((updater: (prev: unknown) => unknown) => {
+      const next = updater(storyState);
+      Object.assign(storyState, next as object);
+    });
+    const { ref } = makeEditorRef(shortDoc);
 
     await renderAndOpenDialog([scene], {
       editorRef: ref,
@@ -885,7 +1062,53 @@ describe('handleSaveProseContent', () => {
       await dlg().onSaveProseContent!('replaced');
     });
 
-    expect(dispatch).toHaveBeenCalled();
+    // Offsets beyond the document end must be clamped so no index error or
+    // partial write corrupts the content.
+    expect(storyState.chapters[0].content).toBe('replaced');
+  });
+
+  it('records an undo handler that persists the prose revert to the backend', async () => {
+    const proseLink = makeProseLink({
+      scope_type: 'chapter',
+      chapter_id: 'ch-1',
+      start_offset: 0,
+      end_offset: 5,
+    });
+    const scene = makeScene({ id: 'ps', prose_link: proseLink });
+    const updatedScene = makeScene({ id: 'ps', prose_link: proseLink });
+    apiMock.scenes.updateProseContent.mockResolvedValue(updatedScene);
+    const { ref } = makeEditorRef('Hello world!');
+
+    await renderAndOpenDialog([scene], {
+      editorRef: ref,
+      currentChapter: {
+        id: 'ch-1',
+        scope: 'chapter',
+        title: 'Chapter 1',
+        content: 'Hello world!',
+      },
+      recordHistoryEntry: recordHistoryEntryMock,
+    });
+
+    await act(async () => {
+      await dlg().onSaveProseContent!('Goodbye');
+    });
+
+    const entry = recordHistoryEntryMock.mock.calls
+      .map((call: [{ label: string; onUndo?: () => Promise<void> | void }]) => call[0])
+      .find((e: { label: string }) => e.label === 'Edit scene linked prose');
+    expect(entry).toBeTruthy();
+    expect(entry!.onUndo).toBeTypeOf('function');
+
+    apiMock.scenes.updateProseContent.mockClear();
+    await act(async () => {
+      await entry!.onUndo!();
+    });
+
+    // The undo must re-persist the previous prose to the backend (BUG-2),
+    // not just restore the in-memory story state.
+    expect(apiMock.scenes.updateProseContent).toHaveBeenCalled();
+    expect(patchSceneMock).toHaveBeenCalled();
   });
 });
 

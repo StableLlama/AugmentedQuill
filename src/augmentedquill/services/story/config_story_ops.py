@@ -9,18 +9,19 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict
+from collections.abc import Callable
+from typing import Any
 
 import jsonschema
 
 
 def normalize_validate_story_config(
     *,
-    merged: Dict[str, Any],
+    merged: dict[str, Any],
     path_label: str,
     current_schema_version: int,
-    schema_loader: Callable[[int], Dict[str, Any]],
-) -> Dict[str, Any]:
+    schema_loader: Callable[[int], dict[str, Any]],
+) -> dict[str, Any]:
     """Normalize story data to current invariants and validate against schema."""
     metadata = merged.get("metadata")
     if not isinstance(metadata, dict):
@@ -81,7 +82,7 @@ def normalize_validate_story_config(
 
     sourcebook = merged.get("sourcebook")
     if isinstance(sourcebook, list):
-        sourcebook_dict: Dict[str, Any] = {}
+        sourcebook_dict: dict[str, Any] = {}
         for entry in sourcebook:
             if isinstance(entry, dict) and isinstance(entry.get("name"), str):
                 name = entry["name"]
@@ -146,7 +147,7 @@ def normalize_validate_story_config(
     return merged
 
 
-def clean_story_config_for_disk(config: Dict[str, Any]) -> Dict[str, Any]:
+def clean_story_config_for_disk(config: dict[str, Any]) -> dict[str, Any]:
     """Strip runtime-only fields and normalize sourcebook shape before persistence."""
 
     def _clean_for_disk(data: Any, current_key: Any = None) -> Any:

@@ -8,8 +8,9 @@
 """Defines the test endpoints coverage unit so this responsibility stays isolated, testable, and easy to evolve."""
 
 import json
+
 from augmentedquill.main import app
-import augmentedquill.services.llm.llm as llm
+from augmentedquill.services.llm import llm
 from augmentedquill.services.projects.projects import select_project
 from tests.unit.api.v1.api_test_case import ApiTestCase
 

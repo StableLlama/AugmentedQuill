@@ -398,8 +398,8 @@ def test_split_straddling_annotations_start_outside_keeps_in_markers_inside_bloc
 def test_create_annotation_snaps_offset_outside_marker() -> None:
     """Offsets that land inside a scene marker token are snapped to the
     marker boundary so the annotation is never inserted mid-marker."""
-    import tempfile
     import json
+    import tempfile
 
     tmp = Path(tempfile.mkdtemp())
     story: dict[str, object] = {
@@ -439,8 +439,8 @@ def test_create_annotation_snaps_offset_outside_marker() -> None:
 def test_create_annotation_raises_when_entirely_within_marker() -> None:
     """When both start and end fall inside the same marker token, the
     snap reduces the range to zero width => ValueError."""
-    import tempfile
     import json
+    import tempfile
 
     tmp = Path(tempfile.mkdtemp())
     story: dict[str, object] = {

@@ -14,8 +14,6 @@ position, workspace mode, and scenes view type.
 
 from __future__ import annotations
 
-from typing import Optional
-
 from pydantic import BaseModel
 
 
@@ -26,7 +24,7 @@ class ViewStatePayload(BaseModel):
     fills missing fields with defaults on load.
     """
 
-    current_chapter_id: Optional[str] = None
+    current_chapter_id: str | None = None
     scroll_position: int = 0
     workspace_mode: str = "page"
     scenes_view_type: str = "narrative"
@@ -36,4 +34,4 @@ class ViewStateResponse(BaseModel):
     """Response body for view state endpoints."""
 
     ok: bool = True
-    view_state: Optional[ViewStatePayload] = None
+    view_state: ViewStatePayload | None = None

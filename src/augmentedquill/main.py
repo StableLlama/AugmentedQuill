@@ -14,37 +14,36 @@ Includes global configuration setup, error handling, and router registration.
 from __future__ import annotations
 
 import argparse
-from typing import Optional
 import os
 
-from fastapi import FastAPI, APIRouter, Request
+from fastapi import APIRouter, FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.middleware.cors import CORSMiddleware
 
-from augmentedquill.core.config import (
-    load_machine_config,
-    STATIC_DIR,
-    ensure_runtime_user_config_files,
-)
-from augmentedquill.services.exceptions import ServiceError
-from augmentedquill.services.chat.chat_tool_decorator import write_tools_json_tempfile
-from augmentedquill.services.projects.projects import get_active_project_dir
-from augmentedquill.models.machine import MachineConfigResponse
+from augmentedquill.api.v1.annotations import router as annotations_router
+from augmentedquill.api.v1.chapters import router as chapters_router
+from augmentedquill.api.v1.chat import router as chat_router
+from augmentedquill.api.v1.checkpoints import router as checkpoints_router
+from augmentedquill.api.v1.debug import router as debug_router
+from augmentedquill.api.v1.projects import router as projects_router
+from augmentedquill.api.v1.scenes import router as scenes_router
+from augmentedquill.api.v1.search import router as search_router
 
 # Import API routers
-from augmentedquill.api.v1.settings import router as settings_router  # noqa: E402
-from augmentedquill.api.v1.projects import router as projects_router  # noqa: E402
-from augmentedquill.api.v1.chapters import router as chapters_router  # noqa: E402
+from augmentedquill.api.v1.settings import router as settings_router
+from augmentedquill.api.v1.sourcebook import router as sourcebook_router
 from augmentedquill.api.v1.story import router as story_router
-from augmentedquill.api.v1.checkpoints import router as checkpoints_router  # noqa: E402
-from augmentedquill.api.v1.chat import router as chat_router  # noqa: E402
-from augmentedquill.api.v1.debug import router as debug_router  # noqa: E402
-from augmentedquill.api.v1.sourcebook import router as sourcebook_router  # noqa: E402
-from augmentedquill.api.v1.search import router as search_router  # noqa: E402
-from augmentedquill.api.v1.scenes import router as scenes_router  # noqa: E402
-from augmentedquill.api.v1.annotations import router as annotations_router  # noqa: E402
-from augmentedquill.api.v1.view_state import router as view_state_router  # noqa: E402
+from augmentedquill.api.v1.view_state import router as view_state_router
+from augmentedquill.core.config import (
+    STATIC_DIR,
+    ensure_runtime_user_config_files,
+    load_machine_config,
+)
+from augmentedquill.models.machine import MachineConfigResponse
+from augmentedquill.services.chat.chat_tool_decorator import write_tools_json_tempfile
+from augmentedquill.services.exceptions import ServiceError
+from augmentedquill.services.projects.projects import get_active_project_dir
 
 
 def create_app() -> FastAPI:
@@ -238,7 +237,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: Optional[list[str]] = None) -> None:
+def main(argv: list[str] | None = None) -> None:
     """CLI entrypoint to run the server via a normal Python invocation.
 
     Examples:

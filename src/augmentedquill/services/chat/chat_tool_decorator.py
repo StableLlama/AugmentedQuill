@@ -365,7 +365,7 @@ def chat_tool(
                 return _tool_message(
                     tool_name,
                     call_id,
-                    {"error": f"Validation error: {str(e)}"},
+                    {"error": f"Validation error: {e!s}"},
                 )
 
             try:
@@ -375,7 +375,7 @@ def chat_tool(
                 return _tool_message(
                     tool_name,
                     call_id,
-                    {"error": f"Execution error: {str(e)}"},
+                    {"error": f"Execution error: {e!s}"},
                 )
 
         _TOOL_REGISTRY[tool_name] = {
@@ -622,6 +622,4 @@ async def execute_registered_tool(
     except ServiceError as e:
         return _tool_error(name, call_id, f"Tool failed: {e.detail}")
     except Exception as e:
-        return _tool_error(
-            name, call_id, f"Tool failed with unexpected error: {str(e)}"
-        )
+        return _tool_error(name, call_id, f"Tool failed with unexpected error: {e!s}")

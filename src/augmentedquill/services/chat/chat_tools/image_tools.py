@@ -7,18 +7,17 @@
 
 """Defines the image tools unit so this responsibility stays isolated, testable, and easy to evolve."""
 
-from typing import Any, Literal
-
 import base64
 import uuid
 from pathlib import Path
+from typing import Any, Literal
 
 from pydantic import Field
-from augmentedquill.services.chat.chat_tool_decorator import ToolModel
 
 from augmentedquill.services.chat.chat_tool_decorator import (
     CHAT_ROLE,
     EDITING_ROLE,
+    ToolModel,
     chat_tool,
     resolve_tool_role,
 )
@@ -81,8 +80,8 @@ async def _tool_generate_image_description(filename: str, payload: dict) -> str:
         get_user_prompt,
         load_model_prompt_overrides,
     )
-    from augmentedquill.services.projects.projects import get_active_project_dir
     from augmentedquill.services.llm import llm
+    from augmentedquill.services.projects.projects import get_active_project_dir
     from augmentedquill.utils.image_helpers import get_images_dir, update_image_metadata
 
     images_dir = get_images_dir()
@@ -173,7 +172,7 @@ async def _tool_generate_image_description(filename: str, payload: dict) -> str:
         return "Error: Failed to generate description."
 
     except Exception as e:
-        return f"Error generating description: {str(e)}"
+        return f"Error generating description: {e!s}"
 
 
 # Tool implementations with co-located schemas

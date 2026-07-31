@@ -8,6 +8,7 @@
 """Defines the smoke workflow unit so this responsibility stays isolated, testable, and easy to evolve."""
 
 import json
+
 from tests.unit.api.v1.api_test_case import ApiTestCase
 
 

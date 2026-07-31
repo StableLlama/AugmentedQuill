@@ -26,14 +26,15 @@ import os
 import re
 import sys
 import tempfile
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Dict, Mapping, Optional
+from typing import Any
 
 import jsonschema
 
 from augmentedquill.services.story.config_story_ops import (
-    normalize_validate_story_config,
     clean_story_config_for_disk,
+    normalize_validate_story_config,
 )
 
 if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
@@ -86,14 +87,14 @@ def _resolve_default_machine_config_path() -> Path:
     return USER_CONFIG_DIR / "machine.json"
 
 
-def _get_story_schema(version: int) -> Dict[str, Any]:
+def _get_story_schema(version: int) -> dict[str, Any]:
     """Get the JSON schema for a given story config version."""
     schema_path = SCHEMAS_DIR / f"story-v{version}.schema.json"
     with open(schema_path, "r") as f:
         return json.load(f)
 
 
-def _validate_machine_config(config: Dict[str, Any], path_label: str) -> None:
+def _validate_machine_config(config: dict[str, Any], path_label: str) -> None:
     """Validate machine config against the schema if openai key is present.
 
     Emits a warning log on failure instead of raising, because machine.json
@@ -112,7 +113,7 @@ def _validate_machine_config(config: Dict[str, Any], path_label: str) -> None:
         _logger.warning("Could not validate machine config at %s: %s", path_label, exc)
 
 
-def _validate_projects_registry(data: Dict[str, Any], path_label: str) -> None:
+def _validate_projects_registry(data: dict[str, Any], path_label: str) -> None:
     """Validate projects registry against the schema.
 
     Raises ValueError on schema violations so callers are forced to handle a
@@ -147,13 +148,13 @@ def _interpolate_env(value: Any) -> Any:
     return value
 
 
-def _deep_merge(base: Dict[str, Any], override: Mapping[str, Any]) -> Dict[str, Any]:
+def _deep_merge(base: dict[str, Any], override: Mapping[str, Any]) -> dict[str, Any]:
     """Deeply merge mapping 'override' into dict 'base'. Returns new dict.
 
     - For dict values, merges recursively.
     - For lists and scalars, override replaces base.
     """
-    result: Dict[str, Any] = dict(base)
+    result: dict[str, Any] = dict(base)
     for k, v in override.items():
         if isinstance(v, Mapping) and isinstance(result.get(k), Mapping):
             result[k] = _deep_merge(dict(result[k]), v)  # type: ignore[index]
@@ -162,7 +163,7 @@ def _deep_merge(base: Dict[str, Any], override: Mapping[str, Any]) -> Dict[str, 
     return result
 
 
-def load_json_file(path: os.PathLike[str] | str | None) -> Dict[str, Any]:
+def load_json_file(path: os.PathLike[str] | str | None) -> dict[str, Any]:
     """Load JSON from path if it exists; return empty dict if missing.
 
     Raises ValueError for malformed JSON.
@@ -180,7 +181,7 @@ def load_json_file(path: os.PathLike[str] | str | None) -> Dict[str, Any]:
         raise ValueError(f"Invalid JSON at {p}: {e}") from e
 
 
-def _env_overrides_for_openai() -> Dict[str, Any]:
+def _env_overrides_for_openai() -> dict[str, Any]:
     """Collect OPENAI_* environment variables into a nested dict structure.
 
     Supported variables:
@@ -189,13 +190,13 @@ def _env_overrides_for_openai() -> Dict[str, Any]:
     - OPENAI_MODEL -> openai.model
     - OPENAI_TIMEOUT_S -> openai.timeout_s (int if parseable)
     """
-    result: Dict[str, Any] = {}
+    result: dict[str, Any] = {}
     api_key = os.getenv("OPENAI_API_KEY")
     base_url = os.getenv("OPENAI_BASE_URL")
     model = os.getenv("OPENAI_MODEL")
     timeout_s = os.getenv("OPENAI_TIMEOUT_S")
 
-    openai: Dict[str, Any] = {}
+    openai: dict[str, Any] = {}
     if api_key is not None:
         openai["api_key"] = api_key
     if base_url is not None:
@@ -214,8 +215,8 @@ def _env_overrides_for_openai() -> Dict[str, Any]:
 
 def load_machine_config(
     path: os.PathLike[str] | str | None = None,
-    defaults: Optional[Mapping[str, Any]] = None,
-) -> Dict[str, Any]:
+    defaults: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     """Load machine configuration applying precedence and interpolation.
 
     Precedence: env overrides > JSON file > defaults
@@ -233,8 +234,8 @@ def load_machine_config(
 
 def load_story_config(
     path: os.PathLike[str] | str | None = DEFAULT_STORY_CONFIG_PATH,
-    defaults: Optional[Mapping[str, Any]] = None,
-) -> Dict[str, Any]:
+    defaults: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     """Load story-specific configuration with env interpolation only.
 
     Currently we do not define env var names for story config. ${VAR} placeholders
@@ -272,7 +273,7 @@ def load_story_config(
     )
 
 
-def save_story_config(path: os.PathLike[str] | str, config: Dict[str, Any]) -> None:
+def save_story_config(path: os.PathLike[str] | str, config: dict[str, Any]) -> None:
     """Save Story Config."""
     p = Path(path)
     if not p.parent.exists():
@@ -297,7 +298,7 @@ def save_story_config(path: os.PathLike[str] | str, config: Dict[str, Any]) -> N
 
 def load_model_presets_config(
     path: os.PathLike[str] | str | None = DEFAULT_MODEL_PRESETS_PATH,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Load global model preset database JSON."""
     return load_json_file(path)
 
@@ -315,7 +316,7 @@ def ensure_runtime_user_config_files() -> None:
 
     story_path = DEFAULT_STORY_CONFIG_PATH
     if not story_path.exists():
-        story_payload: Dict[str, Any] = {
+        story_payload: dict[str, Any] = {
             "project_title": "Untitled Project",
             "project_type": "novel",
             "chapters": [],

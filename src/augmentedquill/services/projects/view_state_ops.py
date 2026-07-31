@@ -19,13 +19,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Defaults
 # ---------------------------------------------------------------------------
 
-_DEFAULT_VIEW_STATE: Dict[str, Any] = {
+_DEFAULT_VIEW_STATE: dict[str, Any] = {
     "current_chapter_id": None,
     "scroll_position": 0,
     "workspace_mode": "page",
@@ -40,7 +40,7 @@ def _view_state_path(project_dir: Path) -> Path:
     return project_dir / _VIEW_STATE_FILENAME
 
 
-def load_view_state(project_dir: Path) -> Dict[str, Any]:
+def load_view_state(project_dir: Path) -> dict[str, Any]:
     """Load view state from ``project_dir/view_state.json``.
 
     Returns a dict with keys from ``_DEFAULT_VIEW_STATE`` — any missing
@@ -55,7 +55,7 @@ def load_view_state(project_dir: Path) -> Dict[str, Any]:
         raw = vs_path.read_text(encoding="utf-8")
         if not raw.strip():
             return dict(_DEFAULT_VIEW_STATE)
-        data: Dict[str, Any] = json.loads(raw)
+        data: dict[str, Any] = json.loads(raw)
     except (json.JSONDecodeError, OSError):
         return dict(_DEFAULT_VIEW_STATE)
 
@@ -65,7 +65,7 @@ def load_view_state(project_dir: Path) -> Dict[str, Any]:
     return result
 
 
-def save_view_state(project_dir: Path, view_state: Dict[str, Any]) -> None:
+def save_view_state(project_dir: Path, view_state: dict[str, Any]) -> None:
     """Persist *view_state* to ``project_dir/view_state.json``.
 
     Creates the file atomically (write-then-rename) to avoid partial writes.

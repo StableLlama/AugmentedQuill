@@ -455,7 +455,7 @@ function buildSpawnedTimelineTrackPath(
 
 // Intentionally kept as one component to keep map layout and overlay geometry together.
 /* eslint-disable complexity */
-// eslint-disable-next-line max-lines-per-function
+
 export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
   scenes,
   sourcebookEntries = [],

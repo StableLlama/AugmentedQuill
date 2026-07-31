@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from pydantic import ConfigDict, Field, model_validator
+
 from augmentedquill.services.chat.chat_tool_decorator import ToolModel
 
 
@@ -66,7 +67,7 @@ class TextPatch(ToolModel):
     )
 
     @model_validator(mode="after")
-    def _validate_shape(self) -> "TextPatch":
+    def _validate_shape(self) -> TextPatch:
         if self.operation in ("replace", "append", "prepend"):
             if self.value is None:
                 raise ValueError(
@@ -199,7 +200,7 @@ class ConflictPatchOperation(ToolModel):
         return data
 
     @model_validator(mode="after")
-    def _validate_shape(self) -> "ConflictPatchOperation":
+    def _validate_shape(self) -> ConflictPatchOperation:
         if self.op is None:
             raise ValueError(
                 "op is required and could not be inferred; "

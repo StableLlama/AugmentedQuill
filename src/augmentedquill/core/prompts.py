@@ -14,7 +14,7 @@ Prompts can be overridden on a per-model basis through the settings or per-proje
 """
 
 import json
-from typing import Dict, Any, Optional
+from typing import Any
 
 from augmentedquill.core.config import CONFIG_DIR
 
@@ -25,12 +25,12 @@ DEFAULTS_JSON_PATH = CONFIG_DIR / "instructions.json"
 USER_PROMPTS_JSON_PATH = CONFIG_DIR / "prompts.json"
 
 
-def _load_prompts() -> Dict[str, Any]:
+def _load_prompts() -> dict[str, Any]:
     """Load prompts."""
     # Load internal defaults from the multi-language instructions file.  The
     # resulting dictionary contains *all* prompt templates at the top level;
     # there is no structural distinction between system vs user prompts.
-    prompts: Dict[str, Any] = {}
+    prompts: dict[str, Any] = {}
     global _AVAILABLE_LANGUAGES
 
     if DEFAULTS_JSON_PATH.exists():
@@ -48,7 +48,7 @@ def _load_prompts() -> Dict[str, Any]:
                             prompts[key] = {"en": ensure_string(entry)}
                             langs.add("en")
                             continue
-                        inner: Dict[str, str] = {}
+                        inner: dict[str, str] = {}
                         for lang_key, val in entry.items():
                             if lang_key.startswith("_"):
                                 continue
@@ -127,7 +127,7 @@ DEFAULT_PROMPTS = _PROMPTS
 
 def get_system_message(
     message_type: str,
-    model_overrides: Optional[Dict[str, Any]] = None,
+    model_overrides: dict[str, Any] | None = None,
     language: str | None = None,
     **kwargs: Any,
 ) -> str:
@@ -251,9 +251,9 @@ def get_user_prompt(
 
 
 def load_model_prompt_overrides(
-    machine_config: Dict[str, Any],
-    selected_model: Optional[str] = None,
-) -> Dict[str, str]:
+    machine_config: dict[str, Any],
+    selected_model: str | None = None,
+) -> dict[str, str]:
     """
     Load prompt overrides for a specific model from machine config.
 

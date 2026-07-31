@@ -7,8 +7,8 @@
 
 """Defines the test chat parser unit so this responsibility stays isolated, testable, and easy to evolve."""
 
-import unittest
 import json
+import unittest
 
 from augmentedquill.services.llm.llm import (
     parse_tool_calls_from_content as _parse_tool_calls_from_content,
@@ -154,7 +154,6 @@ class TestChatParser(unittest.TestCase):
         # If it returns empty list, that's fine for this test case intent.
 
         # Actually let's check what it does.
-        pass
 
     def test_parse_complete_assistant_output_includes_thinking_and_tools(self):
         content = (

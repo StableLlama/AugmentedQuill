@@ -7,11 +7,12 @@
 
 """Tests for sourcebook search refinement logic."""
 
+import json
 import os
 import tempfile
-import json
 from pathlib import Path
 from unittest import TestCase
+
 from fastapi.testclient import TestClient
 
 from augmentedquill.main import app

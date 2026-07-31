@@ -12,13 +12,13 @@ from __future__ import annotations
 import ast
 import copy
 import datetime
-import uuid
-import os
 import json
-from typing import Any, Dict, List
+import os
+import uuid
+from typing import Any
 
 # Global list to store LLM communication logs for the current session
-llm_logs: List[Dict[str, Any]] = []
+llm_logs: list[dict[str, Any]] = []
 
 
 def get_caller_origin(caller_id: str | None) -> str:
@@ -107,7 +107,7 @@ def _extract_chunk_text(chunk: Any) -> str:
     return None
 
 
-def _prepare_dump_entry(entry: Dict[str, Any]) -> Dict[str, Any]:
+def _prepare_dump_entry(entry: dict[str, Any]) -> dict[str, Any]:
     """Prepare an entry for file dump based on verbosity level."""
     verbosity = get_llm_dump_level()
     prepared = copy.deepcopy(entry)
@@ -163,7 +163,7 @@ def _prepare_dump_entry(entry: Dict[str, Any]) -> Dict[str, Any]:
     return prepared
 
 
-def add_llm_log(log_entry: Dict[str, Any]) -> Any:
+def add_llm_log(log_entry: dict[str, Any]) -> Any:
     """Add a log entry to the global list, keeping only the last 100 entries.
 
     If AUGQ_LLM_DUMP is set, also append the raw log to a file.
@@ -256,11 +256,11 @@ def add_llm_log(log_entry: Dict[str, Any]) -> Any:
 def create_log_entry(
     url: str,
     method: str,
-    headers: Dict[str, str],
+    headers: dict[str, str],
     body: Any,
     streaming: bool = False,
     include_response: bool = True,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Create a new log entry structure.
 
     The returned dictionary is the shape that gets stored in ``llm_logs`` along
@@ -280,7 +280,7 @@ def create_log_entry(
             if key in safe_body:
                 safe_body[key] = "REDACTED"
 
-    entry: Dict[str, Any] = {
+    entry: dict[str, Any] = {
         "id": str(uuid.uuid4()),
         "timestamp_start": datetime.datetime.now().isoformat(),
         "timestamp_end": None,

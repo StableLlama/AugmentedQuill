@@ -8,6 +8,7 @@
 """Defines the test stream channel filter unit so this responsibility stays isolated, testable, and easy to evolve."""
 
 import unittest
+
 from augmentedquill.utils.stream_helpers import ChannelFilter
 
 

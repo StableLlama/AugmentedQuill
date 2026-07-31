@@ -18,9 +18,9 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-import augmentedquill.main as main
-from augmentedquill.services.chat.chat_tools_schema import get_story_tools
+from augmentedquill import main
 from augmentedquill.services.chat.chat_tool_decorator import get_registered_tool_schemas
+from augmentedquill.services.chat.chat_tools_schema import get_story_tools
 from augmentedquill.services.projects.project_snapshots import capture_project_snapshot
 from augmentedquill.services.projects.projects import (
     get_active_project_dir,

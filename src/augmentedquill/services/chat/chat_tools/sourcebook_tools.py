@@ -7,19 +7,26 @@
 
 """Defines the sourcebook tools unit so this responsibility stays isolated, testable, and easy to evolve."""
 
-from typing import Any, List, Literal, Union
+from typing import Any, Literal
 
 from pydantic import Field, field_validator
-from augmentedquill.services.chat.chat_tool_decorator import ToolModel
 
 from augmentedquill.services.chat.chat_tool_decorator import (
     CHAT_ROLE,
     EDITING_ROLE,
+    ToolModel,
     chat_tool,
     resolve_tool_role,
 )
+from augmentedquill.services.chat.chat_tools.metadata_patching import (
+    StringListPatch,
+    TextPatch,
+    apply_string_list_patch,
+    apply_text_patch,
+)
 from augmentedquill.services.sourcebook.sourcebook_helpers import (
     _get_entry_relations,
+    _get_story_data,
     sourcebook_add_relation,
     sourcebook_create_entry,
     sourcebook_delete_entry,
@@ -28,13 +35,6 @@ from augmentedquill.services.sourcebook.sourcebook_helpers import (
     sourcebook_refresh_entry_keywords,
     sourcebook_remove_relation,
     sourcebook_update_entry,
-    _get_story_data,
-)
-from augmentedquill.services.chat.chat_tools.metadata_patching import (
-    StringListPatch,
-    TextPatch,
-    apply_string_list_patch,
-    apply_text_patch,
 )
 
 
@@ -236,7 +236,7 @@ class ManageSourcebookParams(ToolModel):
             "'add_relation', or 'remove_relation'."
         ),
     )
-    name_or_id: Union[str, List[str], None] = Field(
+    name_or_id: str | list[str] | None = Field(
         None,
         description="Required for actions 'get', 'update', and 'delete'.",
     )

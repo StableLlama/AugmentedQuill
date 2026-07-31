@@ -13,10 +13,11 @@ Purpose: centralize LLM HTTP communication and guarantee logging for every reque
 from __future__ import annotations
 
 import asyncio
-from contextlib import asynccontextmanager
-from typing import Any, AsyncIterator
 import datetime
 import traceback
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from typing import Any
 from urllib.parse import urlparse
 
 import httpx
@@ -203,7 +204,7 @@ async def logged_request(
         # message is usually sufficient and saves space.  Otherwise fall back
         # to formatting the full traceback for diagnostics.
         if isinstance(exc, (httpx.ReadTimeout, httpx.RequestError)):
-            detail = f"{type(exc).__name__}: {str(exc)}"
+            detail = f"{type(exc).__name__}: {exc!s}"
         else:
             detail = traceback.format_exc()
         _finalize_log_entry(
@@ -253,12 +254,14 @@ async def logged_stream_request(
     add_llm_log(log_entry)
 
     try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            async with client.stream(
+        async with (
+            httpx.AsyncClient(timeout=timeout) as client,
+            client.stream(
                 method=str(method).upper(), url=url, headers=headers, json=body
-            ) as response:
-                log_entry["response"]["status_code"] = response.status_code
-                yield response, log_entry
+            ) as response,
+        ):
+            log_entry["response"]["status_code"] = response.status_code
+            yield response, log_entry
     except Exception as exc:
         tb = traceback.format_exc()
         _finalize_log_entry(

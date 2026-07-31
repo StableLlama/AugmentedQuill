@@ -10,14 +10,14 @@
 import json
 import os
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest import TestCase
 from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
 
-import augmentedquill.main as main
+from augmentedquill import main
 from augmentedquill.services.projects.projects import select_project
 
 
@@ -1010,7 +1010,7 @@ class ChatToolsTest(TestCase):
             ),
             patch(
                 "augmentedquill.services.chat.chat_tools.chapter_prose_tools._current_utc_datetime",
-                return_value=datetime(2026, 5, 29, tzinfo=timezone.utc),
+                return_value=datetime(2026, 5, 29, tzinfo=UTC),
             ),
             patch(
                 "augmentedquill.services.llm.llm.unified_chat_stream",

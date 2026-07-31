@@ -9,16 +9,19 @@
 
 from __future__ import annotations
 
-from typing import Any
-from datetime import datetime, timezone
 import calendar
 import re
+from datetime import UTC, datetime
 from pathlib import Path
-
-from augmentedquill.services.exceptions import BadRequestError
-from augmentedquill.services.chat.chat_tool_decorator import EDITING_ROLE, WRITING_ROLE
+from typing import Any
 
 from augmentedquill.core.config import BASE_DIR, save_story_config
+from augmentedquill.services.chat.chat_tool_decorator import EDITING_ROLE, WRITING_ROLE
+from augmentedquill.services.exceptions import BadRequestError
+from augmentedquill.services.projects.project_chapter_ops import (
+    update_chapter_metadata_in_project,
+)
+from augmentedquill.services.scenes.scene_markers import remove_markers
 from augmentedquill.services.story.story_api_prompt_ops import (
     _get_read_only_tool_schemas,
     build_ai_action_messages,
@@ -28,9 +31,6 @@ from augmentedquill.services.story.story_api_prompt_ops import (
     build_write_chapter_messages,
     get_system_message,
     resolve_model_runtime,
-)
-from augmentedquill.services.projects.project_chapter_ops import (
-    update_chapter_metadata_in_project,
 )
 from augmentedquill.services.story.story_api_state_ops import (
     collect_book_summaries,
@@ -42,7 +42,6 @@ from augmentedquill.services.story.story_api_state_ops import (
     get_normalized_chapters,
     read_text_or_raise,
 )
-from augmentedquill.services.scenes.scene_markers import remove_markers
 
 
 def _resolve_story_draft_path(active: Any, story: dict) -> Any:
@@ -127,11 +126,12 @@ def sanitize_prompt(prompt: str) -> str:
             else:
                 next_line = filtered[lookahead]
                 next_level = _heading_level(next_line)
-                if next_line.strip() == "---":
-                    drop_heading = True
-                elif next_level is not None and next_level <= level:
-                    drop_heading = True
-                elif next_line.strip().lower().startswith("task:"):
+                if (
+                    next_line.strip() == "---"
+                    or next_level is not None
+                    and next_level <= level
+                    or next_line.strip().lower().startswith("task:")
+                ):
                     drop_heading = True
 
             if drop_heading:
@@ -352,8 +352,8 @@ def _parse_temporal_datetime(raw_value: str) -> datetime | None:
         return None
 
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def _replace_year_safe(value: datetime, year: int) -> datetime:
@@ -821,8 +821,8 @@ def gather_writing_context(
     background = ""
     try:
         from augmentedquill.services.sourcebook.sourcebook_helpers import (
-            sourcebook_search_entries,
             sourcebook_get_entry,
+            sourcebook_search_entries,
         )
 
         queries = []

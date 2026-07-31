@@ -1,3 +1,14 @@
+// Copyright (C) 2026 StableLlama
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+
+/**
+ * Defines the playwright.fullstack.config unit so this responsibility stays isolated, testable, and easy to evolve.
+ */
+
 import { defineConfig } from '@playwright/test';
 import * as os from 'os';
 import * as path from 'path';
@@ -154,6 +165,84 @@ function createTestProject(name: string): void {
   fs.writeFileSync(path.join(chapters, '0001.txt'), chapterContent);
 }
 
+/**
+ * Create a project with a single chapter of plain, space-separated prose and
+ * NO scenes.  Used by the scene-linked-prose-undo spec so it can create and
+ * link scenes from scratch and assert clean word boundaries.
+ */
+function createPlainProseProject(name: string): void {
+  const root = path.join(TMP_DIR, 'projects', name);
+  const chapters = path.join(root, 'chapters');
+  fs.mkdirSync(chapters, { recursive: true });
+
+  fs.writeFileSync(
+    path.join(root, 'story.json'),
+    JSON.stringify(
+      {
+        metadata: { version: 9 },
+        project_title: 'Scene Link E2E',
+        format: 'markdown',
+        project_type: 'novel',
+        chapters: [{ id: 1, title: 'Chapter 1', summary: '', filename: '0001.txt' }],
+        scenes: {},
+      },
+      null,
+      2
+    )
+  );
+
+  // Space-separated words so a mid-word prose insertion is easy to detect.
+  fs.writeFileSync(
+    path.join(chapters, '0001.txt'),
+    'Alpha Bravo Charlie Delta Echo Foxtrot Golf Hotel India.\n'
+  );
+}
+
+/**
+ * Create a project with one chapter that already has a linked scene (scene 1
+ * spans the word "Bravo").  Used by the BUG-2 E2E test so it can edit a linked
+ * scene's prose and verify that Undo persists the revert to the backend.
+ */
+function createLinkedSceneProject(name: string): void {
+  const root = path.join(TMP_DIR, 'projects', name);
+  const chapters = path.join(root, 'chapters');
+  fs.mkdirSync(chapters, { recursive: true });
+
+  fs.writeFileSync(
+    path.join(root, 'story.json'),
+    JSON.stringify(
+      {
+        metadata: { version: 9 },
+        project_title: 'Scene Link E2E',
+        format: 'markdown',
+        project_type: 'novel',
+        chapters: [{ id: 1, title: 'Chapter 1', summary: '', filename: '0001.txt' }],
+        scenes: {
+          1: {
+            id: 1,
+            summary: 'Linked scene',
+            beats: [],
+            active_characters: [],
+            passive_characters: [],
+            causes: [],
+            status: 'active',
+            pinboard_x: 100,
+            pinboard_y: 100,
+          },
+        },
+      },
+      null,
+      2
+    )
+  );
+
+  // Scene 1 is linked to the word "Bravo".
+  fs.writeFileSync(
+    path.join(chapters, '0001.txt'),
+    'Alpha <!--scene:1:start-->Bravo<!--scene:1:end--> Charlie Delta Echo Foxtrot Golf Hotel India.\n'
+  );
+}
+
 // Project used by scene-boundary-drag (mutates scene structure).
 createTestProject('e2e-boundary-test');
 // Dedicated pristine project used by scene-cursor-highlight so drag/annotation
@@ -161,6 +250,12 @@ createTestProject('e2e-boundary-test');
 createTestProject('e2e-cursor-test');
 // Dedicated project used by annotation-ux (mutates annotations).
 createTestProject('e2e-annotation-test');
+// Dedicated projects used by the scene-linked-prose-undo spec.  Each test
+// mutates scene/prose state (linking prose, deleting scenes, undo), so each
+// gets its own project to keep the assertions independent.
+createPlainProseProject('e2e-scene-link-test');
+createLinkedSceneProject('e2e-scene-undo-link-test');
+createPlainProseProject('e2e-scene-delete-undo-test');
 
 // Write temp dir path so tests can find the projects directory
 fs.writeFileSync(path.join(os.tmpdir(), 'aq-e2e-tmpdir'), TMP_DIR);

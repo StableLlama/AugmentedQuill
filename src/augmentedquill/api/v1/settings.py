@@ -13,41 +13,29 @@ API endpoints for application and machine settings management.
 import json as _json
 from pathlib import Path
 
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
 from augmentedquill.api.v1.dependencies import ProjectDep
+from augmentedquill.api.v1.request_body import parse_json_object_body
 from augmentedquill.core.config import (
+    DEFAULT_MACHINE_CONFIG_PATH,
+    DEFAULT_MODEL_PRESETS_PATH,
+    DEFAULT_STORY_CONFIG_PATH,
     load_machine_config,
     load_model_presets_config,
     save_story_config,
-    DEFAULT_MACHINE_CONFIG_PATH,
-    DEFAULT_STORY_CONFIG_PATH,
-    DEFAULT_MODEL_PRESETS_PATH,
 )
 from augmentedquill.core.prompts import (
-    get_system_message,
-    load_model_prompt_overrides,
-    get_available_languages,
     DEFAULT_PROMPTS,
     ensure_string,
+    get_available_languages,
+    get_system_message,
+    load_model_prompt_overrides,
 )
-from augmentedquill.services.settings.settings_api_ops import (
-    build_story_cfg_from_payload,
-    validate_and_fill_openai_cfg_for_settings,
-    clean_machine_openai_cfg_for_put,
-    update_story_field,
-)
-from augmentedquill.services.settings.settings_machine_ops import (
-    parse_connection_payload,
-    list_remote_models,
-    remote_model_exists,
-)
-from augmentedquill.utils.llm_utils import verify_model_capabilities
-from augmentedquill.api.v1.request_body import parse_json_object_body
 from augmentedquill.models.machine import (
     MachinePresetsResponse,
-    MachineTestResponse,
     MachineTestModelResponse,
+    MachineTestResponse,
     ModelCapabilities,
     OkResponse,
     OkSelectedResponse,
@@ -55,6 +43,18 @@ from augmentedquill.models.machine import (
     StorySummaryResponse,
     StoryTagsResponse,
 )
+from augmentedquill.services.settings.settings_api_ops import (
+    build_story_cfg_from_payload,
+    clean_machine_openai_cfg_for_put,
+    update_story_field,
+    validate_and_fill_openai_cfg_for_settings,
+)
+from augmentedquill.services.settings.settings_machine_ops import (
+    list_remote_models,
+    parse_connection_payload,
+    remote_model_exists,
+)
+from augmentedquill.utils.llm_utils import verify_model_capabilities
 
 router = APIRouter(tags=["Settings"])
 

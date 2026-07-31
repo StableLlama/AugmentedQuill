@@ -23,6 +23,7 @@ from augmentedquill.models.scene import (
 )
 from augmentedquill.services.chat.chat_tool_decorator import WRITING_ROLE
 from augmentedquill.services.llm import llm
+from augmentedquill.services.scenes.scene_markers import remove_markers
 from augmentedquill.services.scenes.scene_service import (
     _scene_content_path,
     _write_text_atomic,
@@ -32,7 +33,6 @@ from augmentedquill.services.scenes.scene_service import (
     relink_scope_prose,
     update_prose_content,
 )
-from augmentedquill.services.scenes.scene_markers import remove_markers
 from augmentedquill.services.story.story_api_prompt_ops import resolve_model_runtime
 from augmentedquill.services.story.story_generation_common import (
     _iter_story_scenes,
@@ -181,7 +181,7 @@ def _find_nearest_word_break(text: str, target: int, minimum: int, maximum: int)
     if clamped_target >= maximum:
         return maximum
 
-    for radius in range(0, max(1, len(text))):
+    for radius in range(max(1, len(text))):
         left = clamped_target - radius
         right = clamped_target + radius
         if left > minimum and left < maximum and text[left].isspace():

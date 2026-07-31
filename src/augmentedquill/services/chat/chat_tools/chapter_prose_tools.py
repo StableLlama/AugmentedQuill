@@ -7,35 +7,37 @@
 
 """Defines the chapter prose tools unit so this responsibility stays isolated, testable, and easy to evolve."""
 
-from typing import Any
-from datetime import datetime, timezone
 import calendar
 import json
 import re
+from datetime import UTC, datetime
+from typing import Any
 
 from pydantic import AliasChoices, Field
-from augmentedquill.services.chat.chat_tool_decorator import ToolModel
 
 from augmentedquill.core.config import load_story_config
 from augmentedquill.core.prompts import get_user_prompt
-from augmentedquill.utils.json_repair import apply_typographic_quotes
 from augmentedquill.services.chapters.chapter_helpers import _chapter_by_id_or_404
 from augmentedquill.services.chat.chat_tool_decorator import (
     CHAT_ROLE,
     EDITING_ROLE,
+    ToolModel,
     chat_tool,
 )
+from augmentedquill.services.chat.chat_tools.chapter_tools import MARKER
 from augmentedquill.services.projects.projects import (
     get_active_project_dir,
+)
+from augmentedquill.services.projects.projects import (
     write_chapter_content as _write_chapter_content,
 )
-from augmentedquill.services.chat.chat_tools.chapter_tools import MARKER
+from augmentedquill.utils.json_repair import apply_typographic_quotes
 
 _BRACKET_TOKEN_RE = re.compile(r"\[[^\]]+\]")
 
 
 def _current_utc_datetime() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _parse_origin_datetime(origin_date: str) -> datetime | None:
@@ -53,8 +55,8 @@ def _parse_origin_datetime(origin_date: str) -> datetime | None:
         return None
 
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def _replace_year_safe(value: datetime, year: int) -> datetime:
@@ -306,8 +308,8 @@ async def call_writing_llm(
     """Execute the writing LLM tool with provided parameters and return the generated prose."""
     from augmentedquill.core.config import BASE_DIR, load_machine_config
     from augmentedquill.core.prompts import (
-        get_user_prompt,
         get_system_message,
+        get_user_prompt,
         load_model_prompt_overrides,
     )
     from augmentedquill.services.llm import llm
@@ -610,17 +612,17 @@ async def call_editing_assistant(
     params: CallEditingAssistantParams, payload: dict, mutations: dict
 ) -> Any:
     """Execute the editing assistant tool and return revised prose based on the provided instructions."""
-    from augmentedquill.services.llm import llm
+    from augmentedquill.core.config import BASE_DIR, load_machine_config
+    from augmentedquill.core.prompts import (
+        get_system_message,
+        get_user_prompt,
+        load_model_prompt_overrides,
+    )
     from augmentedquill.services.chat.chat_tool_decorator import (
         execute_registered_tool,
         get_registered_tool_schemas,
     )
-    from augmentedquill.core.prompts import (
-        get_user_prompt,
-        load_model_prompt_overrides,
-        get_system_message,
-    )
-    from augmentedquill.core.config import load_machine_config, BASE_DIR
+    from augmentedquill.services.llm import llm
 
     # Resolve EDITING model
     base_url, api_key, model_id, timeout_s, model_name = llm.resolve_openai_credentials(

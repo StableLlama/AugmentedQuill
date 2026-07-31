@@ -17,11 +17,11 @@ from pathlib import Path
 from typing import Any
 
 from pydantic import Field
-from augmentedquill.services.chat.chat_tool_decorator import ToolModel
 
 from augmentedquill.services.chat.chat_tool_decorator import (
     CHAT_ROLE,
     EDITING_ROLE,
+    ToolModel,
     chat_tool,
 )
 from augmentedquill.services.projects.project_snapshots import restore_project_snapshot

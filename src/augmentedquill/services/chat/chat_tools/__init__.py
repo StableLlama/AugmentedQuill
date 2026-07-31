@@ -14,28 +14,30 @@ Tools are auto-registered via the @chat_tool decorator.
 """
 
 # Import all tool modules to trigger decorator registration
-from augmentedquill.services.chat.chat_tools import chapter_tools  # noqa: F401
-from augmentedquill.services.chat.chat_tools import chapter_prose_tools  # noqa: F401
-from augmentedquill.services.chat.chat_tools import image_tools  # noqa: F401
-from augmentedquill.services.chat.chat_tools import order_tools  # noqa: F401
-from augmentedquill.services.chat.chat_tools import project_tools  # noqa: F401
-from augmentedquill.services.chat.chat_tools import scene_tools  # noqa: F401
-from augmentedquill.services.chat.chat_tools import sourcebook_tools  # noqa: F401
-from augmentedquill.services.chat.chat_tools import story_tools  # noqa: F401
-from augmentedquill.services.chat.chat_tools import web_search_tools  # noqa: F401
-from augmentedquill.services.chat.chat_tools import search_tools  # noqa: F401
-from augmentedquill.services.chat.chat_tools import undo_tools  # noqa: F401
+from augmentedquill.services.chat.chat_tools import (
+    chapter_prose_tools,
+    chapter_tools,
+    image_tools,
+    order_tools,
+    project_tools,
+    scene_tools,
+    search_tools,
+    sourcebook_tools,
+    story_tools,
+    undo_tools,
+    web_search_tools,
+)
 
 __all__ = [
-    "chapter_tools",
     "chapter_prose_tools",
+    "chapter_tools",
     "image_tools",
     "order_tools",
     "project_tools",
     "scene_tools",
+    "search_tools",
     "sourcebook_tools",
     "story_tools",
-    "web_search_tools",
-    "search_tools",
     "undo_tools",
+    "web_search_tools",
 ]

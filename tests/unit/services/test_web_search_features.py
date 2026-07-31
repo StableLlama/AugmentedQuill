@@ -10,9 +10,11 @@
 import json
 from pathlib import Path
 from unittest import TestCase
+
 from fastapi.testclient import TestClient
-from augmentedquill.services.chat.chat_tools_schema import get_story_tools
+
 from augmentedquill.main import app
+from augmentedquill.services.chat.chat_tools_schema import get_story_tools
 
 
 class WebSearchFeaturesTest(TestCase):
@@ -30,6 +32,7 @@ class WebSearchFeaturesTest(TestCase):
     def test_delete_all_chats_endpoint(self):
         """Test the DELETE /api/v1/chats endpoint."""
         import tempfile
+
         from augmentedquill.services.chat.chat_session_helpers import delete_all_chats
 
         with tempfile.TemporaryDirectory() as tmp_dir:

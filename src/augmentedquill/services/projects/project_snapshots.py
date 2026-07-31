@@ -10,7 +10,7 @@
 import base64
 import shutil
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 
 def iter_project_files(project_dir: Path) -> Any:
@@ -45,9 +45,9 @@ def _is_safe_relative_path(rel_path: Path) -> bool:
     return True
 
 
-def capture_project_snapshot(project_dir: Path) -> Dict[str, str]:
+def capture_project_snapshot(project_dir: Path) -> dict[str, str]:
     """Capture project files as base64-encoded bytes keyed by relative path."""
-    snapshot: Dict[str, str] = {}
+    snapshot: dict[str, str] = {}
     for rel_path in iter_project_files(project_dir):
         abs_path = project_dir / rel_path
         snapshot[str(rel_path)] = base64.b64encode(abs_path.read_bytes()).decode(
@@ -56,7 +56,7 @@ def capture_project_snapshot(project_dir: Path) -> Dict[str, str]:
     return snapshot
 
 
-def restore_project_snapshot(project_dir: Path, snapshot: Dict[str, str]) -> Any:
+def restore_project_snapshot(project_dir: Path, snapshot: dict[str, str]) -> Any:
     """Replace project files with the exact snapshot content."""
     resolved_root = project_dir.resolve()
     expected = set(snapshot.keys())

@@ -7,15 +7,14 @@
 
 """Defines the scene tools unit so this responsibility stays isolated, testable, and easy to evolve."""
 
-from datetime import datetime, timezone
 import re
-from typing import Any, Literal
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any, Literal
 
 from pydantic import ConfigDict, Field
-from augmentedquill.services.chat.chat_tool_decorator import ToolModel
-from augmentedquill.core.config import load_story_config
 
+from augmentedquill.core.config import load_story_config
 from augmentedquill.models.scene import (
     SceneBeat,
     SceneChronologyTime,
@@ -29,6 +28,7 @@ from augmentedquill.models.scene import (
 from augmentedquill.services.chat.chat_tool_decorator import (
     CHAT_ROLE,
     EDITING_ROLE,
+    ToolModel,
     chat_tool,
 )
 from augmentedquill.services.chat.chat_tools.metadata_patching import (
@@ -128,7 +128,7 @@ def _parse_scene_time(scene: dict[str, Any]) -> datetime | None:
         return None
 
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
+        parsed = parsed.replace(tzinfo=UTC)
     return parsed
 
 

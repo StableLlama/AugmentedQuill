@@ -10,9 +10,10 @@
 Helper functions for managing project images and their metadata.
 """
 
-from typing import Any
 import json
 from pathlib import Path
+from typing import Any
+
 from augmentedquill.services.projects.projects import get_active_project_dir
 
 

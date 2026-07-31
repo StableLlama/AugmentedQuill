@@ -16,7 +16,7 @@ from unittest import TestCase
 
 from fastapi.testclient import TestClient
 
-import augmentedquill.main as main
+from augmentedquill import main
 
 
 def _parse_tool_sse_result(text: str) -> dict:
@@ -425,7 +425,7 @@ class ToolParityTest(TestCase):
 
     def test_sync_summary(self):
         # We need to mock the LLM for sync_summary because it calls unified_chat_complete
-        from unittest.mock import patch, AsyncMock
+        from unittest.mock import AsyncMock, patch
 
         _dummy_runtime = (
             "http://localhost:11434/v1",
@@ -464,7 +464,7 @@ class ToolParityTest(TestCase):
             self.assertEqual(res["summary"], "Synced summary")
 
     def test_sync_summary_with_tool_call(self):
-        from unittest.mock import patch, AsyncMock
+        from unittest.mock import AsyncMock, patch
 
         _dummy_runtime = (
             "http://localhost:11434/v1",
@@ -526,7 +526,7 @@ class ToolParityTest(TestCase):
             mock_tool.assert_called_once()
 
     def test_sync_story_summary(self):
-        from unittest.mock import patch, AsyncMock
+        from unittest.mock import AsyncMock, patch
 
         _dummy_runtime = (
             "http://localhost:11434/v1",

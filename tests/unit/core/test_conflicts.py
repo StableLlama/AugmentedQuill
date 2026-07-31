@@ -7,19 +7,20 @@
 
 """Defines the test conflicts unit so this responsibility stays isolated, testable, and easy to evolve."""
 
+import json
 import os
 import tempfile
-import json
 from pathlib import Path
 from unittest import TestCase
+
+from augmentedquill.core.config import load_story_config
 from augmentedquill.services.projects.projects import (
-    select_project,
     add_chapter_conflict,
-    update_chapter_conflict,
     remove_chapter_conflict,
     reorder_chapter_conflicts,
+    select_project,
+    update_chapter_conflict,
 )
-from augmentedquill.core.config import load_story_config
 
 
 class ConflictsTest(TestCase):

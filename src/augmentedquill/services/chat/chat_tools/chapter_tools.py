@@ -7,12 +7,10 @@
 
 """Defines the chapter tools unit so this responsibility stays isolated, testable, and easy to evolve."""
 
+import json as _json
 from typing import Any
 
-import json as _json
-
 from pydantic import Field
-from augmentedquill.services.chat.chat_tool_decorator import ToolModel
 
 from augmentedquill.core.config import load_story_config
 from augmentedquill.services.chapters.chapter_helpers import (
@@ -24,24 +22,8 @@ from augmentedquill.services.chat.chat_tool_decorator import (
     CHAT_ROLE,
     EDITING_ROLE,
     WRITING_ROLE,
+    ToolModel,
     chat_tool,
-)
-from augmentedquill.services.projects.project_helpers import (
-    _project_overview,
-    _snap_to_boundary,
-)
-from augmentedquill.services.story.story_generation_ops import (
-    continue_chapter_from_summary,
-    generate_chapter_summary,
-    write_chapter_from_summary,
-)
-from augmentedquill.services.projects.projects import (
-    create_new_chapter as _create_new_chapter,
-    get_active_project_dir,
-    update_chapter_metadata as _update_chapter_metadata,
-    write_chapter_content as _write_chapter_content,
-    write_chapter_summary as _write_chapter_summary,
-    write_chapter_title,
 )
 from augmentedquill.services.chat.chat_tools.metadata_patching import (
     ConflictEntry,
@@ -49,6 +31,31 @@ from augmentedquill.services.chat.chat_tools.metadata_patching import (
     TextPatch,
     apply_conflict_list_patch,
     apply_text_patch,
+)
+from augmentedquill.services.projects.project_helpers import (
+    _project_overview,
+    _snap_to_boundary,
+)
+from augmentedquill.services.projects.projects import (
+    create_new_chapter as _create_new_chapter,
+)
+from augmentedquill.services.projects.projects import (
+    get_active_project_dir,
+    write_chapter_title,
+)
+from augmentedquill.services.projects.projects import (
+    update_chapter_metadata as _update_chapter_metadata,
+)
+from augmentedquill.services.projects.projects import (
+    write_chapter_content as _write_chapter_content,
+)
+from augmentedquill.services.projects.projects import (
+    write_chapter_summary as _write_chapter_summary,
+)
+from augmentedquill.services.story.story_generation_ops import (
+    continue_chapter_from_summary,
+    generate_chapter_summary,
+    write_chapter_from_summary,
 )
 
 _MAX_CHAPTER_CHARS = 8000
@@ -213,8 +220,6 @@ class UpdateChapterMetadataParams(ToolModel):
 class GetChapterSummariesParams(ToolModel):
     """Represents the GetChapterSummariesParams type."""
 
-    pass
-
 
 class GetChapterContentParams(ToolModel):
     """Represents the GetChapterContentParams type."""
@@ -239,8 +244,6 @@ class GetChapterContentParams(ToolModel):
 
 class GetCurrentChapterParams(ToolModel):
     """No parameters required, active chapter is inferred from context."""
-
-    pass
 
 
 class WriteChapterContentParams(ToolModel):

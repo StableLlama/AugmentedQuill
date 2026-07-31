@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import re
 import uuid
-from typing import Any, Literal, Optional, TypeAlias
+from typing import Any, Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -92,11 +92,11 @@ class SceneAnnotation(BaseModel):
         default="story",
         description="Scope where the annotation lives.",
     )
-    chapter_id: Optional[str] = Field(
+    chapter_id: str | None = Field(
         None,
         description="Chapter ID when scope_type='chapter'.",
     )
-    book_id: Optional[str] = Field(
+    book_id: str | None = Field(
         None,
         description="Book ID when scope_type='chapter' and the chapter is nested.",
     )
@@ -127,14 +127,14 @@ class SceneProseLink(BaseModel):
             "or internal 'unlinked'."
         ),
     )
-    chapter_id: Optional[str] = Field(
+    chapter_id: str | None = Field(
         None,
         description=(
             "Chapter ID when scope_type='chapter'. Leave empty for story or "
             "unlinked scope."
         ),
     )
-    book_id: Optional[str] = Field(
+    book_id: str | None = Field(
         None,
         description=(
             "Book ID when the linked prose belongs to a book chapter. Leave "
@@ -143,7 +143,7 @@ class SceneProseLink(BaseModel):
     )
 
     @model_validator(mode="after")
-    def _validate_scope(self) -> "SceneProseLink":
+    def _validate_scope(self) -> SceneProseLink:
         if self.scope_type == "chapter":
             if not self.chapter_id or not self.chapter_id.strip():
                 raise ValueError("chapter_id is required when scope_type='chapter'")
@@ -174,11 +174,11 @@ class SceneProseLink(BaseModel):
         return self
 
     # Computed at read time from file markers; never written to story.json.
-    start_offset: Optional[int] = Field(
+    start_offset: int | None = Field(
         None,
         description="Computed start offset within the linked content file.",
     )
-    end_offset: Optional[int] = Field(
+    end_offset: int | None = Field(
         None,
         description="Computed end offset within the linked content file.",
     )
@@ -196,7 +196,7 @@ class SceneBeat(BaseModel):
     text: str = Field(
         ..., description="Short description of the beat's action or event."
     )
-    prose_link: Optional[SceneProseLink] = Field(
+    prose_link: SceneProseLink | None = Field(
         None,
         description="Optional link from this beat to a specific prose range.",
     )
@@ -260,12 +260,12 @@ class Scene(BaseModel):
     active_characters: list[str] = []
     passive_characters: list[str] = []
     sourcebook_entry_ids: list[str] = []
-    location: Optional[str] = None
-    time: Optional[str] = None
-    scene_time: Optional[SceneChronologyTime] = None
+    location: str | None = None
+    time: str | None = None
+    scene_time: SceneChronologyTime | None = None
     timeline_id: str = "main"
-    color_tag: Optional[str] = None  # hex color, e.g. "#a855f7"
-    prose_link: Optional[SceneProseLink] = None  # used when beats is empty
+    color_tag: str | None = None  # hex color, e.g. "#a855f7"
+    prose_link: SceneProseLink | None = None  # used when beats is empty
     causes: list[SceneId] = []  # scene IDs this scene causally precedes
     pinboard_x: float = 100.0
     pinboard_y: float = 100.0
@@ -325,15 +325,15 @@ class SceneCreateRequest(BaseModel):
             "canon references. Always include relevant sourcebook entries when creating a scene so the scene remains connected to existing world knowledge."
         ),
     )
-    location: Optional[str] = Field(
+    location: str | None = Field(
         None,
         description="Location identifier or location name for where the scene occurs.",
     )
-    time: Optional[str] = Field(
+    time: str | None = Field(
         None,
         description="Human-readable scene time string when a formal chronology is not needed.",
     )
-    scene_time: Optional[SceneChronologyTime] = Field(
+    scene_time: SceneChronologyTime | None = Field(
         None,
         description=(
             "Formal timeline position for the scene. Always set this when the scene can be placed on the story timeline; if an exact timestamp is not known, use causes to capture relative chronology. Accepts ISO-like timestamps and normalizes them."
@@ -346,11 +346,11 @@ class SceneCreateRequest(BaseModel):
             "primary timeline and stable IDs for branch timelines."
         ),
     )
-    color_tag: Optional[str] = Field(
+    color_tag: str | None = Field(
         None,
         description="Optional color label for the scene card, usually a hex string.",
     )
-    prose_link: Optional[SceneProseLink] = Field(
+    prose_link: SceneProseLink | None = Field(
         None,
         description=(
             "Optional prose link showing which content file the scene is linked to "
@@ -391,70 +391,70 @@ class SceneUpdateRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    summary: Optional[str] = Field(
+    summary: str | None = Field(
         None,
         description="Replacement scene label/summary. Use this instead of a title.",
     )
-    beats: Optional[list[SceneBeat]] = Field(
+    beats: list[SceneBeat] | None = Field(
         None,
         description="Full replacement beat list for the scene.",
     )
-    active_characters: Optional[list[str]] = Field(
+    active_characters: list[str] | None = Field(
         None,
         description="Full replacement list of active character IDs.",
     )
-    passive_characters: Optional[list[str]] = Field(
+    passive_characters: list[str] | None = Field(
         None,
         description="Full replacement list of passive character IDs.",
     )
-    sourcebook_entry_ids: Optional[list[str]] = Field(
+    sourcebook_entry_ids: list[str] | None = Field(
         None,
         description="Full replacement list of sourcebook entry IDs.",
     )
-    location: Optional[str] = Field(
+    location: str | None = Field(
         None,
         description="Replacement location identifier or name.",
     )
-    time: Optional[str] = Field(
+    time: str | None = Field(
         None,
         description="Replacement human-readable time string.",
     )
-    scene_time: Optional[SceneChronologyTime] = Field(
+    scene_time: SceneChronologyTime | None = Field(
         None,
         description="Replacement formal chronology timestamp for the scene.",
     )
-    timeline_id: Optional[str] = Field(
+    timeline_id: str | None = Field(
         None,
         description="Replacement explicit timeline identity for the scene.",
     )
-    color_tag: Optional[str] = Field(
+    color_tag: str | None = Field(
         None,
         description="Replacement card color tag.",
     )
-    prose_link: Optional[SceneProseLink] = Field(
+    prose_link: SceneProseLink | None = Field(
         None,
         description="Replacement prose link for the scene.",
     )
-    causes: Optional[list[SceneId]] = Field(
+    causes: list[SceneId] | None = Field(
         None,
         description=(
             "Replacement list of scene IDs that this scene causally precedes."
         ),
         json_schema_extra={"examples": [[1, 2]]},
     )
-    pinboard_x: Optional[float] = Field(
+    pinboard_x: float | None = Field(
         None,
         description="Replacement pinboard X position.",
     )
-    pinboard_y: Optional[float] = Field(
+    pinboard_y: float | None = Field(
         None,
         description="Replacement pinboard Y position.",
     )
-    status: Optional[str] = Field(
+    status: str | None = Field(
         None,
         description="Replacement lifecycle status such as active, inactive, or draft.",
     )
-    tag_personal_datetimes: Optional[list[SceneTagPersonalDatetime]] = Field(
+    tag_personal_datetimes: list[SceneTagPersonalDatetime] | None = Field(
         default=None,
         description=(
             "Replacement per-tag personal age overrides. Use None to leave the "
@@ -471,8 +471,8 @@ class SceneLinkProseRequest(BaseModel):
     """
 
     scope_type: str = "story"  # 'story' | 'chapter' | 'unlinked'
-    chapter_id: Optional[str] = None
-    book_id: Optional[str] = None
+    chapter_id: str | None = None
+    book_id: str | None = None
     start_offset: int
     end_offset: int
 
@@ -486,8 +486,8 @@ class SceneBatchLinkProseRequest(BaseModel):
     """
 
     scope_type: str = "story"
-    chapter_id: Optional[str] = None
-    book_id: Optional[str] = None
+    chapter_id: str | None = None
+    book_id: str | None = None
     assignments: list[SceneBoundaryAssignment] = Field(default_factory=list)
     unlink_ids: list[SceneId] = Field(default_factory=list)
 
@@ -505,8 +505,8 @@ class SceneReorderProseResponse(BaseModel):
 
     scenes: list[Scene]
     scope_type: str
-    chapter_id: Optional[str] = None
-    book_id: Optional[str] = None
+    chapter_id: str | None = None
+    book_id: str | None = None
     scope_start: int
     scope_end: int
     rebuilt_text: str
@@ -530,16 +530,16 @@ class SceneDetectBoundariesRequest(BaseModel):
     """Payload for boundary detection + optional automatic scene relinking."""
 
     scope_type: Literal["story", "chapter", "unlinked"] = "chapter"
-    chapter_id: Optional[str] = None
-    book_id: Optional[str] = None
+    chapter_id: str | None = None
+    book_id: str | None = None
     scene_ids: list[SceneId] = Field(default_factory=list)
     start_offset: int = 0
-    end_offset: Optional[int] = None
-    prose_text: Optional[str] = None
+    end_offset: int | None = None
+    prose_text: str | None = None
 
     @field_validator("end_offset")
     @classmethod
-    def _validate_offsets(cls, value: Optional[int], info: Any) -> Optional[int]:
+    def _validate_offsets(cls, value: int | None, info: Any) -> int | None:
         if value is None:
             return value
         start_offset = int(info.data.get("start_offset", 0))
@@ -558,9 +558,9 @@ class SceneDetectBoundariesResponse(BaseModel):
 class SceneWriteRequest(BaseModel):
     """Payload for generating prose for one scene and linking the result."""
 
-    scope_type: Optional[Literal["story", "chapter", "unlinked"]] = None
-    chapter_id: Optional[str] = None
-    book_id: Optional[str] = None
+    scope_type: Literal["story", "chapter", "unlinked"] | None = None
+    chapter_id: str | None = None
+    book_id: str | None = None
     include_following_scenes: int = 1
     detect_boundaries: bool = True
 

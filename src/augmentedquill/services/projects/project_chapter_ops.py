@@ -10,15 +10,15 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, List
+from typing import Any
 
 from augmentedquill.core.config import load_story_config, save_story_config
-from augmentedquill.services.projects.project_locks import run_locked
 from augmentedquill.services.chapters.chapter_helpers import (
     _chapter_by_id_or_404,
     _get_chapter_metadata_entry,
     _scan_chapter_files,
 )
+from augmentedquill.services.projects.project_locks import run_locked
 from augmentedquill.services.scenes.scene_markers import (
     parse_scene_spans,
     remove_markers,
@@ -189,7 +189,7 @@ def remove_chapter_conflict_in_project(active: Path, chap_id: int, index: int) -
 
 
 def reorder_chapter_conflicts_in_project(
-    active: Path, chap_id: int, new_indices: List[int]
+    active: Path, chap_id: int, new_indices: list[int]
 ) -> None:
     """Reorder conflicts in a chapter providing the new sequence of indices."""
     story, story_path, target = _get_chapter_target_and_story(active, chap_id)

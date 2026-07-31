@@ -11,8 +11,6 @@ All routes are scoped under ``/projects/{project_name}/scenes`` and require a
 valid, existing project directory resolved via the ``ProjectDep`` dependency.
 """
 
-from typing import List
-
 from fastapi import APIRouter, HTTPException
 
 from augmentedquill.api.v1.dependencies import ProjectDep
@@ -31,6 +29,11 @@ from augmentedquill.models.scene import (
     SceneWriteRequest,
     SceneWriteResponse,
 )
+from augmentedquill.services.scenes.scene_generation_service import (
+    auto_link_scope_text,
+    detect_scene_boundaries_and_link,
+    write_scene_and_link,
+)
 from augmentedquill.services.scenes.scene_service import (
     create_scene,
     delete_scene,
@@ -43,17 +46,12 @@ from augmentedquill.services.scenes.scene_service import (
     update_prose_content,
     update_scene,
 )
-from augmentedquill.services.scenes.scene_generation_service import (
-    detect_scene_boundaries_and_link,
-    auto_link_scope_text,
-    write_scene_and_link,
-)
 
 router = APIRouter(prefix="/projects/{project_name}", tags=["Scenes"])
 
 
-@router.get("/scenes", response_model=List[Scene])
-async def get_scenes(project_dir: ProjectDep) -> List[Scene]:
+@router.get("/scenes", response_model=list[Scene])
+async def get_scenes(project_dir: ProjectDep) -> list[Scene]:
     """List all scenes for the project, with staleness flags on prose links."""
     return [Scene(**s) for s in list_scenes(project_dir)]
 
@@ -105,15 +103,13 @@ class AutoLinkScopeRequest(SceneDetectBoundariesRequest):
 class AutoLinkScopeResponse(SceneDetectBoundariesResponse):
     """Response for auto-linking a saved prose scope to its scenes."""
 
-    pass
 
-
-@router.post("/scenes/{scene_id}/link-prose", response_model=List[Scene])
+@router.post("/scenes/{scene_id}/link-prose", response_model=list[Scene])
 async def link_scene_prose(
     project_dir: ProjectDep,
     scene_id: SceneId,
     payload: SceneLinkProseRequest,
-) -> List[Scene]:
+) -> list[Scene]:
     """Assign a prose-text range to a scene using inline file markers."""
     if payload.start_offset >= payload.end_offset:
         raise HTTPException(
@@ -129,11 +125,11 @@ async def link_scene_prose(
     return [Scene(**s) for s in updated]
 
 
-@router.post("/scenes/batch-link-prose", response_model=List[Scene])
+@router.post("/scenes/batch-link-prose", response_model=list[Scene])
 async def batch_link_scene_prose(
     project_dir: ProjectDep,
     payload: SceneBatchLinkProseRequest,
-) -> List[Scene]:
+) -> list[Scene]:
     """Atomically unlink and relink multiple scenes in one scope.
 
     All assignments are processed in a single pass so touching boundaries
@@ -161,11 +157,11 @@ async def batch_link_scene_prose(
     return [Scene(**s) for s in updated]
 
 
-@router.post("/scenes/{scene_id}/unlink-prose", response_model=List[Scene])
+@router.post("/scenes/{scene_id}/unlink-prose", response_model=list[Scene])
 async def unlink_scene_prose(
     project_dir: ProjectDep,
     scene_id: SceneId,
-) -> List[Scene]:
+) -> list[Scene]:
     """Remove the prose link from a scene, preserving its narrative position.
 
     Returns all scenes affected in the same prose scope.

@@ -19,8 +19,12 @@ from augmentedquill.models.scene import (
     SceneLinkProseRequest,
     SceneProseLink,
     SceneReorderProseRequest,
-    SceneUpdateRequest,
     SceneUpdateProseContentRequest,
+    SceneUpdateRequest,
+)
+from augmentedquill.services.scenes.scene_markers import (
+    parse_scene_spans,
+    validate_scene_marker_tokens,
 )
 from augmentedquill.services.scenes.scene_service import (
     create_scene,
@@ -28,15 +32,11 @@ from augmentedquill.services.scenes.scene_service import (
     link_prose,
     list_scenes,
     relink_scope_prose,
-    reorder_scope_scenes,
     reorder_scene_prose,
+    reorder_scope_scenes,
     unlink_prose,
-    update_scene,
     update_prose_content,
-)
-from augmentedquill.services.scenes.scene_markers import (
-    parse_scene_spans,
-    validate_scene_marker_tokens,
+    update_scene,
 )
 
 
@@ -531,6 +531,157 @@ def test_update_prose_content_replaces_marked_span(project_dir: Path) -> None:
 
     text = (project_dir / "content.md").read_text(encoding="utf-8")
     assert "<!--scene:1:start-->Omega<!--scene:1:end-->" in text
+
+
+def test_update_prose_content_preserves_other_scene_markers_and_neighboring_text(
+    project_dir: Path,
+) -> None:
+    """Replacing one scene's prose must leave every other scene's markers and
+    the surrounding prose byte-for-byte intact (data-corruption regression for
+    the linked-prose edit path)."""
+    (project_dir / "content.md").write_text(
+        "Alpha First Second Omega", encoding="utf-8"
+    )
+    first = create_scene(project_dir, SceneCreateRequest(summary="First"))
+    second = create_scene(project_dir, SceneCreateRequest(summary="Second"))
+
+    link_prose(
+        project_dir,
+        first["id"],
+        SceneLinkProseRequest(scope_type="story", start_offset=6, end_offset=11),
+    )
+    current = (project_dir / "content.md").read_text(encoding="utf-8")
+    second_start = current.index("Second")
+    link_prose(
+        project_dir,
+        second["id"],
+        SceneLinkProseRequest(
+            scope_type="story",
+            start_offset=second_start,
+            end_offset=second_start + len("Second"),
+        ),
+    )
+
+    linked = (project_dir / "content.md").read_text(encoding="utf-8")
+    assert f"<!--scene:{first['id']}:start-->" in linked
+    assert f"<!--scene:{second['id']}:start-->" in linked
+
+    updated = update_prose_content(
+        project_dir,
+        first["id"],
+        SceneUpdateProseContentRequest(text="Edited"),
+    )
+    assert updated is not None
+
+    final = (project_dir / "content.md").read_text(encoding="utf-8")
+    # The edited scene keeps its own markers wrapped around the new text.
+    assert (
+        f"<!--scene:{first['id']}:start-->Edited<!--scene:{first['id']}:end-->" in final
+    )
+    # The other scene's markers and text are untouched.
+    assert (
+        f"<!--scene:{second['id']}:start-->Second<!--scene:{second['id']}:end-->"
+        in final
+    )
+    # Surrounding prose is untouched.
+    assert final.startswith("Alpha ")
+    assert final.endswith(" Omega")
+
+
+def test_update_prose_content_on_unlinked_scene_does_not_touch_chapter(
+    project_dir: Path,
+) -> None:
+    """A brand-new (unlinked-scope) scene's prose update must never leak into
+    a chapter file — writing it there would corrupt the chapter text at a
+    wrong offset (BUG-1 regression)."""
+    story = json.loads((project_dir / "story.json").read_text(encoding="utf-8"))
+    story["project_type"] = "novel"
+    story["chapters"] = [
+        {
+            "id": "1",
+            "filename": "0001.txt",
+            "title": "Chapter 1",
+            "summary": "",
+            "content": "",
+        }
+    ]
+    (project_dir / "story.json").write_text(json.dumps(story), encoding="utf-8")
+
+    chapters_dir = project_dir / "chapters"
+    chapters_dir.mkdir(parents=True, exist_ok=True)
+    chapter1 = chapters_dir / "0001.txt"
+    original = "Alpha Bravo Charlie"
+    chapter1.write_text(original, encoding="utf-8")
+
+    scene = create_scene(project_dir, SceneCreateRequest(summary="New scene"))
+    updated = update_prose_content(
+        project_dir,
+        scene["id"],
+        SceneUpdateProseContentRequest(text="Inserted"),
+    )
+    assert updated is not None
+    assert updated["prose_link"] is not None
+    assert updated["prose_link"].get("scope_type") == "unlinked"
+
+    # The chapter file must be untouched and contain no scene markers.
+    assert chapter1.read_text(encoding="utf-8") == original
+    assert "<!--scene:" not in chapter1.read_text(encoding="utf-8")
+
+    # The prose went into the internal unlinked-scope file instead.
+    unlinked_text = (project_dir / "unlinked.txt").read_text(encoding="utf-8")
+    assert f"<!--scene:{scene['id']}:start-->" in unlinked_text
+    assert "Inserted" in unlinked_text
+
+
+def test_update_prose_content_in_chapter_preserves_markers_and_surroundings(
+    project_dir: Path,
+) -> None:
+    """Updating a chapter-scope scene's prose must preserve the scene markers
+    and the rest of the chapter text (BUG-2 marker-corruption regression)."""
+    story = json.loads((project_dir / "story.json").read_text(encoding="utf-8"))
+    story["project_type"] = "novel"
+    story["chapters"] = [
+        {
+            "id": "1",
+            "filename": "0001.txt",
+            "title": "Chapter 1",
+            "summary": "",
+            "content": "",
+        }
+    ]
+    (project_dir / "story.json").write_text(json.dumps(story), encoding="utf-8")
+
+    chapters_dir = project_dir / "chapters"
+    chapters_dir.mkdir(parents=True, exist_ok=True)
+    chapter1 = chapters_dir / "0001.txt"
+    chapter1.write_text("Alpha Bravo Charlie Delta", encoding="utf-8")
+
+    scene = create_scene(project_dir, SceneCreateRequest(summary="Chapter scene"))
+    link_prose(
+        project_dir,
+        scene["id"],
+        SceneLinkProseRequest(
+            scope_type="chapter",
+            chapter_id="1",
+            start_offset=6,
+            end_offset=11,
+        ),
+    )
+
+    updated = update_prose_content(
+        project_dir,
+        scene["id"],
+        SceneUpdateProseContentRequest(text="Zulu"),
+    )
+    assert updated is not None
+
+    final = chapter1.read_text(encoding="utf-8")
+    assert (
+        f"<!--scene:{scene['id']}:start-->Zulu<!--scene:{scene['id']}:end-->" in final
+    )
+    assert final.startswith("Alpha ")
+    assert final.endswith(" Charlie Delta")
+    assert "Bravo" not in final
 
 
 def test_link_prose_relinks_scene_with_raw_offsets_after_marker_removal(

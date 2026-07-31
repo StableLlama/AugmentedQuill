@@ -13,8 +13,8 @@ from pathlib import Path
 
 from augmentedquill.core.config import load_story_config, save_story_config
 from augmentedquill.services.chapters.chapter_helpers import (
-    _normalize_chapter_entry,
     _get_chapter_metadata_entry,
+    _normalize_chapter_entry,
     _scan_chapter_files,
 )
 

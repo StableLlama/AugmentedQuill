@@ -12,6 +12,17 @@ import os
 import tempfile
 from pathlib import Path
 from unittest import TestCase
+
+from augmentedquill.core.config import (
+    CURRENT_SCHEMA_VERSION,
+    _get_story_schema,
+    load_story_config,
+)
+from augmentedquill.services.chat.chat_tool_decorator import (
+    ensure_tool_registry_loaded,
+    get_tool_function,
+)
+from augmentedquill.services.projects.projects import select_project
 from augmentedquill.services.sourcebook.sourcebook_helpers import (
     sourcebook_create_entry,
     sourcebook_delete_entry,
@@ -19,16 +30,9 @@ from augmentedquill.services.sourcebook.sourcebook_helpers import (
     sourcebook_refresh_entry_keywords,
     sourcebook_update_entry,
 )
-from augmentedquill.services.chat.chat_tool_decorator import (
-    ensure_tool_registry_loaded,
-    get_tool_function,
-)
-from augmentedquill.services.projects.projects import select_project
-from augmentedquill.core.config import load_story_config
 from augmentedquill.services.story.config_story_ops import (
     normalize_validate_story_config,
 )
-from augmentedquill.core.config import CURRENT_SCHEMA_VERSION, _get_story_schema
 
 
 class SourcebookValidationTest(TestCase):
@@ -378,6 +382,7 @@ class SourcebookValidationTest(TestCase):
 
     def test_manage_sourcebook_relation_data_rejects_string_scene_ids(self):
         from pydantic import ValidationError
+
         from augmentedquill.services.chat.chat_tools.sourcebook_tools import (
             ManageSourcebookRelationData,
         )
@@ -424,10 +429,11 @@ class SourcebookValidationTest(TestCase):
         self.assertIn("error", sourcebook_update_entry(None))
 
     def test_pydantic_schema_validates_images_on_create_tool(self):
+        from pydantic import ValidationError
+
         from augmentedquill.services.chat.chat_tools.sourcebook_tools import (
             ManageSourcebookEntryData,
         )
-        from pydantic import ValidationError
 
         # Valid
         params = ManageSourcebookEntryData(
@@ -454,10 +460,11 @@ class SourcebookValidationTest(TestCase):
             )
 
     def test_pydantic_schema_validates_images_on_update_tool(self):
+        from pydantic import ValidationError
+
         from augmentedquill.services.chat.chat_tools.sourcebook_tools import (
             ManageSourcebookUpdateData,
         )
-        from pydantic import ValidationError
 
         # Valid
         params = ManageSourcebookUpdateData(images=["img1"])

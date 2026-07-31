@@ -284,7 +284,7 @@ const UnlinkedBreak: React.FC = () => {
 
 /* eslint-disable complexity */
 // Intentionally kept as one component to keep list, marker plane, and drag UX co-located.
-// eslint-disable-next-line max-lines-per-function
+
 export const NarrativeView: React.FC<NarrativeViewProps> = ({
   scenes,
   sourcebookEntries = [],

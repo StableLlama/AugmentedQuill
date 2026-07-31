@@ -27,12 +27,14 @@ class ChatApiSessionOpsTest(TestCase):
         self.assertEqual(list_active_chats(project_dir), [])
 
     def test_load_active_chat_raises_when_missing(self):
-        with patch(
-            "augmentedquill.services.chat.chat_api_session_ops.load_chat",
-            return_value=None,
+        with (
+            patch(
+                "augmentedquill.services.chat.chat_api_session_ops.load_chat",
+                return_value=None,
+            ),
+            self.assertRaises(NotFoundError),
         ):
-            with self.assertRaises(NotFoundError):
-                load_active_chat(Path("/tmp/project"), "chat-1")
+            load_active_chat(Path("/tmp/project"), "chat-1")
 
     def test_save_active_chat_injects_chat_id(self):
         with patch(
@@ -46,12 +48,14 @@ class ChatApiSessionOpsTest(TestCase):
         self.assertEqual(payload["name"], "Test")
 
     def test_delete_active_chat_raises_when_not_found(self):
-        with patch(
-            "augmentedquill.services.chat.chat_api_session_ops.delete_chat",
-            return_value=False,
+        with (
+            patch(
+                "augmentedquill.services.chat.chat_api_session_ops.delete_chat",
+                return_value=False,
+            ),
+            self.assertRaises(NotFoundError),
         ):
-            with self.assertRaises(NotFoundError):
-                delete_active_chat(Path("/tmp/project"), "chat-1")
+            delete_active_chat(Path("/tmp/project"), "chat-1")
 
     def test_delete_all_active_chats(self):
         with patch(

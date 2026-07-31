@@ -877,6 +877,37 @@ describe('SceneEditorDialog save flow', () => {
     expect(onSaveProseContent).not.toHaveBeenCalled();
   });
 
+  it('treats a brand-new scene with an unlinked-scope prose link as NOT linked', () => {
+    // Backend `create_scene` always returns a zero-width `prose_link` with
+    // `scope_type: 'unlinked'` for a brand-new scene.  The dialog must not
+    // show the "Unlink prose" button for such a scene — it should show the
+    // drag-to-link hint instead (BUG: unlinked scenes are shown as linked).
+    const unlinkedProseLink: SceneProseLink = {
+      scope_type: 'unlinked',
+      chapter_id: null,
+      book_id: null,
+      start_offset: 0,
+      end_offset: 0,
+    };
+
+    wrap(
+      <SceneEditorDialog
+        scene={makeScene({ prose_link: unlinkedProseLink })}
+        isOpen
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+      />
+    );
+
+    // A never-linked scene must NOT offer an "Unlink prose" action.
+    expect(screen.queryByRole('button', { name: /Unlink prose/i })).toBeNull();
+    // ...and it must show the drag-to-link hint instead.
+    expect(
+      screen.getByText('Drag prose from the editor to link this scene')
+    ).toBeTruthy();
+  });
+
   it('updates linked prose text while write-scene is still running', async () => {
     vi.useFakeTimers();
     try {

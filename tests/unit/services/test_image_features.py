@@ -7,10 +7,10 @@
 
 """Defines the test image features unit so this responsibility stays isolated, testable, and easy to evolve."""
 
-import os
-import json
-import tempfile
 import base64
+import json
+import os
+import tempfile
 from pathlib import Path
 from unittest import TestCase
 from unittest.mock import AsyncMock, patch
@@ -18,15 +18,15 @@ from unittest.mock import AsyncMock, patch
 from fastapi.testclient import TestClient
 
 from augmentedquill.main import create_app
-from augmentedquill.services.projects.projects import select_project, create_project
-from augmentedquill.utils.image_helpers import (
-    delete_image_metadata,
-    load_image_metadata,
-    get_project_images,
-    update_image_metadata,
-)
 from augmentedquill.services.chat.chat_api_helpers import inject_project_images
 from augmentedquill.services.chat.chat_tool_dispatcher import exec_chat_tool
+from augmentedquill.services.projects.projects import create_project, select_project
+from augmentedquill.utils.image_helpers import (
+    delete_image_metadata,
+    get_project_images,
+    load_image_metadata,
+    update_image_metadata,
+)
 
 
 class ImageFeaturesTest(TestCase):

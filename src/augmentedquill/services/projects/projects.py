@@ -9,58 +9,58 @@
 
 from __future__ import annotations
 
+import os
+from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Iterator, List, Tuple
-import os
 
-from augmentedquill.services.projects.project_story_ops import (
-    update_book_metadata_in_project,
-    read_book_content_in_project,
-    write_book_content_in_project,
-    update_story_metadata_in_project,
-    read_story_content_in_project,
-    write_story_content_in_project,
-    read_scratchpad_in_project,
-    write_scratchpad_in_project,
-    read_editing_scratchpad_in_project,
-    write_editing_scratchpad_in_project,
-)
-from augmentedquill.services.projects.project_structure_ops import (
-    create_new_chapter_in_project,
-    create_new_book_in_project,
-    change_project_type_in_project,
+from augmentedquill.core.config import (
+    DEFAULT_PROJECTS_REGISTRY_PATH,
+    PROJECTS_ROOT,
 )
 from augmentedquill.services.projects.project_chapter_ops import (
-    write_chapter_content_in_project,
-    update_chapter_metadata_in_project,
     add_chapter_conflict_in_project,
-    update_chapter_conflict_in_project,
+    delete_chapter_in_project,
     remove_chapter_conflict_in_project,
     reorder_chapter_conflicts_in_project,
+    update_chapter_conflict_in_project,
+    update_chapter_metadata_in_project,
+    write_chapter_content_in_project,
     write_chapter_title_in_project,
-    delete_chapter_in_project,
+)
+from augmentedquill.services.projects.project_lifecycle_ops import (
+    create_project_under_root,
+    delete_project_under_root,
+    initialize_project_dir_data,
+    list_projects_under_root,
+    select_project_under_root,
+    validate_project_dir_data,
 )
 from augmentedquill.services.projects.project_registry_ops import (
+    get_active_project_dir_from_registry,
     load_registry_from_path,
     save_registry_to_path,
     set_active_project_in_registry,
-    get_active_project_dir_from_registry,
 )
-from augmentedquill.services.projects.project_lifecycle_ops import (
-    delete_project_under_root,
-    validate_project_dir_data,
-    initialize_project_dir_data,
-    list_projects_under_root,
-    create_project_under_root,
-    select_project_under_root,
+from augmentedquill.services.projects.project_story_ops import (
+    read_book_content_in_project,
+    read_editing_scratchpad_in_project,
+    read_scratchpad_in_project,
+    read_story_content_in_project,
+    update_book_metadata_in_project,
+    update_story_metadata_in_project,
+    write_book_content_in_project,
+    write_editing_scratchpad_in_project,
+    write_scratchpad_in_project,
+    write_story_content_in_project,
 )
-from augmentedquill.core.config import (
-    PROJECTS_ROOT,
-    DEFAULT_PROJECTS_REGISTRY_PATH,
+from augmentedquill.services.projects.project_structure_ops import (
+    change_project_type_in_project,
+    create_new_book_in_project,
+    create_new_chapter_in_project,
 )
 
 _ACTIVE_PROJECT_OVERRIDE: ContextVar[Path | None] = ContextVar(
@@ -85,7 +85,7 @@ class ProjectInfo:
     reason: str = ""
 
 
-def load_registry() -> Dict:
+def load_registry() -> dict:
     """Represents the ProjectInfo type."""
     """Represents the ProjectInfo type."""
     """Load registry."""
@@ -136,7 +136,7 @@ def _require_active_project() -> Path:
     return active
 
 
-def delete_project(name: str) -> Tuple[bool, str]:
+def delete_project(name: str) -> tuple[bool, str]:
     """Delete a project directory under the projects root by name.
 
     If the deleted project is the current one, clear current in the registry.
@@ -188,7 +188,7 @@ def initialize_project_dir(
     )
 
 
-def list_projects() -> List[Dict[str, str | bool]]:
+def list_projects() -> list[dict[str, str | bool]]:
     """List projects under the projects root directory.
 
     Returns a list of dicts: {name, path, is_valid, title}
@@ -277,7 +277,7 @@ def remove_chapter_conflict(
 
 
 def reorder_chapter_conflicts(
-    chap_id: int, new_indices: List[int], active: Path | None = None
+    chap_id: int, new_indices: list[int], active: Path | None = None
 ) -> None:
     """Reorder conflicts in a chapter providing the new sequence of indices."""
     active = active or _require_active_project()
@@ -302,7 +302,7 @@ def delete_chapter(chap_id: int, active: Path | None = None) -> None:
 
 def create_project(
     name: str, project_type: str = "novel", language: str = "en"
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     """Create a new project explicitly."""
     ok, msg, path = create_project_under_root(
         name=name,
@@ -317,7 +317,7 @@ def create_project(
     return ok, msg
 
 
-def select_project(name: str) -> Tuple[bool, str]:
+def select_project(name: str) -> tuple[bool, str]:
     """
     Select or create a project by name under the projects root.
 
@@ -399,7 +399,7 @@ def write_book_content(book_id: str, content: str, active: Path | None = None) -
 def update_story_metadata(
     title: str = None,
     summary: str = None,
-    tags: List[str] = None,
+    tags: list[str] = None,
     notes: str = None,
     private_notes: str = None,
     conflicts: list | None = None,
@@ -456,7 +456,7 @@ def write_editing_scratchpad(content: str, active: Path | None = None) -> None:
     write_editing_scratchpad_in_project(active=active, content=content)
 
 
-def change_project_type(new_type: str, active: Path | None = None) -> Tuple[bool, str]:
+def change_project_type(new_type: str, active: Path | None = None) -> tuple[bool, str]:
     """Convert the active project to a new type."""
     active = active or get_active_project_dir()
     if not active:

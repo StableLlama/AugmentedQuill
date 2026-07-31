@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from augmentedquill.core.config import save_story_config
@@ -18,6 +19,9 @@ from augmentedquill.services.chat.chat_tool_decorator import (
     tool_message,
 )
 from augmentedquill.services.llm import llm
+from augmentedquill.services.scenes.scene_generation_service import (
+    auto_link_chapter_generation,
+)
 from augmentedquill.services.story.story_api_prompt_ops import (  # noqa: F401
     resolve_model_runtime,
 )
@@ -27,10 +31,6 @@ from augmentedquill.services.story.story_generation_common import (
     prepare_story_summary_generation,
     prepare_write_chapter_generation,
 )
-from augmentedquill.services.scenes.scene_generation_service import (
-    auto_link_chapter_generation,
-)
-import json
 
 
 async def _complete_with_tool_calls(

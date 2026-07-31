@@ -13,8 +13,8 @@ import httpx
 from fastapi.responses import JSONResponse
 
 from augmentedquill.services.exceptions import BadRequestError, UpstreamError
-from augmentedquill.services.llm.llm_http_ops import logged_request
 from augmentedquill.services.llm.llm_completion_ops import _validate_base_url
+from augmentedquill.services.llm.llm_http_ops import logged_request
 
 
 async def proxy_openai_models(payload: dict) -> JSONResponse:

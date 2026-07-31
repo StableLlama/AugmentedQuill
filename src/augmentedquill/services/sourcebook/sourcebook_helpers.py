@@ -7,13 +7,14 @@
 
 """Defines the sourcebook helpers unit so this responsibility stays isolated, testable, and easy to evolve."""
 
-from typing import Any, Dict, List, Literal, Optional
 import re
-from augmentedquill.services.projects.projects import get_active_project_dir
+from typing import Any, Literal
+
 from augmentedquill.core.config import (
     load_story_config,
     save_story_config,
 )
+from augmentedquill.services.projects.projects import get_active_project_dir
 from augmentedquill.services.sourcebook.sourcebook_keyword_service import (
     _keyword_budget,
     _normalize_keyword_value,
@@ -316,7 +317,7 @@ def _get_story_data(active: Any = None) -> Any:
     return story, story_path
 
 
-def sourcebook_list_entries(active: Any = None) -> List[Dict]:
+def sourcebook_list_entries(active: Any = None) -> list[dict]:
     """Sourcebook List Entries."""
     story, _ = _get_story_data(active)
     if not story:
@@ -362,7 +363,7 @@ def sourcebook_search_entries(
     match_mode: SOURCEBOOK_SEARCH_MODE = "extensive",
     split_query_fallback: bool = False,
     active: Any = None,
-) -> List[Dict]:
+) -> list[dict]:
     """Search sourcebook entries with direct/extensive matching and optional split fallback."""
     story, _ = _get_story_data(active)
     if not story:
@@ -415,7 +416,7 @@ def sourcebook_search_entries(
     return fallback_results
 
 
-def sourcebook_get_entry(name_or_id: str, active: Any = None) -> Optional[Dict]:
+def sourcebook_get_entry(name_or_id: str, active: Any = None) -> dict | None:
     """Sourcebook Get Entry."""
     if not name_or_id:
         return None
@@ -445,17 +446,17 @@ def sourcebook_create_entry(
     name: str,
     description: str,
     category: str = None,
-    synonyms: List[str] | object = _UNSET,
-    images: List[str] | object = _UNSET,
-    keywords: List[str] | object = _UNSET,
-    relations: List[dict] | object = _UNSET,
+    synonyms: list[str] | object = _UNSET,
+    images: list[str] | object = _UNSET,
+    keywords: list[str] | object = _UNSET,
+    relations: list[dict] | object = _UNSET,
     origin_date: str | None = None,
     destination_datetime: str | None = None,
     destination_relative: str | None = None,
     creates_new_timeline: bool = False,
     timeline_id: str | None = None,
     active: Any = None,
-) -> Dict:
+) -> dict:
     """Create a sourcebook entry for the active project."""
     if not name or not isinstance(name, str) or not name.strip():
         return {"error": "Invalid name: Name must be a non-empty string."}
@@ -591,17 +592,17 @@ def sourcebook_update_entry(
     name: str = None,
     description: str = None,
     category: str = None,
-    synonyms: List[str] = None,
-    images: List[str] = None,
-    keywords: List[str] = None,
-    relations: List[Dict] = None,
+    synonyms: list[str] = None,
+    images: list[str] = None,
+    keywords: list[str] = None,
+    relations: list[dict] = None,
     origin_date: str | None | object = _UNSET,
     destination_datetime: str | None | object = _UNSET,
     destination_relative: str | None | object = _UNSET,
     creates_new_timeline: bool | None | object = _UNSET,
     timeline_id: str | None | object = _UNSET,
     active: Any = None,
-) -> Dict:
+) -> dict:
     """Sourcebook Update Entry."""
     if not name_or_id:
         return {"error": "Invalid identifier: name_or_id is required."}

@@ -42,8 +42,8 @@ from augmentedquill.services.scenes.scene_markers import (
     remove_annotation_markers,
     remove_markers,
     scene_block_bounds,
-    snap_range_outside_markers,
     snap_offset_outside_markers,
+    snap_range_outside_markers,
     validate_internal_marker_tokens,
     validate_scene_marker_tokens,
 )
@@ -1038,8 +1038,8 @@ def relink_scope_prose(
         marker_lengths: dict[SceneId, tuple[int, int]] = {}
         for sid in {sid for sid, _, _ in all_assignments}:
             from augmentedquill.services.scenes.scene_markers import (
-                _marker_token,
                 SCENE_LAYER,
+                _marker_token,
             )
 
             start_tok = _marker_token(SCENE_LAYER, sid, "start")

@@ -9,10 +9,9 @@
 
 from __future__ import annotations
 
-from typing import Any
 from pathlib import Path
+from typing import Any
 
-from augmentedquill.services.llm import llm
 from augmentedquill.core.config import load_machine_config
 from augmentedquill.core.prompts import (
     get_system_message,
@@ -23,15 +22,16 @@ from augmentedquill.services.chat.chat_tool_decorator import (
     EDITING_ROLE,
     get_tool_schemas,
 )
+from augmentedquill.services.llm import llm
 
 
 def _ensure_tools_loaded() -> Any:
     """Force load tool modules to ensure they are registered without causing circular imports at module level."""
     # We import here to avoid circular dependencies with story_generation_ops which imports us
-    import augmentedquill.services.chat.chat_tools.chapter_tools  # noqa: F401
+    import augmentedquill.services.chat.chat_tools.chapter_tools
+    import augmentedquill.services.chat.chat_tools.project_tools
+    import augmentedquill.services.chat.chat_tools.sourcebook_tools
     import augmentedquill.services.chat.chat_tools.story_tools  # noqa: F401
-    import augmentedquill.services.chat.chat_tools.project_tools  # noqa: F401
-    import augmentedquill.services.chat.chat_tools.sourcebook_tools  # noqa: F401
 
 
 def _get_read_only_tool_schemas(project_type: str | None = None) -> list[dict]:

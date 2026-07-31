@@ -7,17 +7,18 @@
 
 """Defines the test story generation ops unit so this responsibility stays isolated, testable, and easy to evolve."""
 
-import pytest
 import json
 from unittest.mock import patch
 
+import pytest
+
+from augmentedquill.api.v1.story_routes.generation_streaming import (
+    _create_gen_source,
+)
 from augmentedquill.core.config import load_story_config, save_story_config
 from augmentedquill.services.projects.projects import (
     get_active_project_dir,
     select_project,
-)
-from augmentedquill.api.v1.story_routes.generation_streaming import (
-    _create_gen_source,
 )
 from augmentedquill.services.story.story_api_stream_ops import (
     stream_unified_chat_content,

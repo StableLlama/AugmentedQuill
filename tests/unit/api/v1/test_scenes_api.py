@@ -8,9 +8,9 @@
 """API-level tests for marker-based scenes endpoints."""
 
 import json
-from pathlib import Path
 import re
 import shutil
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 from augmentedquill.services.projects.projects import select_project
@@ -243,6 +243,54 @@ class ScenesApiTest(ApiTestCase):
         self.assertEqual(resp.status_code, 200, resp.text)
         body = resp.json()
         self.assertEqual(body["id"], scene["id"])
+
+    def test_patch_prose_content_on_unlinked_scene_does_not_touch_chapter(
+        self,
+    ) -> None:
+        _, chapter_path = self._configure_scope(project_case="novel")
+        chapter_path.write_text("Alpha Bravo Charlie", encoding="utf-8")
+
+        # A brand-new scene is unlinked; patching its prose must never write
+        # into the chapter file (BUG-1 data-corruption regression).
+        scene = self._create(summary="New unlinked scene")
+        resp = self.client.patch(
+            self._url(f"/{scene['id']}/prose-content"),
+            json={"text": "Inserted"},
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+
+        self.assertEqual(
+            chapter_path.read_text(encoding="utf-8"), "Alpha Bravo Charlie"
+        )
+        self.assertNotIn("<!--scene:", chapter_path.read_text(encoding="utf-8"))
+
+    def test_patch_prose_content_preserves_other_scene_markers(self) -> None:
+        pdir = self.projects_root / self.pname
+        first = self._create(summary="First")
+        second = self._create(summary="Second")
+        (pdir / "content.md").write_text(
+            (
+                f"<!--scene:{first['id']}:start-->First<!--scene:{first['id']}:end--> "
+                f"<!--scene:{second['id']}:start-->Second<!--scene:{second['id']}:end-->"
+            ),
+            encoding="utf-8",
+        )
+
+        resp = self.client.patch(
+            self._url(f"/{first['id']}/prose-content"),
+            json={"text": "Edited"},
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+
+        final = (pdir / "content.md").read_text(encoding="utf-8")
+        self.assertIn(
+            f"<!--scene:{first['id']}:start-->Edited<!--scene:{first['id']}:end-->",
+            final,
+        )
+        self.assertIn(
+            f"<!--scene:{second['id']}:start-->Second<!--scene:{second['id']}:end-->",
+            final,
+        )
 
     def test_reorder_prose_reorders_two_linked_scenes(self) -> None:
         first = self._create(summary="First")

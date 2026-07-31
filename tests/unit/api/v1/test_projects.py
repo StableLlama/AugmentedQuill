@@ -8,14 +8,14 @@
 """Defines the test projects unit so this responsibility stays isolated, testable, and easy to evolve."""
 
 import json
-from pathlib import Path
 import tempfile
+from pathlib import Path
 
 from augmentedquill.services.projects.projects import (
-    validate_project_dir,
     initialize_project_dir,
-    select_project,
     load_registry,
+    select_project,
+    validate_project_dir,
     write_chapter_content,
     write_chapter_summary,
 )
@@ -167,7 +167,8 @@ class ProjectsTest(ApiTestCase):
         (book_dir / "book_content.md").write_text("Book intro", encoding="utf-8")
 
         from fastapi.testclient import TestClient
-        import augmentedquill.main as main
+
+        from augmentedquill import main
 
         client = TestClient(main.app)
 

@@ -10,9 +10,11 @@
 from typing import Any
 
 from pydantic import Field
-from augmentedquill.services.chat.chat_tool_decorator import ToolModel
 
-from augmentedquill.services.chat.chat_tool_decorator import CHAT_ROLE  # noqa: F401
+from augmentedquill.services.chat.chat_tool_decorator import (
+    CHAT_ROLE,  # noqa: F401
+    ToolModel,
+)
 
 # Pydantic models for tool parameters
 

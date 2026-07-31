@@ -5,6 +5,10 @@
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 
+/**
+ * Defines the scene sort utils.test unit so this responsibility stays isolated, testable, and easy to evolve.
+ */
+
 import { describe, it, expect } from 'vitest';
 import {
   computeCauseOrderViolations,

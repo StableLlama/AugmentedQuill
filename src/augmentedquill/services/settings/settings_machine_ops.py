@@ -11,10 +11,11 @@ from __future__ import annotations
 
 import asyncio
 import time
+
 import httpx
 
-from augmentedquill.services.llm.llm_http_ops import logged_request
 from augmentedquill.services.llm.llm_completion_ops import _validate_base_url
+from augmentedquill.services.llm.llm_http_ops import logged_request
 
 
 def auth_headers(api_key: str | None) -> dict[str, str]:

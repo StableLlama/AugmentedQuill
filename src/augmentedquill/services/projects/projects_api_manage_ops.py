@@ -9,19 +9,24 @@
 
 from __future__ import annotations
 
+import base64
+import json
 import re
 import shutil
-import json
-import base64
-from uuid import uuid4
 from pathlib import Path
+from uuid import uuid4
 
 from fastapi import HTTPException
 from pydantic import ValidationError
 
-from augmentedquill.services.exceptions import BadRequestError
-
 from augmentedquill.core.config import load_story_config, save_story_config
+from augmentedquill.models.story import (
+    BookMutationResponse,
+    ProjectMutationResponse,
+    ProjectSelectResponse,
+    StoryPayload,
+)
+from augmentedquill.services.exceptions import BadRequestError
 from augmentedquill.services.projects.project_helpers import (
     normalize_story_for_frontend,
 )
@@ -34,12 +39,6 @@ from augmentedquill.services.projects.projects import (
     list_projects,
     load_registry,
     select_project,
-)
-from augmentedquill.models.story import (
-    BookMutationResponse,
-    ProjectMutationResponse,
-    ProjectSelectResponse,
-    StoryPayload,
 )
 
 _BOOK_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,80}$")

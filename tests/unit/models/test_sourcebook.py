@@ -7,16 +7,17 @@
 
 """Defines the test sourcebook unit so this responsibility stays isolated, testable, and easy to evolve."""
 
-import tempfile
 import os
+import tempfile
 from pathlib import Path
 from unittest import TestCase
+
 from augmentedquill.services.sourcebook.sourcebook_helpers import (
     sourcebook_add_relation,
     sourcebook_create_entry,
+    sourcebook_delete_entry,
     sourcebook_get_entry,
     sourcebook_search_entries,
-    sourcebook_delete_entry,
 )
 
 

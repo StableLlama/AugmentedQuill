@@ -7,10 +7,10 @@
 
 """Tests for the LLM logging utilities."""
 
-from unittest import IsolatedAsyncioTestCase
-from unittest.mock import AsyncMock, patch
 import os
 import tempfile
+from unittest import IsolatedAsyncioTestCase
+from unittest.mock import AsyncMock, patch
 
 import httpx
 
@@ -73,19 +73,21 @@ class LlmLoggingTest(IsolatedAsyncioTestCase):
             # store a shallow copy to freeze the state at call time
             seen.append(entry.copy())
 
-        with patch(
-            "augmentedquill.services.llm.llm_http_ops.httpx.AsyncClient",
-            return_value=dummy,
+        with (
+            patch(
+                "augmentedquill.services.llm.llm_http_ops.httpx.AsyncClient",
+                return_value=dummy,
+            ),
+            patch.object(llm_http_ops, "add_llm_log", new=record),
         ):
-            with patch.object(llm_http_ops, "add_llm_log", new=record):
-                # perform the request, ignore the result
-                await llm_http_ops.logged_request(
-                    caller_id="tests.llm_logging.initial_entry",
-                    method="GET",
-                    url="http://example.invalid",
-                    headers={},
-                    timeout=httpx.Timeout(1.0),
-                )
+            # perform the request, ignore the result
+            await llm_http_ops.logged_request(
+                caller_id="tests.llm_logging.initial_entry",
+                method="GET",
+                url="http://example.invalid",
+                headers={},
+                timeout=httpx.Timeout(1.0),
+            )
 
         # two add_llm_log calls are expected (start + finalize), but same ID
         # should be replaced by add_llm_log logic in llm_logging.
@@ -115,19 +117,21 @@ class LlmLoggingTest(IsolatedAsyncioTestCase):
         def record(entry):
             seen.append(entry.copy())
 
-        with patch(
-            "augmentedquill.services.llm.llm_http_ops.httpx.AsyncClient",
-            return_value=BrokenClient(None),
+        with (
+            patch(
+                "augmentedquill.services.llm.llm_http_ops.httpx.AsyncClient",
+                return_value=BrokenClient(None),
+            ),
+            patch.object(llm_http_ops, "add_llm_log", new=record),
         ):
-            with patch.object(llm_http_ops, "add_llm_log", new=record):
-                with self.assertRaises(RuntimeError):
-                    await llm_http_ops.logged_request(
-                        caller_id="tests.llm_logging.exception_entry",
-                        method="GET",
-                        url="http://example.invalid",
-                        headers={},
-                        timeout=httpx.Timeout(1.0),
-                    )
+            with self.assertRaises(RuntimeError):
+                await llm_http_ops.logged_request(
+                    caller_id="tests.llm_logging.exception_entry",
+                    method="GET",
+                    url="http://example.invalid",
+                    headers={},
+                    timeout=httpx.Timeout(1.0),
+                )
 
         # ensure we recorded at least one entry and its error_detail contains the
         # exception message and a stack trace.

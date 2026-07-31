@@ -9,7 +9,9 @@
 
 import json
 from pathlib import Path
+
 from augmentedquill.services.projects.projects import select_project
+
 from .api_test_case import ApiTestCase
 
 

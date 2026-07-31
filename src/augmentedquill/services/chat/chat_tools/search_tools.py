@@ -14,11 +14,11 @@ These tools are available to the CHAT and EDITING model roles.
 from typing import Literal
 
 from pydantic import Field
-from augmentedquill.services.chat.chat_tool_decorator import ToolModel
 
 from augmentedquill.services.chat.chat_tool_decorator import (
     CHAT_ROLE,
     EDITING_ROLE,
+    ToolModel,
     chat_tool,
 )
 

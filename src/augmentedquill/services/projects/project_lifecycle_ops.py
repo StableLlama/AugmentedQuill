@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import json
 import shutil
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Dict, List, Tuple
 
 from augmentedquill.core.config import load_story_config, save_story_config
 
@@ -20,8 +20,8 @@ from augmentedquill.core.config import load_story_config, save_story_config
 def delete_project_under_root(
     name: str,
     projects_root: Path,
-    current_registry: Dict,
-) -> Tuple[bool, str, str, List[str]]:
+    current_registry: dict,
+) -> tuple[bool, str, str, list[str]]:
     """Delete Project Under Root."""
     clean_name = str(name or "").strip()
     if not clean_name:
@@ -51,7 +51,7 @@ def delete_project_under_root(
     if current_name and current_name == name:
         current = ""
 
-    filtered_recent: List[str] = []
+    filtered_recent: list[str] = []
     for item in recent:
         try:
             if Path(str(item)).name == name:
@@ -63,7 +63,7 @@ def delete_project_under_root(
     return True, "Project deleted", current, filtered_recent
 
 
-def validate_project_dir_data(path: Path) -> Tuple[bool, str]:
+def validate_project_dir_data(path: Path) -> tuple[bool, str]:
     """Validate Project Dir Data."""
     if not path.exists():
         return False, "does_not_exist"
@@ -154,12 +154,12 @@ def initialize_project_dir_data(
 def list_projects_under_root(
     projects_root: Path,
     validate_project_dir: Callable[[Path], object],
-) -> List[Dict[str, str | bool]]:
+) -> list[dict[str, str | bool]]:
     """List Projects Under Root."""
     if not projects_root.exists():
         return []
 
-    items: List[Dict[str, str | bool]] = []
+    items: list[dict[str, str | bool]] = []
     for directory in sorted(
         [item for item in projects_root.iterdir() if item.is_dir()]
     ):
@@ -203,7 +203,7 @@ def create_project_under_root(
     initialize_project: Callable[[Path, str, str, str], None],
     validate_project: Callable[[Path], object],
     language: str = "en",
-) -> Tuple[bool, str, Path | None]:
+) -> tuple[bool, str, Path | None]:
     """Create Project Under Root."""
     clean_name = str(name or "").strip()
     if not clean_name:
@@ -240,7 +240,7 @@ def select_project_under_root(
     projects_root: Path,
     initialize_project: Callable[[Path, str, str], None],
     validate_project: Callable[[Path], object],
-) -> Tuple[bool, str, Path | None]:
+) -> tuple[bool, str, Path | None]:
     """Select Project Under Root."""
     clean_name = str(name or "").strip()
     if not clean_name:

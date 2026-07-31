@@ -11,7 +11,9 @@ import os
 import tempfile
 from pathlib import Path
 from unittest import TestCase
+
 from fastapi.testclient import TestClient
+
 from augmentedquill.main import app
 from augmentedquill.services.projects.projects import create_project
 

@@ -10,10 +10,18 @@
 API endpoints for managing the sourcebook (knowledge base) associated with a project.
 """
 
-from typing import Any, List, Literal, Optional
+from typing import Any, Literal
+
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 
 from augmentedquill.api.v1.dependencies import ProjectDep
+from augmentedquill.models.sourcebook import (
+    SourcebookEntry,
+    SourcebookEntryCreate,
+    SourcebookEntryUpdate,
+    SourcebookKeywordsRequest,
+    SourcebookKeywordsResponse,
+)
 from augmentedquill.services.sourcebook.sourcebook_helpers import (
     sourcebook_create_entry,
     sourcebook_delete_entry,
@@ -22,13 +30,6 @@ from augmentedquill.services.sourcebook.sourcebook_helpers import (
     sourcebook_refresh_entry_keywords,
     sourcebook_search_entries_with_keyword_refresh,
     sourcebook_update_entry,
-)
-from augmentedquill.models.sourcebook import (
-    SourcebookEntry,
-    SourcebookEntryCreate,
-    SourcebookEntryUpdate,
-    SourcebookKeywordsRequest,
-    SourcebookKeywordsResponse,
 )
 
 router = APIRouter(prefix="/projects/{project_name}", tags=["Sourcebook"])
@@ -58,10 +59,10 @@ async def generate_sourcebook_keywords(
 @router.get("/sourcebook")
 async def get_sourcebook(
     project_dir: ProjectDep,
-    query: Optional[str] = None,
+    query: str | None = None,
     match_mode: Literal["direct", "extensive"] = "extensive",
     split_query_fallback: bool = False,
-) -> List[SourcebookEntry]:
+) -> list[SourcebookEntry]:
     """Return sourcebook."""
     if query:
         return [

@@ -13,7 +13,6 @@ Pydantic models for search-and-replace API request/response contracts.
 from __future__ import annotations
 
 from enum import Enum
-from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -44,7 +43,7 @@ class SearchOptions(BaseModel):
     is_phonetic: bool = Field(
         False, description="Use phonetic (soundex) matching instead of literal"
     )
-    active_chapter_id: Optional[int] = Field(
+    active_chapter_id: int | None = Field(
         None, description="Chapter ID to use when scope is current_chapter"
     )
 
@@ -122,7 +121,7 @@ class ReplaceAllRequest(BaseModel):
     case_sensitive: bool = Field(False)
     is_regex: bool = Field(False)
     is_phonetic: bool = Field(False)
-    active_chapter_id: Optional[int] = Field(None)
+    active_chapter_id: int | None = Field(None)
 
 
 class ReplaceSingleRequest(BaseModel):
@@ -138,7 +137,7 @@ class ReplaceSingleRequest(BaseModel):
     case_sensitive: bool = Field(False)
     is_regex: bool = Field(False)
     is_phonetic: bool = Field(False)
-    active_chapter_id: Optional[int] = Field(None)
+    active_chapter_id: int | None = Field(None)
     section_type: str = Field(
         ..., description="The section_type value from SearchResultSection"
     )

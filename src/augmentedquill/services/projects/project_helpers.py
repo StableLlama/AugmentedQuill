@@ -9,13 +9,13 @@
 
 from typing import Any
 
-from augmentedquill.services.projects.projects import get_active_project_dir
 from augmentedquill.core.config import load_story_config
 from augmentedquill.services.chapters.chapter_helpers import (
-    _scan_chapter_files,
-    _normalize_chapter_entry,
     _chapter_by_id_or_404,
+    _normalize_chapter_entry,
+    _scan_chapter_files,
 )
+from augmentedquill.services.projects.projects import get_active_project_dir
 
 
 def _sanitize_scene_prose_links_for_frontend(scene_value: Any) -> Any:
@@ -291,8 +291,7 @@ def _project_overview(include_notes: bool = False) -> dict:
 
 def _chapter_content_slice(chap_id: int, start: int = 0, max_chars: int = 8000) -> dict:
     """Return a safe slice of chapter content with metadata."""
-    if start < 0:
-        start = 0
+    start = max(start, 0)
     if max_chars <= 0:
         max_chars = 1
     _, path, _pos = _chapter_by_id_or_404(chap_id)

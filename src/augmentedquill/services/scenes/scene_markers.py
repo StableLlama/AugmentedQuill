@@ -19,8 +19,8 @@ markers.  It performs only string operations – no file I/O.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 # ─── Generalized marker-layer engine ────────────────────────────────────────
 #
@@ -583,8 +583,7 @@ def snap_range_outside_markers(
     content_len = len(content)
     safe_start = max(0, min(start, content_len))
     safe_end = max(0, min(end, content_len))
-    if safe_start > safe_end:
-        safe_end = safe_start
+    safe_end = max(safe_end, safe_start)
 
     ignored_ids = ignored_scene_ids or set()
     markers = [(match, int(match.group(1))) for match in _MARKER_RE.finditer(content)]

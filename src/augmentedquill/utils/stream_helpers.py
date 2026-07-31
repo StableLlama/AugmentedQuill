@@ -12,7 +12,6 @@ Includes stateful filtering for multi-channel LLM output.
 """
 
 import re
-from typing import List, Dict
 
 
 class ChannelFilter:
@@ -39,7 +38,7 @@ class ChannelFilter:
             re.IGNORECASE | re.DOTALL,
         )
 
-    def feed(self, chunk: str) -> List[Dict[str, str]]:
+    def feed(self, chunk: str) -> list[dict[str, str]]:
         """Process a chunk and return a list of (channel, content) pairs."""
         self.buffer += chunk
         results = []
@@ -184,7 +183,7 @@ class ChannelFilter:
 
         return results
 
-    def flush(self) -> List[Dict[str, str]]:
+    def flush(self) -> list[dict[str, str]]:
         """Flush the buffer and return any remaining content."""
         results = []
         if self.buffer:

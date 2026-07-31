@@ -14,8 +14,8 @@ from unittest import TestCase
 
 from fastapi.testclient import TestClient
 
-import augmentedquill.main as main
-import augmentedquill.services.llm.llm as llm
+from augmentedquill import main
+from augmentedquill.services.llm import llm
 from augmentedquill.services.projects.projects import select_project
 
 

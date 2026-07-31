@@ -136,7 +136,6 @@ const getBuilderCalendar = (sceneCalendar: string, basis: DateInputBasis): strin
 const toSignedYearInput = (parts: StoryDateParts): string =>
   String(toIsoYear(parts.era, parts.yearOfEra));
 
-// eslint-disable-next-line max-lines-per-function
 export const SceneTemporalDialog: React.FC<SceneTemporalDialogProps> = ({
   isOpen,
   value,

@@ -18,6 +18,7 @@ The resulting openapi.json is consumed by the frontend type-generation step:
 
 from __future__ import annotations
 
+import importlib
 import json
 import subprocess
 import sys
@@ -28,7 +29,7 @@ SRC_DIR = REPO_ROOT / "src"
 
 sys.path.insert(0, str(SRC_DIR))
 
-from augmentedquill.main import create_app  # noqa: E402
+create_app = importlib.import_module("augmentedquill.main").create_app
 
 
 def main() -> None:

@@ -127,9 +127,9 @@ def _read_chapter_content(chap_id: int) -> str:
 def _get_all_chapter_ids() -> list[int]:
     """Return all available chapter IDs for the active project."""
     try:
+        from augmentedquill.core.config import load_story_config
         from augmentedquill.services.chapters.chapter_helpers import _scan_chapter_files
         from augmentedquill.services.projects.projects import get_active_project_dir
-        from augmentedquill.core.config import load_story_config
 
         active = get_active_project_dir()
         if active:
