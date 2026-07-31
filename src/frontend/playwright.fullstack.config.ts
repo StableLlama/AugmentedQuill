@@ -243,6 +243,42 @@ function createLinkedSceneProject(name: string): void {
   );
 }
 
+/**
+ * Create a pristine novel project with three clearly distinct paragraphs and
+ * NO scenes.  Used by the scene-link-regressions spec so it can create and
+ * link scenes from scratch and assert that a second linked scene keeps its
+ * full paragraph (instead of a truncated fragment).
+ */
+function createSceneLinkRegressionProject(name: string): void {
+  const root = path.join(TMP_DIR, 'projects', name);
+  const chapters = path.join(root, 'chapters');
+  fs.mkdirSync(chapters, { recursive: true });
+
+  fs.writeFileSync(
+    path.join(root, 'story.json'),
+    JSON.stringify(
+      {
+        metadata: { version: 9 },
+        project_title: 'Scene Link Regressions',
+        format: 'markdown',
+        project_type: 'novel',
+        chapters: [{ id: 1, title: 'Chapter 1', summary: '', filename: '0001.txt' }],
+        scenes: {},
+      },
+      null,
+      2
+    )
+  );
+
+  // Three distinct single-line paragraphs so a truncated link is unambiguous.
+  fs.writeFileSync(
+    path.join(chapters, '0001.txt'),
+    'One apple falls from the tree in the orchard.\n' +
+      'Two birds fly over the hill toward the lake.\n' +
+      'Three fish swim in the clear blue water of the pond.\n'
+  );
+}
+
 // Project used by scene-boundary-drag (mutates scene structure).
 createTestProject('e2e-boundary-test');
 // Dedicated pristine project used by scene-cursor-highlight so drag/annotation
@@ -256,6 +292,12 @@ createTestProject('e2e-annotation-test');
 createPlainProseProject('e2e-scene-link-test');
 createLinkedSceneProject('e2e-scene-undo-link-test');
 createPlainProseProject('e2e-scene-delete-undo-test');
+// Dedicated projects used by the scene-link-regressions spec.  Each test
+// mutates scene/prose state (linking prose, undo), so each gets its own
+// project to keep the assertions independent.
+createSceneLinkRegressionProject('e2e-scene-link-regression');
+createSceneLinkRegressionProject('e2e-scene-link-regression-b2');
+createSceneLinkRegressionProject('e2e-scene-undo-persist');
 
 // Write temp dir path so tests can find the projects directory
 fs.writeFileSync(path.join(os.tmpdir(), 'aq-e2e-tmpdir'), TMP_DIR);

@@ -60,6 +60,79 @@ def test_create_annotation_injects_markers(project_dir: Path) -> None:
     assert "Hello" in prose
 
 
+def test_create_annotation_after_existing_scene_markers_wraps_visible_text(
+    project_dir: Path,
+) -> None:
+    """Regression guard for the shared marker coordinate space.
+
+    Annotations live in the same marker-inclusive coordinate space as scenes
+    (the shared grammar in ``scene_markers``).  Creating an annotation in a
+    chapter that already contains scene markers must place the annotation
+    markers around exactly the requested raw-content prose, without splitting
+    or shifting the existing scene markers.
+    """
+    (project_dir / "content.md").write_text(
+        "<!--scene:1:start-->Alpha<!--scene:1:end--> Bravo Charlie",
+        encoding="utf-8",
+    )
+    ann = create_annotation(
+        project_dir,
+        scope_type="story",
+        chapter_id=None,
+        book_id=None,
+        start_offset=44,
+        end_offset=57,
+        comment="note",
+    )
+
+    prose = (project_dir / "content.md").read_text(encoding="utf-8")
+    start_tok = f"<!--annotation:{ann['id']}:start-->"
+    end_tok = f"<!--annotation:{ann['id']}:end-->"
+    assert start_tok in prose
+    assert end_tok in prose
+
+    # The annotation must wrap exactly "Bravo Charlie" (the visible prose
+    # after the scene block), not scene prose or marker tokens.
+    s = prose.index(start_tok) + len(start_tok)
+    e = prose.index(end_tok)
+    assert prose[s:e] == "Bravo Charlie"
+
+    # The scene markers must remain intact.
+    assert "<!--scene:1:start-->Alpha<!--scene:1:end-->" in prose
+
+
+def test_create_annotation_snaps_offset_inside_scene_marker_token(
+    project_dir: Path,
+) -> None:
+    """Regression guard: a raw start offset that lands inside an existing
+    scene marker token must be snapped outside it so the annotation never
+    splits a marker."""
+    (project_dir / "content.md").write_text(
+        "<!--scene:1:start-->Alpha<!--scene:1:end--> Bravo Charlie",
+        encoding="utf-8",
+    )
+    # start_offset=30 lands inside the scene:1:end marker token (span 25..43).
+    ann = create_annotation(
+        project_dir,
+        scope_type="story",
+        chapter_id=None,
+        book_id=None,
+        start_offset=30,
+        end_offset=57,
+        comment="note",
+    )
+
+    prose = (project_dir / "content.md").read_text(encoding="utf-8")
+    start_tok = f"<!--annotation:{ann['id']}:start-->"
+    end_tok = f"<!--annotation:{ann['id']}:end-->"
+    s = prose.index(start_tok) + len(start_tok)
+    e = prose.index(end_tok)
+
+    # The start was snapped past the scene end marker to the first prose
+    # position after it (which begins with the space before "Bravo").
+    assert prose[s:e] == " Bravo Charlie"
+
+
 def test_list_annotations_returns_runtime_offsets(project_dir: Path) -> None:
     ann = create_annotation(
         project_dir,

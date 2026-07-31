@@ -87,6 +87,53 @@ describe('toOriginalOffset', () => {
   });
 });
 
+describe('toOriginalOffset — snapPastMarkers (annotation creation path)', () => {
+  // The annotation creation flow (AppMainLayout.handleCreateAnnotation)
+  // converts editor-space visible offsets to full-content offsets using
+  // toOriginalOffset(..., { snapPastMarkers: true }).  Scene boundary drags
+  // use the default (false).  These tests pin the exact difference so a
+  // change to either path is caught.
+
+  it('snaps a visible offset at an end-marker boundary to the prose after the marker', () => {
+    const content = '<!--scene:1:start-->Hello<!--scene:1:end-->World';
+    // stripped: "HelloWorld"; visible 5 = end of "Hello" = boundary before
+    // the scene end marker.
+    // default (scene drags): keep the marker start position.
+    expect(toOriginalOffset(content, 5)).toBe('<!--scene:1:start-->Hello'.length);
+    // snapPastMarkers (annotation creation): skip the marker to "World".
+    expect(toOriginalOffset(content, 5, { snapPastMarkers: true })).toBe(
+      '<!--scene:1:start-->Hello<!--scene:1:end-->'.length
+    );
+  });
+
+  it('snaps a visible offset at a start-marker boundary to the first prose char after it', () => {
+    const content = 'Before<!--scene:1:start-->Hello<!--scene:1:end-->';
+    // stripped: "BeforeHello"; visible 6 = start of "Hello" = boundary at the
+    // scene start marker.
+    expect(toOriginalOffset(content, 6, { snapPastMarkers: true })).toBe(
+      'Before<!--scene:1:start-->'.length
+    );
+  });
+
+  it('snaps correctly with multiple interleaved scene and annotation markers', () => {
+    const content =
+      '<!--scene:1:start-->A<!--annotation:a1:start-->B<!--annotation:a1:end-->C' +
+      '<!--scene:1:end--><!--scene:2:start-->D<!--scene:2:end-->E';
+    // stripped: "ABCDE"; visible 2 = after "B" = boundary at the annotation
+    // end marker.  snapPastMarkers must skip past that marker to "C".
+    expect(toOriginalOffset(content, 2, { snapPastMarkers: true })).toBe(
+      '<!--scene:1:start-->A<!--annotation:a1:start-->B<!--annotation:a1:end-->'.length
+    );
+  });
+
+  it('clamps to content end when the visible offset is beyond the stripped text', () => {
+    const content = '<!--scene:1:start-->Hello<!--scene:1:end-->';
+    expect(toOriginalOffset(content, 100, { snapPastMarkers: true })).toBe(
+      content.length
+    );
+  });
+});
+
 describe('toVisibleOffset', () => {
   it('returns same offset when content has no markers', () => {
     const content = 'Hello World!';
@@ -105,6 +152,27 @@ describe('toVisibleOffset', () => {
 
   it('returns identity when fullContent is empty', () => {
     expect(toVisibleOffset('', 5)).toBe(5);
+  });
+});
+
+describe('coordinate round-trip — scenes and annotations interleaved', () => {
+  it('round-trips every visible position with multiple scenes and interleaved annotations', () => {
+    // Real-world document shape: several scenes with annotations nested
+    // inside and between them.  The accumulated marker lengths before a
+    // position must be accounted for exactly in both directions.
+    const content =
+      '<!--scene:1:start-->AAA<!--annotation:a1:start-->B<!--annotation:a1:end-->BBB' +
+      '<!--scene:1:end-->CC' +
+      '<!--scene:2:start-->D<!--annotation:a2:start-->E<!--annotation:a2:end-->FF' +
+      '<!--scene:2:end-->G';
+    const stripped = stripInlineInternalMarkers(content);
+    for (let v = 0; v <= stripped.length; v++) {
+      const original = toOriginalOffset(content, v);
+      expect(
+        toVisibleOffset(content, original),
+        `visible ${v} of ${stripped.length}`
+      ).toBe(v);
+    }
   });
 });
 

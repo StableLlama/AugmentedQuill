@@ -449,6 +449,35 @@ describe('round-trip: toOriginalOffset ↔ toVisibleLinkedOffset', () => {
         ).toBe(end);
       }
     });
+
+    it(`round-trips every visible position with scenes and annotations interleaved: ${label}`, () => {
+      // Annotations are stored in the same marker-inclusive coordinate space
+      // as scenes (shared grammar in internalTags.ts).  A chapter that
+      // contains both scene and annotation markers must still round-trip
+      // every visible position through toOriginalOffset ↔
+      // toVisibleLinkedOffset.
+      const annContent =
+        '<!--scene:1:start-->' +
+        'One <!--annotation:ann-1:start-->two<!--annotation:ann-1:end--> three' +
+        '<!--scene:1:end--> four' +
+        '<!--scene:2:start-->five<!--annotation:ann-2:start--> six' +
+        '<!--annotation:ann-2:end--><!--scene:2:end-->';
+      const stripped = stripInlineInternalMarkers(annContent);
+      for (let v = 0; v <= stripped.length; v++) {
+        const original = toOriginalOffset(v, annContent);
+        const backToVisible = toVisibleLinkedOffset(
+          original,
+          null as unknown as never,
+          [],
+          true,
+          annContent
+        );
+        expect(
+          backToVisible,
+          `visible ${v} of ${stripped.length} → original ${original} → visible ${backToVisible}`
+        ).toBe(v);
+      }
+    });
   }
 });
 

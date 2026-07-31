@@ -48,6 +48,7 @@ import {
   hasInlineSceneMarkers,
   sceneMarkerTokenLength,
   stripInlineInternalMarkers,
+  toOriginalOffset as toOriginalOffsetWithSnap,
   toVisibleOffset,
 } from '../editor/internalTags';
 import {
@@ -347,6 +348,76 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
     [currentChapter, setStory]
   );
 
+  // ---- Prose-drop coordinate conversion + content refresh ----
+  // The drag payload (`ProseDropData`) carries offsets in the editor's
+  // VISIBLE (marker-stripped) coordinate space, but the backend link-prose
+  // API stores RAW (marker-inclusive) offsets.  Convert before persisting,
+  // exactly like the annotation creation path (see
+  // AppMainLayout.handleCreateAnnotation).  Snap past any marker sitting
+  // exactly at a selection boundary so a range that starts/ends right after
+  // an already-linked scene maps to the first prose position after the
+  // marker (BUG-1).
+  const convertProseDropOffsetsToOriginal = useCallback(
+    (data: ProseDropData): { startOffset: number; endOffset: number } => {
+      const latestChapter = currentChapterRef.current;
+      const fullContent = latestChapter?.content ?? '';
+      if (fullContent.length === 0) {
+        return { startOffset: data.startOffset, endOffset: data.endOffset };
+      }
+      const scopeMatches =
+        data.scopeType === 'story'
+          ? latestChapter?.scope === 'story'
+          : data.scopeType === 'chapter' &&
+            !!data.chapterId &&
+            normalizeChapterId(data.chapterId) ===
+              normalizeChapterId(latestChapter?.id ?? '');
+      if (!scopeMatches) {
+        return { startOffset: data.startOffset, endOffset: data.endOffset };
+      }
+      return {
+        startOffset: toOriginalOffsetWithSnap(fullContent, data.startOffset, {
+          snapPastMarkers: true,
+        }),
+        endOffset: toOriginalOffsetWithSnap(fullContent, data.endOffset, {
+          snapPastMarkers: true,
+        }),
+      };
+    },
+    []
+  );
+
+  // After the backend has injected/removed markers, refetch the scope content
+  // and push it into the store so subsequent visible↔original conversions and
+  // the Scene Editor "Linked Prose" display use fresh marker positions
+  // (BUG-1 / BUG-2).
+  const refreshProseLinkScopeContent = useCallback(
+    async (data: ProseDropData): Promise<void> => {
+      const latestChapter = currentChapterRef.current;
+      if (!latestChapter) return;
+      const scopeMatches =
+        data.scopeType === 'story'
+          ? latestChapter.scope === 'story'
+          : data.scopeType === 'chapter' &&
+            !!data.chapterId &&
+            normalizeChapterId(data.chapterId) === normalizeChapterId(latestChapter.id);
+      if (!scopeMatches) return;
+      try {
+        if (data.scopeType === 'chapter' && data.chapterId) {
+          const ch = await api.chapters.get(Number(data.chapterId));
+          updateCurrentChapterContent(ch.content ?? '');
+        } else if (data.scopeType === 'story') {
+          const storyContent = await api.story.getContent();
+          if (storyContent.ok) {
+            updateCurrentChapterContent(storyContent.content);
+          }
+        }
+      } catch {
+        /* non-critical — content refresh is best-effort */
+      }
+    },
+    [updateCurrentChapterContent]
+  );
+
   const recordSceneHistory = useCallback(
     (
       label: string,
@@ -520,6 +591,7 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
         return;
       }
       try {
+        const { startOffset, endOffset } = convertProseDropOffsetsToOriginal(data);
         const created = await api.scenes.create({
           summary: '',
           pinboard_x: 40 + Math.random() * 200,
@@ -530,8 +602,8 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
           scope_type: data.scopeType,
           chapter_id: data.chapterId ?? null,
           book_id: data.bookId ?? null,
-          start_offset: data.startOffset,
-          end_offset: data.endOffset,
+          start_offset: startOffset,
+          end_offset: endOffset,
         });
         modified.forEach((s: Scene) => patchScene(s));
         const scenesAfterCreate = applyScenePatch(scenes, created as Scene);
@@ -540,11 +612,19 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
           applyScenePatches(scenesAfterCreate, modified as Scene[])
         );
         setEditingSceneId(created.id);
+        await refreshProseLinkScopeContent(data);
       } catch (err) {
         notifyError(t('Add Scene'), err);
       }
     },
-    [patchScene, recordSceneHistory, scenes, t]
+    [
+      convertProseDropOffsetsToOriginal,
+      patchScene,
+      recordSceneHistory,
+      refreshProseLinkScopeContent,
+      scenes,
+      t,
+    ]
   );
 
   // ---- Move (position update from drag) ----
@@ -713,20 +793,53 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
   const handleDropProse = useCallback(
     async (sceneId: SceneId, data: ProseDropData): Promise<void> => {
       try {
+        // The drag payload offsets are in the editor's VISIBLE (marker-stripped)
+        // coordinate space, but link-prose stores RAW (marker-inclusive) offsets.
+        // Convert before persisting (BUG-1), snapping past any marker sitting
+        // exactly at a selection boundary like the annotation path does.
+        const { startOffset, endOffset } = convertProseDropOffsetsToOriginal(data);
         const modified = await api.scenes.linkProse(sceneId, {
           scope_type: data.scopeType,
           chapter_id: data.chapterId ?? null,
           book_id: data.bookId ?? null,
-          start_offset: data.startOffset,
-          end_offset: data.endOffset,
+          start_offset: startOffset,
+          end_offset: endOffset,
         });
         modified.forEach((s: Scene) => patchScene(s));
-        recordSceneHistory('Link scene prose', applyScenePatches(scenes, modified));
+        recordSceneHistory('Link scene prose', applyScenePatches(scenes, modified), {
+          // Persist undo/redo to the backend so the link survives a reload
+          // (BUG-4).  Unlink removes the injected markers from the file; redo
+          // re-injects them at the original (converted) raw offsets.
+          onUndo: async (): Promise<void> => {
+            const updated = await api.scenes.unlinkProse(sceneId);
+            updated.forEach((s: Scene) => patchScene(s));
+            await refreshProseLinkScopeContent(data);
+          },
+          onRedo: async (): Promise<void> => {
+            const relinked = await api.scenes.linkProse(sceneId, {
+              scope_type: data.scopeType,
+              chapter_id: data.chapterId ?? null,
+              book_id: data.bookId ?? null,
+              start_offset: startOffset,
+              end_offset: endOffset,
+            });
+            relinked.forEach((s: Scene) => patchScene(s));
+            await refreshProseLinkScopeContent(data);
+          },
+        });
+        await refreshProseLinkScopeContent(data);
       } catch (err) {
         notifyError(t('Link Prose'), err);
       }
     },
-    [patchScene, recordSceneHistory, scenes, t]
+    [
+      convertProseDropOffsetsToOriginal,
+      patchScene,
+      recordSceneHistory,
+      refreshProseLinkScopeContent,
+      scenes,
+      t,
+    ]
   );
 
   // ---- Narrative reorder (drag in list + move linked prose text) ----
