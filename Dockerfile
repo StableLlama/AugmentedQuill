@@ -1,7 +1,7 @@
 FROM node:24-bookworm AS frontend-builder
 WORKDIR /app/src/frontend
 COPY src/frontend/package*.json ./
-RUN npm ci --no-audit --prefer-offline
+RUN npm ci --no-audit --prefer-offline --legacy-peer-deps
 COPY src/frontend/ ./
 RUN npm run build
 
@@ -23,8 +23,11 @@ RUN pip install --no-cache-dir -e .
 COPY --from=frontend-builder /app/static/dist ./static/dist
 COPY static/images ./static/images
 
+# Copy bundled resources (LLM instructions, model presets, JSON schemas)
+COPY resources/ ./resources/
+
 # Create necessary directories
-RUN mkdir -p data/projects data/logs resources/config
+RUN mkdir -p data/projects data/logs
 
 # Expose the port
 EXPOSE 8000
