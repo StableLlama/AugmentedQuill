@@ -152,11 +152,9 @@ def _get_chapter_metadata_entries(active: Path) -> list[dict]:
         story = load_story_config(active / "story.json") or {}
         p_type = story.get("project_type", "novel")
         if p_type == "series":
-            chapters = []
-            for book in story.get("books", []):
-                for ch in book.get("chapters", []):
-                    chapters.append(ch)
-            return chapters
+            return [
+                ch for book in story.get("books", []) for ch in book.get("chapters", [])
+            ]
         return story.get("chapters", [])
     except Exception:
         return []
@@ -587,7 +585,7 @@ def run_search(opts: SearchOptions, active: Path) -> SearchResponse:
     # Validate regex early so the caller gets a clean error
     if rx and not ph:
         try:
-            re.compile(q if cs else q, 0 if cs else re.IGNORECASE)
+            re.compile(q, 0 if cs else re.IGNORECASE)
         except re.error as exc:
             raise ValueError(f"Invalid regular expression: {exc}") from exc
 

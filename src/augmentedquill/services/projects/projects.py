@@ -14,7 +14,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from augmentedquill.core.config import (
@@ -183,7 +183,7 @@ def initialize_project_dir(
         path=path,
         project_title=project_title,
         project_type=project_type,
-        now_iso=datetime.now().isoformat(),
+        now_iso=datetime.now(UTC).isoformat(),
         language=language,
     )
 
@@ -212,11 +212,11 @@ def write_chapter_summary(
 
 def update_chapter_metadata(
     chap_id: int,
-    title: str = None,
-    summary: str = None,
-    notes: str = None,
-    private_notes: str = None,
-    conflicts: list = None,
+    title: str | None = None,
+    summary: str | None = None,
+    notes: str | None = None,
+    private_notes: str | None = None,
+    conflicts: list | None = None,
     active: Path | None = None,
 ) -> None:
     """Update metadata fields for a chapter by its ID across all project types."""
@@ -236,7 +236,7 @@ def add_chapter_conflict(
     chap_id: int,
     description: str,
     resolution: str,
-    index: int = None,
+    index: int | None = None,
     active: Path | None = None,
 ) -> None:
     """Add a conflict to a chapter. If index is provided, inserts there; else appends."""
@@ -253,8 +253,8 @@ def add_chapter_conflict(
 def update_chapter_conflict(
     chap_id: int,
     index: int,
-    description: str = None,
-    resolution: str = None,
+    description: str | None = None,
+    resolution: str | None = None,
     active: Path | None = None,
 ) -> None:
     """Update a specific conflict in a chapter by its index."""
@@ -341,7 +341,7 @@ def select_project(name: str) -> tuple[bool, str]:
 
 
 def create_new_chapter(
-    title: str = "", book_id: str = None, active: Path | None = None
+    title: str = "", book_id: str | None = None, active: Path | None = None
 ) -> int:
     """Create a new chapter file and update story.json.
 
@@ -366,10 +366,10 @@ def create_new_book(title: str, active: Path | None = None) -> str:
 
 def update_book_metadata(
     book_id: str,
-    title: str = None,
-    summary: str = None,
-    notes: str = None,
-    private_notes: str = None,
+    title: str | None = None,
+    summary: str | None = None,
+    notes: str | None = None,
+    private_notes: str | None = None,
     active: Path | None = None,
 ) -> None:
     """Update title or metadata for a book in a series project."""
@@ -397,13 +397,13 @@ def write_book_content(book_id: str, content: str, active: Path | None = None) -
 
 
 def update_story_metadata(
-    title: str = None,
-    summary: str = None,
-    tags: list[str] = None,
-    notes: str = None,
-    private_notes: str = None,
+    title: str | None = None,
+    summary: str | None = None,
+    tags: list[str] | None = None,
+    notes: str | None = None,
+    private_notes: str | None = None,
     conflicts: list | None = None,
-    language: str = None,
+    language: str | None = None,
     active: Path | None = None,
 ) -> None:
     """Update general story metadata."""

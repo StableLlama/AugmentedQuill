@@ -9,6 +9,7 @@
 
 import os
 import tempfile
+from typing import ClassVar
 from unittest import IsolatedAsyncioTestCase
 from unittest.mock import AsyncMock, patch
 
@@ -58,7 +59,7 @@ class LlmLoggingTest(IsolatedAsyncioTestCase):
 
         class DummyResp:
             status_code = 200
-            headers = {}
+            headers: ClassVar[dict[str, str]] = {}
             text = ""
 
             def json(self):
@@ -123,15 +124,15 @@ class LlmLoggingTest(IsolatedAsyncioTestCase):
                 return_value=BrokenClient(None),
             ),
             patch.object(llm_http_ops, "add_llm_log", new=record),
+            self.assertRaises(RuntimeError),
         ):
-            with self.assertRaises(RuntimeError):
-                await llm_http_ops.logged_request(
-                    caller_id="tests.llm_logging.exception_entry",
-                    method="GET",
-                    url="http://example.invalid",
-                    headers={},
-                    timeout=httpx.Timeout(1.0),
-                )
+            await llm_http_ops.logged_request(
+                caller_id="tests.llm_logging.exception_entry",
+                method="GET",
+                url="http://example.invalid",
+                headers={},
+                timeout=httpx.Timeout(1.0),
+            )
 
         # ensure we recorded at least one entry and its error_detail contains the
         # exception message and a stack trace.

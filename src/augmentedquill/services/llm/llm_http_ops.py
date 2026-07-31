@@ -117,7 +117,7 @@ def _finalize_log_entry(
     ``include_response=False``; in that case ``response`` will be ``None`` and
     we need to build a default structure before setting individual fields.
     """
-    log_entry["timestamp_end"] = datetime.datetime.now().isoformat()
+    log_entry["timestamp_end"] = datetime.datetime.now(datetime.UTC).isoformat()
 
     # ensure a response container exists so downstream code can index it
     if log_entry.get("response") is None:

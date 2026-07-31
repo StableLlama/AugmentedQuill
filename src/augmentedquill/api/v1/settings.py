@@ -132,7 +132,7 @@ async def _api_prompts_get_impl(
     # Resolve all system messages
     system_messages = {}
     user_prompts = {}
-    for key in DEFAULT_PROMPTS.keys():
+    for key in DEFAULT_PROMPTS:
         system_messages[key] = get_system_message(
             key, model_overrides, language=project_language
         )

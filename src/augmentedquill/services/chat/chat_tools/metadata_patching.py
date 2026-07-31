@@ -68,11 +68,10 @@ class TextPatch(ToolModel):
 
     @model_validator(mode="after")
     def _validate_shape(self) -> TextPatch:
-        if self.operation in ("replace", "append", "prepend"):
-            if self.value is None:
-                raise ValueError(
-                    f"missing required key(s): value for operation '{self.operation}'"
-                )
+        if self.operation in ("replace", "append", "prepend") and self.value is None:
+            raise ValueError(
+                f"missing required key(s): value for operation '{self.operation}'"
+            )
         if self.operation == "replace_text":
             missing_keys: list[str] = []
             if self.old_text is None:

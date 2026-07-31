@@ -95,7 +95,7 @@ async def test_stream_unified_chat_content_multi_round():
 
         # Verify tool was executed
         mock_exec.assert_called_once()
-        args, kwargs = mock_exec.call_args
+        args, _kwargs = mock_exec.call_args
         assert args[0] == "manage_story_core"
         assert args[1] == {
             "action": "update_metadata",

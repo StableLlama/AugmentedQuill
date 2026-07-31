@@ -180,7 +180,7 @@ def _get_chapter_metadata_entry(
     story: dict,
     chap_id: int,
     path: Path,
-    files: list = None,
+    files: list | None = None,
     active: Path | None = None,
 ) -> dict | None:
     """Find the specific metadata entry in story.json for a given chapter global ID.
@@ -214,13 +214,12 @@ def _get_chapter_metadata_entry(
             )
             if not curr_match and i < len(book_chapters):
                 candidate = book_chapters[i]
-                if id(candidate) not in used_ids:
-                    if (
-                        not isinstance(candidate, dict)
-                        or not candidate.get("filename")
-                        or candidate.get("filename") == fname
-                    ):
-                        curr_match = candidate
+                if id(candidate) not in used_ids and (
+                    not isinstance(candidate, dict)
+                    or not candidate.get("filename")
+                    or candidate.get("filename") == fname
+                ):
+                    curr_match = candidate
             if curr_match:
                 used_ids.add(id(curr_match))
                 if f_idx == chap_id:
@@ -250,13 +249,12 @@ def _get_chapter_metadata_entry(
             )
             if not curr_match and i < len(chapters_data):
                 candidate = chapters_data[i]
-                if id(candidate) not in used_ids:
-                    if (
-                        not isinstance(candidate, dict)
-                        or not candidate.get("filename")
-                        or candidate.get("filename") == fname
-                    ):
-                        curr_match = candidate
+                if id(candidate) not in used_ids and (
+                    not isinstance(candidate, dict)
+                    or not candidate.get("filename")
+                    or candidate.get("filename") == fname
+                ):
+                    curr_match = candidate
             if curr_match:
                 used_ids.add(id(curr_match))
                 if f_idx == chap_id:

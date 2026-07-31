@@ -1527,7 +1527,7 @@ def reorder_scope_scenes(
         return []
 
     current_set = set(linked_in_scope)
-    requested_set = set(int(scene_id) for scene_id in ordered_scene_ids)
+    requested_set = {int(scene_id) for scene_id in ordered_scene_ids}
     if len(ordered_scene_ids) != len(requested_set):
         raise ValueError("ordered_scene_ids must not contain duplicates")
     if current_set != requested_set:

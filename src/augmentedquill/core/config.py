@@ -109,7 +109,7 @@ def _validate_machine_config(config: dict[str, Any], path_label: str) -> None:
         jsonschema.validate(config, schema)
     except jsonschema.ValidationError as exc:
         _logger.warning("machine config at %s is invalid: %s", path_label, exc.message)
-    except Exception as exc:  # noqa: BLE001 – schema file missing, etc.
+    except Exception as exc:
         _logger.warning("Could not validate machine config at %s: %s", path_label, exc)
 
 

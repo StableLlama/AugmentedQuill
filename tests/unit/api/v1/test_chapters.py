@@ -84,7 +84,7 @@ class ChaptersApiTest(ApiTestCase):
 
     def test_series_list_chapters_includes_book_id(self):
         # Setup a series project
-        ok, msg = select_project("test-series")
+        ok, _msg = select_project("test-series")
         self.assertTrue(ok)
         pdir = self.projects_root / "test-series"
 
@@ -409,7 +409,7 @@ class ChaptersApiTest(ApiTestCase):
 
     def test_series_project_chapters(self):
         # Create a series project
-        ok, msg = select_project("series_proj")
+        ok, _msg = select_project("series_proj")
         self.assertTrue(ok)
         pdir = self.projects_root / "series_proj"
         story_path = pdir / "story.json"

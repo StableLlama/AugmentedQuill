@@ -2364,7 +2364,7 @@ class TestRelinkScopeProse:
             remap_offset_after_marker_removal,
         )
 
-        a, b = _link_two_adjacent_scenes(project_dir)
+        _a, _b = _link_two_adjacent_scenes(project_dir)
         content = (project_dir / "content.md").read_text(encoding="utf-8")
 
         for offset in range(len(content) + 1):
@@ -2378,7 +2378,7 @@ class TestRelinkScopeProse:
         """toVisibleLinkedOffset ∘ toOriginalOffset must be identity for
         every visible position.  This is the composition used in
         handleProseBoundaryChange."""
-        a, b = _link_two_adjacent_scenes(project_dir)
+        _a, _b = _link_two_adjacent_scenes(project_dir)
         content = (project_dir / "content.md").read_text(encoding="utf-8")
         stripped = _MARKER_PATTERN.sub("", content)
 
