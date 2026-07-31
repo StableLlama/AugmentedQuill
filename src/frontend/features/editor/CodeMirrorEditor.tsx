@@ -912,9 +912,19 @@ export const CodeMirrorEditor = React.forwardRef<
         (ref as React.MutableRefObject<EditorView | null>).current = view;
       }
 
+      // Expose the EditorView on window for E2E automation so tests can
+      // dispatch cursor selections deterministically (mirrors the pattern
+      // used by the test fixture in tests/e2e/fixture/main.ts).
+      if (typeof window !== 'undefined') {
+        (window as unknown as { __aqEditorView?: EditorView }).__aqEditorView = view;
+      }
+
       return (): void => {
         view.destroy();
         viewRef.current = null;
+        if (typeof window !== 'undefined') {
+          delete (window as unknown as { __aqEditorView?: EditorView }).__aqEditorView;
+        }
         if (typeof ref === 'function') {
           ref(null);
         } else if (ref) {

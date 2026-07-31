@@ -16,6 +16,7 @@
  */
 
 import { test, expect, type Page } from '@playwright/test';
+import type { APIRequestContext } from '@playwright/test';
 
 const FRONTEND = 'http://127.0.0.1:18001';
 const PROJECT = 'e2e-boundary-test';
@@ -207,25 +208,28 @@ async function selectScene(page: Page, sceneNum: number): Promise<void> {
 test.describe('Scene boundary drag — browser UX', () => {
   let getErrors: () => string[];
 
-  test.beforeEach(async ({ page }: { page: Page }) => {
-    getErrors = installConsoleErrorCollector(page);
-    // Ensure a large viewport so the responsive Split button is visible
-    await page.setViewportSize({ width: 1920, height: 1080 });
+  test.beforeEach(
+    async ({ page, request }: { page: Page; request: APIRequestContext }) => {
+      getErrors = installConsoleErrorCollector(page);
+      // Ensure a large viewport so the responsive Split button is visible
+      await page.setViewportSize({ width: 1920, height: 1080 });
 
-    // Must use page.evaluate so the fetch runs in the browser's context
-    // (shares cookies with the page).
-    await page.goto(`${FRONTEND}`);
-    await page.evaluate(async (projectName: string) => {
-      await fetch('http://127.0.0.1:18000/api/v1/projects/select', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: projectName }),
+      // Select this spec's project BEFORE loading the app.  The fullstack
+      // specs share one backend whose "current" project is global state and
+      // the app auto-selects it on load via an async refresh, so selecting
+      // first guarantees the app loads our project.
+      const resp = await request.post('http://127.0.0.1:18000/api/v1/projects/select', {
+        data: { name: PROJECT },
       });
-    }, PROJECT);
-    // Reload so the app picks up the selected project
-    await page.goto(`${FRONTEND}`);
-    await page.waitForTimeout(2000);
-  });
+      if (!resp.ok()) {
+        throw new Error(`Failed to select project ${PROJECT}: ${resp.status()}`);
+      }
+
+      await page.goto(`${FRONTEND}`);
+      await page.waitForSelector('.cm-content', { timeout: 15000 });
+      await page.waitForTimeout(2000);
+    }
+  );
 
   test.afterEach(async ({ page }: { page: Page }) => {
     await assertNoConsoleErrors(getErrors, page);

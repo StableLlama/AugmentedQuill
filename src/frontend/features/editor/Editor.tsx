@@ -40,7 +40,10 @@ import {
   type ProseBoundaryCallback,
 } from './CodeMirrorEditor';
 import { setAnnotationRangesEffect, type AnnotationRange } from './annotationPlugin';
-import { setAnnotationClickCallback } from './annotationPlugin';
+import {
+  setAnnotationClickCallback,
+  setAnnotationCursorCallback,
+} from './annotationPlugin';
 import { transferInternalMarkers } from './internalTags';
 import { EditorSuggestionPanel } from './EditorSuggestionPanel';
 import { EditorMobileToolbar } from './EditorMobileToolbar';
@@ -141,6 +144,14 @@ export interface EditorHandle {
    * Pass null to unsubscribe.
    */
   setOnAnnotationClick: (cb: ((annotationId: string | null) => void) | null) => void;
+  /**
+   * Register a callback that fires when the editor cursor moves into or out
+   * of annotated text, reporting the annotation under the cursor (or null
+   * when the cursor is outside every annotation).  Pass null to unsubscribe.
+   */
+  setOnAnnotationCursorChange: (
+    cb: ((annotationId: string | null) => void) | null
+  ) => void;
   /** Return current selection (anchor/head) or null when editor is unavailable. */
   getSelection: () => { anchor: number; head: number } | null;
 }
@@ -770,6 +781,11 @@ export const Editor = React.memo(
           cb: ((annotationId: string | null) => void) | null
         ): void => {
           setAnnotationClickCallback(cb);
+        },
+        setOnAnnotationCursorChange: (
+          cb: ((annotationId: string | null) => void) | null
+        ): void => {
+          setAnnotationCursorCallback(cb);
         },
         getSelection: (): { anchor: number; head: number } | null => {
           const sel = editorViewRef.current?.state.selection.main;

@@ -14,9 +14,13 @@
  */
 
 import { test, expect, type Page } from '@playwright/test';
+import type { APIRequestContext } from '@playwright/test';
 
 const FRONTEND = 'http://127.0.0.1:18001';
-const PROJECT = 'e2e-boundary-test';
+// Dedicated pristine project so concurrent drag/annotation tests (which
+// mutate the shared e2e-boundary-test project) never corrupt these scene
+// ranges.  Created by playwright.fullstack.config.ts.
+const PROJECT = 'e2e-cursor-test';
 
 /**
  * Set up Split Mode and Narrative view.  Assumes the page is already loaded
@@ -41,45 +45,75 @@ async function setupSplitModeWithNarrative(page: Page): Promise<void> {
 }
 
 /**
- * Set the editor cursor at a visible character offset by clicking at the
- * start of the editor text and then pressing ArrowRight N times.  Keyboard
- * events are reliably handled by CodeMirror.
+ * Set the editor cursor at a visible character offset by dispatching a
+ * selection transaction directly through CodeMirror's API via page.evaluate.
+ * Deterministic and immune to dropped keyboard events under CI load.  The
+ * editor runs with hideSceneMarkers=true, so document offsets equal visible
+ * character offsets.
  */
 async function setCursorAtOffset(page: Page, offset: number): Promise<void> {
-  // Click at the very start of the editor content to position the cursor at 0.
-  // CodeMirror has ~20px left padding and ~20px top padding for the first line.
-  const cmContent = page.locator('.cm-content');
-  const box = await cmContent.boundingBox();
-  if (!box) throw new Error('Editor .cm-content not found');
+  // Wait for the editor view to be exposed (remounts on mode switches).
+  await page.waitForFunction(
+    () => !!(window as unknown as { __aqEditorView?: unknown }).__aqEditorView,
+    undefined,
+    { timeout: 5000 }
+  );
 
-  await cmContent.click({ position: { x: 25, y: 25 } });
-  await page.waitForTimeout(300);
+  const applied = await page.evaluate((target: number): boolean => {
+    const w = window as unknown as {
+      __aqEditorView?: {
+        dispatch: (spec: {
+          selection: { anchor: number; head: number };
+          scrollIntoView: boolean;
+        }) => void;
+        state: {
+          doc: { length: number };
+          selection: { main: { head: number } };
+        };
+        focus: () => void;
+      };
+    };
+    const view = w.__aqEditorView;
+    if (!view) return false;
+    const len = view.state.doc.length;
+    const pos = Math.min(Math.max(0, target), len);
+    view.dispatch({
+      selection: { anchor: pos, head: pos },
+      scrollIntoView: true,
+    });
+    view.focus();
+    return view.state.selection.main.head === pos;
+  }, offset);
 
-  // Navigate right to the target offset
-  for (let i = 0; i < offset; i++) {
-    await page.keyboard.press('ArrowRight');
+  if (!applied) {
+    throw new Error(`Failed to set editor cursor at offset ${offset}`);
   }
-  await page.waitForTimeout(500);
+  // Give React a tick to process the selection-change callback.
+  await page.waitForTimeout(300);
 }
 
 test.describe('Scene cursor highlight — browser UX', () => {
-  test.beforeEach(async ({ page }: { page: Page }) => {
-    await page.setViewportSize({ width: 1920, height: 1080 });
+  test.beforeEach(
+    async ({ page, request }: { page: Page; request: APIRequestContext }) => {
+      await page.setViewportSize({ width: 1920, height: 1080 });
 
-    // Select the test project via the backend API
-    await page.goto(`${FRONTEND}`, { waitUntil: 'domcontentloaded' });
-    await page.evaluate(async (projectName: string) => {
-      await fetch('http://127.0.0.1:18000/api/v1/projects/select', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: projectName }),
+      // Select this spec's dedicated pristine project BEFORE loading the app.
+      // The fullstack specs share one backend whose "current" project is
+      // global state, and the app auto-selects it on load via an async
+      // refresh.  Selecting our project first guarantees the app loads it
+      // instead of whichever project a previous spec left active.
+      const resp = await request.post('http://127.0.0.1:18000/api/v1/projects/select', {
+        data: { name: PROJECT },
       });
-    }, PROJECT);
-    // Reload so the app picks up the selected project
-    await page.goto(`${FRONTEND}`, { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('.cm-content', { timeout: 15000 });
-    await page.waitForTimeout(1500);
-  });
+      if (!resp.ok()) {
+        throw new Error(`Failed to select project ${PROJECT}: ${resp.status()}`);
+      }
+
+      await page.goto(`${FRONTEND}`, { waitUntil: 'domcontentloaded' });
+      await page.waitForSelector('.cm-content', { timeout: 15000 });
+      await page.waitForTimeout(1500);
+    }
+  );
 
   test('cursor inside scene prose highlights the owning scene card', async ({
     page,

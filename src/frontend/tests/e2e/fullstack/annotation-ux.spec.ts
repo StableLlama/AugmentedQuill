@@ -22,7 +22,10 @@ import { test, expect, type Page } from '@playwright/test';
 
 const FRONTEND = 'http://127.0.0.1:18001';
 const BACKEND = 'http://127.0.0.1:18000';
-const PROJECT = 'e2e-boundary-test';
+// Dedicated project (created by playwright.fullstack.config.ts) so the
+// scene-boundary-drag tests can never corrupt the annotation markers or scene
+// structure this spec asserts on.
+const PROJECT = 'e2e-annotation-test';
 
 // ---------------------------------------------------------------------------
 // Annotation IDs from playwright config
@@ -114,21 +117,51 @@ async function deleteAnnotationsExcept(
 }
 
 /**
- * Set cursor at a visible offset using keyboard navigation from the editor
- * start.  More reliable than approximate pixel clicking.
+ * Set the editor cursor at a visible character offset by dispatching a
+ * selection transaction directly through CodeMirror's API via page.evaluate.
+ * Deterministic and immune to dropped keyboard events under CI load.  The
+ * editor runs with hideSceneMarkers=true, so document offsets equal visible
+ * character offsets.
  */
 async function setCursorAtOffset(page: Page, offset: number): Promise<void> {
-  const cmContent = page.locator('.cm-content');
-  const box = await cmContent.boundingBox();
-  if (!box) throw new Error('Editor .cm-content not found');
+  // Wait for the editor view to be exposed (remounts on mode switches).
+  await page.waitForFunction(
+    () => !!(window as unknown as { __aqEditorView?: unknown }).__aqEditorView,
+    undefined,
+    { timeout: 5000 }
+  );
 
-  await cmContent.click({ position: { x: 25, y: 25 } });
-  await page.waitForTimeout(300);
+  const applied = await page.evaluate((target: number): boolean => {
+    const w = window as unknown as {
+      __aqEditorView?: {
+        dispatch: (spec: {
+          selection: { anchor: number; head: number };
+          scrollIntoView: boolean;
+        }) => void;
+        state: {
+          doc: { length: number };
+          selection: { main: { head: number } };
+        };
+        focus: () => void;
+      };
+    };
+    const view = w.__aqEditorView;
+    if (!view) return false;
+    const len = view.state.doc.length;
+    const pos = Math.min(Math.max(0, target), len);
+    view.dispatch({
+      selection: { anchor: pos, head: pos },
+      scrollIntoView: true,
+    });
+    view.focus();
+    return view.state.selection.main.head === pos;
+  }, offset);
 
-  for (let i = 0; i < offset; i++) {
-    await page.keyboard.press('ArrowRight');
+  if (!applied) {
+    throw new Error(`Failed to set editor cursor at offset ${offset}`);
   }
-  await page.waitForTimeout(500);
+  // Give React a tick to process the selection-change callback.
+  await page.waitForTimeout(300);
 }
 
 /**
@@ -289,30 +322,23 @@ test.describe('Annotation UX — cursor linking', () => {
     const panel = page.locator('[aria-label="Annotation panel"]');
     await expect(panel).toBeAttached({ timeout: 10000 });
 
-    // Set cursor inside "Scene" (e2e-anno-1)
+    // Set cursor inside "Scene" (e2e-anno-1, offsets 0-4)
     await setCursorAtOffset(page, 2);
 
-    let activeItem = panel.locator('[role="button"].bg-amber-500\\/20');
-    await expect(activeItem).toBeAttached({ timeout: 5000 });
-    await expect(activeItem).toContainText('Annotation on "Scene"');
-
-    // Move right into "teen" area (e2e-anno-2, at offsets 9-12)
-    for (let i = 0; i < 12; i++) {
-      await page.keyboard.press('ArrowRight');
-      await page.waitForTimeout(30);
-    }
-    await page.waitForTimeout(800);
-
-    // Should now have active item for e2e-anno-2 or still e2e-anno-1
-    const teenItem = panel.locator(
-      '[role="button"].bg-amber-500\\/20:has-text("teen")'
-    );
     const sceneItem = panel.locator(
       '[role="button"].bg-amber-500\\/20:has-text(\'Annotation on "Scene"\')'
     );
-    const teenVisible = await teenItem.isVisible().catch(() => false);
-    const sceneVisible = await sceneItem.isVisible().catch(() => false);
-    expect(teenVisible || sceneVisible).toBe(true);
+    await expect(sceneItem).toBeAttached({ timeout: 5000 });
+
+    // Move cursor into "teen" (e2e-anno-2, offsets 9-12)
+    await setCursorAtOffset(page, 10);
+
+    // The active annotation should switch to e2e-anno-2 and clear e2e-anno-1
+    const teenItem = panel.locator(
+      '[role="button"].bg-amber-500\\/20:has-text("teen")'
+    );
+    await expect(teenItem).toBeAttached({ timeout: 5000 });
+    await expect(sceneItem).not.toBeAttached({ timeout: 5000 });
   });
 });
 

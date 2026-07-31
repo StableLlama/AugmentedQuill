@@ -116,6 +116,15 @@ export function setAnnotationClickCallback(
   onAnnotationClickCallback = cb;
 }
 
+/** Callback invoked when the editor cursor moves into/out of annotated text. */
+let onAnnotationCursorCallback: ((annotationId: string | null) => void) | null = null;
+
+export function setAnnotationCursorCallback(
+  cb: ((annotationId: string | null) => void) | null
+): void {
+  onAnnotationCursorCallback = cb;
+}
+
 /** Reset cycling state (used in tests to ensure clean state). */
 export function resetAnnotationClickCycle(): void {
   lastClickPos = null;
@@ -214,6 +223,40 @@ const annotationClickHandler = EditorView.domEventHandlers({
   },
 });
 
+/**
+ * Return the first annotation range that covers `pos`, or null when the
+ * position is not inside any annotation.  Matches the containment semantics
+ * used by the click handler so cursor and click selection stay consistent.
+ */
+function annotationAtPos(
+  ranges: AnnotationRange[],
+  pos: number
+): AnnotationRange | null {
+  for (const r of ranges) {
+    if (pos >= r.from && pos <= r.to) {
+      return r;
+    }
+  }
+  return null;
+}
+
+/**
+ * Fires the cursor callback with the annotation under the cursor whenever
+ * the selection moves, so the annotation sidebar follows the editor caret.
+ * When the cursor is outside every annotation the callback fires with null
+ * (clearing the sidebar selection).  Clicking an annotation decoration is
+ * handled by `annotationClickHandler` and does not move the cursor, so the
+ * two callbacks never conflict.
+ */
+const annotationCursorHandler = EditorView.updateListener.of(
+  (update: ViewUpdate): void => {
+    if (!update.selectionSet || !onAnnotationCursorCallback) return;
+    const head = update.state.selection.main.head;
+    const match = annotationAtPos(update.state.field(annotationRangesField), head);
+    onAnnotationCursorCallback(match?.id ?? null);
+  }
+);
+
 // ---------------------------------------------------------------------------
 // CSS theme
 // ---------------------------------------------------------------------------
@@ -233,7 +276,13 @@ const theme = EditorView.baseTheme({
 // ---------------------------------------------------------------------------
 
 export function buildAnnotationExtensions(): Extension[] {
-  return [annotationRangesField, buildPlugin(), annotationClickHandler, theme];
+  return [
+    annotationRangesField,
+    buildPlugin(),
+    annotationClickHandler,
+    annotationCursorHandler,
+    theme,
+  ];
 }
 
 /**

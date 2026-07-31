@@ -294,6 +294,7 @@ export const AppMainLayout: React.FC<AppMainLayoutProps> = React.memo(
         docText
       );
       editorRef.current?.setOnAnnotationClick(setActiveAnnotationId);
+      editorRef.current?.setOnAnnotationCursorChange(setActiveAnnotationId);
       editorRef.current?.setAnnotationRanges(adjustedRanges);
     }, [currentChapter, annotations, editorReady, editorRef, workspaceMode]);
 
