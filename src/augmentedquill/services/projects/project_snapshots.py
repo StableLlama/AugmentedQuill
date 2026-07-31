@@ -39,10 +39,7 @@ def _is_safe_relative_path(rel_path: Path) -> bool:
         return False
 
     # Prevent access to internal metadata and checkpoints.
-    if parts[0] in {".aq_history", "chats", "checkpoints"}:
-        return False
-
-    return True
+    return parts[0] not in {".aq_history", "chats", "checkpoints"}
 
 
 def capture_project_snapshot(project_dir: Path) -> dict[str, str]:

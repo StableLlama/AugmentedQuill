@@ -70,19 +70,21 @@ class TestLoggedRequestRetry:
                 mock_client_cls.return_value.__aenter__.return_value = mock_client
                 mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
                 mock_client.request = AsyncMock(return_value=ok_resp)
-                with patch("augmentedquill.services.llm.llm_http_ops.add_llm_log"):
-                    with patch(
+                with (
+                    patch("augmentedquill.services.llm.llm_http_ops.add_llm_log"),
+                    patch(
                         "augmentedquill.services.llm.llm_http_ops.create_log_entry",
                         return_value={},
-                    ):
-                        return await logged_request(
-                            caller_id="test",
-                            method="POST",
-                            url="https://api.example.com/v1/chat",
-                            headers={},
-                            timeout=self._timeout(),
-                            body={},
-                        )
+                    ),
+                ):
+                    return await logged_request(
+                        caller_id="test",
+                        method="POST",
+                        url="https://api.example.com/v1/chat",
+                        headers={},
+                        timeout=self._timeout(),
+                        body={},
+                    )
 
         resp = asyncio.run(_run())
         assert resp.status_code == 200
@@ -106,20 +108,22 @@ class TestLoggedRequestRetry:
                 mock_client_cls.return_value.__aenter__.return_value = mock_client
                 mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
                 mock_client.request = fake_request
-                with patch("augmentedquill.services.llm.llm_http_ops.add_llm_log"):
-                    with patch(
+                with (
+                    patch("augmentedquill.services.llm.llm_http_ops.add_llm_log"),
+                    patch(
                         "augmentedquill.services.llm.llm_http_ops.create_log_entry",
                         return_value={"response": {}},
-                    ):
-                        with patch("asyncio.sleep", new_callable=AsyncMock):
-                            return await logged_request(
-                                caller_id="test",
-                                method="POST",
-                                url="https://api.example.com/v1/chat",
-                                headers={},
-                                timeout=self._timeout(),
-                                body={},
-                            )
+                    ),
+                    patch("asyncio.sleep", new_callable=AsyncMock),
+                ):
+                    return await logged_request(
+                        caller_id="test",
+                        method="POST",
+                        url="https://api.example.com/v1/chat",
+                        headers={},
+                        timeout=self._timeout(),
+                        body={},
+                    )
 
         resp = asyncio.run(_run())
         assert resp.status_code == 200
@@ -143,19 +147,21 @@ class TestLoggedRequestRetry:
                 mock_client_cls.return_value.__aenter__.return_value = mock_client
                 mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
                 mock_client.request = fake_request
-                with patch("augmentedquill.services.llm.llm_http_ops.add_llm_log"):
-                    with patch(
+                with (
+                    patch("augmentedquill.services.llm.llm_http_ops.add_llm_log"),
+                    patch(
                         "augmentedquill.services.llm.llm_http_ops.create_log_entry",
                         return_value={"response": {}},
-                    ):
-                        return await logged_request(
-                            caller_id="test",
-                            method="POST",
-                            url="https://api.example.com/v1/chat",
-                            headers={},
-                            timeout=self._timeout(),
-                            body={},
-                        )
+                    ),
+                ):
+                    return await logged_request(
+                        caller_id="test",
+                        method="POST",
+                        url="https://api.example.com/v1/chat",
+                        headers={},
+                        timeout=self._timeout(),
+                        body={},
+                    )
 
         resp = asyncio.run(_run())
         assert resp.status_code == 400
@@ -173,20 +179,22 @@ class TestLoggedRequestRetry:
                 mock_client_cls.return_value.__aenter__.return_value = mock_client
                 mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
                 mock_client.request = fake_request
-                with patch("augmentedquill.services.llm.llm_http_ops.add_llm_log"):
-                    with patch(
+                with (
+                    patch("augmentedquill.services.llm.llm_http_ops.add_llm_log"),
+                    patch(
                         "augmentedquill.services.llm.llm_http_ops.create_log_entry",
                         return_value={},
-                    ):
-                        with patch("asyncio.sleep", new_callable=AsyncMock):
-                            await logged_request(
-                                caller_id="test",
-                                method="POST",
-                                url="https://api.example.com/v1/chat",
-                                headers={},
-                                timeout=self._timeout(),
-                                body={},
-                            )
+                    ),
+                    patch("asyncio.sleep", new_callable=AsyncMock),
+                ):
+                    await logged_request(
+                        caller_id="test",
+                        method="POST",
+                        url="https://api.example.com/v1/chat",
+                        headers={},
+                        timeout=self._timeout(),
+                        body={},
+                    )
 
         with pytest.raises(httpx.ConnectError):
             asyncio.run(_run())

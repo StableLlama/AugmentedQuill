@@ -55,11 +55,11 @@ def write_chapter_content_in_project(
 def update_chapter_metadata_in_project(
     active: Path,
     chap_id: int,
-    title: str = None,
-    summary: str = None,
-    notes: str = None,
-    private_notes: str = None,
-    conflicts: list = None,
+    title: str | None = None,
+    summary: str | None = None,
+    notes: str | None = None,
+    private_notes: str | None = None,
+    conflicts: list | None = None,
 ) -> None:
     """Update metadata fields for a chapter by its ID across all project types."""
     story_path = active / "story.json"
@@ -134,7 +134,11 @@ def _get_chapter_target_and_story(active: Path, chap_id: int) -> Any:
 
 
 def add_chapter_conflict_in_project(
-    active: Path, chap_id: int, description: str, resolution: str, index: int = None
+    active: Path,
+    chap_id: int,
+    description: str,
+    resolution: str,
+    index: int | None = None,
 ) -> None:
     """Add a conflict to a chapter. If index is provided, inserts there; else appends."""
     story, story_path, target = _get_chapter_target_and_story(active, chap_id)
@@ -154,8 +158,8 @@ def update_chapter_conflict_in_project(
     active: Path,
     chap_id: int,
     index: int,
-    description: str = None,
-    resolution: str = None,
+    description: str | None = None,
+    resolution: str | None = None,
 ) -> None:
     """Update a specific conflict in a chapter by its index."""
     story, story_path, target = _get_chapter_target_and_story(active, chap_id)
@@ -320,13 +324,12 @@ def delete_chapter_in_project(active: Path, chap_id: int) -> None:
                 )
                 if not curr_match and i < len(book_chapters):
                     candidate = book_chapters[i]
-                    if id(candidate) not in used_ids:
-                        if (
-                            not isinstance(candidate, dict)
-                            or not candidate.get("filename")
-                            or candidate.get("filename") == fname
-                        ):
-                            curr_match = candidate
+                    if id(candidate) not in used_ids and (
+                        not isinstance(candidate, dict)
+                        or not candidate.get("filename")
+                        or candidate.get("filename") == fname
+                    ):
+                        curr_match = candidate
 
                 if curr_match:
                     used_ids.add(id(curr_match))
@@ -354,13 +357,12 @@ def delete_chapter_in_project(active: Path, chap_id: int) -> None:
             )
             if not curr_match and i < len(chapters_data):
                 candidate = chapters_data[i]
-                if id(candidate) not in used_ids:
-                    if (
-                        not isinstance(candidate, dict)
-                        or not candidate.get("filename")
-                        or candidate.get("filename") == fname
-                    ):
-                        curr_match = candidate
+                if id(candidate) not in used_ids and (
+                    not isinstance(candidate, dict)
+                    or not candidate.get("filename")
+                    or candidate.get("filename") == fname
+                ):
+                    curr_match = candidate
 
             if curr_match:
                 used_ids.add(id(curr_match))

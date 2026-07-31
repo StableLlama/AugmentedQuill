@@ -85,9 +85,8 @@ class ChannelFilter:
                 first_bracket = -1
                 for char in check_chars:
                     idx = self.buffer.find(char)
-                    if idx != -1:
-                        if first_bracket == -1 or idx < first_bracket:
-                            first_bracket = idx
+                    if idx != -1 and (first_bracket == -1 or idx < first_bracket):
+                        first_bracket = idx
 
                 if first_bracket == -1:
                     # No bracket at all, safe to yield everything

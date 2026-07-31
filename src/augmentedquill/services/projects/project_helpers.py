@@ -113,10 +113,9 @@ def normalize_story_for_frontend(story: dict) -> dict:
                             if not b_copy.get("id"):
                                 b_copy["id"] = b_copy.get("folder")
 
-                            if not b_copy.get("id"):
-                                # that predate explicit IDs.
-                                if i < len(folders):
-                                    b_copy["id"] = folders[i]
+                            # Fallback for books that predate explicit IDs.
+                            if not b_copy.get("id") and i < len(folders):
+                                b_copy["id"] = folders[i]
                             new_books.append(b_copy)
                     res["books"] = new_books
 

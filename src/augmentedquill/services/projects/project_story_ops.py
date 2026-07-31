@@ -21,10 +21,10 @@ from augmentedquill.utils.json_repair import apply_typographic_quotes
 def update_book_metadata_in_project(
     active: Path,
     book_id: str,
-    title: str = None,
-    summary: str = None,
-    notes: str = None,
-    private_notes: str = None,
+    title: str | None = None,
+    summary: str | None = None,
+    notes: str | None = None,
+    private_notes: str | None = None,
 ) -> None:
     """Update Book Metadata In Project."""
     # Security: Prevent path traversal
@@ -91,13 +91,13 @@ def write_book_content_in_project(active: Path, book_id: str, content: str) -> N
 
 def update_story_metadata_in_project(
     active: Path,
-    title: str = None,
-    summary: str = None,
-    tags: list[str] = None,
-    notes: str = None,
-    private_notes: str = None,
+    title: str | None = None,
+    summary: str | None = None,
+    tags: list[str] | None = None,
+    notes: str | None = None,
+    private_notes: str | None = None,
     conflicts: list | None = None,
-    language: str = None,
+    language: str | None = None,
 ) -> None:
     """Update Story Metadata In Project."""
     story_path = active / "story.json"

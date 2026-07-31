@@ -56,11 +56,10 @@ def main(argv=None) -> int:
         out_path = Path(args.output)
         out_path.parent.mkdir(parents=True, exist_ok=True)
     else:
-        out_file = tempfile.NamedTemporaryFile(
+        with tempfile.NamedTemporaryFile(
             prefix="augmentedquill-tools-", suffix=".json", delete=False
-        )
-        out_path = Path(out_file.name)
-        out_file.close()
+        ) as out_file:
+            out_path = Path(out_file.name)
 
     out_path.write_text(
         json.dumps(schemas, indent=2, sort_keys=False) + "\n", encoding="utf-8"

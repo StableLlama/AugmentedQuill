@@ -8,7 +8,7 @@
 """Unit tests for temporal value normalization utilities."""
 
 import unittest
-from datetime import datetime
+from datetime import UTC, datetime
 
 from augmentedquill.models.temporal_utils import normalize_temporal_value
 
@@ -71,43 +71,43 @@ class NormalizeTemporalValueTest(unittest.TestCase):
     def test_time_only_hh_mm(self) -> None:
         """Time-only HH:MM should use today's date, add seconds, use UTC."""
         result = normalize_temporal_value("14:30")
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
         self.assertEqual(result, f"{today}T14:30:00Z")
 
     def test_time_only_hh_mm_ss(self) -> None:
         """Time-only HH:MM:SS should use today's date and UTC."""
         result = normalize_temporal_value("14:30:45")
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
         self.assertEqual(result, f"{today}T14:30:45Z")
 
     def test_time_with_z_timezone(self) -> None:
         """Time with 'Z' timezone should use today's date and UTC."""
         result = normalize_temporal_value("14:30Z")
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
         self.assertEqual(result, f"{today}T14:30:00Z")
 
     def test_time_with_positive_offset(self) -> None:
         """Time with positive offset should use today's date."""
         result = normalize_temporal_value("14:30+05:30")
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
         self.assertEqual(result, f"{today}T14:30:00+05:30")
 
     def test_time_with_negative_offset(self) -> None:
         """Time with negative offset should use today's date."""
         result = normalize_temporal_value("14:30-08:00")
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
         self.assertEqual(result, f"{today}T14:30:00-08:00")
 
     def test_time_with_seconds_and_offset(self) -> None:
         """Time with seconds and offset should use today's date."""
         result = normalize_temporal_value("14:30:45+01:00")
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
         self.assertEqual(result, f"{today}T14:30:45+01:00")
 
     def test_time_with_offset_without_colon(self) -> None:
         """Time with offset without colon should be normalized."""
         result = normalize_temporal_value("14:30+0530")
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
         self.assertEqual(result, f"{today}T14:30:00+05:30")
 
     # -----------------------------------------------------------------------
@@ -127,13 +127,13 @@ class NormalizeTemporalValueTest(unittest.TestCase):
     def test_midnight_time(self) -> None:
         """Midnight (00:00) should be valid."""
         result = normalize_temporal_value("00:00")
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
         self.assertEqual(result, f"{today}T00:00:00Z")
 
     def test_end_of_day_time(self) -> None:
         """23:59 should be valid."""
         result = normalize_temporal_value("23:59")
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
         self.assertEqual(result, f"{today}T23:59:00Z")
 
     # -----------------------------------------------------------------------
@@ -168,31 +168,31 @@ class NormalizeTemporalValueTest(unittest.TestCase):
     def test_doc_example_time_hh_mm(self) -> None:
         """Verify doc example: time HH:MM."""
         result = normalize_temporal_value("14:30")
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
         self.assertEqual(result, f"{today}T14:30:00Z")
 
     def test_doc_example_time_hh_mm_ss(self) -> None:
         """Verify doc example: time HH:MM:SS."""
         result = normalize_temporal_value("14:30:45")
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
         self.assertEqual(result, f"{today}T14:30:45Z")
 
     def test_doc_example_time_with_z(self) -> None:
         """Verify doc example: time with Z."""
         result = normalize_temporal_value("14:30Z")
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
         self.assertEqual(result, f"{today}T14:30:00Z")
 
     def test_doc_example_time_with_seconds_offset(self) -> None:
         """Verify doc example: time with seconds and offset."""
         result = normalize_temporal_value("14:30:45+05:30")
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
         self.assertEqual(result, f"{today}T14:30:45+05:30")
 
     def test_doc_example_time_with_offset(self) -> None:
         """Verify doc example: time with offset."""
         result = normalize_temporal_value("14:30+01:00")
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
         self.assertEqual(result, f"{today}T14:30:00+01:00")
 
 

@@ -40,7 +40,7 @@ class TestApplyReplace(TestCase):
         self.assertEqual(new_text, "dog and dog")
 
     def test_case_insensitive_replaces(self):
-        new_text, count = _apply_replace(
+        _new_text, count = _apply_replace(
             "Cat and CAT",
             "cat",
             "dog",

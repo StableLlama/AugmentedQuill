@@ -31,7 +31,10 @@ from augmentedquill.models.temporal_utils import normalize_temporal_value
 # Keep a private alias for backward compat within this module
 _normalize_scene_temporal_value = normalize_temporal_value
 
-SceneId: TypeAlias = int
+# Pydantic resolves `TypeAlias`-based aliases to the underlying type in the
+# OpenAPI schema (inline `integer`); a PEP 695 `type` alias emits a `$ref`
+# component instead, which would churn the committed schema/artifacts.
+SceneId: TypeAlias = int  # noqa: UP040
 
 
 def _is_safe_link_identifier(value: str) -> bool:

@@ -942,7 +942,7 @@ async def delete_chapter(
         }
 
     active = get_active_project_dir()
-    chap_id, path, _pos = _chapter_by_id_or_404(params.chap_id)
+    _chap_id, path, _pos = _chapter_by_id_or_404(params.chap_id)
 
     story_path = active / "story.json"
     story = load_story_config(story_path) or {}

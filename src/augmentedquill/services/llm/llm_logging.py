@@ -117,47 +117,46 @@ def _prepare_dump_entry(entry: dict[str, Any]) -> dict[str, Any]:
         prepared["request"].pop("headers", None)
 
     response = prepared.get("response")
-    if isinstance(response, dict):
-        if response.get("streaming"):
-            chunks = response.get("chunks") or []
-            # Always record how many raw chunks were received
-            if chunks:
-                response["chunk_count"] = len(chunks)
-            elif "chunk_count" not in response:
-                response["chunk_count"] = 0
+    if isinstance(response, dict) and response.get("streaming"):
+        chunks = response.get("chunks") or []
+        # Always record how many raw chunks were received
+        if chunks:
+            response["chunk_count"] = len(chunks)
+        elif "chunk_count" not in response:
+            response["chunk_count"] = 0
 
-            if verbosity == "compact":
-                # compact: chunk_count + full_content (assembled text), no raw chunks, no HTTP-level meta
-                response.pop("chunks", None)
-                response.pop("body", None)
-                response.pop("error_detail", None)
-                # full_content stays intact (complete assembled text)
+        if verbosity == "compact":
+            # compact: chunk_count + full_content (assembled text), no raw chunks, no HTTP-level meta
+            response.pop("chunks", None)
+            response.pop("body", None)
+            response.pop("error_detail", None)
+            # full_content stays intact (complete assembled text)
 
-            elif verbosity == "normal":
-                # normal: text-token list only — no raw chunk objects, no full_content
-                preview = []
-                for chunk in chunks:
-                    chunk_text = _extract_chunk_text(chunk)
-                    if chunk_text is not None:
-                        # preserve as-is: keep newlines and whitespace, no truncation
-                        preview.append(chunk_text)
+        elif verbosity == "normal":
+            # normal: text-token list only — no raw chunk objects, no full_content
+            preview = []
+            for chunk in chunks:
+                chunk_text = _extract_chunk_text(chunk)
+                if chunk_text is not None:
+                    # preserve as-is: keep newlines and whitespace, no truncation
+                    preview.append(chunk_text)
 
-                # Fallback: if chunks were not stored but full_content was, split by lines
-                if not chunks and response.get("full_content"):
-                    preview = response["full_content"].splitlines(keepends=True)
+            # Fallback: if chunks were not stored but full_content was, split by lines
+            if not chunks and response.get("full_content"):
+                preview = response["full_content"].splitlines(keepends=True)
 
-                # Second fallback: chunks present but no text extracted (e.g. unknown format),
-                # use full_content if available so the log always shows what was generated.
-                if not preview and response.get("full_content"):
-                    preview = response["full_content"].splitlines(keepends=True)
+            # Second fallback: chunks present but no text extracted (e.g. unknown format),
+            # use full_content if available so the log always shows what was generated.
+            if not preview and response.get("full_content"):
+                preview = response["full_content"].splitlines(keepends=True)
 
-                response["chunk_text_preview"] = preview
-                response.pop("chunks", None)
-                response.pop("full_content", None)
+            response["chunk_text_preview"] = preview
+            response.pop("chunks", None)
+            response.pop("full_content", None)
 
-            # debug: keep everything (raw chunks, full_content, body, error_detail) — no preview added
+        # debug: keep everything (raw chunks, full_content, body, error_detail) — no preview added
 
-        # non-streaming: communication content (body, full_content) preserved in all modes
+    # non-streaming: communication content (body, full_content) preserved in all modes
 
     prepared["response"] = response
     return prepared
@@ -232,7 +231,9 @@ def add_llm_log(log_entry: dict[str, Any]) -> Any:
 
             with open(log_path, "a", encoding="utf-8") as f:
                 f.write("=" * 80 + "\n")
-                f.write(f"TIMESTAMP: {datetime.datetime.now().isoformat()}\n")
+                f.write(
+                    f"TIMESTAMP: {datetime.datetime.now(datetime.UTC).isoformat()}\n"
+                )
                 f.write("-" * 80 + "\n")
 
                 # Render JSON
@@ -282,7 +283,7 @@ def create_log_entry(
 
     entry: dict[str, Any] = {
         "id": str(uuid.uuid4()),
-        "timestamp_start": datetime.datetime.now().isoformat(),
+        "timestamp_start": datetime.datetime.now(datetime.UTC).isoformat(),
         "timestamp_end": None,
         "request": {
             "url": url,
@@ -301,7 +302,7 @@ def create_log_entry(
             "streaming": streaming,
             "chunks": [] if streaming else None,
             "full_content": "" if streaming else None,
-            "body": None if not streaming else None,
+            "body": None,
             "error_detail": None,
         }
     else:

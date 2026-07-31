@@ -22,7 +22,7 @@ from augmentedquill.services.chapters.chapter_helpers import (
 
 
 def create_new_chapter_in_project(
-    active: Path, title: str = "", book_id: str = None
+    active: Path, title: str = "", book_id: str | None = None
 ) -> int:
     """Create a new chapter file and update story.json within active project path."""
     story_path = active / "story.json"

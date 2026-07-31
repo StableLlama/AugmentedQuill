@@ -367,7 +367,7 @@ def test_split_straddling_annotations_start_inside_keeps_in_markers_inside_block
             "book_id": None,
         }
     ]
-    new_content, new_meta = split_straddling_annotations(
+    new_content, _new_meta = split_straddling_annotations(
         content, block_start, block_end, meta
     )
 
@@ -433,7 +433,7 @@ def test_split_straddling_annotations_start_outside_keeps_in_markers_inside_bloc
             "book_id": None,
         }
     ]
-    new_content, new_meta = split_straddling_annotations(
+    new_content, _new_meta = split_straddling_annotations(
         content, block_start, block_end, meta
     )
 

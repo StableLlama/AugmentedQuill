@@ -415,18 +415,24 @@ def get_tool_schemas(
             if not allowed_project_types or "short-story" not in allowed_project_types:
                 continue
         allowed_project_types = info.get("project_types")
-        if project_type and allowed_project_types is not None:
-            if project_type not in allowed_project_types:
-                continue
+        if (
+            project_type
+            and allowed_project_types is not None
+            and project_type not in allowed_project_types
+        ):
+            continue
         schema = deepcopy(info["schema"])
         func_name = schema.get("function", {}).get("name")
         params = schema.get("function", {}).get("parameters", {})
         properties = params.get("properties") if isinstance(params, dict) else None
 
-        if func_name == "update_story_metadata" and project_type in ("novel", "series"):
-            if properties is not None:
-                properties.pop("conflicts", None)
-                properties.pop("conflicts_patch", None)
+        if (
+            func_name == "update_story_metadata"
+            and project_type in ("novel", "series")
+            and properties is not None
+        ):
+            properties.pop("conflicts", None)
+            properties.pop("conflicts_patch", None)
 
         if func_name == "call_writing_llm" and properties is not None:
             chap_prop = properties.get("chap_id")
@@ -555,17 +561,15 @@ def write_tools_json_tempfile() -> str:
 
     schemas = get_registered_tool_schemas(model_type=None)
 
-    f = tempfile.NamedTemporaryFile(
+    with tempfile.NamedTemporaryFile(
         prefix="augmentedquill-tools-",
         suffix=".json",
         delete=False,
         mode="w",
         encoding="utf-8",
-    )
-    json.dump(schemas, f, indent=2)
-    f.write("\n")
-    f.flush()
-    f.close()
+    ) as f:
+        json.dump(schemas, f, indent=2)
+        f.write("\n")
     return f.name
 
 

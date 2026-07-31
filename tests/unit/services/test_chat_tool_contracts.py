@@ -13,6 +13,7 @@ import os
 import tempfile
 import uuid
 from pathlib import Path
+from typing import ClassVar
 from unittest import TestCase
 from unittest.mock import patch
 
@@ -45,13 +46,13 @@ def _parse_tool_sse_result(text: str) -> dict:
 
 
 class ChatToolContractsTest(TestCase):
-    _SPECIAL_CASE_MUTATION_TOOLS = {
+    _SPECIAL_CASE_MUTATION_TOOLS: ClassVar[set[str]] = {
         # Covered with nested-tool-call behavior assertions in test_chat_tools.py
         "call_editing_assistant",
         "undo_last_tool_changes",
     }
 
-    _READ_ONLY_TOOLS = {
+    _READ_ONLY_TOOLS: ClassVar[set[str]] = {
         "call_writing_llm",
         "get_book_metadata",
         "get_chapter_content",
@@ -70,7 +71,7 @@ class ChatToolContractsTest(TestCase):
         "search_and_replace",
     }
 
-    _EDITING_ONLY_TOOLS = {
+    _EDITING_ONLY_TOOLS: ClassVar[set[str]] = {
         "replace_text_in_chapter",
         "apply_chapter_replacements",
         "insert_text_at_marker",
@@ -1189,7 +1190,7 @@ class ChatToolContractsTest(TestCase):
                     snapshot = capture_project_snapshot(project_dir)
                     metadata = {
                         "batch_id": batch_id,
-                        "created_at": datetime.datetime.now().isoformat(),
+                        "created_at": datetime.datetime.now(datetime.UTC).isoformat(),
                         "tool_names": [tool_name],
                         "changed_chapter_ids": [],
                         "before": snapshot,

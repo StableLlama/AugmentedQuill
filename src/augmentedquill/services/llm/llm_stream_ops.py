@@ -59,7 +59,7 @@ def _validate_base_url(base_url: str, skip_validation: bool = False) -> None:
         return
 
     # Check for suspicious schemes or non-HTTP/HTTPS URLs
-    if not (base_url.startswith("http://") or base_url.startswith("https://")):
+    if not (base_url.startswith(("http://", "https://"))):
         raise ValueError(f"Invalid base_url scheme: {base_url}")
 
     # Check for forbidden characters in URL (basic SSRF protection)

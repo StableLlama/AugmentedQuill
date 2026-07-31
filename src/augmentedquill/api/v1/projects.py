@@ -10,7 +10,7 @@
 API endpoints for project-related operations including creation, deletion, and management.
 """
 
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, File, UploadFile
 from fastapi.responses import JSONResponse
@@ -136,7 +136,7 @@ async def api_projects_images_create_placeholder(
 
 @router.post("/projects/images/upload")
 async def api_projects_images_upload(
-    file: UploadFile = File(...), target_name: str | None = None
+    file: Annotated[UploadFile, File()], target_name: str | None = None
 ) -> JSONResponse:
     """Handle the API request to projects images upload."""
     return await upload_image_response(file=file, target_name=target_name)
@@ -161,18 +161,22 @@ async def api_projects_images_get(filename: str) -> Any:
 
 
 @router.get("/projects/export")
-async def api_projects_export(name: str = None) -> Any:
+# The optional query param stays `str = None` so the exported OpenAPI schema
+# keeps `name` as a plain (non-nullable) string, avoiding API contract churn.
+async def api_projects_export(name: str = None) -> Any:  # noqa: RUF013
     """Handle the API request to projects export."""
     return export_project_response(name=name)
 
 
 @router.get("/projects/export/epub")
-async def api_projects_export_epub(name: str = None) -> Any:
+async def api_projects_export_epub(name: str = None) -> Any:  # noqa: RUF013
     """Handle the API request to projects export epub."""
     return export_project_epub_response(name=name)
 
 
 @router.post("/projects/import", response_model=ProjectMutationResponse)
-async def api_projects_import(file: UploadFile = File(...)) -> ProjectMutationResponse:
+async def api_projects_import(
+    file: Annotated[UploadFile, File()],
+) -> ProjectMutationResponse:
     """Handle the API request to projects import."""
     return await import_project_response(file)

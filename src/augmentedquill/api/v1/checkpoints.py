@@ -9,7 +9,7 @@
 
 import re
 import shutil
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import APIRouter
@@ -92,7 +92,7 @@ async def api_get_checkpoints(project_dir: ProjectDep) -> CheckpointListResponse
 @router.post("/checkpoints/create")
 async def api_create_checkpoint(project_dir: ProjectDep) -> JSONResponse:
     """Handle the API request to create checkpoint."""
-    timestamp = datetime.now().replace(microsecond=0).isoformat()
+    timestamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S")
     # To be safe with filenames, we'll replace colons
     safe_timestamp = timestamp.replace(":", "-")
 
