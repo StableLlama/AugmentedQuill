@@ -21,9 +21,15 @@ clock is struck on November 12, 1955 at 10:04 PM; Marty and Doc visit October
 21, 2015; Doc is stranded in the Old West of 1885.
 
 Every time jump opens a new timeline, so only the trilogy's "present" stays on
-``main``.  The trip to Hill Valley 2015 gets ``timeline-2015``, the alternate
-1985 (Biff's world) and the second trip back to 1955 that fixes it get
-``timeline-1985a``, and the Old West gets ``timeline-1885``.
+on ``main``.  The trip to 1955 (Part I) gets ``branch:1985 -> 1955``, the
+future gets ``branch:1985 -> 2015``, the alternate 1985 and the fixing trip get
+``branch:2015 -> 1985A`` and ``branch:1985A -> 1955``, and the Old West gets
+``branch:1985 -> 1885``.
+
+Each DeLorean jump is also stored as a ``Time Travel`` sourcebook entry so the
+Convergence Map can draw the branch spawn arcs and jump arrows on its left-hand
+timeline panel — the same fields a user would fill in for their own time-travel
+story.
 
 Each movie also shares one ``color_tag`` (blue for Part I, orange for Part II,
 green for Part III) so a chronologically sorted view makes it obvious at a
@@ -56,11 +62,15 @@ BOOKS: tuple[str, str, str] = (
 CHAPTERS: tuple[str, str, str] = ("The DeLorean", "The Future", "The Old West")
 
 # (summary, scene_time, timeline_id, active_characters, passive_characters,
-#  causes, color_tag)
+#  causes, color_tag, sourcebook_entry_ids)
 # Scene ids are assigned 1..N in order; causes reference prior ids.  Colors are
 # per movie so a chronologically sorted view groups scenes by which movie they
 # belong to: blue = Part I, orange = Part II, green = Part III.
-SCENES: list[tuple[str, str, str, list[str], list[str], list[int], str]] = [
+# Branch scenes name their timeline ``branch:<jump entry name>`` so the
+# Convergence Map can draw a spawn arc from the Time Travel entry that creates
+# the branch; sourcebook_entry_ids reference the jumps that depart from or land
+# on the scene so the arrows anchor to real scene dots.
+SCENES: list[tuple[str, str, str, list[str], list[str], list[int], str, list[str]]] = [
     (
         "Twin Pines Mall",
         "1985-10-26T01:15:00Z",
@@ -69,6 +79,7 @@ SCENES: list[tuple[str, str, str, list[str], list[str], list[int], str]] = [
         [],
         [],
         "blue",
+        ["1985 -> 2015"],
     ),
     (
         "The Libyan attack",
@@ -78,69 +89,77 @@ SCENES: list[tuple[str, str, str, list[str], list[str], list[int], str]] = [
         [],
         [1],
         "blue",
+        ["1985 -> 1955", "1985 -> 1885"],
     ),
     (
         "Arrival in 1955",
         "1955-11-05T22:04:00Z",
-        "main",
+        "branch:1985 -> 1955",
         ["Marty McFly", "Doc Brown"],
         [],
         [2],
         "blue",
+        [],
     ),
     (
         "Enchantment Under the Sea",
         "1955-11-12T21:00:00Z",
-        "main",
+        "branch:1985 -> 1955",
         ["Marty McFly", "George McFly", "Lorraine Baines"],
         [],
         [3],
         "blue",
+        [],
     ),
     (
         "Lightning sends Marty home",
         "1955-11-12T22:04:00Z",
-        "main",
+        "branch:1985 -> 1955",
         ["Marty McFly", "Doc Brown"],
         [],
         [4],
         "blue",
+        [],
     ),
     (
         "Hill Valley 2015",
         "2015-10-21T18:00:00Z",
-        "timeline-2015",
+        "branch:1985 -> 2015",
         ["Marty McFly", "Doc Brown"],
         ["Jennifer Parker"],
         [5],
         "orange",
+        ["2015 -> 1985A"],
     ),
     (
         "Alternate 1985 (1985A)",
         "1985-10-27T09:00:00Z",
-        "timeline-1985a",
+        "branch:2015 -> 1985A",
         ["Marty McFly", "Doc Brown", "Biff Tannen"],
         [],
         [6],
         "orange",
+        ["1985A -> 1955"],
     ),
     (
         "Return to 1955",
         "1955-11-12T21:30:00Z",
-        "timeline-1985a",
+        "branch:1985A -> 1955",
         ["Marty McFly", "Doc Brown", "Biff Tannen"],
         [],
         [7],
         "orange",
+        [],
     ),
     (
         "The Old West, 1885",
         "1885-09-02T12:00:00Z",
-        "timeline-1885",
+        "branch:1985 -> 1885",
         ["Marty McFly", "Doc Brown", "Clara Clayton"],
         [],
         [8],
         "green",
+        [],
     ),
     (
         "The return home",
@@ -150,6 +169,63 @@ SCENES: list[tuple[str, str, str, list[str], list[str], list[int], str]] = [
         ["Jennifer Parker"],
         [9],
         "green",
+        [],
+    ),
+]
+
+# (name, description, origin_date, destination_datetime, creates_new_timeline,
+#  timeline_id) — one entry per DeLorean jump.  Every jump opens a new branch
+# named ``branch:<name>``; the scenes that land on it use that id (see SCENES)
+# so the Convergence Map timeline panel draws a spawn arc + arrow per jump.
+TIME_TRAVELS: list[tuple[str, str, str, str, bool, str]] = [
+    (
+        "1985 -> 1955",
+        (
+            "Marty's first jump from 1985 to 1955 after the Libyan attack at "
+            "Twin Pines Mall."
+        ),
+        "1985-10-26T01:35:00Z",
+        "1955-11-05T22:04:00Z",
+        True,
+        "main",
+    ),
+    (
+        "1985 -> 2015",
+        "Marty, Doc and Jennifer travel from 1985 to the Hill Valley of 2015.",
+        "1985-10-26T01:15:00Z",
+        "2015-10-21T18:00:00Z",
+        True,
+        "main",
+    ),
+    (
+        "2015 -> 1985A",
+        "Returning from 2015, the trio lands in Biff's alternate 1985.",
+        "2015-10-21T18:00:00Z",
+        "1985-10-27T09:00:00Z",
+        True,
+        "branch:1985 -> 2015",
+    ),
+    (
+        "1985A -> 1955",
+        (
+            "Marty travels from the alternate 1985 to 1955 to retrieve the "
+            "stolen sports almanac."
+        ),
+        "1985-10-27T09:00:00Z",
+        "1955-11-12T21:30:00Z",
+        True,
+        "branch:2015 -> 1985A",
+    ),
+    (
+        "1985 -> 1885",
+        (
+            "Doc is stranded in the Old West of 1885 after a lightning strike "
+            "sends the DeLorean back in time."
+        ),
+        "1985-10-26T01:35:00Z",
+        "1885-09-02T12:00:00Z",
+        True,
+        "main",
     ),
 ]
 
@@ -238,7 +314,7 @@ def seed_back_to_the_future_trilogy() -> Path:
     for book_id, chapter in zip(book_ids, CHAPTERS):
         create_new_chapter(title=chapter, book_id=book_id)
 
-    for summary, iso, timeline, active, passive, causes, color in SCENES:
+    for summary, iso, timeline, active, passive, causes, color, entry_ids in SCENES:
         create_scene(
             project_dir,
             SceneCreateRequest(
@@ -250,6 +326,7 @@ def seed_back_to_the_future_trilogy() -> Path:
                 timeline_id=timeline,
                 causes=causes,
                 color_tag=color,
+                sourcebook_entry_ids=entry_ids,
             ),
         )
 
@@ -265,6 +342,32 @@ def seed_back_to_the_future_trilogy() -> Path:
         if "error" in result:
             raise RuntimeError(
                 f"could not create sourcebook entry {name}: {result['error']}"
+            )
+
+    # Every DeLorean jump is a Time Travel sourcebook entry: the Convergence Map
+    # timeline panel turns each one into a jump arrow and draws a spawn arc for
+    # each branch-creating jump.  Branch scenes reference the same names in
+    # SCENES so the arrows anchor to real scene dots.
+    for (
+        name,
+        description,
+        origin,
+        destination,
+        creates_branch,
+        timeline,
+    ) in TIME_TRAVELS:
+        result = sourcebook_create_entry(
+            name=name,
+            description=description,
+            category="Time Travel",
+            origin_date=origin,
+            destination_datetime=destination,
+            creates_new_timeline=creates_branch,
+            timeline_id=timeline,
+        )
+        if "error" in result:
+            raise RuntimeError(
+                f"could not create time travel entry {name}: {result['error']}"
             )
 
     return project_dir

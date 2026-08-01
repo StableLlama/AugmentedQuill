@@ -16,8 +16,10 @@ It checks that the scenes feature holds a series with one book per movie, ten
 scenes whose in-story times jump across 1885 / 1955 / 1985 / 2015, that the
 time-travel branches get their own timelines instead of all sharing ``main``,
 that scenes from one movie share a ``color_tag`` so a chronologically sorted
-view groups them by movie, and that the characters whose scenes draw the
-Convergence Map lanes exist.
+view groups them by movie, that the characters whose scenes draw the
+Convergence Map lanes exist, and that every DeLorean jump is modelled as a
+``Time Travel`` sourcebook entry so the Convergence Map can draw the branch
+spawn arcs and jump arrows on its left-hand timeline panel.
 """
 
 import json
@@ -37,13 +39,56 @@ from augmentedquill.testing.back_to_the_future import (
     seed_back_to_the_future_trilogy,
 )
 
-# Every time jump opens a new timeline: only the trilogy's "present" scenes
-# stay on ``main``; the future, the alternate 1985 and the Old West branch.
+# Every outbound DeLorean jump opens a new timeline: only the trilogy's
+# "present" scenes stay on ``main``.  Branch lanes are named
+# ``branch:<jump entry name>`` so the Convergence Map timeline panel can draw
+# each branch's spawn arc from the entry that creates it.
 BRANCH_TIMELINES = {
-    "Hill Valley 2015": "timeline-2015",
-    "Alternate 1985 (1985A)": "timeline-1985a",
-    "Return to 1955": "timeline-1985a",
-    "The Old West, 1885": "timeline-1885",
+    "Arrival in 1955": "branch:1985 -> 1955",
+    "Enchantment Under the Sea": "branch:1985 -> 1955",
+    "Lightning sends Marty home": "branch:1985 -> 1955",
+    "Hill Valley 2015": "branch:1985 -> 2015",
+    "Alternate 1985 (1985A)": "branch:2015 -> 1985A",
+    "Return to 1955": "branch:1985A -> 1955",
+    "The Old West, 1885": "branch:1985 -> 1885",
+}
+
+# One Time Travel sourcebook entry per DeLorean jump.  Every jump is
+# branch-creating; the new timeline is named ``branch:<name>`` (the default the
+# sourcebook service assigns) and the scenes that land on that branch use the
+# same id, so the Convergence Map timeline panel draws a spawn arc + arrow for
+# every jump.
+TIME_TRAVELS: dict[str, dict[str, object]] = {
+    "1985 -> 1955": {
+        "origin_date": "1985-10-26T01:35:00Z",
+        "destination_datetime": "1955-11-05T22:04:00Z",
+        "creates_new_timeline": True,
+        "timeline_id": "main",
+    },
+    "1985 -> 2015": {
+        "origin_date": "1985-10-26T01:15:00Z",
+        "destination_datetime": "2015-10-21T18:00:00Z",
+        "creates_new_timeline": True,
+        "timeline_id": "main",
+    },
+    "2015 -> 1985A": {
+        "origin_date": "2015-10-21T18:00:00Z",
+        "destination_datetime": "1985-10-27T09:00:00Z",
+        "creates_new_timeline": True,
+        "timeline_id": "branch:1985 -> 2015",
+    },
+    "1985A -> 1955": {
+        "origin_date": "1985-10-27T09:00:00Z",
+        "destination_datetime": "1955-11-12T21:30:00Z",
+        "creates_new_timeline": True,
+        "timeline_id": "branch:2015 -> 1985A",
+    },
+    "1985 -> 1885": {
+        "origin_date": "1985-10-26T01:35:00Z",
+        "destination_datetime": "1885-09-02T12:00:00Z",
+        "creates_new_timeline": True,
+        "timeline_id": "main",
+    },
 }
 
 # Per-movie color tags (blue = Part I, orange = Part II, green = Part III).
@@ -132,6 +177,79 @@ class BackToTheFutureTimeTravelTest(TestCase):
         for scene in scenes:
             if scene["summary"] not in BRANCH_TIMELINES:
                 self.assertEqual(scene["timeline_id"], "main")
+
+    def test_creates_a_time_travel_entry_for_every_deleorean_jump(self) -> None:
+        project_dir = seed_back_to_the_future_trilogy()
+        self.assertIsNotNone(project_dir)
+        entries = sourcebook_list_entries()
+        tt_entries = {
+            entry["name"]: entry
+            for entry in entries
+            if entry["category"] == "Time Travel"
+        }
+        # One entry per DeLorean jump across the trilogy.  These drive the
+        # Convergence Map timeline panel: every entry becomes a jump arrow, and
+        # every branch-creating entry draws the branch's spawn arc.
+        self.assertEqual(set(tt_entries), set(TIME_TRAVELS))
+        for name, expected in TIME_TRAVELS.items():
+            entry = tt_entries[name]
+            self.assertEqual(entry["origin_date"], expected["origin_date"])
+            self.assertEqual(
+                entry["destination_datetime"], expected["destination_datetime"]
+            )
+            self.assertEqual(
+                entry["creates_new_timeline"], expected["creates_new_timeline"]
+            )
+            self.assertEqual(entry["timeline_id"], expected["timeline_id"])
+
+    def test_branch_scenes_live_on_the_branch_their_entry_creates(self) -> None:
+        project_dir = seed_back_to_the_future_trilogy()
+        scenes = list_scenes(project_dir)
+        entries = sourcebook_list_entries()
+        branch_scenes = {
+            summary: timeline
+            for summary, timeline in ((s["summary"], s["timeline_id"]) for s in scenes)
+            if timeline != "main"
+        }
+        # Every branch lane is created by exactly one branch-creating entry whose
+        # default destination timeline is ``branch:<name>``.
+        branch_lanes: set[str] = set()
+        for entry in entries:
+            if entry["category"] != "Time Travel" or not entry["creates_new_timeline"]:
+                continue
+            branch_lanes.add(f"branch:{entry['name']}")
+        self.assertEqual(set(branch_scenes.values()), branch_lanes)
+        # Each branch lane holds at least one scene.
+        for lane in branch_lanes:
+            self.assertIn(lane, branch_scenes.values())
+
+    def test_scenes_reference_their_departure_time_travel_entries(self) -> None:
+        project_dir = seed_back_to_the_future_trilogy()
+        scenes = list_scenes(project_dir)
+        by_summary = {scene["summary"]: scene for scene in scenes}
+        # Each jump is referenced only from its departure scene (the scene from
+        # which the DeLorean leaves), so the timeline panel anchors the arrow's
+        # departure to a real scene dot on the source timeline.
+        self.assertIn(
+            "1985 -> 2015", by_summary["Twin Pines Mall"]["sourcebook_entry_ids"]
+        )
+        self.assertIn(
+            "1985 -> 1955", by_summary["The Libyan attack"]["sourcebook_entry_ids"]
+        )
+        self.assertIn(
+            "1985 -> 1885", by_summary["The Libyan attack"]["sourcebook_entry_ids"]
+        )
+        self.assertIn(
+            "2015 -> 1985A", by_summary["Hill Valley 2015"]["sourcebook_entry_ids"]
+        )
+        self.assertIn(
+            "1985A -> 1955",
+            by_summary["Alternate 1985 (1985A)"]["sourcebook_entry_ids"],
+        )
+        # Arrival scenes do not reference the jump: the timeline panel finds the
+        # destination scene by its epoch on the branch timeline.
+        self.assertEqual(by_summary["Return to 1955"]["sourcebook_entry_ids"], [])
+        self.assertEqual(by_summary["The Old West, 1885"]["sourcebook_entry_ids"], [])
 
     def test_scenes_from_one_movie_share_a_color(self) -> None:
         project_dir = seed_back_to_the_future_trilogy()
