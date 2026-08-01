@@ -113,6 +113,7 @@ export const fr = {
     'Web Search Enabled': 'Recherche Web activée',
     'Enable Web Search': 'Activer la recherche Web',
     'Open Scratchpad': 'Ouvrir le bloc-notes',
+    'Toggle AI Chat': 'Afficher/masquer le chat IA',
     'Chat History': 'Historique du chat',
     'Chat Settings': 'Paramètres du chat',
     // ChatComposer

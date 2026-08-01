@@ -127,6 +127,7 @@ export const en = {
     'Web Search Enabled': 'Web Search Enabled',
     'Enable Web Search': 'Enable Web Search',
     'Open Scratchpad': 'Open Scratchpad',
+    'Toggle AI Chat': 'Toggle AI Chat',
     'Chat History': 'Chat History',
     'Chat Settings': 'Chat Settings',
     // ChatComposer

@@ -109,6 +109,7 @@ export const de = {
     'Web Search Enabled': 'Websuche aktiviert',
     'Enable Web Search': 'Websuche aktivieren',
     'Open Scratchpad': 'Entwurfsnotizen öffnen',
+    'Toggle AI Chat': 'KI-Chat umschalten',
     'Chat History': 'Chatverlauf',
     'Chat Settings': 'Chat-Einstellungen',
     // ChatComposer

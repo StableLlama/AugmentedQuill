@@ -14,6 +14,7 @@ This chapter covers the major new features: the **Scenes** system (for planning 
    - [Narrative View](#narrative-view)
    - [Pinboard View](#pinboard-view)
    - [Convergence Map](#convergence-map)
+   - [A Time-Travel Story in Practice](#a-time-travel-story-in-practice)
 4. [Creating and Managing Scenes](#creating-and-managing-scenes)
    - [Scene Properties](#scene-properties)
    - [Causal Ordering](#causal-ordering)
@@ -113,6 +114,27 @@ The **Convergence Map** is designed for **time-travel stories**. It shows scenes
 - Time-travel jumps appear as **U-turns** in the snake path.
 - Scene cards are positioned by chronological story time, not narrative order.
 - Click a character's lane button to highlight their path.
+
+### A Time-Travel Story in Practice
+
+The Convergence Map really earns its keep when your story jumps through time. The map below is the same view rendered for a series built as **one book per movie** of the _Back to the Future_ trilogy — ten scenes spanning 1885, 1955, 1985 and 2015:
+
+![The Convergence Map for a time-travel story, with snake paths that double back when characters jump through time](screenshots/12_scenes_convergence_bttf.png)
+
+> **In this screenshot:** the scenes are laid out chronologically, from 1885 at the top to 2015 at the bottom — but the characters experience them in a different order. Every time a character jumps to a scene that happened _earlier_, their snake doubles back in a **U-turn**. Marty's and Doc's snakes cross themselves again and again as the trilogy rewrites its own history.
+
+Scenes from the same movie share one **colour tag** (blue for Part I, orange for Part II, green for Part III), so even though the map is sorted purely by in-story time you can still tell at a glance which movie each scene belongs to. And because every time jump opens a new timeline, the branch scenes live on their own lanes in the timeline panel on the left — the 2015 future, the alternate 1985, and the Old West of 1885 each get their own lane instead of tangling with `main`.
+
+### How to Specify Time Travel in Your Scenes
+
+The Convergence Map has no special "time travel" flag — it reads three ordinary scene properties and infers the jumps from them:
+
+1. **Set a precise Scene Time on every scene.** The map sorts scenes by their [Scene Time](#scene-properties), _not_ by narrative order or by which book they belong to. A scene in Book 2 can land chronologically before a scene in Book 1 — that mismatch is exactly what draws the U-turn. Use the clock button in the Scene Editor to set an exact date and time (e.g. `1955-11-12T22:04Z`).
+2. **Tag the time-travelling characters.** Put each character who is present in the scene's **Active** or **Passive** characters. The map draws one snake per tagged character, visiting their scenes in _experience_ order (the order the story shows them). When a character's next scene is earlier on the timeline than their previous one, the snake turns back.
+3. **Put branch timelines on their own `timeline_id`.** Scenes in an alternate reality or a separate branch (e.g. an alternate 1985) should use a `timeline_id` other than `main`. The left-hand timeline panel groups branches separately so alternate-reality scenes don't tangle with the main timeline.
+4. **Use colour tags to group scenes by story arc.** Setting the same **Colour Tag** on every scene of a movie, volume or act makes a chronologically sorted view readable: readers can immediately tell which scenes belong together even when they're scattered across the timeline.
+
+For characters who travel as individuals — including a time traveller meeting their younger self in the same scene — see [Per-Scene Personal Datetime Overrides](#per-scene-personal-datetime-overrides) and the [Sourcebook Time Travel Features](#sourcebook-time-travel-features).
 
 ---
 

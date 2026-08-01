@@ -32,6 +32,7 @@ const BACKEND = 'http://127.0.0.1:28010';
 const FRONTEND = 'http://127.0.0.1:28011';
 const DEMO_PROJECT = 'The Undrawn Valley';
 const SERIES_PROJECT = 'The Signal Fire';
+const BTTF_PROJECT = 'Back to the Future';
 
 // docs/user_manual/screenshots relative to this spec file
 // (src/frontend/tests/docs-screenshots -> repo root is four levels up).
@@ -56,7 +57,7 @@ interface ScreenshotDef {
   /** Capture strategy. */
   shot: Shot;
   /** Project to load first (defaults to the demo novel). */
-  project?: 'demo' | 'series';
+  project?: 'demo' | 'series' | 'bttf';
   /**
    * Optional viewport to size the capture window to.  Dialog screenshots that
    * fill the window (metadata editor, etc.) should match the dialog's natural
@@ -210,6 +211,35 @@ async function hidePanels(page: Page): Promise<void> {
       );
     });
     await page.waitForTimeout(500);
+  }
+}
+
+/**
+ * Show the AI Chat panel with a fixed, deterministic conversation loaded.
+ *
+ * The chat panel is a headline feature, so captures show it rather than hiding
+ * it.  To keep re-captures pixel-stable (so the screenshot dedup keeps the
+ * existing file), load a fixed seeded session instead of whatever the app
+ * auto-selects: the seeded messages and context-usage pill are static, so the
+ * panel renders identically every run.  Pass no session name to just reveal
+ * the panel in its (deterministic) empty welcome state.
+ */
+async function showChatWithSession(page: Page, sessionName?: string): Promise<void> {
+  // Reveal the panel if a previous capture left it closed.
+  const open = await page
+    .locator('[aria-label="Toggle AI Chat"]:has-text("Hide")')
+    .count();
+  if (open === 0) {
+    const toggle = page.locator('[aria-label="Toggle AI Chat"]').first();
+    await toggle.click({ timeout: 5000, force: true }).catch(async () => {
+      await toggle.evaluate((el: SVGElement | HTMLElement) =>
+        (el as HTMLElement).click()
+      );
+    });
+    await page.waitForTimeout(600);
+  }
+  if (sessionName) {
+    await loadChatSession(page, sessionName);
   }
 }
 
@@ -1036,6 +1066,9 @@ const screenshotDefs: ScreenshotDef[] = [
       await reset(ctx);
       await setWorkspaceMode(ctx.page, 'scenes');
       await setScenesView(ctx.page, 'Narrative');
+      // Show the chat with a fixed session: it is a headline feature, and the
+      // seeded conversation renders identically so re-captures stay stable.
+      await showChatWithSession(ctx.page, 'Plan the opening chapters');
     },
   },
   {
@@ -1048,6 +1081,9 @@ const screenshotDefs: ScreenshotDef[] = [
       await reset(ctx);
       await setWorkspaceMode(ctx.page, 'scenes');
       await setScenesView(ctx.page, 'Pinboard');
+      // Show the chat with a fixed session: it is a headline feature, and the
+      // seeded conversation renders identically so re-captures stay stable.
+      await showChatWithSession(ctx.page, 'Plan the opening chapters');
     },
   },
   {
@@ -1060,6 +1096,9 @@ const screenshotDefs: ScreenshotDef[] = [
       await reset(ctx);
       await setWorkspaceMode(ctx.page, 'scenes');
       await setScenesView(ctx.page, 'Chronological');
+      // Show the chat with a fixed session: it is a headline feature, and the
+      // seeded conversation renders identically so re-captures stay stable.
+      await showChatWithSession(ctx.page, 'Plan the opening chapters');
     },
   },
   {
@@ -1072,6 +1111,43 @@ const screenshotDefs: ScreenshotDef[] = [
       await reset(ctx);
       await setWorkspaceMode(ctx.page, 'scenes');
       await setScenesView(ctx.page, 'Convergence Map');
+      // Show the chat with a fixed session: it is a headline feature, and the
+      // seeded conversation renders identically so re-captures stay stable.
+      await showChatWithSession(ctx.page, 'Plan the opening chapters');
+    },
+  },
+  {
+    id: '12_scenes_convergence_bttf',
+    marker:
+      'The Convergence Map for a time-travel story, with snake paths that double back when characters jump through time',
+    shot: { kind: 'fullPage' },
+    // Tall viewport so all ten scenes across 1885/1955/1985/2015 stay visible.
+    viewport: { width: 1700, height: 1700 },
+    project: 'bttf',
+    setup: async (ctx: CaptureCtx) => {
+      await reset(ctx);
+      await setWorkspaceMode(ctx.page, 'scenes');
+      await setScenesView(ctx.page, 'Convergence Map');
+      // The BTTF project has no seeded chats, so reveal the panel in its empty
+      // (deterministic) welcome state rather than loading a session.
+      await showChatWithSession(ctx.page);
+      // Sanity check: every scene card must be inside the viewport or the
+      // full-page capture would silently clip the time-travel story.
+      const cards = ctx.page.locator('[aria-label*="ID "]');
+      const count = await cards.count();
+      const viewport = ctx.page.viewportSize();
+      const last =
+        count > 0
+          ? await cards
+              .nth(count - 1)
+              .boundingBox()
+              .catch(() => null)
+          : null;
+      if (count < 10 || !last || last.y + last.height > (viewport?.height ?? 0)) {
+        throw new Error(
+          `BTTF convergence scenes not all visible (cards=${count}, lastBottom=${last ? Math.round(last.y + last.height) : 'n/a'})`
+        );
+      }
     },
   },
   {
@@ -1107,6 +1183,7 @@ const screenshotDefs: ScreenshotDef[] = [
       // Annotation panel appear automatically over the editor; fail loudly if
       // it does not (so we never ship an empty annotation screenshot).
       await reset(ctx);
+      await showChatWithSession(ctx.page, 'Plan the opening chapters');
       await ctx.page
         .locator('[aria-label="Annotation panel"]')
         .first()
@@ -1144,7 +1221,12 @@ for (const def of screenshotDefs) {
     }
     const ctx: CaptureCtx = {
       page,
-      project: def.project === 'series' ? SERIES_PROJECT : DEMO_PROJECT,
+      project:
+        def.project === 'series'
+          ? SERIES_PROJECT
+          : def.project === 'bttf'
+            ? BTTF_PROJECT
+            : DEMO_PROJECT,
     };
     console.log(`\n>>> ${def.id}`);
     try {

@@ -18,6 +18,7 @@
  *   npx playwright test --config=docs-screenshots.config.ts
  */
 
+import { execSync } from 'child_process';
 import { defineConfig } from '@playwright/test';
 import * as os from 'os';
 import * as path from 'path';
@@ -94,6 +95,8 @@ function writePlaceholderImage(filePath: string): void {
 // Real artwork used by the Project Images screenshots, taken from the docs
 // assets so the dialog shows meaningful cover/portrait images.
 const CONFIG_DIR = path.dirname(fileURLToPath(import.meta.url));
+// Repo root (config lives in src/frontend) — used to reach the venv Python.
+const REPO_ROOT = path.resolve(CONFIG_DIR, '..', '..');
 const MOCKUP_DIR = path.resolve(CONFIG_DIR, '../../docs/user_manual/assets/mockup');
 
 /** Copy a mockup image into a project images dir, falling back to a placeholder. */
@@ -118,6 +121,7 @@ function writeDemoImage(imagesDir: string, name: string): void {
 
 const DEMO_PROJECT_NAME = 'The Undrawn Valley';
 const SERIES_PROJECT_NAME = 'The Signal Fire';
+const BTTF_PROJECT_NAME = 'Back to the Future';
 
 /** Write the demo novel's image metadata (titles + descriptions). */
 function writeDemoImageMetadata(imagesDir: string): void {
@@ -679,6 +683,22 @@ const seriesProjectRoot = path.join(TMP_DIR, 'projects', SERIES_PROJECT_NAME);
 createDemoNovelProject(demoProjectRoot);
 createDemoSeriesProject(seriesProjectRoot);
 
+// The Back to the Future demo story is created through the real backend
+// services — the single shared seed that the backend test
+// (tests/unit/services/test_scene_time_travel.py) also exercises — so the
+// Convergence Map screenshot verifies that creation code.  Run it against the
+// same temp data dir the backend will use.
+execSync(`${REPO_ROOT}/venv/bin/python -m augmentedquill.testing.back_to_the_future`, {
+  cwd: REPO_ROOT,
+  env: {
+    ...process.env,
+    AUGQ_USER_DATA_DIR: TMP_DIR,
+    AUGQ_PROJECTS_ROOT: path.join(TMP_DIR, 'projects'),
+    AUGQ_PROJECTS_REGISTRY: path.join(configDir, 'projects.json'),
+  },
+  stdio: 'pipe',
+});
+
 // Persist the temp dir + demo project names at a fixed location so the
 // capture spec and the teardown can locate them without recomputing the
 // config evaluation (the temp dir itself is a random mkdtemp path).
@@ -689,6 +709,7 @@ fs.writeFileSync(
     tmpDir: TMP_DIR,
     demoProject: DEMO_PROJECT_NAME,
     seriesProject: SERIES_PROJECT_NAME,
+    bttfProject: BTTF_PROJECT_NAME,
   })
 );
 
