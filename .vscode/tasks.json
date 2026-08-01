@@ -131,7 +131,7 @@
       }
     },
     {
-      "label": "docs: screenshots: capture",
+      "label": "docs: screenshots: capture (incremental)",
       "type": "shell",
       "command": "npx playwright test --config=docs-screenshots.config.ts tests/docs-screenshots/capture.spec.ts",
       "options": {
@@ -142,7 +142,21 @@
         "reveal": "always",
         "clear": true
       },
-      "detail": "Boots an isolated AugmentedQuill + mock LLM, seeds a demo project, and captures every documentation screenshot into docs/user_manual/screenshots/. Also writes the .screenshot-manifest.json used by the docs updater."
+      "detail": "Captures documentation screenshots, keeping the existing file whenever a re-capture is pixel-identical (no git-diff noise). Use the 'force' variant to overwrite every screenshot."
+    },
+    {
+      "label": "docs: screenshots: capture (force)",
+      "type": "shell",
+      "command": "AUGQ_FORCE_SCREENSHOTS=1 npx playwright test --config=docs-screenshots.config.ts tests/docs-screenshots/capture.spec.ts",
+      "options": {
+        "cwd": "${workspaceFolder}/src/frontend"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "clear": true
+      },
+      "detail": "Forces regeneration of every documentation screenshot, overwriting all files (bypasses the keep-if-identical dedup)."
     },
     {
       "label": "docs: screenshots: update-docs",
@@ -160,7 +174,10 @@
     },
     {
       "label": "docs: screenshots",
-      "dependsOn": ["docs: screenshots: capture", "docs: screenshots: update-docs"],
+      "dependsOn": [
+        "docs: screenshots: capture (incremental)",
+        "docs: screenshots: update-docs"
+      ],
       "dependsOrder": "sequence",
       "group": {
         "kind": "build",

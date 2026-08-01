@@ -63,6 +63,10 @@ Click the **workspace mode buttons** in the top header bar to switch between lay
 
 Once you're in **Scenes** or **Split** mode, use the segmented buttons labelled **Pinboard**, **Narrative**, **Chronological**, and **Convergence Map** to switch between view types.
 
+![The Scenes workspace in Narrative view, with scene cards grouped under their chapters and causal links](screenshots/12_scenes_narrative.png)
+
+> **In this screenshot:** the Scenes workspace in **Narrative** view. The view-mode buttons sit in the toolbar at the top, scene cards are grouped under their chapters, and arrows show which scenes cause which.
+
 ### Narrative View
 
 The **Narrative View** (default) displays all scenes as a vertical list. Divider lines appear at chapter and book boundaries so you can see how scenes map onto your story structure.
@@ -76,6 +80,10 @@ The **Narrative View** (default) displays all scenes as a vertical list. Divider
 
 The **Pinboard View** provides an infinite canvas where you can freely position scene cards.
 
+![The Scenes workspace in Pinboard view, with freely positioned scene cards linked by causal arrows](screenshots/12_scenes_pinboard.png)
+
+> **In this screenshot:** the **Pinboard** — cards are placed freely on the canvas and linked with causal arrows. Alt+drag from one card toward another draws a new arrow.
+
 - **Pan:** Middle-mouse button drag, or **Alt+drag** on the background.
 - **Zoom:** Scroll wheel.
 - **Move cards:** Drag any card to reposition it.
@@ -84,9 +92,21 @@ The **Pinboard View** provides an infinite canvas where you can freely position 
 - **Lasso select:** Drag on empty space to draw a selection rectangle.
 - Same multi-select shortcuts as Narrative View (**Ctrl+click**, **Shift+click**).
 
+### Chronological View
+
+The **Chronological** view sorts every scene by its **in-story time** (the _Scene Time_ you set in the Scene Editor) rather than by narrative order. This is the fastest way to spot pacing problems, timeline conflicts, or scenes that are dated incorrectly.
+
+![The Scenes workspace in Chronological view, sorting scenes by their in-story time](screenshots/12_scenes_chronological.png)
+
+> **In this screenshot:** the **Chronological** view — the same cards as the Narrative view, re-sorted by when each scene happens in the story, with scenes that share a time slot grouped together.
+
 ### Convergence Map
 
 The **Convergence Map** is designed for **time-travel stories**. It shows scenes sorted by their in-story time, with one coloured snake path per sourcebook character drawn behind the cards.
+
+![The Convergence Map, with character lanes and snake paths tracing each character through the timeline](screenshots/12_scenes_convergence.png)
+
+> **In this screenshot:** the **Convergence Map**. Each character gets a coloured lane with a snake path that traces how they move through the story's timeline. When a character travels in time, the path doubles back as a U-turn.
 
 - Each character or sourcebook entry gets its own **coloured lane** at the top.
 - The snake shows the character's **experience order** through the story.
@@ -139,6 +159,10 @@ Each scene can contain **Beats** — smaller sub-units of action within the scen
 
 **Double-click** any scene card, or ask the AI to edit a scene, to open the **Scene Editor Dialog**. This provides a full form where you can:
 
+![Scene Editor Dialog with summary, beats, characters, time, location, and color tag](screenshots/12_scene_editor.png)
+
+> **In this screenshot:** the **Scene Editor** for one scene — summary, beats, active/passive characters, scene time, location, color tag, and causal links, all in a single form.
+
 - Edit the **summary**, **location**, **time**, and **status**.
 - Manage **Active** and **Passive character** lists.
 - Assign a **color tag** for visual organization.
@@ -151,6 +175,10 @@ Each scene can contain **Beats** — smaller sub-units of action within the scen
 ## Inline Annotations
 
 **Annotations** let you attach notes, comments, or reminders to specific ranges of text. They appear as coloured highlights in the editor.
+
+![The editor showing inline annotation highlights with the Annotation panel listing them on the right](screenshots/12_annotations_editor.png)
+
+> **In this screenshot:** two inline annotations highlighted in the prose, with the **Annotation panel** open on the right listing each comment. Click an entry to jump to its highlight in the text.
 
 ### Adding an Annotation
 

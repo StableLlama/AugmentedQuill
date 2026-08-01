@@ -109,29 +109,18 @@ function writeDemoImage(imagesDir: string, name: string): void {
 
 // ---------------------------------------------------------------------------
 // Demo project seeding.
-// The "Screenshots Demo" novel exercises the writing/metadata/sourcebook/
-// search screenshots.  The "Screenshots Series" project exercises the
-// book/books UI.  Content is deliberately generic and neutral.
+// The demo novel (a young cartographer's hunt for a valley that no survey
+// ever recorded) exercises the writing/metadata/sourcebook/search
+// screenshots.  The series project (a lighthouse keeper's daughter) exercises
+// the book/books UI.  Titles are deliberately non-generic so the captures
+// read like a real project rather than a fixture.
 // ---------------------------------------------------------------------------
 
-const DEMO_PROJECT_NAME = 'Screenshots Demo';
-const SERIES_PROJECT_NAME = 'Screenshots Series';
+const DEMO_PROJECT_NAME = 'The Undrawn Valley';
+const SERIES_PROJECT_NAME = 'The Signal Fire';
 
-/**
- * Create a rich novel project on disk (the proven fullstack pattern: write
- * story.json + chapter files before the backend scans the projects folder).
- */
-function createDemoNovelProject(root: string): void {
-  const chaptersDir = path.join(root, 'chapters');
-  const imagesDir = path.join(root, 'images');
-  fs.mkdirSync(chaptersDir, { recursive: true });
-
-  writeDemoImage(imagesDir, 'cover.png');
-  writeDemoImage(imagesDir, 'portrait.png');
-  writeDemoImage(imagesDir, 'elias.png');
-  writeDemoImage(imagesDir, 'valley.png');
-  writeDemoImage(imagesDir, 'surveyor_seal.png');
-
+/** Write the demo novel's image metadata (titles + descriptions). */
+function writeDemoImageMetadata(imagesDir: string): void {
   // Image metadata: give the placeholder images titles + descriptions so the
   // Project Images cards look complete and the "Create prompt" action (which
   // requires a description) is enabled.
@@ -172,7 +161,10 @@ function createDemoNovelProject(root: string): void {
       2
     )
   );
+}
 
+/** Write the demo novel's story.json with chapters, scenes, and sourcebook. */
+function writeDemoNovelStoryJson(root: string): void {
   fs.writeFileSync(
     path.join(root, 'story.json'),
     JSON.stringify(
@@ -229,26 +221,175 @@ function createDemoNovelProject(root: string): void {
           1: {
             id: 1,
             summary: 'Nora finds the map in the library',
-            beats: [],
+            beats: [
+              { id: 's1-b1', text: 'Nora opens the book on the reading table' },
+              { id: 's1-b2', text: 'She unfolds the map from inside the pages' },
+            ],
             active_characters: ['Nora'],
             passive_characters: ['Archivist'],
             causes: [],
+            scene_time: {
+              temporal_zoned_datetime: '1924-06-03T14:00:00+00:00[UTC]',
+            },
+            timeline_id: 'main',
+            location: 'County Library, Reading Room',
             status: 'active',
-            pinboard_x: 100,
-            pinboard_y: 100,
+            color_tag: 'teal',
+            pinboard_x: 120,
+            pinboard_y: 80,
           },
           2: {
             id: 2,
             summary: 'The archivist warns her away',
-            beats: [],
+            beats: [
+              { id: 's2-b1', text: 'The archivist notices the open book' },
+              { id: 's2-b2', text: 'He warns her the valley is not on any chart' },
+            ],
             active_characters: ['Nora', 'Archivist'],
             passive_characters: [],
-            causes: [],
+            causes: [1],
+            scene_time: {
+              temporal_zoned_datetime: '1924-06-03T15:30:00+00:00[UTC]',
+            },
+            timeline_id: 'main',
+            location: 'County Library, Archives',
             status: 'active',
-            pinboard_x: 320,
-            pinboard_y: 100,
+            color_tag: 'orange',
+            pinboard_x: 440,
+            pinboard_y: 80,
+          },
+          3: {
+            id: 3,
+            summary: 'Nora shows Elias the map',
+            beats: [
+              { id: 's3-b1', text: 'Nora lays the map on the kitchen table' },
+              { id: 's3-b2', text: 'Elias jokes about selling it' },
+            ],
+            active_characters: ['Nora', 'Elias'],
+            passive_characters: [],
+            causes: [1],
+            scene_time: {
+              temporal_zoned_datetime: '1924-06-04T08:00:00+00:00[UTC]',
+            },
+            timeline_id: 'main',
+            location: 'Hale House, Kitchen',
+            status: 'draft',
+            color_tag: 'yellow',
+            pinboard_x: 120,
+            pinboard_y: 280,
+          },
+          4: {
+            id: 4,
+            summary: 'The argument over the map',
+            beats: [
+              { id: 's4-b1', text: 'Elias insists the valley means money' },
+              { id: 's4-b2', text: 'Nora refuses to sell' },
+            ],
+            active_characters: ['Nora', 'Elias'],
+            passive_characters: [],
+            causes: [3],
+            scene_time: {
+              temporal_zoned_datetime: '1924-06-04T19:00:00+00:00[UTC]',
+            },
+            timeline_id: 'main',
+            location: 'Hale House, Kitchen',
+            status: 'draft',
+            color_tag: 'red',
+            pinboard_x: 440,
+            pinboard_y: 280,
+          },
+          5: {
+            id: 5,
+            summary: 'The empty road',
+            beats: [{ id: 's5-b1', text: 'The road narrows, then stops at a hedge' }],
+            active_characters: ['Nora'],
+            passive_characters: ['Elias'],
+            causes: [4],
+            scene_time: {
+              temporal_zoned_datetime: '1924-06-10T11:00:00+00:00[UTC]',
+            },
+            timeline_id: 'main',
+            location: 'Old County Road',
+            status: 'active',
+            color_tag: 'green',
+            pinboard_x: 120,
+            pinboard_y: 480,
+          },
+          6: {
+            id: 6,
+            summary: 'Crossing the hedge',
+            beats: [{ id: 's6-b1', text: 'Nora finds the gate that has no hinges' }],
+            active_characters: ['Nora'],
+            passive_characters: [],
+            causes: [5],
+            scene_time: {
+              temporal_zoned_datetime: '1924-06-10T11:45:00+00:00[UTC]',
+            },
+            timeline_id: 'main',
+            location: 'The Hedge Gate',
+            status: 'active',
+            color_tag: 'green',
+            pinboard_x: 440,
+            pinboard_y: 480,
+          },
+          7: {
+            id: 7,
+            summary: 'The unwritten valley',
+            beats: [
+              { id: 's7-b1', text: 'Farms open like a page being turned' },
+              { id: 's7-b2', text: 'The innkeeper knows the map' },
+            ],
+            active_characters: ['Nora', 'The Innkeeper'],
+            passive_characters: [],
+            causes: [6],
+            scene_time: {
+              temporal_zoned_datetime: '1924-06-10T12:15:00+00:00[UTC]',
+            },
+            timeline_id: 'main',
+            location: 'The Unwritten Valley, Village Well',
+            status: 'active',
+            color_tag: 'blue',
+            pinboard_x: 120,
+            pinboard_y: 680,
+          },
+          8: {
+            id: 8,
+            summary: 'The surveyors make camp',
+            beats: [
+              { id: 's8-b1', text: 'A cartographic party camps at the county line' },
+            ],
+            active_characters: ['Elias'],
+            passive_characters: ['Nora'],
+            causes: [7],
+            scene_time: {
+              temporal_zoned_datetime: '1924-06-15T09:00:00+00:00[UTC]',
+            },
+            timeline_id: 'main',
+            location: 'County Line Camp',
+            status: 'draft',
+            color_tag: 'purple',
+            pinboard_x: 760,
+            pinboard_y: 680,
           },
         },
+        annotations: [
+          {
+            id: 'annot-shadow',
+            comment:
+              'The map is “a shadow” — foreshadowing that the valley is barely remembered and easily lost.',
+            scope_type: 'chapter',
+            chapter_id: '1',
+            book_id: null,
+          },
+          {
+            id: 'annot-archivist',
+            comment:
+              'The archivist plants the central conflict: the valley exists but must not be spoken of.',
+            scope_type: 'chapter',
+            chapter_id: '1',
+            book_id: null,
+          },
+        ],
         sourcebook: {
           Nora: {
             description:
@@ -258,6 +399,7 @@ function createDemoNovelProject(root: string): void {
             images: ['portrait.png'],
             keywords: ['cartographer', 'stubborn', 'nora'],
             relations: [],
+            origin_date: '1899-03-12T00:00:00+00:00[UTC]',
             creates_new_timeline: false,
             timeline_id: 'main',
           },
@@ -269,6 +411,19 @@ function createDemoNovelProject(root: string): void {
             images: ['elias.png'],
             keywords: ['brother', 'pragmatic', 'elias'],
             relations: [],
+            origin_date: '1895-09-02T00:00:00+00:00[UTC]',
+            creates_new_timeline: false,
+            timeline_id: 'main',
+          },
+          'The Innkeeper': {
+            description:
+              'A quiet woman in her fifties who has kept the Blue Roof Inn for thirty years. She recognizes the map at once and knows exactly what it is not saying.',
+            category: 'Character',
+            synonyms: ['The Blue Roof Innkeeper'],
+            images: [],
+            keywords: ['innkeeper', 'valley', 'map'],
+            relations: [],
+            origin_date: '1890-01-05T00:00:00+00:00[UTC]',
             creates_new_timeline: false,
             timeline_id: 'main',
           },
@@ -300,18 +455,31 @@ function createDemoNovelProject(root: string): void {
       2
     )
   );
+}
 
-  // Chapter prose: distinct, single-paragraph text per chapter.
-  const chapterText = [
-    'The library smelled of dust and old glue. Nora had come for a quiet corner to finish her field notes, but the book on the reading table was already open, and inside it, folded so thin it was almost a shadow, lay a map of a valley that no survey had ever recorded.\n',
-    'The road narrowed as it climbed, then stopped. Not faded — stopped. A dense hedge ran across the way where the map promised the route would continue, and beyond it the hills were green and ordinary and entirely unmarked.\n',
-    'The hedge parted at a gate that had no hinges. On the far side, the valley opened like a page being turned: farms in tidy rows, a village with a blue roof on the inn, and a woman at the well who looked up and knew the map the moment she saw it.\n',
+/** Write chapter prose with inline scene/annotation markers. */
+function writeDemoChapterProse(chaptersDir: string): void {
+  // Chapter prose with inline scene/annotation markers so the Scenes and
+  // Annotations screenshots have linked, annotated text.
+  const chapterProse = [
+    // Chapter 1 — scenes 1 & 2, plus two annotations.
+    '<!--scene:1:start-->The library smelled of dust and old glue. Nora had come for a quiet corner to finish her field notes, but the book on the reading table was already open, and inside it, <!--annotation:annot-shadow:start-->folded so thin it was almost a shadow<!--annotation:annot-shadow:end-->, lay a map of a valley that no survey had ever recorded.<!--scene:1:end-->\n\n' +
+      'Nora touched the paper and felt its age, then closed the book as if she had never seen it.\n\n' +
+      '<!--scene:2:start-->The archivist looked up from his ledger as she reached the door. "That book was returned years ago," he said, "and the valley it shows is not on any chart I have seen. Best leave it where it lies." <!--annotation:annot-archivist:start-->The warning settled on Nora like dust<!--annotation:annot-archivist:end-->, but it only made her fold the map more carefully.<!--scene:2:end-->\n',
+    // Chapter 2 — scenes 5 & 6.
+    '<!--scene:5:start-->The road narrowed as it climbed, then stopped. Not faded — stopped. A dense hedge ran across the way where the map promised the route would continue, and beyond it the hills were green and ordinary and entirely unmarked.<!--scene:5:end-->\n\n' +
+      '<!--scene:6:start-->Nora walked the hedge line until she found a gate that had no hinges, and stepped through before she could lose her nerve.<!--scene:6:end-->\n',
+    // Chapter 3 — scene 7.
+    '<!--scene:7:start-->The hedge parted at a gate that had no hinges. On the far side, the valley opened like a page being turned: farms in tidy rows, a village with a blue roof on the inn, and a woman at the well who looked up and knew the map the moment she saw it.<!--scene:7:end-->\n',
   ];
-  chapterText.forEach((text: string, index: number) => {
+  chapterProse.forEach((text: string, index: number) => {
     const filename = `000${index + 1}.txt`;
     fs.writeFileSync(path.join(chaptersDir, filename), text);
   });
+}
 
+/** Seed chat sessions so the Chat History panel and chat screenshots look real. */
+function seedDemoChatSessions(root: string): void {
   // Seed a few chat sessions so the Chat History panel and the chat
   // screenshots have realistic-looking conversation state.
   const chatsDir = path.join(root, 'chats');
@@ -408,6 +576,26 @@ function createDemoNovelProject(root: string): void {
       );
     }
   );
+}
+
+/**
+ * Create a rich novel project on disk (the proven fullstack pattern: write
+ * story.json + chapter files before the backend scans the projects folder).
+ */
+function createDemoNovelProject(root: string): void {
+  const chaptersDir = path.join(root, 'chapters');
+  const imagesDir = path.join(root, 'images');
+  fs.mkdirSync(chaptersDir, { recursive: true });
+
+  writeDemoImage(imagesDir, 'cover.png');
+  writeDemoImage(imagesDir, 'portrait.png');
+  writeDemoImage(imagesDir, 'elias.png');
+  writeDemoImage(imagesDir, 'valley.png');
+  writeDemoImage(imagesDir, 'surveyor_seal.png');
+  writeDemoImageMetadata(imagesDir);
+  writeDemoNovelStoryJson(root);
+  writeDemoChapterProse(chaptersDir);
+  seedDemoChatSessions(root);
 }
 
 /**

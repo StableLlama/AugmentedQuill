@@ -25,12 +25,13 @@
 import { test, type Page } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
+import { PNG } from 'pngjs';
 import { fileURLToPath } from 'url';
 
 const BACKEND = 'http://127.0.0.1:28010';
 const FRONTEND = 'http://127.0.0.1:28011';
-const DEMO_PROJECT = 'Screenshots Demo';
-const SERIES_PROJECT = 'Screenshots Series';
+const DEMO_PROJECT = 'The Undrawn Valley';
+const SERIES_PROJECT = 'The Signal Fire';
 
 // docs/user_manual/screenshots relative to this spec file
 // (src/frontend/tests/docs-screenshots -> repo root is four levels up).
@@ -76,29 +77,106 @@ interface CaptureCtx {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Select a project via the backend API, reload, and wait for the editor. */
+/**
+ * Select a project via the backend API, reload, and wait for the editor.
+ *
+ * Boots the app once, wipes persisted UI state (workspace mode, scenes view,
+ * panel prefs), then selects the project and reloads.  Without the wipe, an
+ * earlier capture that switched to Scenes/Split mode would make the next
+ * capture boot without an editor (no `.cm-content`).  A retry loop absorbs
+ * cold Vite/backend spin-up so slow first loads do not fail the run.
+ */
 async function selectProject(page: Page, name: string): Promise<void> {
+  // Establish the origin, then wipe persisted panel preferences so the capture
+  // boots into a clean default UI state.
   await page.goto(`${FRONTEND}`);
-  await page.waitForTimeout(700);
+  await page.waitForTimeout(600);
+  await page.evaluate(() => localStorage.clear()).catch(() => undefined);
+  await page.goto(`${FRONTEND}`);
+  await page.waitForTimeout(800);
+  // Select the project via the backend API.
   await page.evaluate(
     async (args: { backend: string; projectName: string }) => {
-      await fetch(`${args.backend}/api/v1/projects/select`, {
+      const res = await fetch(`${args.backend}/api/v1/projects/select`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: args.projectName }),
       });
+      if (!res.ok) throw new Error(`select failed: ${res.status}`);
     },
     { backend: BACKEND, projectName: name }
   );
-  await page.goto(`${FRONTEND}`);
-  await page.waitForSelector('.cm-content', { timeout: 20000 });
+  // Reset the per-project view state (persisted server-side in
+  // view_state.json): an earlier capture that switched to Scenes/Split mode
+  // would otherwise make this capture boot without the editor (no
+  // `.cm-content`).  Page mode + chapter 1 keeps every capture deterministic.
+  const encoded = encodeURIComponent(name);
+  await page
+    .evaluate(
+      async (args: { backend: string; path: string }) => {
+        const res = await fetch(`${args.backend}${args.path}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            current_chapter_id: '1',
+            scroll_position: 0,
+            workspace_mode: 'page',
+            scenes_view_type: 'narrative',
+          }),
+        });
+        if (!res.ok) throw new Error(`view-state reset failed: ${res.status}`);
+      },
+      { backend: BACKEND, path: `/api/v1/projects/${encoded}/view-state` }
+    )
+    .catch(() => undefined);
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await page.goto(`${FRONTEND}`);
+    try {
+      await page.waitForSelector('.cm-content', { timeout: 30000 });
+      break;
+    } catch {
+      if (attempt === 2) throw new Error('editor never rendered');
+    }
+  }
   await page.waitForTimeout(1200);
+}
+
+/** Switch the editor to Visual (WYSIWYG) mode — writers see prose, not markup. */
+async function switchToVisualMode(page: Page): Promise<void> {
+  const visual = page.locator('button:has-text("Visual")').first();
+  if (await visual.isVisible().catch(() => false)) {
+    await visual.click({ force: true }).catch(async () => {
+      await visual.evaluate((el: SVGElement | HTMLElement) =>
+        (el as HTMLElement).click()
+      );
+    });
+    await page.waitForTimeout(400);
+    return;
+  }
+  // Narrow screens collapse the view modes into a dropdown: open it, then pick
+  // Visual from the menu.
+  const trigger = page
+    .locator(
+      'button:visible:has-text("Raw"), button:visible:has-text("MD"), button:visible:has-text("Visual")'
+    )
+    .first();
+  try {
+    await trigger.click({ force: true });
+    await page.waitForTimeout(300);
+    const item = page.locator('[role="menu"] button:has-text("Visual")').first();
+    await item.click({ force: true });
+    await page.waitForTimeout(400);
+  } catch {
+    // Best effort — the editor is not prominent in narrow captures.
+  }
 }
 
 /** Reset to a known clean project state (fresh reload each time). */
 async function reset(ctx: CaptureCtx): Promise<void> {
   await selectProject(ctx.page, ctx.project);
   await ensureSidebarOpen(ctx.page);
+  // Writers want the "nice" WYSIWYG view; show rendered prose by default.
+  await switchToVisualMode(ctx.page);
 }
 
 /**
@@ -263,13 +341,116 @@ async function loadChatSession(page: Page, sessionName: string): Promise<void> {
   await page.waitForTimeout(1200);
 }
 
+/** Switch the workspace between Page / Scenes / Split modes. */
+async function setWorkspaceMode(
+  page: Page,
+  mode: 'page' | 'scenes' | 'split'
+): Promise<void> {
+  const label =
+    mode === 'page' ? 'Page Mode' : mode === 'scenes' ? 'Scenes Mode' : 'Split Mode';
+  await clickFirst(page, [`[title="${label}"]`, `[aria-label="${label}"]`], label);
+  await page.waitForTimeout(800);
+}
+
+/** Select a scenes view: Pinboard / Narrative / Chronological / Convergence Map. */
+async function setScenesView(page: Page, label: string): Promise<void> {
+  const btn = page
+    .locator(`[role="group"][aria-label="View mode"] button:has-text("${label}")`)
+    .first();
+  try {
+    await btn.click({ timeout: 8000, force: true });
+  } catch {
+    await btn.evaluate((el: SVGElement | HTMLElement) => (el as HTMLElement).click());
+  }
+  await page.waitForTimeout(1000);
+}
+
+// ---------------------------------------------------------------------------
+// PNG utilities: strip metadata (EXIF / creation time / text chunks) via
+// pngjs and skip redundant re-captures so the git diff stays clean.  Set
+// AUGQ_FORCE_SCREENSHOTS=1 to overwrite screenshots unconditionally.
+// ---------------------------------------------------------------------------
+
+/** Re-encode a PNG via pngjs, dropping all metadata (EXIF / text chunks). */
+function stripPngMetadata(buffer: Buffer): Buffer {
+  return PNG.sync.write(PNG.sync.read(buffer));
+}
+
+/**
+ * True when a PNG carries ancillary (metadata) chunks.  Only reads the chunk
+ * type bytes; it does not decode the image.
+ */
+function hasAncillaryChunks(png: Buffer): boolean {
+  let offset = 8;
+  while (offset + 12 <= png.length) {
+    const length = png.readUInt32BE(offset);
+    const type = png.toString('ascii', offset + 4, offset + 8);
+    if (!['IHDR', 'PLTE', 'IDAT', 'IEND'].includes(type)) return true;
+    offset = offset + 12 + length;
+  }
+  return false;
+}
+
+/**
+ * True when two PNGs are effectively identical (only rounding-level channel
+ * differences on a tiny fraction of pixels).  Keeps the existing file and
+ * avoids git-diff noise when a re-capture produced the same image.
+ */
+function pngsEquivalent(a: Buffer, b: Buffer): boolean {
+  let da: PNG;
+  let db: PNG;
+  try {
+    da = PNG.sync.read(a);
+    db = PNG.sync.read(b);
+  } catch {
+    return false;
+  }
+  if (da.width !== db.width || da.height !== db.height) return false;
+  let differing = 0;
+  const total = da.data.length;
+  for (let i = 0; i < total; i++) {
+    if (Math.abs(da.data[i] - db.data[i]) > 2) differing += 1;
+  }
+  return differing / total < 0.005;
+}
+
+/**
+ * Write a screenshot: strip metadata, and unless a re-capture is forced, keep
+ * the existing file when the new image is effectively identical so the git
+ * diff stays clean.  Set AUGQ_FORCE_SCREENSHOTS=1 to overwrite unconditionally.
+ */
+async function writeScreenshot(file: string, buffer: Buffer): Promise<void> {
+  const stripped = stripPngMetadata(buffer);
+  const force = process.env.AUGQ_FORCE_SCREENSHOTS === '1';
+  if (force || !fs.existsSync(file)) {
+    fs.writeFileSync(file, stripped);
+    console.log(`  [ok] wrote ${path.basename(file)}`);
+    return;
+  }
+  const existing = fs.readFileSync(file);
+  if (pngsEquivalent(existing, stripped)) {
+    // Pixel-identical: keep the existing file to avoid diff noise — but if it
+    // still carries PNG metadata, replace it once with the stripped version.
+    if (hasAncillaryChunks(existing)) {
+      fs.writeFileSync(file, stripped);
+      console.log(`  [ok] stripped metadata from ${path.basename(file)}`);
+    } else {
+      console.log(`  [unchanged] ${path.basename(file)} (keeping existing)`);
+    }
+    return;
+  }
+  fs.writeFileSync(file, stripped);
+  console.log(`  [ok] wrote ${path.basename(file)}`);
+}
+
 async function capture(ctx: CaptureCtx, def: ScreenshotDef): Promise<void> {
   const file = path.join(SHOTS_DIR, `${def.id}.png`);
   fs.mkdirSync(SHOTS_DIR, { recursive: true });
+  let buffer: Buffer;
   if (def.shot.kind === 'fullPage') {
-    await ctx.page.screenshot({ path: file, fullPage: true });
+    buffer = await ctx.page.screenshot({ fullPage: true });
   } else if (def.shot.kind === 'element') {
-    await ctx.page.locator(def.shot.selector).first().screenshot({ path: file });
+    buffer = await ctx.page.locator(def.shot.selector).first().screenshot();
   } else {
     // Capture the topmost visible dialog (the one the recipe just opened).
     // Text matching is fragile (i18n keys, aria-labelledby titles), so we pick
@@ -293,12 +474,14 @@ async function capture(ctx: CaptureCtx, def: ScreenshotDef): Promise<void> {
       // inner panel (max-w-md card) instead so the screenshot is focused.
       const panel = target.locator('div.max-w-md').filter({ visible: true }).first();
       if ((await panel.count()) > 0) {
-        await panel.screenshot({ path: file });
+        await writeScreenshot(file, await panel.screenshot());
         return;
       }
     }
-    await target.screenshot({ path: file });
+    await writeScreenshot(file, await target.screenshot());
+    return;
   }
+  await writeScreenshot(file, buffer);
 }
 
 // ---------------------------------------------------------------------------
@@ -840,6 +1023,97 @@ const screenshotDefs: ScreenshotDef[] = [
       }
     },
   },
+
+  // ---- 12 scenes & annotations ----
+  {
+    id: '12_scenes_narrative',
+    marker:
+      'The Scenes workspace in Narrative view, with scene cards grouped under their chapters and causal links',
+    shot: { kind: 'fullPage' },
+    // Tall viewport so all eight scene cards fit without internal scrolling.
+    viewport: { width: 1500, height: 1500 },
+    setup: async (ctx: CaptureCtx) => {
+      await reset(ctx);
+      await setWorkspaceMode(ctx.page, 'scenes');
+      await setScenesView(ctx.page, 'Narrative');
+    },
+  },
+  {
+    id: '12_scenes_pinboard',
+    marker:
+      'The Scenes workspace in Pinboard view, with freely positioned scene cards linked by causal arrows',
+    shot: { kind: 'fullPage' },
+    viewport: { width: 1600, height: 1000 },
+    setup: async (ctx: CaptureCtx) => {
+      await reset(ctx);
+      await setWorkspaceMode(ctx.page, 'scenes');
+      await setScenesView(ctx.page, 'Pinboard');
+    },
+  },
+  {
+    id: '12_scenes_chronological',
+    marker:
+      'The Scenes workspace in Chronological view, sorting scenes by their in-story time',
+    shot: { kind: 'fullPage' },
+    viewport: { width: 1500, height: 1500 },
+    setup: async (ctx: CaptureCtx) => {
+      await reset(ctx);
+      await setWorkspaceMode(ctx.page, 'scenes');
+      await setScenesView(ctx.page, 'Chronological');
+    },
+  },
+  {
+    id: '12_scenes_convergence',
+    marker:
+      'The Convergence Map, with character lanes and snake paths tracing each character through the timeline',
+    shot: { kind: 'fullPage' },
+    viewport: { width: 1600, height: 1500 },
+    setup: async (ctx: CaptureCtx) => {
+      await reset(ctx);
+      await setWorkspaceMode(ctx.page, 'scenes');
+      await setScenesView(ctx.page, 'Convergence Map');
+    },
+  },
+  {
+    id: '12_scene_editor',
+    marker:
+      'Scene Editor Dialog with summary, beats, characters, time, location, and color tag',
+    shot: { kind: 'dialog', dialogText: 'Edit Scene' },
+    viewport: { width: 1200, height: 900 },
+    setup: async (ctx: CaptureCtx) => {
+      await reset(ctx);
+      await setWorkspaceMode(ctx.page, 'scenes');
+      // Double-click the first scene card (aria-label is "#N · ID N") to open
+      // the Scene Editor Dialog.
+      const card = ctx.page.locator('[aria-label$="ID 1"]').first();
+      await card.dblclick({ timeout: 8000 }).catch(async () => {
+        await card.evaluate((el: SVGElement | HTMLElement) =>
+          (el as HTMLElement).dispatchEvent(
+            new MouseEvent('dblclick', { bubbles: true, cancelable: true })
+          )
+        );
+      });
+      await ctx.page.waitForTimeout(1500);
+    },
+  },
+  {
+    id: '12_annotations_editor',
+    marker:
+      'The editor showing inline annotation highlights with the Annotation panel listing them on the right',
+    shot: { kind: 'fullPage' },
+    viewport: { width: 1500, height: 950 },
+    setup: async (ctx: CaptureCtx) => {
+      // Page mode with Chapter 1 open. The seeded annotations make the
+      // Annotation panel appear automatically over the editor; fail loudly if
+      // it does not (so we never ship an empty annotation screenshot).
+      await reset(ctx);
+      await ctx.page
+        .locator('[aria-label="Annotation panel"]')
+        .first()
+        .waitFor({ state: 'visible', timeout: 15000 });
+      await ctx.page.waitForTimeout(1500);
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -879,7 +1153,7 @@ for (const def of screenshotDefs) {
       await capture(ctx, def);
       results.push({ id: def.id, status: 'ok' });
       if (def.marker) manifest.push({ marker: def.marker, file: `${def.id}.png` });
-      console.log(`  [ok] wrote ${def.id}.png`);
+      console.log(`  [ok] captured ${def.id}.png`);
     } catch (e) {
       const status = /skipping|requires a live model/i.test(String(e))
         ? 'skipped'
