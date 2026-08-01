@@ -271,10 +271,7 @@ def _is_low_quality_suggestion(text: str) -> bool:
 
     # If the paragraph is long enough but has no sentence-like ending,
     # treat it as likely truncated/poor quality and retry.
-    if len(sample) >= 80 and not re.search(r"[.!?…][\"'”’\)\]]*\s*$", sample):
-        return True
-
-    return False
+    return bool(len(sample) >= 80 and not re.search(r"[.!?…][\"'”’\)\]]*\s*$", sample))
 
 
 def _normalize_suggestion_candidate(raw_text: str) -> str:
@@ -341,7 +338,7 @@ async def _collect_suggestion_candidate(
 
         # Remove formatting-only indentation at stream start.
         if not start_found:
-            while chunk.startswith(" ") or chunk.startswith("\t"):
+            while chunk.startswith((" ", "\t")):
                 chunk = chunk[1:]
             if chunk == "":
                 continue
@@ -600,13 +597,12 @@ async def api_story_sourcebook_relevance(
 
         if scope == "story":
             path = None
-            pos = None
         else:
             chap_id = (payload or {}).get("chap_id")
             if not isinstance(chap_id, int):
                 raise ServiceError("chap_id is required", status_code=400)
 
-            _, path, pos = get_chapter_locator(chap_id, active=project_dir)
+            _, path, _pos = get_chapter_locator(chap_id, active=project_dir)
         current_text = (payload or {}).get("current_text")
         scope_text: str | None = None
         if not isinstance(current_text, str):
@@ -806,7 +802,7 @@ async def api_story_suggest(
                     # Remove any leading spaces/tabs that are purely formatting noise,
                     # but retain all newline characters to preserve paragraph boundaries.
                     if not start_found:
-                        while chunk.startswith(" ") or chunk.startswith("\t"):
+                        while chunk.startswith((" ", "\t")):
                             chunk = chunk[1:]
                         if chunk == "":
                             continue
@@ -1026,7 +1022,7 @@ async def api_chapter_rewrite_and_relink(
                         delta = chunk["choices"][0].get("delta", {})
                         if "content" in delta:
                             collected_content += delta["content"]
-                except (json.JSONDecodeError, (KeyError, IndexError, TypeError)):
+                except (json.JSONDecodeError, KeyError, IndexError, TypeError):
                     pass
 
         # After stream completes, auto-link scenes in this chapter

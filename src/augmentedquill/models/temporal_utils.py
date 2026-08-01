@@ -14,7 +14,7 @@ from user or LLM input into a consistent representation.
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import UTC, datetime
 
 _BRACKET_TOKEN_RE = re.compile(r"\[[^\]]+\]")
 _DATE_ONLY_RE = re.compile(r"^[+-]?\d{4,}-\d{2}-\d{2}$")
@@ -67,7 +67,7 @@ def normalize_temporal_value(raw_value: str) -> str:
         if ":" in time_part and time_part.count(":") == 1:
             time_part = f"{time_part}:00"
         # Use current date
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
         normalized = f"{today}T{time_part}{tz_part}"
         # Normalize timezone offset (ensure colon format)
         if _OFFSET_NO_COLON_RE.search(normalized):

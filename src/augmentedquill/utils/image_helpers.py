@@ -52,7 +52,7 @@ def save_image_metadata(data: dict) -> Any:
 
 
 def update_image_metadata(
-    filename: str, description: str = None, title: str = None
+    filename: str, description: str | None = None, title: str | None = None
 ) -> Any:
     """Update Image Metadata."""
     meta = load_image_metadata()

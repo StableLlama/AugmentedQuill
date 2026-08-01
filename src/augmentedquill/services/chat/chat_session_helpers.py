@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import shutil
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 
@@ -58,7 +58,7 @@ def save_chat(project_path: Path, chat_id: str, chat_data: dict) -> None:
     chats_dir = project_path / "chats"
     (chats_dir).mkdir(parents=True, exist_ok=True)
     chat_file = chats_dir / f"{chat_id}.json"
-    chat_data["updated_at"] = datetime.now().isoformat()
+    chat_data["updated_at"] = datetime.now(UTC).isoformat()
     if "created_at" not in chat_data:
         chat_data["created_at"] = chat_data["updated_at"]
     chat_file.write_text(json.dumps(chat_data, indent=2), encoding="utf-8")

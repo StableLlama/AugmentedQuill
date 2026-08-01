@@ -347,9 +347,7 @@ def _matches_extensive_query(entry: dict, normalized_query: str) -> bool:
         return True
     if any(normalized_query in s.lower() for s in entry.get("synonyms", [])):
         return True
-    if any(normalized_query in k.lower() for k in entry.get("keywords", [])):
-        return True
-    return False
+    return bool(any(normalized_query in k.lower() for k in entry.get("keywords", [])))
 
 
 def _split_query_tokens(query: str) -> list[str]:
@@ -445,7 +443,7 @@ def sourcebook_get_entry(name_or_id: str, active: Any = None) -> dict | None:
 def sourcebook_create_entry(
     name: str,
     description: str,
-    category: str = None,
+    category: str | None = None,
     synonyms: list[str] | object = _UNSET,
     images: list[str] | object = _UNSET,
     keywords: list[str] | object = _UNSET,
@@ -589,13 +587,13 @@ def sourcebook_delete_entry(name_or_id: str, active: Any = None) -> bool:
 
 def sourcebook_update_entry(
     name_or_id: str,
-    name: str = None,
-    description: str = None,
-    category: str = None,
-    synonyms: list[str] = None,
-    images: list[str] = None,
-    keywords: list[str] = None,
-    relations: list[dict] = None,
+    name: str | None = None,
+    description: str | None = None,
+    category: str | None = None,
+    synonyms: list[str] | None = None,
+    images: list[str] | None = None,
+    keywords: list[str] | None = None,
+    relations: list[dict] | None = None,
     origin_date: str | None | object = _UNSET,
     destination_datetime: str | None | object = _UNSET,
     destination_relative: str | None | object = _UNSET,

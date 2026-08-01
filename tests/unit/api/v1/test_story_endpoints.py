@@ -21,9 +21,11 @@ class StoryEndpointsTest(ApiTestCase):
         self,
         name: str = "novel",
         story_summary: str | None = "Overall story summary.",
-        tags: list | None = ["fantasy", "adventure"],
+        tags: list | None = None,
         sourcebook: dict | None = None,
     ) -> Path:
+        if tags is None:
+            tags = ["fantasy", "adventure"]
         ok, msg = select_project(name)
         self.assertTrue(ok, msg)
         pdir = self.projects_root / name

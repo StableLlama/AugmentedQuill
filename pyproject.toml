@@ -54,7 +54,28 @@ line-length = 88
 target-version = "py312"
 
 [tool.ruff.lint]
-ignore = ["E501", "S101", "S104", "COM812", "ISC001", "BLE001", "S110", "S112", "TRY004", "ASYNC230"]
+# Deliberate project-wide conventions (kept for maintainability):
+# - BLE001/S110/S112: best-effort defensive exception handling at integration
+#   and parsing boundaries (optional configs, LLM output). A failure to load or
+#   parse optional data must never crash the local-first app, so broad catches
+#   are intentional. Narrowing every site would reduce robustness.
+# - TRY004: the codebase consistently raises ValueError for type validation and
+#   callers catch ValueError; switching to TypeError would alter error behavior.
+# - ASYNC230: async handlers perform small bounded local file I/O; wrapping in
+#   asyncio.to_thread would add complexity without real benefit for a
+#   single-user local app.
+ignore = [
+    "BLE001",
+    "S110",
+    "S112",
+    "TRY004",
+    "ASYNC230",
+    "E501",
+    "S101",
+    "S104",
+    "COM812",
+    "ISC001",
+]
 per-file-ignores = {"tests/**/*" = ["S101", "ARG", "FBT", "PLR2004"]}
 
 [tool.black]

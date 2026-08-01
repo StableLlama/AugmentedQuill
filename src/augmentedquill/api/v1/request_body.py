@@ -17,7 +17,7 @@ from fastapi import HTTPException, Request
 TError = TypeVar("TError", bound=Exception)
 
 
-async def parse_json_object_body(
+async def parse_json_object_body[TError: Exception](
     request: Request,
     *,
     error_factory: Callable[[Exception], TError] | None = None,

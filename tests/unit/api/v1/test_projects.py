@@ -63,7 +63,7 @@ class ProjectsTest(ApiTestCase):
         # empty dir under projects root by name
         empty_name = "empty"
         (self.projects_root / empty_name).mkdir(parents=True, exist_ok=True)
-        ok2, msg2 = select_project(empty_name)
+        ok2, _msg2 = select_project(empty_name)
         self.assertTrue(ok2)
         reg2 = json.loads(self.registry_path.read_text(encoding="utf-8"))
         self.assertEqual(reg2.get("current"), str(self.projects_root / empty_name))

@@ -214,9 +214,12 @@ async def inject_project_images(messages: list[dict]) -> Any:
     allowed = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
 
     for image_file in images_dir.iterdir():
-        if image_file.is_file() and image_file.suffix.lower() in allowed:
-            if image_file.name in text_for_matching:
-                found_images.append(image_file)
+        if (
+            image_file.is_file()
+            and image_file.suffix.lower() in allowed
+            and image_file.name in text_for_matching
+        ):
+            found_images.append(image_file)
 
     if not found_images:
         return

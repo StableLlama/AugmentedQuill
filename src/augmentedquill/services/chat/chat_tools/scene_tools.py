@@ -1157,9 +1157,10 @@ async def manage_scenes(
                 str(current.get("summary") or ""),
                 params.update_data.summary_patch,
             )
-        if params.update_data.summary_patch is not None or "summary" in fields_set:
-            if summary_value is not None:
-                update_kwargs["summary"] = summary_value
+        if (
+            params.update_data.summary_patch is not None or "summary" in fields_set
+        ) and summary_value is not None:
+            update_kwargs["summary"] = summary_value
 
         active_characters_value = params.update_data.active_characters
         if params.update_data.active_characters_patch is not None:

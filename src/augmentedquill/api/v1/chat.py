@@ -17,7 +17,6 @@ import json as _json
 import logging
 import re
 from collections import OrderedDict
-from datetime import UTC
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -80,8 +79,7 @@ from augmentedquill.services.projects.projects import (
 from augmentedquill.utils.json_repair import try_parse_json_robust
 from augmentedquill.utils.path_utils import safe_child_path
 
-_logger = logging.getLogger(__name__)
-
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Chat"])
 
@@ -512,7 +510,7 @@ def _store_chat_tool_batch_snapshot(
     )
     metadata = {
         "batch_id": batch_id,
-        "created_at": datetime.datetime.now(UTC).isoformat(),
+        "created_at": datetime.datetime.now(datetime.UTC).isoformat(),
         "tool_names": tool_names,
         "changed_chapter_ids": changed_chapter_ids,
         "chapter_id_paths": before_chapter_id_paths,
@@ -737,7 +735,7 @@ async def api_chat_tools(
             )
             log_entry["response"]["status_code"] = 200
             log_entry["response"]["body"] = {"appended_messages": appended}
-            log_entry["timestamp_end"] = datetime.datetime.now(UTC).isoformat()
+            log_entry["timestamp_end"] = datetime.datetime.now(datetime.UTC).isoformat()
             add_llm_log(log_entry)
 
         yield f"data: {_json.dumps({'type': 'result', 'ok': True, 'appended_messages': appended, 'mutations': mutations})}\n\n"
@@ -1055,7 +1053,7 @@ async def api_chat_stream(
                     yield f"data: {_json.dumps({'tool_calls': chunk['tool_calls']})}\n\n"
         except Exception as e:
             # Mask internal errors to prevent information exposure, but log for debugability
-            _logger.exception("Chat stream error")
+            logger.exception("Chat stream error")
             yield f"data: {_json.dumps({'error': f'An internal chat stream error occurred: {e}'})}\n\n"
         finally:
             yield "data: [DONE]\n\n"

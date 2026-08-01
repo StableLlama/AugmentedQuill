@@ -7,6 +7,7 @@
 
 """Defines the mutate unit so this responsibility stays isolated, testable, and easy to evolve."""
 
+import logging
 from typing import Any
 
 from fastapi import APIRouter
@@ -35,6 +36,8 @@ from augmentedquill.services.projects.projects import (
     update_chapter_metadata,
     write_chapter_title,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/projects/{project_name}", tags=["Chapters"])
 
@@ -189,9 +192,7 @@ async def api_reorder_chapters(
     except LookupError as exc:
         return error_json(str(exc), status_code=404)
     except ValueError as exc:
-        import logging
-
-        logging.error(f"Reorder Error: {exc}")
+        logger.error("Reorder Error: %s", exc)
         return error_json(str(exc), status_code=400)
     except (OSError, RuntimeError, TypeError) as exc:
         return error_json(f"Failed to update story.json: {exc}", status_code=500)

@@ -18,6 +18,7 @@ markers.  It performs only string operations – no file I/O.
 
 from __future__ import annotations
 
+import itertools
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -324,7 +325,7 @@ def validate_marker_integrity(content: str) -> None:
 
         if layer.exclusive:
             ordered = sorted(spans)
-            for previous, current in zip(ordered, ordered[1:]):
+            for previous, current in itertools.pairwise(ordered):
                 if current[0] < previous[1]:
                     raise ValueError(
                         f"Overlapping {layer.name} spans detected: any part of "
@@ -663,8 +664,8 @@ def transfer_scene_markers(existing_content: str, rewritten_content: str) -> str
         )
         old_end = remap_offset_after_marker_removal(existing_content, span.end, None)
 
-        mapped_start = int(round((old_start / old_len) * new_len))
-        mapped_end = int(round((old_end / old_len) * new_len))
+        mapped_start = round((old_start / old_len) * new_len)
+        mapped_end = round((old_end / old_len) * new_len)
 
         mapped_start = max(prev_end, min(mapped_start, new_len))
         mapped_end = max(mapped_start, min(mapped_end, new_len))

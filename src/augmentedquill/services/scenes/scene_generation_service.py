@@ -208,7 +208,7 @@ def _proportional_ranges(
     n = len(scene_ids)
     boundaries: list[int] = [segment_start]
     for i in range(1, n):
-        raw_target = int(round((total * i) / n))
+        raw_target = round((total * i) / n)
         global_target = segment_start + raw_target
         minimum = boundaries[-1] + 1
         maximum = segment_end - (n - i)

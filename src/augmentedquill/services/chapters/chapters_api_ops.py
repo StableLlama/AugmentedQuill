@@ -305,12 +305,10 @@ def reorder_chapters_in_project(active: Path, payload: dict) -> None:
 
             if not match_data and i < len(chapters_data):
                 candidate = chapters_data[i]
-                if id(candidate) not in used_metadata_ids:
-                    if (
-                        not candidate.get("filename")
-                        or candidate.get("filename") == fname
-                    ):
-                        match_data = candidate
+                if id(candidate) not in used_metadata_ids and (
+                    not candidate.get("filename") or candidate.get("filename") == fname
+                ):
+                    match_data = candidate
 
             if not match_data and i < len(chapters_data):
                 candidate = chapters_data[i]

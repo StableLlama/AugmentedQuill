@@ -41,7 +41,7 @@ def get_project_lock(project_dir: Path) -> asyncio.Lock:
         return _project_locks[key]
 
 
-async def run_locked(project_dir: Path, fn: Callable[[], _T]) -> _T:
+async def run_locked[T](project_dir: Path, fn: Callable[[], _T]) -> _T:
     """Acquire the per-project write lock, then execute *fn* in a thread pool.
 
     Using ``asyncio.to_thread`` keeps the event-loop free while synchronous
