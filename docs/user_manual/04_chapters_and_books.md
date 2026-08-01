@@ -2,7 +2,7 @@
 
 This part of AugmentedQuill keeps your narrative structure tidy: choose the right story type, keep every chapter summarized, and, for complex arcs, organize chapters into books. The sidebar lets you see each chapter, open its metadata, and cue the AI to help with summaries or conflicts.
 
-`[SCREENSHOT: Sidebar showing story metadata on top, the chapter list, and the metadata dialog open for a selected chapter]`
+![Sidebar showing story metadata on top, the chapter list, and the metadata dialog open for a selected chapter](screenshots/04_sidebar_metadata_dialog.png)
 
 ## Story Types and When to Upgrade
 
@@ -22,7 +22,7 @@ You can convert a project between types using the dropdown next to the active pr
 
 Each chapter card in the sidebar shows the title, a short summary excerpt, and quick controls:
 
-`[SCREENSHOT: Chapters panel with a highlighted chapter card, expand/collapse book controls, and drag handles visible]`
+![Chapters panel with a highlighted chapter card, expand/collapse book controls, and drag handles visible](screenshots/04_chapters_panel.png)
 
 - **Select**: Click a card to load it into the editor. The active chapter highlights with a brighter border.
 - **Drag & Drop**: Reorder chapters by dragging the cards up or down. In a series, drag within a book or across books; the UI previews the move before it actually reorders on the server.
@@ -33,7 +33,7 @@ Each chapter card in the sidebar shows the title, a short summary excerpt, and q
 
 The Metadata Editor is a full-screen or sidebar panel that opens whenever you click the <img src="assets/edit-2.svg" alt="Edit icon" width="16" height="16" style="vertical-align:text-bottom;" /> pencil icon on a chapter, book, or story item.
 
-`[SCREENSHOT: Metadata Editor Dialog in fullscreen mode, showing the tab bar, title input, and summary textarea with AI buttons]`
+![Metadata Editor Dialog in fullscreen mode, showing the tab bar, title input, and summary textarea with AI buttons](screenshots/04_metadata_fullscreen.png)
 
 **Header controls:**
 
@@ -80,7 +80,7 @@ The Metadata Editor is a full-screen or sidebar panel that opens whenever you cl
   - A <img src="assets/trash-2.svg" alt="Trash icon" width="16" height="16" style="vertical-align:text-bottom;" /> delete button to remove the row.
 - Unresolved conflicts show as a **red count badge** on the chapter card in the sidebar so you can see at a glance which chapters still have open threads.
 
-`[SCREENSHOT: Conflicts tab showing two conflict rows with description, resolution plan, and reorder arrows]`
+![Conflicts tab showing two conflict rows with description, resolution plan, and reorder arrows](screenshots/04_conflicts_tab.png)
 
 ### Why conflicts matter
 
@@ -103,7 +103,7 @@ When you or AI generate or continue text, keep the conflict list visible as a â€
 
 When you switch to a series, each book renders as a collapsible panel showing the book title, the number of chapters it contains, and a summary preview. The controls include:
 
-`[SCREENSHOT: Series view with multiple books expanded, showing Add Chapter and drag handles for books]`
+![Series view with multiple books expanded, showing Add Chapter and drag handles for books](screenshots/04_series_books.png)
 
 - **Add Chapter**: Tap the <img src="assets/plus.svg" alt="Plus icon" width="16" height="16" style="vertical-align:text-bottom;" /> plus icon inside a book to append a new chapter directly into that volume.
 - **Edit Metadata**: The same metadata dialog used for chapters opens for books, letting you clarify the bookâ€™s focus, notes, and title.
@@ -115,7 +115,7 @@ When you switch to a series, each book renders as a collapsible panel showing th
 
 - The top of the sidebar shows the Story Metadata view with the title, summary, tags, and a compact notes preview. Click the <img src="assets/edit-2.svg" alt="Edit icon" width="16" height="16" style="vertical-align:text-bottom;" /> pencil icon to open the metadata dialog and adjust the shared story information:
 
-`[SCREENSHOT: Story Metadata panel with tags, notes, and the pencil icon highlighted]`
+![Story Metadata panel with tags, notes, and the pencil icon highlighted](screenshots/04_story_metadata.png)
 
 - **Style Tags** appear as pill chips, helping the AI keep a consistent tone (e.g., `Noir`, `Humor`).
 - **Notes** and **Private Notes** keep long-form references so the AI can read (or ignore) them depending on visibility.

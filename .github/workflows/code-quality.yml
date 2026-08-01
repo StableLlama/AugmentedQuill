@@ -23,7 +23,7 @@ jobs:
     - name: Run ruff
       run: ruff check .
     - name: Run black
-      uses: psf/black@stable
+      uses: psf/black@26.3.1
       with:
         options: "--check --diff"
         src: "."
@@ -61,8 +61,7 @@ jobs:
         npm run check:generated-types
     - name: Run Prettier
       run: |
-        cd src/frontend
-        npx prettier --check .
+        src/frontend/node_modules/.bin/prettier --check '**/*.{ts,tsx,js,jsx,mjs,cjs,json,css,scss,md,html}'
     - name: Run Tests
       run: |
         cd src/frontend

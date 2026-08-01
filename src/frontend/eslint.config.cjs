@@ -1,6 +1,6 @@
 module.exports = [
   {
-    ignores: ['node_modules', 'tests/e2e/**'],
+    ignores: ['node_modules'],
   },
   {
     files: ['**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx'],

@@ -96,7 +96,7 @@ The suggestion cards appear — click any card to insert that text, or press `Es
 2. Type: _"I just wrote 'The bad guy walked in and looked mean.' Can you rewrite this to be more intimidating and descriptive? Remember he is a ruthless treasure hunter named Silas."_
 3. Review the result. Depending on the task, CHAT may either return revised wording for review or use the EDITING workflow to update the chapter directly.
 
-`[SCREENSHOT: The suggestion footer open with continuation cards based on the current chapter context]`
+![The suggestion footer open with continuation cards based on the current chapter context](screenshots/06_continuation.png)
 
 ## Step 6: Adding Visual References
 
@@ -109,7 +109,7 @@ Visual references help both you and the AI stay consistent with how characters a
 5. Once you have the actual image, click **Replace** on the placeholder card to upload it.
 6. Open the Elara entry in the Sourcebook and click **Manage Images** to link the portrait to her character profile.
 
-`[SCREENSHOT: Project Images dialog showing the Elara placeholder card with the generated prompt popup open]`
+![Project Images dialog showing the Elara placeholder card with the generated prompt popup open](screenshots/06_generated_prompt.png)
 
 ## Step 7: Pacing and Review
 

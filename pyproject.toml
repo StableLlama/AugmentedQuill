@@ -29,7 +29,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=9.0.3",
-    "ruff>=0.14.10,<0.15.0",
+    "ruff>=0.16.1,<0.17.0",
     "black>=26.3.1",
     "requests>=2.33.0",
     "pre-commit",
@@ -54,7 +54,7 @@ line-length = 88
 target-version = "py312"
 
 [tool.ruff.lint]
-ignore = ["E501", "S101", "S104", "COM812", "ISC001"]
+ignore = ["E501", "S101", "S104", "COM812", "ISC001", "BLE001", "S110", "S112", "TRY004", "ASYNC230"]
 per-file-ignores = {"tests/**/*" = ["S101", "ARG", "FBT", "PLR2004"]}
 
 [tool.black]

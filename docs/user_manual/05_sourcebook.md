@@ -2,7 +2,7 @@
 
 The Sourcebook is your story's encyclopedia. It is crucial for keeping both you and the AI consistent. When you ask the AI to generate text or brainstorm, it references the Sourcebook to ensure it uses the right names, places, and rules of your world.
 
-![SCREENSHOT: The Sourcebook panel in the left sidebar showing a list of entries with category icons and the search filter field](screenshots/05_sourcebook_panel.png)
+![The Sourcebook panel in the left sidebar showing a list of entries with category icons and the search filter field](screenshots/05_sourcebook_panel.png)
 
 ## Sourcebook Browser
 

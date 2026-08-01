@@ -109,10 +109,9 @@
     {
       "label": "frontend: prettier",
       "type": "shell",
-      "command": "npx",
-      "args": ["prettier", "--write", "src/**/*.{ts,tsx,js,jsx,css,md,json,scss,html}"],
+      "command": "${workspaceFolder}/src/frontend/node_modules/.bin/prettier --write '**/*.{ts,tsx,js,jsx,mjs,cjs,json,css,scss,md,html}'",
       "options": {
-        "cwd": "${workspaceFolder}/src/frontend"
+        "cwd": "${workspaceFolder}"
       },
       "problemMatcher": [],
       "presentation": {
@@ -122,7 +121,7 @@
     {
       "label": "fix: all",
       "type": "shell",
-      "command": "${workspaceFolder}/venv/bin/ruff check --fix . ; ${workspaceFolder}/venv/bin/black . ; cd ${workspaceFolder}/src/frontend && npm run lint -- --fix ; npx prettier --write '**/*.{ts,tsx,js,jsx,css,md,json,scss,html}'",
+      "command": "${workspaceFolder}/venv/bin/ruff check --fix . ; ${workspaceFolder}/venv/bin/black . ; ${workspaceFolder}/src/frontend/node_modules/.bin/prettier --write '**/*.{ts,tsx,js,jsx,mjs,cjs,json,css,scss,md,html}' ; cd ${workspaceFolder}/src/frontend && npm run lint -- --fix",
       "options": {
         "cwd": "${workspaceFolder}"
       },
@@ -130,6 +129,44 @@
       "presentation": {
         "reveal": "always"
       }
+    },
+    {
+      "label": "docs: screenshots: capture",
+      "type": "shell",
+      "command": "npx playwright test --config=docs-screenshots.config.ts tests/docs-screenshots/capture.spec.ts",
+      "options": {
+        "cwd": "${workspaceFolder}/src/frontend"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "clear": true
+      },
+      "detail": "Boots an isolated AugmentedQuill + mock LLM, seeds a demo project, and captures every documentation screenshot into docs/user_manual/screenshots/. Also writes the .screenshot-manifest.json used by the docs updater."
+    },
+    {
+      "label": "docs: screenshots: update-docs",
+      "type": "shell",
+      "command": "node scripts/update-docs-screenshots.mjs",
+      "options": {
+        "cwd": "${workspaceFolder}/src/frontend"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "clear": true
+      },
+      "detail": "Replaces the [SCREENSHOT: ...] placeholder markers in docs/user_manual with real image links using the manifest produced by the capture step."
+    },
+    {
+      "label": "docs: screenshots",
+      "dependsOn": ["docs: screenshots: capture", "docs: screenshots: update-docs"],
+      "dependsOrder": "sequence",
+      "group": {
+        "kind": "build",
+        "isDefault": false
+      },
+      "detail": "Generates / updates all documentation screenshots and rewrites the user manual to link them."
     }
   ]
 }

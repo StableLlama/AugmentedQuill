@@ -222,3 +222,6 @@ data/
 static/dist/
 
 tools.json
+
+# Generated per-run mapping of docs screenshot markers to files
+docs/user_manual/screenshots/.screenshot-manifest.json

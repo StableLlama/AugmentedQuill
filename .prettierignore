@@ -1,0 +1,5 @@
+# Keep the prettier file scope identical to the pre-commit prettier hook's
+# `exclude` regex and to the GitHub CI prettier check.
+node_modules
+dist
+coverage

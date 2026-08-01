@@ -14,8 +14,10 @@ import asyncio
 import base64
 import datetime
 import json as _json
+import logging
 import re
 from collections import OrderedDict
+from datetime import UTC
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -77,6 +79,9 @@ from augmentedquill.services.projects.projects import (
 )
 from augmentedquill.utils.json_repair import try_parse_json_robust
 from augmentedquill.utils.path_utils import safe_child_path
+
+_logger = logging.getLogger(__name__)
+
 
 router = APIRouter(tags=["Chat"])
 
@@ -507,7 +512,7 @@ def _store_chat_tool_batch_snapshot(
     )
     metadata = {
         "batch_id": batch_id,
-        "created_at": datetime.datetime.now().isoformat(),
+        "created_at": datetime.datetime.now(UTC).isoformat(),
         "tool_names": tool_names,
         "changed_chapter_ids": changed_chapter_ids,
         "chapter_id_paths": before_chapter_id_paths,
@@ -554,9 +559,8 @@ async def api_get_chat() -> ChatInitialStateResponse:
 
     selected = openai_cfg.get("selected", "") if isinstance(openai_cfg, dict) else ""
     # Coerce to a valid selection
-    if model_names:
-        if not selected or selected not in model_names:
-            selected = model_names[0]
+    if model_names and (not selected or selected not in model_names):
+        selected = model_names[0]
 
     return {
         "models": model_names,
@@ -648,7 +652,7 @@ async def api_chat_tools(
             except asyncio.CancelledError:
                 result_holder.append(([], initial_mutations, [], None))
                 raise
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 result_holder.append(([], initial_mutations, [], exc))
             finally:
                 await stream_queue.put(None)  # sentinel – signals end of stream
@@ -733,7 +737,7 @@ async def api_chat_tools(
             )
             log_entry["response"]["status_code"] = 200
             log_entry["response"]["body"] = {"appended_messages": appended}
-            log_entry["timestamp_end"] = datetime.datetime.now().isoformat()
+            log_entry["timestamp_end"] = datetime.datetime.now(UTC).isoformat()
             add_llm_log(log_entry)
 
         yield f"data: {_json.dumps({'type': 'result', 'ok': True, 'appended_messages': appended, 'mutations': mutations})}\n\n"
@@ -1051,9 +1055,7 @@ async def api_chat_stream(
                     yield f"data: {_json.dumps({'tool_calls': chunk['tool_calls']})}\n\n"
         except Exception as e:
             # Mask internal errors to prevent information exposure, but log for debugability
-            import logging
-
-            logging.error(f"Chat stream error: {e}", exc_info=True)
+            _logger.exception("Chat stream error")
             yield f"data: {_json.dumps({'error': f'An internal chat stream error occurred: {e}'})}\n\n"
         finally:
             yield "data: [DONE]\n\n"

@@ -2,7 +2,7 @@
 
 The **Project Images** dialog is where you manage all visual assets attached to a story — reference artwork, character portraits, location sketches, or any images you want the AI to describe or use in prompts. Open it from the header by clicking the <img src="assets/eye.svg" alt="Image icon" width="16" height="16" style="vertical-align:text-bottom;" /> Image icon on the right side of the top bar.
 
-`[SCREENSHOT: The Project Images dialog showing the settings accordion, the action bar with three buttons, and an image grid with cards]`
+![The Project Images dialog showing the settings accordion, the action bar with three buttons, and an image grid with cards](screenshots/06_project_images.png)
 
 ---
 
@@ -35,7 +35,7 @@ You can also drag and drop an image file directly anywhere onto the dialog to up
 
 Uploaded and placeholder images are shown in a responsive grid (1–4 columns depending on screen width). Each image card contains:
 
-`[SCREENSHOT: A single image card showing the thumbnail, title input, description textarea, and action buttons]`
+![A single image card showing the thumbnail, title input, description textarea, and action buttons](screenshots/06_image_card.png)
 
 ### Thumbnail Area
 

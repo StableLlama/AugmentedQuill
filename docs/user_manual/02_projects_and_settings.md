@@ -21,7 +21,7 @@ This tab is useful for troubleshooting, bug reports, and confirming exactly whic
 
 The Projects tab lists every project stored on this machine and lets you create, rename, delete, import, and export them.
 
-`[SCREENSHOT: The Settings Dialog showing the Projects tab with a list of projects]`
+![The Settings Dialog showing the Projects tab with a list of projects](screenshots/02_settings_projects.png)
 
 ### Toolbar
 

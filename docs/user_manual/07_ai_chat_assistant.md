@@ -2,7 +2,7 @@
 
 The AI Chat Assistant is your dedicated coordinator, sounding board, and editor. It sits in the right sidebar alongside your writing interface, ready to help whenever you get stuck. Toggle it open with the **AI** button at the far right of the header, or close it with **Hide**.
 
-`[SCREENSHOT: The AI Chat Assistant panel open in the right sidebar next to the text editor]`
+![The AI Chat Assistant panel open in the right sidebar next to the text editor](screenshots/07_chat_panel.png)
 
 The Chat Assistant is powered by the <img src="assets/message-square.svg" alt="Message square icon" width="20" height="20" style="vertical-align:text-bottom;" /> <img src="assets/swatches/blue.svg" alt="Blue swatch" width="16" height="16" style="vertical-align:text-bottom;" /> **CHAT model**
 <img src="assets/message-square.svg" alt="Message square icon" width="20" height="20" style="vertical-align:text-bottom;" /> <img src="assets/swatches/blue.svg" alt="Blue swatch" width="16" height="16" style="vertical-align:text-bottom;" />, which you can spot by the blue halo around the panel. You can swap the CHAT provider at any time using the model selector in the header without opening Settings.
@@ -17,7 +17,7 @@ Each chat session is independent. CHAT can rely on the messages in the current s
 
 The header bar at the top of the chat panel shows the current session name and a row of icon buttons:
 
-`[SCREENSHOT: Chat panel header showing the session title and all icon buttons]`
+![Chat panel header showing the session title and all icon buttons](screenshots/07_chat_header.png)
 
 | Button             | Icon                                                                                                                | Description                                                                                                                                                                                                                                            |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -36,7 +36,7 @@ The header bar at the top of the chat panel shows the current session name and a
 
 Clicking the History button reveals a slide-in panel below the header (up to 240 px tall, scrollable):
 
-`[SCREENSHOT: Chat History panel showing a list of previous sessions with dates and the Clear All button]`
+![Chat History panel showing a list of previous sessions with dates and the Clear All button](screenshots/07_chat_history.png)
 
 | Element                                                                                                                               | Description                                                                                                                                       |
 | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
