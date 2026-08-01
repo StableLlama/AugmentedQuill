@@ -4,6 +4,8 @@ The AI Chat Assistant is your dedicated coordinator, sounding board, and editor.
 
 ![The AI Chat Assistant panel open in the right sidebar next to the text editor](screenshots/07_chat_panel.png)
 
+> **In this screenshot:** the Chat Assistant docked on the right while you write. Type in the composer at the bottom, and the panel shows the conversation, tool activity, and change tags above it.
+
 The Chat Assistant is powered by the <img src="assets/message-square.svg" alt="Message square icon" width="20" height="20" style="vertical-align:text-bottom;" /> <img src="assets/swatches/blue.svg" alt="Blue swatch" width="16" height="16" style="vertical-align:text-bottom;" /> **CHAT model**
 <img src="assets/message-square.svg" alt="Message square icon" width="20" height="20" style="vertical-align:text-bottom;" /> <img src="assets/swatches/blue.svg" alt="Blue swatch" width="16" height="16" style="vertical-align:text-bottom;" />, which you can spot by the blue halo around the panel. You can swap the CHAT provider at any time using the model selector in the header without opening Settings.
 
@@ -127,9 +129,7 @@ The <img src="assets/message-square.svg" alt="Message Square icon" width="16" he
 
 ## Tool Call Limit Dialog
 
-To prevent runaway AI automation, AugmentedQuill monitors how many consecutive tool calls the AI makes. If the count reaches the limit, a dialog pauses execution:
-
-`[SCREENSHOT: Tool Call Limit dialog showing the call count and the three action buttons]`
+To prevent runaway AI automation, AugmentedQuill monitors how many consecutive tool calls the AI makes. If the count reaches the limit, a dialog pauses execution, shows how many tool calls were made, and asks you how to continue (see the table below).
 
 | Button                     | Description                                                                                       |
 | -------------------------- | ------------------------------------------------------------------------------------------------- |

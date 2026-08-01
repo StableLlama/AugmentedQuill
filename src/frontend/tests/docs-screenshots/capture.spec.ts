@@ -601,6 +601,34 @@ const screenshotDefs: ScreenshotDef[] = [
       await ctx.page.waitForTimeout(1000);
     },
   },
+  {
+    id: '05_sourcebook_hover',
+    marker:
+      'Sourcebook hover card showing the Nora entry with its linked portrait and description',
+    shot: { kind: 'element', selector: 'div.fixed:has-text("Nora")' },
+    viewport: { width: 1400, height: 950 },
+    setup: async (ctx: CaptureCtx) => {
+      await reset(ctx);
+      // Focus the Sourcebook section so the entry list fills the sidebar and
+      // the hover card floats clearly to its right, over the editor.
+      await focusSidebarSection(ctx.page, 'Sourcebook');
+      // Hover the Nora entry row (its first button) to reveal the image-backed
+      // hover card; fall back to a programmatic mouseover if the hover stalls.
+      const noraRow = ctx.page
+        .locator('[role="listitem"]', { hasText: 'Nora' })
+        .first();
+      await noraRow.scrollIntoViewIfNeeded({ timeout: 8000 }).catch(() => undefined);
+      const noraButton = noraRow.locator('button').first();
+      await noraButton.hover({ timeout: 8000, force: true }).catch(async () => {
+        await noraButton.evaluate((el: SVGElement | HTMLElement) =>
+          (el as HTMLElement).dispatchEvent(
+            new MouseEvent('mouseover', { bubbles: true })
+          )
+        );
+      });
+      await ctx.page.waitForTimeout(1500);
+    },
+  },
 
   // ---- 06 project images ----
   {
@@ -651,7 +679,7 @@ const screenshotDefs: ScreenshotDef[] = [
   {
     id: '06_generated_prompt',
     marker:
-      'Project Images dialog showing the Elara placeholder card with the generated prompt popup open',
+      'Project Images dialog showing an image card with the generated prompt popup open',
     shot: { kind: 'dialog', dialogText: 'Project Images' },
     setup: async (ctx: CaptureCtx) => {
       await reset(ctx);

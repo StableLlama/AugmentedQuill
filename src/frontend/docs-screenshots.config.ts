@@ -128,6 +128,9 @@ function createDemoNovelProject(root: string): void {
 
   writeDemoImage(imagesDir, 'cover.png');
   writeDemoImage(imagesDir, 'portrait.png');
+  writeDemoImage(imagesDir, 'elias.png');
+  writeDemoImage(imagesDir, 'valley.png');
+  writeDemoImage(imagesDir, 'surveyor_seal.png');
 
   // Image metadata: give the placeholder images titles + descriptions so the
   // Project Images cards look complete and the "Create prompt" action (which
@@ -147,6 +150,21 @@ function createDemoNovelProject(root: string): void {
             title: 'Nora portrait',
             description:
               'A warm pencil sketch of a young cartographer studying a folded map by lamplight.',
+          },
+          'elias.png': {
+            title: 'Elias portrait',
+            description:
+              "A pencil sketch of Nora's pragmatic older brother, holding the survey map he wants to sell.",
+          },
+          'valley.png': {
+            title: 'The Unwritten Valley',
+            description:
+              'The hidden valley at golden hour — tidy farms, a winding stream, and the blue-roofed inn from Chapter 3.',
+          },
+          'surveyor_seal.png': {
+            title: "Surveyors' office seal",
+            description:
+              'The wax-and-ink seal of the cartographic office, stamped on every redrawn county chart.',
           },
         },
       },
@@ -248,7 +266,7 @@ function createDemoNovelProject(root: string): void {
               "Nora's older brother, pragmatic and a little envious. He sees the map as money; Nora sees it as a doorway.",
             category: 'Character',
             synonyms: ['Elias Hale'],
-            images: [],
+            images: ['elias.png'],
             keywords: ['brother', 'pragmatic', 'elias'],
             relations: [],
             creates_new_timeline: false,
@@ -259,7 +277,7 @@ function createDemoNovelProject(root: string): void {
               'A self-sufficient valley of farms and workshops that exists off every survey. Its people assume the outside world is a rumor.',
             category: 'Location',
             synonyms: ['The Hidden Valley'],
-            images: [],
+            images: ['valley.png'],
             keywords: ['valley', 'hidden', 'farms'],
             relations: [],
             creates_new_timeline: false,
@@ -270,7 +288,7 @@ function createDemoNovelProject(root: string): void {
               'The cartographic office that plans to redraw the county maps. They are efficient, well-funded, and not interested in questions.',
             category: 'Lore',
             synonyms: ['Cartographic Office'],
-            images: [],
+            images: ['surveyor_seal.png'],
             keywords: ['surveyors', 'maps', 'office'],
             relations: [],
             creates_new_timeline: false,

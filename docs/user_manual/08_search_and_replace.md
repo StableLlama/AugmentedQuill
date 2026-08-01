@@ -4,6 +4,8 @@ AugmentedQuill provides a project-wide **Search and Replace** tool that lets you
 
 ![Search and Replace dialog open with results grouped by section](screenshots/12_search_and_replace_dialog.png)
 
+> **In this screenshot:** the Search and Replace dialog after a project-wide search. Results are grouped by section (chapter prose, metadata, sourcebook), and each match can be replaced individually or all at once.
+
 ---
 
 ## Opening Search & Replace
@@ -90,7 +92,7 @@ Only the currently highlighted match is replaced; the search reruns automaticall
 
 Click **Replace All** to replace every match in the current scope simultaneously. The match count updates to reflect the result (typically 0 if all replacements succeeded).
 
-> **Caution:** Replace All modifies files on disk immediately. Use [Checkpoints](04_chapters_and_books.md#checkpoints) to save a snapshot before a mass replacement if you want an easy way to undo.
+> **Caution:** Replace All modifies files on disk immediately. Use [Project Checkpoints](02_projects_and_settings.md#project-checkpoints) to save a snapshot before a mass replacement if you want an easy way to undo.
 
 ---
 

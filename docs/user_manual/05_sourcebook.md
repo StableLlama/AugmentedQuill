@@ -18,6 +18,10 @@ The Sourcebook list lives at the bottom of the left sidebar, below the chapter l
 | **Include/Exclude** (Checkbox)  | Toggle whether this entry is explicitly included in the AI context. These checkboxes are disabled (greyed out) while **Auto** is enabled, but still show current selection. |
 | **Hover tooltip**               | Appears automatically when you hover an entry — shows the category badge, description preview, and primary image thumbnail (if any) without opening the full dialog.        |
 
+> **In this screenshot:** hover any entry to preview it without opening the editor. The floating card shows the entry's category badge, a short description excerpt, and — when the entry has one — its linked image. Here, hovering **Nora** reveals her portrait.
+
+![Hover card previewing the Nora entry with its linked portrait, category badge, and description](screenshots/05_sourcebook_hover.png)
+
 When the AI chat assistant creates or updates a Sourcebook entry, the app can surface that change immediately and open the relevant entry for review. This helps you inspect and refine AI-generated lore without losing your place in the writing workflow.
 
 ---

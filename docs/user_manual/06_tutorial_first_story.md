@@ -47,7 +47,9 @@ Before writing, it helps to know who is in the story and where it takes place.
 2. Type: _"Create a character profile for the antagonist, a ruthless treasure hunter named Silas."_
 3. Type: _"Create a location entry for The Grand Library, an ancient building filled with dusty tomes and hidden secrets."_
 
-![The Sourcebook showing the newly created entries for Elara and the Library](screenshots/09_sourcebook.png)
+![The Sourcebook showing a populated entry list with category icons after adding characters, locations, and lore](screenshots/09_sourcebook.png)
+
+> The entries shown come from the built-in example project, so the names differ from yours — what matters is the structure. Every entry has a category icon, and the search field filters the list by name, category, or synonym.
 
 ## Step 3: Outlining with the AI
 
@@ -109,7 +111,7 @@ Visual references help both you and the AI stay consistent with how characters a
 5. Once you have the actual image, click **Replace** on the placeholder card to upload it.
 6. Open the Elara entry in the Sourcebook and click **Manage Images** to link the portrait to her character profile.
 
-![Project Images dialog showing the Elara placeholder card with the generated prompt popup open](screenshots/06_generated_prompt.png)
+![Project Images dialog showing an image card with the generated prompt popup open](screenshots/06_generated_prompt.png)
 
 ## Step 7: Pacing and Review
 

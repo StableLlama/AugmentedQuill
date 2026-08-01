@@ -74,6 +74,10 @@ Clicking a thumbnail opens the **Lightbox** — a full-screen overlay showing th
 
 When you click **Create prompt** on an image card, a popup panel appears showing the AI-generated image-generation prompt. The prompt streams in word by word so you can see it being written.
 
+> **In this screenshot:** the generated prompt popup open above an image card. The read-only output streams the AI-written prompt, and the **Copy to Clipboard** button lets you take it straight into your image tool of choice.
+
+![Project Images dialog showing an image card with the generated prompt popup open](screenshots/06_generated_prompt.png)
+
 | Control                                                                                                                            | Description                                                                                         |
 | ---------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
 | **Close** (<img src="assets/x.svg" alt="Close icon" width="16" height="16" style="vertical-align:text-bottom;" />)                 | Closes the popup without copying.                                                                   |

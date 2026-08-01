@@ -4,6 +4,8 @@ This part of AugmentedQuill keeps your narrative structure tidy: choose the righ
 
 ![Sidebar showing story metadata on top, the chapter list, and the metadata dialog open for a selected chapter](screenshots/04_sidebar_metadata_dialog.png)
 
+> **In this screenshot:** the sidebar with the Story Metadata panel on top, the chapter list beneath it, and the chapter Metadata dialog open in sidebar mode to the right.
+
 ## Story Types and When to Upgrade
 
 The story type is configured from the **Projects** tab in Settings (see the [Projects and Settings](02_projects_and_settings.md#the-projects-tab) guide for a walkthrough). Each type controls what you can add to the sidebar:
@@ -24,6 +26,8 @@ Each chapter card in the sidebar shows the title, a short summary excerpt, and q
 
 ![Chapters panel with a highlighted chapter card, expand/collapse book controls, and drag handles visible](screenshots/04_chapters_panel.png)
 
+> **In this screenshot:** the chapter list. The active chapter is highlighted, and each card shows its title, a summary excerpt, and hover actions for editing and deleting.
+
 - **Select**: Click a card to load it into the editor. The active chapter highlights with a brighter border.
 - **Drag & Drop**: Reorder chapters by dragging the cards up or down. In a series, drag within a book or across books; the UI previews the move before it actually reorders on the server.
 - **Actions**: Hover to reveal the <img src="assets/edit-2.svg" alt="Edit icon" width="16" height="16" style="vertical-align:text-bottom;" /> Edit and <img src="assets/trash-2.svg" alt="Trash icon" width="16" height="16" style="vertical-align:text-bottom;" /> Delete icons. Delete immediately removes the chapter after confirmation.
@@ -34,6 +38,8 @@ Each chapter card in the sidebar shows the title, a short summary excerpt, and q
 The Metadata Editor is a full-screen or sidebar panel that opens whenever you click the <img src="assets/edit-2.svg" alt="Edit icon" width="16" height="16" style="vertical-align:text-bottom;" /> pencil icon on a chapter, book, or story item.
 
 ![Metadata Editor Dialog in fullscreen mode, showing the tab bar, title input, and summary textarea with AI buttons](screenshots/04_metadata_fullscreen.png)
+
+> **In this screenshot:** the fullscreen Metadata Editor. The tab bar switches between Summary, Notes, Private Notes, and Conflicts; the title field and summary textarea carry the AI buttons.
 
 **Header controls:**
 
@@ -82,6 +88,8 @@ The Metadata Editor is a full-screen or sidebar panel that opens whenever you cl
 
 ![Conflicts tab showing two conflict rows with description, resolution plan, and reorder arrows](screenshots/04_conflicts_tab.png)
 
+> **In this screenshot:** the Conflicts tab with two rows. Each row pairs a **Conflict Description** with a **Resolution Plan**, and the arrow buttons let you order them by importance.
+
 ### Why conflicts matter
 
 Conflicts are the engine that helps your story move forward. Every chapter should either:
@@ -105,6 +113,8 @@ When you switch to a series, each book renders as a collapsible panel showing th
 
 ![Series view with multiple books expanded, showing Add Chapter and drag handles for books](screenshots/04_series_books.png)
 
+> **In this screenshot:** a series with two books expanded. Each book groups its chapters, and drag handles plus **Add Chapter** buttons let you restructure volumes without leaving the sidebar.
+
 - **Add Chapter**: Tap the <img src="assets/plus.svg" alt="Plus icon" width="16" height="16" style="vertical-align:text-bottom;" /> plus icon inside a book to append a new chapter directly into that volume.
 - **Edit Metadata**: The same metadata dialog used for chapters opens for books, letting you clarify the book’s focus, notes, and title.
 - **Add Book**: A dashed button at the bottom of the list creates a new book (the button uses the same <img src="assets/plus.svg" alt="Plus icon" width="16" height="16" style="vertical-align:text-bottom;" /> icon). Name it, then drag it to place it before or after other books.
@@ -116,6 +126,8 @@ When you switch to a series, each book renders as a collapsible panel showing th
 - The top of the sidebar shows the Story Metadata view with the title, summary, tags, and a compact notes preview. Click the <img src="assets/edit-2.svg" alt="Edit icon" width="16" height="16" style="vertical-align:text-bottom;" /> pencil icon to open the metadata dialog and adjust the shared story information:
 
 ![Story Metadata panel with tags, notes, and the pencil icon highlighted](screenshots/04_story_metadata.png)
+
+> **In this screenshot:** the Story Metadata panel at the top of the sidebar — title, summary, style tags, and notes — with the pencil icon that opens the full Metadata Editor.
 
 - **Style Tags** appear as pill chips, helping the AI keep a consistent tone (e.g., `Noir`, `Humor`).
 - **Notes** and **Private Notes** keep long-form references so the AI can read (or ignore) them depending on visibility.
