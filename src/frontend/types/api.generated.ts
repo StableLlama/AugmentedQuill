@@ -3494,8 +3494,7 @@ export interface components {
        * @description Replacement per-tag personal age overrides. Use None to leave the field unchanged, or an explicit list to replace it.
        */
       tag_personal_datetimes?:
-        | components['schemas']['SceneTagPersonalDatetime'][]
-        | null;
+        components['schemas']['SceneTagPersonalDatetime'][] | null;
     };
     /**
      * SceneWriteRequest
