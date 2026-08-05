@@ -7,13 +7,20 @@
 
 /**
  * Defines the playwright.config unit so this responsibility stays isolated, testable, and easy to evolve.
+ *
+ * This config drives the lightweight "fixture" E2E suite: scene-marker cursor
+ * navigation against a minimal Vite-served CodeMirror fixture (port 5199).
+ * The heavier suites are isolated in their own configs and excluded here so
+ * they never run against the wrong webServer:
+ *   - fullstack suite   -> playwright.fullstack.config.ts
+ *   - docs/user_manual  -> playwright.docs.config.ts
  */
 
 import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
   testDir: './tests/e2e',
-  testIgnore: '**/fullstack/**',
+  testIgnore: ['**/fullstack/**', '**/docs/**'],
   timeout: 30000,
   retries: 1,
   outputDir: './tests/e2e/.test-artifacts',
