@@ -1121,8 +1121,9 @@ const screenshotDefs: ScreenshotDef[] = [
     marker:
       'The Convergence Map for a time-travel story, with snake paths that double back when characters jump through time',
     shot: { kind: 'fullPage' },
-    // Tall viewport so all ten scenes across 1885/1955/1985/2015 stay visible.
-    viewport: { width: 1700, height: 1700 },
+    // Tall viewport so all twenty-one scenes across 1885/1955/1985/2015 stay
+    // visible (the full trilogy's 14 time-travel events).
+    viewport: { width: 1700, height: 3200 },
     project: 'bttf',
     setup: async (ctx: CaptureCtx) => {
       await reset(ctx);
@@ -1143,7 +1144,7 @@ const screenshotDefs: ScreenshotDef[] = [
               .boundingBox()
               .catch(() => null)
           : null;
-      if (count < 10 || !last || last.y + last.height > (viewport?.height ?? 0)) {
+      if (count < 22 || !last || last.y + last.height > (viewport?.height ?? 0)) {
         throw new Error(
           `BTTF convergence scenes not all visible (cards=${count}, lastBottom=${last ? Math.round(last.y + last.height) : 'n/a'})`
         );

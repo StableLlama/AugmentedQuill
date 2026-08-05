@@ -191,7 +191,6 @@ interface BasicSectionProps {
   originDate: string | null;
   destinationDatetime: string | null;
   destinationRelative: string;
-  createsNewTimeline: boolean;
   timelineId: string;
   timelineOptions: TimelineOption[];
   inputBorderClass: string;
@@ -208,7 +207,6 @@ interface BasicSectionProps {
   onOriginDateChange: (value: string | null) => void;
   onDestinationDatetimeChange: (value: string | null) => void;
   onDestinationRelativeChange: (value: string) => void;
-  onCreatesNewTimelineChange: (value: boolean) => void;
   onTimelineIdChange: (value: string) => void;
 }
 
@@ -220,7 +218,6 @@ export const SourcebookEntryBasicsSection: React.FC<BasicSectionProps> = ({
   originDate,
   destinationDatetime,
   destinationRelative,
-  createsNewTimeline,
   timelineId,
   timelineOptions,
   inputBorderClass,
@@ -237,7 +234,6 @@ export const SourcebookEntryBasicsSection: React.FC<BasicSectionProps> = ({
   onOriginDateChange,
   onDestinationDatetimeChange,
   onDestinationRelativeChange,
-  onCreatesNewTimelineChange,
   onTimelineIdChange,
 }: BasicSectionProps) => (
   <>
@@ -400,23 +396,6 @@ export const SourcebookEntryBasicsSection: React.FC<BasicSectionProps> = ({
             className={`w-full px-3 py-2 text-sm rounded-md border ${inputBorderClass} ${inputBgClass} focus:outline-none focus:ring-2 focus:ring-brand-500 transition-colors`}
             placeholder={t('e.g. 30 years earlier')}
           />
-        </div>
-        <div className="flex items-center gap-3">
-          <input
-            type="checkbox"
-            id="creates-new-timeline"
-            checked={createsNewTimeline}
-            onChange={(
-              e: React.ChangeEvent<HTMLInputElement, HTMLInputElement>
-            ): void => onCreatesNewTimelineChange(e.target.checked)}
-            className="w-4 h-4 rounded border accent-brand-500 cursor-pointer"
-          />
-          <label
-            htmlFor="creates-new-timeline"
-            className={`text-sm cursor-pointer ${isLight ? 'text-brand-gray-700' : 'text-brand-gray-300'}`}
-          >
-            {t('Creates new timeline')}
-          </label>
         </div>
         <div className="space-y-2">
           <label

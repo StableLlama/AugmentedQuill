@@ -15,21 +15,42 @@ screenshot pipeline (``docs-screenshots.config.ts`` runs this module as
 path, so the generated Convergence Map screenshot doubles as a visual check
 that this creation code works.
 
-Canonical in-universe dates are taken from the films: Marty arrives in 1955 on
-November 5, 1955 (the night Doc invents the flux capacitor); the courthouse
-clock is struck on November 12, 1955 at 10:04 PM; Marty and Doc visit October
-21, 2015; Doc is stranded in the Old West of 1885.
+Canonical in-universe dates are taken from the films and the trilogy's 14
+time-travel events: Einstein's test run and the Libyan attack on October 26,
+1985; Marty arrives in 1955 on November 5, 1955 and the courthouse clock is
+struck on November 12, 1955 at 10:04 PM; Marty and Doc visit October 21, 2015;
+Old Biff steals the DeLorean and hands the almanac to his 1955 self; the trio
+returns to Biff's dystopian 1985 (1985A) and goes back to 1955 to burn the
+almanac; Doc is struck by lightning and stranded in the Old West of 1885;
+Marty follows, and the story ends with the Time Train arriving in 1985.
 
-Every time jump opens a new timeline, so only the trilogy's "present" stays on
-on ``main``.  The trip to 1955 (Part I) gets ``branch:1985 -> 1955``, the
-future gets ``branch:1985 -> 2015``, the alternate 1985 and the fixing trip get
-``branch:2015 -> 1985A`` and ``branch:1985A -> 1955``, and the Old West gets
-``branch:1985 -> 1885``.
+Timelines are the app's own (not the films' fan-canon numbering): ``main`` is
+ONLY the trilogy's ORIGINAL 1985 (Timeline 1 — Einstein's test run and the
+Libyan attack).  Once Marty changes the past, every later scene lives on an
+altered line.
 
-Each DeLorean jump is also stored as a ``Time Travel`` sourcebook entry so the
-Convergence Map can draw the branch spawn arcs and jump arrows on its left-hand
-timeline panel — the same fields a user would fill in for their own time-travel
-story.
+UNIVERSAL RULE: a time travel to the PAST always opens a new branch; a time
+travel to the FUTURE stays on the same line.  Past-travels here (arrival is
+earlier than departure): Marty's 1985 -> 1955, Old Biff's 2015 -> 1955, Doc's
+2015 -> 1985 return to warn, the 2015 -> 1985-A trip to the alternate 1985, the
+1985-A -> 1955 trip that fixes it, Doc's 1955 -> 1885 and Marty's 1955 -> 1885.
+Future-travels (arrival is later than departure, so they stay on their line):
+Einstein's test run, the returns from 1955 / 1885 to 1985, and the trips to
+2015.
+
+Each branch starts off a timeline that exists at the moment it is created:
+Old Biff's 1955 and the restored 1955 branch off the first 1955 line, the
+alternate 1985 branches off Old Biff's 1955, Marty's 1885 opens a second Old
+West line off Doc's 1885, and the first 1955 and Doc's 1885 branch off
+``main`` (their direct departure timeline — 2015, 1985-A — does not exist at
+the branch's creation moment, so the parent falls back to the timeline that
+does exist).  This keeps the Convergence Map's directory-tree lanes connected
+(no floating spawns).
+
+Each time-travel event is also stored as a ``Time Travel`` sourcebook entry so
+the Convergence Map can draw the branch spawn arcs and jump arrows on its
+left-hand timeline panel — the same fields a user would fill in for their own
+time-travel story.
 
 Each movie also shares one ``color_tag`` (blue for Part I, orange for Part II,
 green for Part III) so a chronologically sorted view makes it obvious at a
@@ -68,32 +89,42 @@ CHAPTERS: tuple[str, str, str] = ("The DeLorean", "The Future", "The Old West")
 # belong to: blue = Part I, orange = Part II, green = Part III.
 # Branch scenes name their timeline ``branch:<jump entry name>`` so the
 # Convergence Map can draw a spawn arc from the Time Travel entry that creates
-# the branch; sourcebook_entry_ids reference the jumps that depart from or land
-# on the scene so the arrows anchor to real scene dots.
+# the branch; sourcebook_entry_ids reference the jumps that depart from the
+# scene so the arrows anchor to real scene dots.
 SCENES: list[tuple[str, str, str, list[str], list[str], list[int], str, list[str]]] = [
     (
-        "Twin Pines Mall",
-        "1985-10-26T01:15:00Z",
+        "Einstein's Test Run",
+        "1985-10-26T01:18:00Z",
         "main",
-        ["Marty McFly", "Doc Brown"],
+        ["Doc Brown"],
         [],
         [],
         "blue",
-        ["1985 -> 2015"],
+        ["Einstein's Test Run"],
     ),
     (
-        "The Libyan attack",
+        "The Libyan Attack",
         "1985-10-26T01:35:00Z",
         "main",
         ["Marty McFly", "Doc Brown"],
         [],
         [1],
         "blue",
-        ["1985 -> 1955", "1985 -> 1885"],
+        ["1985 -> 1955"],
+    ),
+    (
+        "Trip to the Future (2015)",
+        "1985-10-26T10:29:00Z",
+        "branch:1985 -> 1955",
+        ["Doc Brown", "Marty McFly"],
+        ["Jennifer Parker"],
+        [2],
+        "blue",
+        ["1985 -> 2015 (the trio)"],
     ),
     (
         "Arrival in 1955",
-        "1955-11-05T22:04:00Z",
+        "1955-11-05T06:00:00Z",
         "branch:1985 -> 1955",
         ["Marty McFly", "Doc Brown"],
         [],
@@ -107,77 +138,203 @@ SCENES: list[tuple[str, str, str, list[str], list[str], list[int], str, list[str
         "branch:1985 -> 1955",
         ["Marty McFly", "George McFly", "Lorraine Baines"],
         [],
-        [3],
-        "blue",
-        [],
-    ),
-    (
-        "Lightning sends Marty home",
-        "1955-11-12T22:04:00Z",
-        "branch:1985 -> 1955",
-        ["Marty McFly", "Doc Brown"],
-        [],
         [4],
         "blue",
         [],
     ),
     (
+        "Lightning Sends Marty Home",
+        "1955-11-12T22:04:00Z",
+        "branch:1985 -> 1955",
+        ["Marty McFly", "Doc Brown"],
+        [],
+        [5],
+        "blue",
+        ["1955 -> 1985"],
+    ),
+    (
         "Hill Valley 2015",
-        "2015-10-21T18:00:00Z",
-        "branch:1985 -> 2015",
+        "2015-10-21T16:29:00Z",
+        "branch:1985 -> 1955",
         ["Marty McFly", "Doc Brown"],
         ["Jennifer Parker"],
-        [5],
+        [3],
+        "orange",
+        ["2015 -> 1985"],
+    ),
+    (
+        "Old Biff Steals the DeLorean",
+        "2015-10-21T18:00:00Z",
+        "branch:1985 -> 1955",
+        ["Biff Tannen"],
+        [],
+        [7],
+        "orange",
+        ["2015 -> 1955"],
+    ),
+    (
+        "The Return to Hell Valley",
+        "2015-10-21T19:28:00Z",
+        "branch:2015 -> 1955",
+        ["Doc Brown", "Marty McFly"],
+        [],
+        [8],
         "orange",
         ["2015 -> 1985A"],
     ),
     (
         "Alternate 1985 (1985A)",
-        "1985-10-27T09:00:00Z",
+        "1985-10-26T09:00:00Z",
         "branch:2015 -> 1985A",
         ["Marty McFly", "Doc Brown", "Biff Tannen"],
         [],
-        [6],
+        [9],
+        "orange",
+        [],
+    ),
+    (
+        "Go Back to 1955",
+        "1985-10-27T02:42:00Z",
+        "branch:2015 -> 1985A",
+        ["Marty McFly", "Doc Brown"],
+        [],
+        [10],
         "orange",
         ["1985A -> 1955"],
     ),
     (
-        "Return to 1955",
-        "1955-11-12T21:30:00Z",
-        "branch:1985A -> 1955",
-        ["Marty McFly", "Doc Brown", "Biff Tannen"],
+        "Old Biff Gives the Almanac",
+        "1955-11-12T14:00:00Z",
+        "branch:2015 -> 1955",
+        ["Biff Tannen"],
         [],
-        [7],
+        [8],
         "orange",
         [],
     ),
     (
-        "The Old West, 1885",
-        "1885-09-02T12:00:00Z",
-        "branch:1985 -> 1885",
-        ["Marty McFly", "Doc Brown", "Clara Clayton"],
+        "Return to 1955",
+        "1955-11-12T06:00:00Z",
+        "branch:1985A -> 1955",
+        ["Marty McFly", "Doc Brown"],
         [],
-        [8],
+        [11],
+        "orange",
+        [],
+    ),
+    (
+        "Doc Struck by Lightning",
+        "1955-11-12T21:44:00Z",
+        "branch:1985A -> 1955",
+        ["Doc Brown"],
+        [],
+        [13],
+        "orange",
+        ["1955 -> 1885"],
+    ),
+    (
+        "Marty Leaves for the Old West",
+        "1955-11-16T10:00:00Z",
+        "branch:1985A -> 1955",
+        ["Marty McFly"],
+        [],
+        [14],
+        "green",
+        ["1955 -> 1885 (Marty)"],
+    ),
+    (
+        "Doc Arrives in 1885",
+        "1885-01-01T00:00:00Z",
+        "branch:1955 -> 1885",
+        ["Doc Brown"],
+        [],
+        [14],
         "green",
         [],
     ),
     (
-        "The return home",
-        "1985-10-27T12:00:00Z",
-        "main",
+        "Marty Arrives in the Old West",
+        "1885-09-02T08:00:00Z",
+        "branch:1955 -> 1885 (Marty)",
         ["Marty McFly", "Doc Brown", "Clara Clayton"],
-        ["Jennifer Parker"],
-        [9],
+        [],
+        [15],
         "green",
         [],
+    ),
+    (
+        "Marty Departs the Old West",
+        "1885-09-07T09:00:00Z",
+        "branch:1955 -> 1885 (Marty)",
+        ["Marty McFly", "Doc Brown", "Clara Clayton"],
+        [],
+        [17],
+        "green",
+        ["1885 -> 1985"],
+    ),
+    (
+        "Doc Builds the Time Train",
+        "1885-09-08T12:00:00Z",
+        "branch:1955 -> 1885 (Marty)",
+        ["Doc Brown", "Clara Clayton"],
+        [],
+        [16],
+        "green",
+        ["1885 -> 1985 (the Time Train)"],
+    ),
+    (
+        "The Return Home",
+        "1985-10-27T11:00:00Z",
+        "branch:1955 -> 1885 (Marty)",
+        ["Marty McFly", "Doc Brown", "Clara Clayton"],
+        ["Jennifer Parker"],
+        [18],
+        "green",
+        [],
+    ),
+    (
+        "The Time Train Arrives",
+        "1985-10-27T12:00:00Z",
+        "branch:1955 -> 1885 (Marty)",
+        ["Doc Brown", "Clara Clayton"],
+        ["Jennifer Parker"],
+        [19],
+        "green",
+        ["The Time Train Departs"],
+    ),
+    (
+        "Old Biff Returns to 2015",
+        "1955-11-12T18:38:00Z",
+        "branch:2015 -> 1955",
+        ["Biff Tannen"],
+        [],
+        [12],
+        "orange",
+        ["1955 -> 2015"],
     ),
 ]
 
 # (name, description, origin_date, destination_datetime, creates_new_timeline,
-#  timeline_id) — one entry per DeLorean jump.  Every jump opens a new branch
-# named ``branch:<name>``; the scenes that land on it use that id (see SCENES)
-# so the Convergence Map timeline panel draws a spawn arc + arrow per jump.
-TIME_TRAVELS: list[tuple[str, str, str, str, bool, str]] = [
+#  timeline_id) — one entry per time-travel event.  A branch-creating jump opens
+# a new branch named ``branch:<name>``; the scenes that land on it use that id
+# (see SCENES) so the Convergence Map timeline panel draws a spawn arc + arrow
+# per jump.  ``timeline_id`` is the timeline the branch starts off (its parent):
+# per the Convergence Map's "common ancestor" rule a branch must start off a
+# timeline that exists at the moment it is created, so when the direct departure
+# timeline does not exist at that time (2015 / 1985A do not exist in 1955) the
+# parent falls back to ``main``.
+TIME_TRAVELS: list[tuple[str, str, str, str | None, bool, str]] = [
+    (
+        "Einstein's Test Run",
+        (
+            "Doc proves time travel works when the DeLorean carries Einstein "
+            "one minute into the future."
+        ),
+        "1985-10-26T01:18:00Z",
+        "1985-10-26T01:19:00Z",
+        False,
+        "main",
+    ),
     (
         "1985 -> 1955",
         (
@@ -185,47 +342,148 @@ TIME_TRAVELS: list[tuple[str, str, str, str, bool, str]] = [
             "Twin Pines Mall."
         ),
         "1985-10-26T01:35:00Z",
-        "1955-11-05T22:04:00Z",
+        "1955-11-05T06:00:00Z",
         True,
         "main",
     ),
     (
-        "1985 -> 2015",
-        "Marty, Doc and Jennifer travel from 1985 to the Hill Valley of 2015.",
-        "1985-10-26T01:15:00Z",
-        "2015-10-21T18:00:00Z",
+        "1955 -> 1985",
+        (
+            "Marty rides the lightning back to an improved 1985 where George "
+            "is a writer and Doc survives."
+        ),
+        "1955-11-12T22:04:00Z",
+        "1985-10-26T01:24:00Z",
+        False,
+        "branch:1985 -> 1955",
+    ),
+    (
+        "2015 -> 1985",
+        (
+            "Doc returns from 2015 to warn Marty and Jennifer about their "
+            "future children.  This is a trip to the PAST (1985 is earlier "
+            "than 2015), so per the universal rule it opens a new branch."
+        ),
+        "2015-10-21T16:30:00Z",
+        "1985-10-26T10:28:00Z",
         True,
-        "main",
+        "branch:1985 -> 1955",
+    ),
+    (
+        "1985 -> 2015 (the trio)",
+        (
+            "Doc, Marty and Jennifer travel to 2015 to stop Marty Jr.'s "
+            "arrest.  This is the trilogy's one trip to the future — it departs "
+            "from the altered 1985 (Trip to the Future (2015)) and stays on the "
+            "same line."
+        ),
+        "1985-10-26T10:29:00Z",
+        "2015-10-21T16:29:00Z",
+        False,
+        "branch:1985 -> 1955",
+    ),
+    (
+        "2015 -> 1955",
+        (
+            "Old Biff steals the DeLorean and gives the sports almanac to his "
+            "1955 self, creating a divergent 1955."
+        ),
+        "2015-10-21T18:00:00Z",
+        "1955-11-12T14:00:00Z",
+        True,
+        "branch:1985 -> 1955",
+    ),
+    (
+        "1955 -> 2015",
+        (
+            "Old Biff returns to 2015, where he fades out of existence as the "
+            "timeline changes around him."
+        ),
+        "1955-11-12T18:38:00Z",
+        "2015-10-21T18:38:00Z",
+        False,
+        "branch:2015 -> 1955",
     ),
     (
         "2015 -> 1985A",
-        "Returning from 2015, the trio lands in Biff's alternate 1985.",
-        "2015-10-21T18:00:00Z",
-        "1985-10-27T09:00:00Z",
+        (
+            "Doc, Marty and Jennifer return from 2015 and land in Biff's "
+            "dystopian alternate 1985.  This is a trip to the PAST, so it "
+            "opens a new branch."
+        ),
+        "2015-10-21T19:28:00Z",
+        "1985-10-26T09:00:00Z",
         True,
-        "branch:1985 -> 2015",
+        "branch:2015 -> 1955",
     ),
     (
         "1985A -> 1955",
         (
-            "Marty travels from the alternate 1985 to 1955 to retrieve the "
-            "stolen sports almanac."
+            "Doc and Marty travel from the alternate 1985 back to 1955 to "
+            "burn the stolen sports almanac."
         ),
-        "1985-10-27T09:00:00Z",
-        "1955-11-12T21:30:00Z",
+        "1985-10-27T02:42:00Z",
+        "1955-11-12T06:00:00Z",
         True,
-        "branch:2015 -> 1985A",
+        "branch:1985 -> 1955",
     ),
     (
-        "1985 -> 1885",
+        "1955 -> 1885",
         (
-            "Doc is stranded in the Old West of 1885 after a lightning strike "
-            "sends the DeLorean back in time."
+            "Doc is struck by lightning in 1955 and the DeLorean carries him "
+            "to the Old West of 1885."
         ),
-        "1985-10-26T01:35:00Z",
-        "1885-09-02T12:00:00Z",
+        "1955-11-12T21:44:00Z",
+        "1885-01-01T00:00:00Z",
         True,
         "main",
+    ),
+    (
+        "1955 -> 1885 (Marty)",
+        (
+            "Marty travels to 1885 after finding Doc's gravestone, to stop "
+            "Doc from being murdered by Buford Tannen.  His arrival opens a "
+            "second Old West line off Doc's 1885."
+        ),
+        "1955-11-16T10:00:00Z",
+        "1885-09-02T08:00:00Z",
+        True,
+        "branch:1955 -> 1885",
+    ),
+    (
+        "1885 -> 1985",
+        (
+            "Marty pushes the locomotive to 88 mph and returns to 1985, "
+            "landing on the train tracks.  This is a trip to the FUTURE, so it "
+            "stays on the Old West line he was on — it does not open a branch."
+        ),
+        "1885-09-07T09:00:00Z",
+        "1985-10-27T11:00:00Z",
+        False,
+        "branch:1955 -> 1885 (Marty)",
+    ),
+    (
+        "1885 -> 1985 (the Time Train)",
+        (
+            "Doc, Clara and their children arrive in 1985 aboard the "
+            "steam-powered Time Train — a future travel, so it stays on the "
+            "Old West line."
+        ),
+        "1885-09-08T12:00:00Z",
+        "1985-10-27T12:00:00Z",
+        False,
+        "branch:1955 -> 1885 (Marty)",
+    ),
+    (
+        "The Time Train Departs",
+        (
+            "The Time Train lifts off and travels to parts unknown — 'already "
+            "been there'."
+        ),
+        "1985-10-27T12:00:00Z",
+        None,
+        False,
+        "branch:1955 -> 1885 (Marty)",
     ),
 ]
 

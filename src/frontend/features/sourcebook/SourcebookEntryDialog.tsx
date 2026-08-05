@@ -225,7 +225,6 @@ export const SourcebookEntryDialog: React.FC<SourcebookEntryDialogProps> = ({
       originDate={state.originDate}
       destinationDatetime={state.destinationDatetime}
       destinationRelative={state.destinationRelative}
-      createsNewTimeline={state.createsNewTimeline}
       timelineId={state.timelineId}
       timelineOptions={timelineOptions}
       images={state.images}
@@ -265,7 +264,6 @@ export const SourcebookEntryDialog: React.FC<SourcebookEntryDialogProps> = ({
       onOriginDateChange={state.setOriginDate}
       onDestinationDatetimeChange={state.setDestinationDatetime}
       onDestinationRelativeChange={state.setDestinationRelative}
-      onCreatesNewTimelineChange={state.setCreatesNewTimeline}
       onTimelineIdChange={state.setTimelineId}
       onToggleImagesExpanded={(): void =>
         state.setIsImagesExpanded((value: boolean): boolean => !value)

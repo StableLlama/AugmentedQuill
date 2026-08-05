@@ -80,10 +80,8 @@ const SCENE_CIRCLE_R = 5; // snake node circle radius
 
 // Left timeline panel
 const TL_LANE_START_X = 8; // px — X position of the left-most timeline lane
-const TL_LANE_GAP = 28; // px — horizontal spacing between timeline lanes
+const TL_LANE_GAP = 28; // px — horizontal spacing between swimlanes
 const TL_DOT_R = 4; // px — radius of scene dots on timeline
-const TL_LOOP_W_CROSS = 30; // px — baseline bow for cross-lane jumps
-const TL_LOOP_W_SAME = 14; // px — baseline bow for same-lane jumps (= TL_LANE_GAP/2)
 const TL_CORNER_R = 6; // px — rounded corner radius on loop arrows
 const TL_RIGHT_PAD = 8; // px — right breathing room for arrow heads
 const DEFAULT_PLACEHOLDER_ROW_HEIGHT = 84; // px — fallback until card heights are measured
@@ -91,6 +89,24 @@ const PROSE_LANE_ID = '__prose__'; // synthetic lane id for the prose-order snak
 const PROSE_SNAKE_OPACITY = 0.45; // lower opacity to distinguish prose snake from entry snakes
 const DEFAULT_LANE_BUTTON_WIDTH = 144;
 const LANE_HEADER_GAP = 8; // gap-2 between lane header items
+
+// Scene color tags (Tailwind 400 palette) → SVG colors for timeline dots/arrows.
+const SCENE_TAG_COLORS: Record<string, string> = {
+  red: '#f87171',
+  orange: '#fb923c',
+  yellow: '#facc15',
+  green: '#4ade80',
+  teal: '#2dd4bf',
+  blue: '#60a5fa',
+  purple: '#a78bfa',
+  pink: '#f472b6',
+};
+
+const getSceneColor = (scene: Scene): string | null => {
+  const tag = scene.color_tag;
+  if (typeof tag !== 'string') return null;
+  return SCENE_TAG_COLORS[tag] ?? null;
+};
 
 // ---------------------------------------------------------------------------
 // Geometry helpers
@@ -305,148 +321,137 @@ export function buildSnakePath(
 }
 
 /**
- * Build an SVG path string for a time travel arrow on the left timeline panel.
- * The arrow loops from depY → destY, bowing RIGHT of the track (toward the scene cards).
+ * Non-branching join geometry.
  *
- *  destY > depY (forward jump): arrow goes DOWN on the right
- *  destY < depY (backward jump): arrow goes UP on the right
+ * A jump that joins an existing timeline (a future jump, or a return) is drawn
+ * in its OWN swimlane: it departs from the source point, runs a short
+ * horizontal lead into its swimlane, travels vertically to the arrival height,
+ * then JOINS the destination timeline with a short horizontal segment whose
+ * arrowhead points into the timeline.  Both right-angle turns (the lead → the
+ * vertical run, and the vertical run → the join) are rounded with a knee, the
+ * same corner radius the branch arrows use:
  *
- * Shape: start at (TL_TRACK_X, depY), horizontal right to loop edge,
- * vertical to destY, horizontal left back to TL_TRACK_X.
- * Corners are rounded with radius TL_CORNER_R.
+ *   timeline        jump swimlane
+ *       │                │
+ *       │ ● depY ──┐     │
+ *       │          ╰─┐   │
+ *       │            │   │
+ *       │ ◀────── destY  │   ← short horizontal join (arrowhead)
+ *       │                │
+ *
+ * When the destination is the same timeline the arrow simply detours out and
+ * back, keeping the jump off the timeline's own line.
  */
-/**
- * Universal time-travel arrow geometry.
- *
- * By default jumps bow to the RIGHT of max(sourceX, destinationX). Callers may
- * pass a custom `loopX` to keep a jump in a lane-local side channel instead.
- *
- * The shape is always a U-like path opening toward the right-side channel:
- *
- *   ┌── rx ──┐
- *   │        │
- *   srcX    dstX  (same lane → dstX = srcX, so it bows right and returns)
- *
- * Backward jump (destY < depY, going UP in the SVG): arrowhead tip points UP.
- * Forward jump  (destY ≥ depY, going DOWN):          arrowhead tip points DOWN.
- */
-function buildTimeTravelArrowGeometry(
-  sourceX: number,
+function buildTimelineJoinGeometry(
+  originX: number,
   depY: number,
-  destinationX: number,
+  arrowX: number,
   destY: number,
-  loopX?: number
+  destX: number
 ): { pathData: string; endX: number; endY: number } {
-  const cr = TL_CORNER_R;
-  const rx = loopX ?? Math.max(sourceX, destinationX) + TL_LOOP_W_CROSS;
-  const goingDown = destY >= depY;
+  const cr = Math.min(TL_CORNER_R, Math.abs(destX - arrowX), Math.abs(destY - depY));
 
-  if (goingDown) {
+  // No room for a rounded knee (a flat/horizontal jump) — keep the sharp path.
+  if (cr < 0.5) {
     return {
       pathData: [
-        `M ${sourceX},${depY}`,
-        `L ${rx - cr},${depY}`,
-        `a ${cr},${cr} 0 0 1 ${cr},${cr}`,
-        `L ${rx},${destY - cr}`,
-        `a ${cr},${cr} 0 0 1 ${-cr},${cr}`,
-        `L ${destinationX},${destY}`,
+        `M ${originX},${depY}`,
+        `L ${arrowX},${depY}`,
+        `L ${arrowX},${destY}`,
+        `L ${destX},${destY}`,
       ].join(' '),
-      endX: destinationX,
+      endX: destX,
       endY: destY,
     };
   }
 
+  const goingDown = destY >= depY;
+  const goingRight = destX >= arrowX;
+
+  // Knee 1 (at depY): the horizontal lead turns into the vertical run.
+  const knee1 = goingDown
+    ? `a ${cr},${cr} 0 0 1 ${cr},${cr}` // right → down (clockwise)
+    : `a ${cr},${cr} 0 0 0 ${cr},${-cr}`; // right → up (counter-clockwise)
+
+  // Knee 2 (at destY): the vertical run turns horizontal to join the target.
+  const knee2 = goingDown
+    ? goingRight
+      ? `a ${cr},${cr} 0 0 0 ${cr},${cr}` // down → right (counter-clockwise)
+      : `a ${cr},${cr} 0 0 1 ${-cr},${cr}` // down → left (clockwise)
+    : goingRight
+      ? `a ${cr},${cr} 0 0 1 ${cr},${-cr}` // up → right (clockwise)
+      : `a ${cr},${cr} 0 0 0 ${-cr},${-cr}`; // up → left (counter-clockwise)
+
+  const verticalY = goingDown ? destY - cr : destY + cr;
+
   return {
     pathData: [
-      `M ${sourceX},${depY}`,
-      `L ${rx - cr},${depY}`,
-      `a ${cr},${cr} 0 0 0 ${cr},${-cr}`,
-      `L ${rx},${destY + cr}`,
-      `a ${cr},${cr} 0 0 0 ${-cr},${-cr}`,
-      `L ${destinationX},${destY}`,
+      `M ${originX},${depY}`,
+      `L ${arrowX - cr},${depY}`,
+      knee1,
+      `L ${arrowX},${verticalY}`,
+      knee2,
+      `L ${destX},${destY}`,
     ].join(' '),
-    endX: destinationX,
+    endX: destX,
     endY: destY,
   };
 }
 
-function getTimeTravelLoopX(
-  sourceX: number,
-  destinationX: number,
-  depY: number,
-  destY: number
-): number {
-  if (sourceX === destinationX && destY < depY) {
-    return sourceX + TL_LOOP_W_SAME;
-  }
-
-  return Math.max(sourceX, destinationX) + TL_LOOP_W_CROSS;
-}
-
+/**
+ * Branch-creation jump arrow geometry (vertical swimlane arrow).
+ *
+ * A time jump starts from the origin scene's marker, runs a short distance
+ * horizontally to the right onto the even swimlane between the two timelines,
+ * then has a knee and extends vertically to the universum-time point where the
+ * new timeline branches off its origin:
+ *
+ *   origin lane                    new lane
+ *       │                                │
+ *       │ ● departure (depY) ──┐         │
+ *       │                      │         │
+ *       │                      │         │
+ *       │                      ▼ destY   │   ← vertical arrow (even swimlane)
+ *       │                                │
+ *
+ * Knee UP (destY < depY) is a jump to the past; knee DOWN (destY >= depY) is a
+ * jump to the future. The arrowhead is vertical (`tl-arrow-up`/`tl-arrow-down`)
+ * and sits at the tip; when a scene marks the arrival moment its marker dot is
+ * drawn at the tip and the scene card lines up to the right.
+ */
 function buildBranchCreationArrowGeometry(
-  sourceX: number,
+  originX: number,
   depY: number,
-  destinationLaneX: number,
+  arrowX: number,
   destY: number
 ): { pathData: string; endX: number; endY: number } {
-  const targetX = (sourceX + destinationLaneX) / 2;
-  const dx = targetX - sourceX;
+  const dx = arrowX - originX;
   const goingDown = destY >= depY;
   const cr = Math.min(TL_CORNER_R, Math.abs(dx));
 
   if (cr < 0.5) {
     return {
-      pathData: [`M ${sourceX},${depY}`, `L ${targetX},${destY}`].join(' '),
-      endX: targetX,
+      pathData: [`M ${originX},${depY}`, `L ${arrowX},${destY}`].join(' '),
+      endX: arrowX,
       endY: destY,
     };
   }
 
-  const approachX = targetX - Math.sign(dx) * cr;
+  const approachX = arrowX - Math.sign(dx) * cr;
   const arcDx = Math.sign(dx) * cr;
   const arcDy = goingDown ? cr : -cr;
   const sweepFlag = dx > 0 ? (goingDown ? 1 : 0) : goingDown ? 0 : 1;
 
   return {
     pathData: [
-      `M ${sourceX},${depY}`,
+      `M ${originX},${depY}`,
       `L ${approachX},${depY}`,
       `a ${cr},${cr} 0 0 ${sweepFlag} ${arcDx},${arcDy}`,
-      `L ${targetX},${destY}`,
+      `L ${arrowX},${destY}`,
     ].join(' '),
-    endX: targetX,
+    endX: arrowX,
     endY: destY,
   };
-}
-
-function buildSpawnedTimelineTrackPath(
-  parentLaneX: number,
-  laneX: number,
-  spawnY: number,
-  overlayHeight: number
-): string {
-  const cornerRadius = TL_CORNER_R;
-  const dx = laneX - parentLaneX;
-  const absDx = Math.abs(dx);
-  const horizontalSign = dx >= 0 ? 1 : -1;
-  const usableCornerRadius = Math.min(cornerRadius, absDx / 2);
-
-  // If the parent and destination lanes are effectively the same X,
-  // fall back to a direct vertical continuation.
-  if (absDx < 0.5 || usableCornerRadius < 0.5) {
-    return [`M ${laneX},${spawnY}`, `L ${laneX},${overlayHeight}`].join(' ');
-  }
-
-  const horizontalEndX = laneX - horizontalSign * usableCornerRadius;
-  const arcDx = horizontalSign * usableCornerRadius;
-  const arcDy = usableCornerRadius;
-
-  return [
-    `M ${parentLaneX},${spawnY}`,
-    `L ${horizontalEndX},${spawnY}`,
-    `a ${usableCornerRadius},${usableCornerRadius} 0 0 ${horizontalSign > 0 ? 1 : 0} ${arcDx},${arcDy}`,
-    `L ${laneX},${overlayHeight}`,
-  ].join(' ');
 }
 
 // ---------------------------------------------------------------------------
@@ -477,6 +482,16 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
 }: ConvergenceMapViewProps) => {
   const { t } = useTranslation();
   const { isLight } = useTheme();
+
+  // Theme colors used by the timeline panel / character snakes.  These are
+  // hoisted above the timeline geometry memos so fallback colors are
+  // initialised before any arrow memo references them (otherwise a TDZ error
+  // fires as soon as a jump has no departure scene).
+  const trackColor = isLight ? '#6366f1' : '#a5b4fc';
+  const solidFill = isLight ? '#6366f1' : '#a5b4fc';
+  const hollowFill = isLight ? '#f8fafc' : '#0f172a';
+  const otherTrackColor = isLight ? '#8b1f3d' : '#d7b26f';
+  const otherSolidFill = isLight ? '#8b1f3d' : '#f0d8a3';
 
   // Lane state (shared with NarrativeView via useSceneLanes).
   const lanes = useSceneLanes({
@@ -1114,6 +1129,7 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
     destinationX: number;
     depY: number;
     destY: number;
+    color: string;
   };
   const timelineLaneStartYByNumber = useMemo(() => {
     const starts = new Map<number, number>();
@@ -1163,67 +1179,77 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
   }, [timelinePanelModel.laneNumbers]);
 
   /**
-   * Compute the actual rightmost X reached by any time-travel loop so the
-   * timeline panel is sized exactly to its content (no over-reservation).
+   * X coordinate for each scene's marker dot.  Normally a scene's dot sits on
+   * its own timeline lane (odd swimlane).  A scene that exists at the exact
+   * moment a time jump arrives (the destination scene of a branch-creating
+   * jump) is instead marked at the TIP of that jump arrow — on the even
+   * swimlane between the source and destination timelines — with its card at
+   * the same height to the right.
    */
-  const maxTimeTravelLoopX = useMemo((): number => {
-    let max = 0;
-    timelinePanelModel.events.forEach((ev: TimelineJumpEvent): void => {
-      const sourceX = timelineLaneXByNumber.get(ev.sourceLane);
-      if (sourceX === undefined) return;
-      if (ev.createsNewTimeline) {
-        // Branch-creation arrows use a midpoint — they stay within lane bounds.
-        const destinationLaneX =
-          timelineLaneXByNumber.get(ev.destinationLane) ?? sourceX;
-        max = Math.max(max, Math.max(sourceX, destinationLaneX));
-        return;
-      }
-      const destinationX = timelineLaneXByNumber.get(ev.destinationLane) ?? sourceX;
-      if (sourceX === destinationX) {
-        // Same-lane backward jump: bow right by TL_LOOP_W_SAME.
-        max = Math.max(max, sourceX + TL_LOOP_W_SAME);
-      } else {
-        // Cross-lane jump: bow right by TL_LOOP_W_CROSS from the rightmost lane.
-        max = Math.max(max, Math.max(sourceX, destinationX) + TL_LOOP_W_CROSS);
-      }
+  const sceneMarkerXBySceneId = useMemo((): Map<SceneId, number> => {
+    const markerX = new Map<SceneId, number>();
+    sortedScenes.forEach((scene: Scene): void => {
+      const lane = timelinePanelModel.laneBySceneId.get(scene.id) ?? 0;
+      const laneX = timelineLaneXByNumber.get(lane);
+      if (laneX !== undefined) markerX.set(scene.id, laneX);
     });
-    return max;
-  }, [timelinePanelModel.events, timelineLaneXByNumber]);
+
+    timelinePanelModel.events.forEach((ev: TimelineJumpEvent): void => {
+      if (!ev.createsNewTimeline || ev.destinationSceneId === null) return;
+      const eventLaneX = timelineLaneXByNumber.get(ev.lane);
+      if (eventLaneX === undefined) return;
+      // The destination scene of a branch-creating jump is marked at the tip of
+      // its arrow, on the jump's OWN swimlane.
+      markerX.set(ev.destinationSceneId, eventLaneX);
+    });
+
+    return markerX;
+  }, [sortedScenes, timelinePanelModel, timelineLaneXByNumber]);
+
+  /** Resolved SVG color per scene (from its color_tag), or null when unset. */
+  const sceneColorBySceneId = useMemo((): Map<SceneId, string | null> => {
+    const colors = new Map<SceneId, string | null>();
+    sortedScenes.forEach((scene: Scene): void => {
+      colors.set(scene.id, getSceneColor(scene));
+    });
+    return colors;
+  }, [sortedScenes]);
 
   const timelinePanelWidth = useMemo(() => {
-    const maxLaneNumber = Math.max(0, ...timelinePanelModel.laneNumbers);
-    const rightMostLaneX = TL_LANE_START_X + maxLaneNumber * TL_LANE_GAP;
-    const contentRight = Math.max(rightMostLaneX, maxTimeTravelLoopX);
-    return contentRight + TL_RIGHT_PAD;
-  }, [timelinePanelModel.laneNumbers, maxTimeTravelLoopX]);
+    // Every timeline AND every jump reserves its own swimlane, so the panel
+    // spans exactly the widest occupied column.
+    const maxColumn = Math.max(0, ...timelinePanelModel.laneNumbers);
+    return TL_LANE_START_X + maxColumn * TL_LANE_GAP + TL_RIGHT_PAD;
+  }, [timelinePanelModel.laneNumbers]);
 
-  const timelineSpawns = useMemo((): Map<number, number | null> => {
-    const spawns = new Map<number, number | null>();
-    spawns.set(0, null);
+  /**
+   * Y of each branch lane's branch point — the universum-time point where the
+   * new timeline branches off its origin (the destination scene row when a
+   * scene covers the arrival, otherwise the empty gap row).  Used both to start
+   * the spawned timeline's horizontal line and to anchor the jump arrow tip.
+   */
+  const branchPointYByLane = useMemo((): Map<number, number | null> => {
+    const points = new Map<number, number | null>();
+    points.set(0, null);
 
     timelinePanelModel.events.forEach((ev: TimelineJumpEvent): void => {
       if (!ev.createsNewTimeline || ev.destinationEpochNs === null) return;
-
-      const measuredGap = epochGapLayouts.get(ev.destinationEpochNs.toString());
-      if (measuredGap !== undefined) {
-        spawns.set(ev.destinationLane, getLayoutCenterY(measuredGap));
-        return;
+      let y: number | null = null;
+      if (ev.destinationSceneId !== null) {
+        const layout = cardLayouts.get(ev.destinationSceneId);
+        y = layout ? getLayoutCenterY(layout) : null;
       }
-
-      const spawnY =
-        ev.destinationSceneId !== null
-          ? (() => {
-              const layout = cardLayouts.get(ev.destinationSceneId);
-              return layout ? getLayoutCenterY(layout) : null;
-            })()
-          : null; // gap row not yet measured
-      spawns.set(ev.destinationLane, spawnY);
+      if (y === null) {
+        const gap = epochGapLayouts.get(ev.destinationEpochNs.toString());
+        y = gap ? getLayoutCenterY(gap) : null;
+      }
+      points.set(ev.destinationLane, y);
     });
 
-    return spawns;
+    return points;
   }, [timelinePanelModel.events, cardLayouts, epochGapLayouts]);
 
-  /** Maps each spawned branch lane → the source lane that created it. */
+  /** Maps each spawned branch lane → the source lane it branches off. */
   const timelineSpawnParentLane = useMemo((): Map<number, number> => {
     const map = new Map<number, number>();
     timelinePanelModel.events.forEach((ev: TimelineJumpEvent): void => {
@@ -1234,26 +1260,6 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
     });
     return map;
   }, [timelinePanelModel.events]);
-
-  // For branch-creation jumps that land on an actual destination scene, place
-  // that scene dot on the horizontal spawn segment so the arrow can terminate
-  // directly on the dot (special case like 19->17 in the sketch).
-  const timelineSceneDotXOverrides = useMemo((): Map<SceneId, number> => {
-    const overrides = new Map<SceneId, number>();
-
-    timelinePanelModel.events.forEach((ev: TimelineJumpEvent): void => {
-      if (!ev.createsNewTimeline) return;
-      if (ev.destinationSceneId === null) return;
-
-      const sourceX = timelineLaneXByNumber.get(ev.sourceLane);
-      const destinationLaneX = timelineLaneXByNumber.get(ev.destinationLane);
-      if (sourceX === undefined || destinationLaneX === undefined) return;
-
-      overrides.set(ev.destinationSceneId, (sourceX + destinationLaneX) / 2);
-    });
-
-    return overrides;
-  }, [timelinePanelModel.events, timelineLaneXByNumber]);
 
   const timeTravelArrows = useMemo((): TimeTravelArrow[] => {
     const arrows: TimeTravelArrow[] = [];
@@ -1286,6 +1292,18 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
     timelinePanelModel.events.forEach((ev: TimelineJumpEvent): void => {
       const sourceX = timelineLaneXByNumber.get(ev.sourceLane);
       if (sourceX === undefined) return;
+      // The model only emits events with a known destination (a travel without
+      // one draws no arrow), but the type keeps it nullable — guard it here.
+      if (ev.destinationEpochNs === null) return;
+      // The jump's OWN swimlane — never shared with a timeline or another jump.
+      const arrowX = timelineLaneXByNumber.get(ev.lane) ?? sourceX;
+      const destinationLaneX = timelineLaneXByNumber.get(ev.destinationLane) ?? sourceX;
+
+      // The arrow is drawn dotted and colored like the causing scene.
+      const arrowColor =
+        ev.departureSceneId !== null
+          ? (sceneColorBySceneId.get(ev.departureSceneId) ?? trackColor)
+          : trackColor;
 
       // Departure point
       const depY =
@@ -1305,73 +1323,52 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
       if (depY === null) return;
 
       // Determine destination point
-      let destX = sourceX;
+      let destX = destinationLaneX;
       let destY: number | null = null;
-      const destinationLaneX = timelineLaneXByNumber.get(ev.destinationLane) ?? sourceX;
 
-      if (ev.createsNewTimeline && ev.destinationEpochNs !== null) {
-        // Branching case: target the split height on the spawned timeline.
-        const spawnY = timelineSpawns.get(ev.destinationLane);
-
-        if (spawnY != null) {
-          if (ev.destinationSceneId !== null) {
-            // Special case: when the destination scene exists exactly at the
-            // branch spawn point, terminate at the marker border so the arrow
-            // points to the dot, not to the horizontal spawn line.
-            const goingDown = spawnY >= depY;
-            destY = spawnY + (goingDown ? -TL_DOT_R : TL_DOT_R);
-          } else {
-            destY = spawnY;
-          }
-        } else if (ev.destinationSceneId !== null) {
-          // Scene exists at destination — use its Y as the arrival point
+      if (ev.createsNewTimeline) {
+        // Branching case: the arrow extends to the universum-time point where
+        // the new timeline branches off its origin (its branch point).  When a
+        // scene covers that moment its marker sits at the arrow tip, so the
+        // arrow head and the marker share the SAME vertical position; when no
+        // scene covers it, the arrow points at the empty gap row (no marker).
+        const destDotY = branchPointYByLane.get(ev.destinationLane) ?? null;
+        destY = destDotY;
+      } else {
+        // Non-branching case: point at the destination scene on the destination
+        // timeline (arrow head at the marker's vertical position), or at the
+        // empty gap row when no scene covers the arrival (no marker).
+        if (ev.destinationSceneId !== null) {
           const sceneLayout = cardLayouts.get(ev.destinationSceneId);
           destY = sceneLayout ? sceneLayout.y + sceneLayout.h / 2 : null;
         } else {
-          // No gap row measured yet for this epoch.
-          destY = null;
-        }
-        destX = destinationLaneX;
-      } else {
-        // Non-branching case: point at destination scene or stay on source lane
-        if (ev.destinationSceneId !== null) {
-          const sceneLayout = cardLayouts.get(ev.destinationSceneId);
-          if (sceneLayout) {
-            const centerY = sceneLayout.y + sceneLayout.h / 2;
-            // Vertical arrivals: stop at top/bottom edge of dot.
-            // Same-lane backward (horizontal arrival) offset is applied at draw time.
-            const isSameLaneBwd =
-              ev.sourceLane === ev.destinationLane && centerY < depY;
-            destY = isSameLaneBwd
-              ? centerY
-              : centerY + (centerY >= depY ? -TL_DOT_R : TL_DOT_R);
-            destX = sourceX;
-          } else {
-            destY = null;
-            destX = sourceX;
-          }
-        } else if (ev.destinationEpochNs !== null) {
-          // Use the measured epoch-gap row position.
           const gap = epochGapLayouts.get(ev.destinationEpochNs.toString());
           destY = gap ? getLayoutCenterY(gap) : null;
-          destX = sourceX;
-        } else {
-          destY = depY - 20;
-          destX = sourceX;
         }
       }
 
       if (destY === null) return;
       if (Math.abs(destY - depY) < 2 && sourceX === destX) return;
 
+      // Origin marker: every jump starts at the departure scene's dot, on its
+      // OWN timeline — never on a different timeline while the marker sits
+      // elsewhere.  A branch-creation jump uses the marker as its origin; a
+      // non-branching join does the same, then runs in its own swimlane and
+      // joins the destination timeline (a return loops back to the line it
+      // left).
+      const departureMarkerX =
+        ev.departureSceneId !== null
+          ? (sceneMarkerXBySceneId.get(ev.departureSceneId) ?? sourceX)
+          : sourceX;
+
       let pathData: string;
       let markerEnd: string;
 
       if (ev.createsNewTimeline && ev.destinationEpochNs !== null) {
         const geometry = buildBranchCreationArrowGeometry(
-          sourceX,
+          departureMarkerX,
           depY,
-          destinationLaneX,
+          arrowX,
           destY
         );
         pathData = geometry.pathData;
@@ -1387,47 +1384,23 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
           destinationX: geometry.endX,
           depY,
           destY: geometry.endY,
+          color: arrowColor,
         });
         return;
       }
 
-      const loopX = ev.createsNewTimeline
-        ? Math.max(
-            sourceX,
-            timelineLaneXByNumber.get(ev.destinationLane) ?? sourceX + TL_LANE_GAP
-          ) + TL_LOOP_W_CROSS
-        : getTimeTravelLoopX(sourceX, destX, depY, destY);
-
-      if (sourceX === destX && destY > depY) {
-        // Same-lane forward travel remains on the timeline.
-        pathData = `M ${sourceX},${depY} L ${destX},${destY}`;
-        markerEnd = 'url(#tl-arrow-down)';
-      } else {
-        // Backward jumps and cross-lane jumps use a side-channel loop.
-        const isSameLaneBackward = sourceX === destX && destY < depY;
-        // For same-lane backward jumps with a known destination scene the path arrives
-        // horizontally; shift the endpoint to the right edge of the destination dot.
-        const drawDestX =
-          isSameLaneBackward && ev.destinationSceneId !== null
-            ? destX + TL_DOT_R
-            : destX;
-        const geometry = buildTimeTravelArrowGeometry(
-          sourceX,
-          depY,
-          drawDestX,
-          destY,
-          loopX
-        );
-        pathData = geometry.pathData;
-        // Same-lane backward jumps arrive horizontally from the right side-channel;
-        // all other loops arrive vertically.
-        markerEnd =
-          destY > depY
-            ? 'url(#tl-arrow-down)'
-            : isSameLaneBackward
-              ? 'url(#tl-arrow-left)'
-              : 'url(#tl-arrow-up)';
-      }
+      // Non-branching join: depart from the departure scene's dot → the jump's
+      // own swimlane → arrival height → a short horizontal segment joining the
+      // destination timeline.
+      const geometry = buildTimelineJoinGeometry(
+        departureMarkerX,
+        depY,
+        arrowX,
+        destY,
+        destX
+      );
+      pathData = geometry.pathData;
+      markerEnd = destX > arrowX ? 'url(#tl-arrow-right)' : 'url(#tl-arrow-left)';
 
       arrows.push({
         pathData,
@@ -1436,9 +1409,10 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
         entryName: ev.entryName,
         createsNewTimeline: ev.createsNewTimeline,
         sourceX,
-        destinationX: destX,
+        destinationX: geometry.endX,
         depY,
-        destY,
+        destY: geometry.endY,
+        color: arrowColor,
       });
     });
 
@@ -1448,7 +1422,9 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
     cardLayouts,
     epochGapLayouts,
     timelineLaneXByNumber,
-    timelineSpawns,
+    branchPointYByLane,
+    sceneMarkerXBySceneId,
+    sceneColorBySceneId,
   ]);
 
   const timelineSceneAreaHeight = useMemo(() => {
@@ -1461,6 +1437,62 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
 
   const timelineOverlayHeight = Math.max(timelineSceneAreaHeight, viewportHeight);
   const cardsLeftPadding = timelinePanelWidth + 4;
+
+  /**
+   * Spawn path for each branched timeline (directory-tree style): a horizontal
+   * "side going" line from the parent timeline at the branch point, a downward
+   * knee, then a vertical line down to the bottom of the panel.
+   */
+  const branchSpawnPaths = useMemo((): Map<number, string> => {
+    const paths = new Map<number, string>();
+    timelinePanelModel.timelineLaneNumbers.forEach((laneNumber: number): void => {
+      if (laneNumber === 0) return;
+      const branchY = branchPointYByLane.get(laneNumber);
+      if (branchY === null || branchY === undefined) return;
+      const laneX = timelineLaneXByNumber.get(laneNumber);
+      const parentLane = timelineSpawnParentLane.get(laneNumber) ?? 0;
+      const parentX = timelineLaneXByNumber.get(parentLane);
+      if (laneX === undefined || parentX === undefined) return;
+
+      // Directory-tree spawn: a horizontal line from the parent at the branch
+      // point, a rounded knee turning downward, then the vertical trunk to the
+      // bottom.  Each timeline's trunk starts at its own branch point only — it
+      // is never extended upward, so no timeline appears to start at a Y where
+      // it does not actually begin.
+      const dx = laneX - parentX;
+      const absDx = Math.abs(dx);
+      const horizontalSign = dx >= 0 ? 1 : -1;
+      const cr = Math.min(TL_CORNER_R, absDx / 2);
+
+      if (absDx < 0.5 || cr < 0.5) {
+        paths.set(
+          laneNumber,
+          [`M ${parentX},${branchY}`, `L ${laneX},${timelineOverlayHeight}`].join(' ')
+        );
+        return;
+      }
+
+      const horizontalEndX = laneX - horizontalSign * cr;
+      const arcDx = horizontalSign * cr;
+      const arcDy = cr;
+      paths.set(
+        laneNumber,
+        [
+          `M ${parentX},${branchY}`,
+          `L ${horizontalEndX},${branchY}`,
+          `a ${cr},${cr} 0 0 ${horizontalSign > 0 ? 1 : 0} ${arcDx},${arcDy}`,
+          `L ${laneX},${timelineOverlayHeight}`,
+        ].join(' ')
+      );
+    });
+    return paths;
+  }, [
+    timelinePanelModel.timelineLaneNumbers,
+    branchPointYByLane,
+    timelineSpawnParentLane,
+    timelineLaneXByNumber,
+    timelineOverlayHeight,
+  ]);
 
   const placeholderRowHeight = useMemo((): number => {
     const heights = Array.from(cardLayouts.values()).map(
@@ -1612,11 +1644,6 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
   // -------------------------------------------------------------------------
 
   const bgClass = isLight ? 'bg-brand-gray-50' : 'bg-brand-gray-950';
-  const trackColor = isLight ? '#6366f1' : '#a5b4fc';
-  const solidFill = isLight ? '#6366f1' : '#a5b4fc';
-  const hollowFill = isLight ? '#f8fafc' : '#0f172a';
-  const otherTrackColor = isLight ? '#8b1f3d' : '#d7b26f';
-  const otherSolidFill = isLight ? '#8b1f3d' : '#f0d8a3';
   const { proseTrackColor, proseFill, proseIconColor } =
     getPageProseStyle(editorSettings);
   const proseHeaderClasses = isLight
@@ -1870,70 +1897,59 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
             onPointerUp={handleTimelinePointerUp}
             onPointerCancel={handleTimelinePointerCancel}
           >
-            {/* Vertical track lines for all timelines */}
-            {timelinePanelModel.laneNumbers.map((laneNumber: number) => {
+            {/* Timeline tracks — main line and spawned branches (tree style).
+                Only timeline columns get vertical lines; jump columns carry
+                only their arrow (one swimlane per item). */}
+            {timelinePanelModel.timelineLaneNumbers.map((laneNumber: number) => {
               const laneX = timelineLaneXByNumber.get(laneNumber);
               if (laneX === undefined) return null;
 
-              // Determine where the line should start.
-              let lineStartY: number | undefined;
-
               if (laneNumber === 0) {
                 // Main timeline exists for the full visible chronology.
-                lineStartY = 0;
-              } else {
-                // Branched timelines only exist from their spawn onward.
-                const spawnY = timelineSpawns.get(laneNumber);
-                if (spawnY !== null && spawnY !== undefined) {
-                  lineStartY = spawnY;
-                } else {
-                  lineStartY = timelineLaneStartYByNumber.get(laneNumber);
-                }
+                return (
+                  <line
+                    key="lane-track-0"
+                    x1={laneX}
+                    y1={0}
+                    x2={laneX}
+                    y2={timelineOverlayHeight}
+                    stroke={trackColor}
+                    strokeWidth={3}
+                    opacity={0.9}
+                  />
+                );
               }
 
-              // Skip rendering if no anchor exists.
+              // Branched timeline: a horizontal spawn line from its parent at
+              // the branch point, a downward knee, then a vertical line to the
+              // bottom of the panel (directory-tree look).
+              const spawnPath = branchSpawnPaths.get(laneNumber);
+              if (spawnPath !== undefined) {
+                return (
+                  <path
+                    key={`lane-track-${laneNumber}`}
+                    d={spawnPath}
+                    fill="none"
+                    stroke={trackColor}
+                    strokeWidth={3}
+                    strokeLinejoin="round"
+                    opacity={0.9}
+                  />
+                );
+              }
+
+              const lineStartY = timelineLaneStartYByNumber.get(laneNumber);
               if (lineStartY === undefined) return null;
-
-              const lineEndY = Math.max(timelineOverlayHeight, lineStartY + 1);
-
-              if (laneNumber !== 0) {
-                const spawnY = timelineSpawns.get(laneNumber);
-                if (spawnY !== null && spawnY !== undefined) {
-                  const parentLane = timelineSpawnParentLane.get(laneNumber) ?? 0;
-                  const parentLaneX =
-                    timelineLaneXByNumber.get(parentLane) ?? laneX - TL_LANE_GAP;
-                  const spawnedPath = buildSpawnedTimelineTrackPath(
-                    parentLaneX,
-                    laneX,
-                    spawnY,
-                    lineEndY
-                  );
-
-                  return (
-                    <path
-                      key={`lane-track-${laneNumber}`}
-                      d={spawnedPath}
-                      fill="none"
-                      stroke={trackColor}
-                      strokeWidth={2}
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      opacity={0.7}
-                    />
-                  );
-                }
-              }
-
               return (
                 <line
                   key={`lane-track-${laneNumber}`}
                   x1={laneX}
                   y1={lineStartY}
                   x2={laneX}
-                  y2={lineEndY}
+                  y2={timelineOverlayHeight}
                   stroke={trackColor}
-                  strokeWidth={2}
-                  opacity={0.7}
+                  strokeWidth={3}
+                  opacity={0.9}
                 />
               );
             })}
@@ -1962,8 +1978,9 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
               const laneX = timelineLaneXByNumber.get(lane);
               if (!layout) return null;
               if (laneX === undefined) return null;
-              const overriddenX = timelineSceneDotXOverrides.get(scene.id);
-              const targetX = overriddenX ?? laneX;
+              // Scene markers sit on their timeline lane, except the destination
+              // scene of a jump which is marked at the arrow tip (even swimlane).
+              const targetX = sceneMarkerXBySceneId.get(scene.id) ?? laneX;
               const pendingLane = pendingTimelineAssignments.get(scene.id);
               const previewX =
                 draggingSceneId === scene.id && dragHoverLane !== null
@@ -1987,7 +2004,7 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
                     cx={cx}
                     cy={cy}
                     r={TL_DOT_R}
-                    fill={solidFill}
+                    fill={sceneColorBySceneId.get(scene.id) ?? solidFill}
                     opacity={0.8}
                     style={{ cursor: 'ew-resize' }}
                     pointerEvents="none"
@@ -2005,7 +2022,7 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
                 refY="2.5"
                 orient="90"
               >
-                <polygon points="0 0, 6 2.5, 0 5" fill={trackColor} />
+                <polygon points="0 0, 6 2.5, 0 5" fill="context-stroke" />
               </marker>
               <marker
                 id="tl-arrow-up"
@@ -2015,7 +2032,7 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
                 refY="2.5"
                 orient="270"
               >
-                <polygon points="0 0, 6 2.5, 0 5" fill={trackColor} />
+                <polygon points="0 0, 6 2.5, 0 5" fill="context-stroke" />
               </marker>
               <marker
                 id="tl-arrow-left"
@@ -2025,27 +2042,31 @@ export const ConvergenceMapView: React.FC<ConvergenceMapViewProps> = ({
                 refY="2.5"
                 orient="180"
               >
-                <polygon points="0 0, 6 2.5, 0 5" fill={trackColor} />
+                <polygon points="0 0, 6 2.5, 0 5" fill="context-stroke" />
+              </marker>
+              <marker
+                id="tl-arrow-right"
+                markerWidth="6"
+                markerHeight="5"
+                refX="1"
+                refY="2.5"
+                orient="0"
+              >
+                <polygon points="0 0, 6 2.5, 0 5" fill="context-stroke" />
               </marker>
             </defs>
             {timeTravelArrows.map((arrow: TimeTravelArrow, i: number) => (
               <g key={i}>
-                {/* Dot at departure point */}
-                <circle
-                  cx={arrow.sourceX}
-                  cy={arrow.depY}
-                  r={3}
-                  fill={trackColor}
-                  opacity={0.85}
-                />
-                {/* Arrow path with new semantics */}
+                {/* Arrow path: from the origin scene marker, knee, to the tip.
+                    Dotted and colored like the causing scene. */}
                 <path
                   d={arrow.pathData}
                   fill="none"
-                  stroke={trackColor}
+                  stroke={arrow.color}
                   strokeWidth={1.5}
                   strokeLinecap="round"
                   strokeLinejoin="round"
+                  strokeDasharray="4 3"
                   markerEnd={arrow.markerEnd}
                   opacity={0.85}
                 />

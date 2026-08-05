@@ -10,6 +10,7 @@
  */
 
 import { useEffect, useMemo, useState, Dispatch, SetStateAction } from 'react';
+import { parseZonedDateTime } from '../../utils/temporal';
 import { SourcebookEntry, SourcebookRelation } from '../../types';
 import { ProjectImage, SourcebookUpsertPayload } from '../../services/apiTypes';
 import { useSearchHighlight } from '../search/SearchHighlightContext';
@@ -77,6 +78,33 @@ interface UseSourcebookEntryDialogStateParams {
   onClose: () => void;
 }
 
+/**
+ * Branch creation is derived from context, so a Time Travel entry's
+ * ``creates_new_timeline`` flag is computed from the direction of the travel:
+ * a trip to the PAST (destination before origin) opens a new timeline, a trip
+ * to the FUTURE stays on the same line.  Entries with incomplete dates stay
+ * non-branching (and, without a destination, draw no arrow at all).
+ */
+const deriveCreatesNewTimeline = (
+  category: string,
+  originDate: string | null,
+  destinationDatetime: string | null
+): boolean => {
+  if (
+    category !== 'Time Travel' ||
+    originDate === null ||
+    destinationDatetime === null
+  ) {
+    return false;
+  }
+  const origin = parseZonedDateTime(originDate);
+  const destination = parseZonedDateTime(destinationDatetime);
+  if (origin === null || destination === null) {
+    return false;
+  }
+  return destination.epochNanoseconds < origin.epochNanoseconds;
+};
+
 export interface UseSourcebookEntryDialogStateResult {
   name: string;
   description: string;
@@ -88,7 +116,6 @@ export interface UseSourcebookEntryDialogStateResult {
   originDate: string | null;
   destinationDatetime: string | null;
   destinationRelative: string;
-  createsNewTimeline: boolean;
   timelineId: string;
   images: string[];
   relations: SourcebookRelation[];
@@ -117,7 +144,6 @@ export interface UseSourcebookEntryDialogStateResult {
   setOriginDate: Dispatch<SetStateAction<string | null>>;
   setDestinationDatetime: Dispatch<SetStateAction<string | null>>;
   setDestinationRelative: Dispatch<SetStateAction<string>>;
-  setCreatesNewTimeline: Dispatch<SetStateAction<boolean>>;
   setTimelineId: Dispatch<SetStateAction<string>>;
   setImages: Dispatch<SetStateAction<string[]>>;
   setRelations: Dispatch<SetStateAction<SourcebookRelation[]>>;
@@ -155,7 +181,6 @@ export const useSourcebookEntryDialogState = ({
   const [originDate, setOriginDate] = useState<string | null>(null);
   const [destinationDatetime, setDestinationDatetime] = useState<string | null>(null);
   const [destinationRelative, setDestinationRelative] = useState<string>('');
-  const [createsNewTimeline, setCreatesNewTimeline] = useState<boolean>(false);
   const [timelineId, setTimelineId] = useState<string>('main');
   const [images, setImages] = useState<string[]>([]);
   const [relations, setRelations] = useState<SourcebookRelation[]>([]);
@@ -220,7 +245,6 @@ export const useSourcebookEntryDialogState = ({
     setOriginDate(entry?.origin_date ?? null);
     setDestinationDatetime(entry?.destination_datetime ?? null);
     setDestinationRelative(entry?.destination_relative ?? '');
-    setCreatesNewTimeline(entry?.creates_new_timeline ?? false);
     setTimelineId(entry?.timeline_id ?? 'main');
     setImages(initialState.images);
     setRelations(initialState.relations);
@@ -254,7 +278,11 @@ export const useSourcebookEntryDialogState = ({
         origin_date: originDate ?? undefined,
         destination_datetime: destinationDatetime ?? undefined,
         destination_relative: destinationRelative || undefined,
-        creates_new_timeline: createsNewTimeline,
+        creates_new_timeline: deriveCreatesNewTimeline(
+          category,
+          originDate,
+          destinationDatetime
+        ),
         timeline_id: timelineId,
       });
       onClose();
@@ -311,7 +339,6 @@ export const useSourcebookEntryDialogState = ({
     originDate,
     destinationDatetime,
     destinationRelative,
-    createsNewTimeline,
     timelineId,
     images,
     relations,
@@ -340,7 +367,6 @@ export const useSourcebookEntryDialogState = ({
     setOriginDate,
     setDestinationDatetime,
     setDestinationRelative,
-    setCreatesNewTimeline,
     setTimelineId,
     setImages,
     setRelations,
