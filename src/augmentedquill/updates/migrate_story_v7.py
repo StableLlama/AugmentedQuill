@@ -257,7 +257,7 @@ def migrate_project_v7(project_dir: Path) -> None:
     ):
         changed = True
 
-    if metadata.get("version") != 7:
+    if metadata.get("version") < 7:
         metadata["version"] = 7
         changed = True
 

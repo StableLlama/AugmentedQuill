@@ -435,8 +435,7 @@ function makeMutableEditorRef(initialText: string = ''): {
 function makeEditorRefWithBoundary(docText: string = 'Hello world'): {
   ref: React.RefObject<EditorHandle | null>;
   getBoundaryCallback: () =>
-    | ((sceneId: string, edge: 'start' | 'end', offset: number) => Promise<void>)
-    | null;
+    ((sceneId: string, edge: 'start' | 'end', offset: number) => Promise<void>) | null;
   dispatch: ReturnType<typeof vi.fn>;
 } {
   const dispatch = vi.fn();
@@ -446,8 +445,7 @@ function makeEditorRefWithBoundary(docText: string = 'Hello world'): {
   };
   const view = { state: { doc }, dispatch };
   let capturedCb:
-    | ((sceneId: string, edge: 'start' | 'end', offset: number) => void)
-    | null = null;
+    ((sceneId: string, edge: 'start' | 'end', offset: number) => void) | null = null;
   const ref: React.RefObject<EditorHandle | null> = {
     current: {
       setOnCursorChange: vi.fn(),
@@ -2813,8 +2811,7 @@ describe('handleProseBoundaryChange', () => {
     // original, unchanged fullContent verbatim.
     expect(setStoryMock).toHaveBeenCalled();
     const updater = setStoryMock.mock.calls[setStoryMock.mock.calls.length - 1]?.[0] as
-      | ((prev: typeof storyState) => typeof storyState)
-      | undefined;
+      ((prev: typeof storyState) => typeof storyState) | undefined;
     expect(typeof updater).toBe('function');
     const prevState = {
       ...storyState,
@@ -2915,8 +2912,7 @@ describe('handleProseBoundaryChange', () => {
     // Verify setStory was called with reconstructed content
     expect(setStoryMock).toHaveBeenCalled();
     const updater = setStoryMock.mock.calls[setStoryMock.mock.calls.length - 1]?.[0] as
-      | ((prev: typeof storyState) => typeof storyState)
-      | undefined;
+      ((prev: typeof storyState) => typeof storyState) | undefined;
     expect(typeof updater).toBe('function');
     const prevState = {
       ...storyState,
@@ -3012,8 +3008,7 @@ describe('handleProseBoundaryChange', () => {
     // Verify setStory was called with reconstructed content
     expect(setStoryMock).toHaveBeenCalled();
     const updater = setStoryMock.mock.calls[setStoryMock.mock.calls.length - 1]?.[0] as
-      | ((prev: typeof storyState) => typeof storyState)
-      | undefined;
+      ((prev: typeof storyState) => typeof storyState) | undefined;
     expect(typeof updater).toBe('function');
     const prevState = {
       ...storyState,
@@ -3140,8 +3135,7 @@ describe('handleProseBoundaryChange', () => {
     // Verify setStory was called with correct reconstructed content
     expect(setStoryMock).toHaveBeenCalled();
     const updater = setStoryMock.mock.calls[setStoryMock.mock.calls.length - 1]?.[0] as
-      | ((prev: typeof storyState) => typeof storyState)
-      | undefined;
+      ((prev: typeof storyState) => typeof storyState) | undefined;
     expect(typeof updater).toBe('function');
     const prevState = {
       ...storyState,
@@ -3353,8 +3347,7 @@ describe('handleProseBoundaryChange', () => {
     // Verify setStory was called with correct reconstructed content
     expect(setStoryMock).toHaveBeenCalled();
     const updater = setStoryMock.mock.calls[setStoryMock.mock.calls.length - 1]?.[0] as
-      | ((prev: typeof storyState) => typeof storyState)
-      | undefined;
+      ((prev: typeof storyState) => typeof storyState) | undefined;
     const prevState = {
       ...storyState,
       chapters: storyState.chapters.map((c: Chapter) => ({ ...c })),
@@ -3694,8 +3687,7 @@ describe('handleProseBoundaryChange', () => {
     // Verify setStory was called with reconstructed content
     expect(setStoryMock).toHaveBeenCalled();
     const updater = setStoryMock.mock.calls[setStoryMock.mock.calls.length - 1]?.[0] as
-      | ((prev: typeof storyState) => typeof storyState)
-      | undefined;
+      ((prev: typeof storyState) => typeof storyState) | undefined;
     expect(typeof updater).toBe('function');
     const prevState = {
       ...storyState,
@@ -3950,8 +3942,7 @@ describe('handleProseBoundaryChange', () => {
 
     expect(setStoryMock).toHaveBeenCalled();
     const updater = setStoryMock.mock.calls[setStoryMock.mock.calls.length - 1]?.[0] as
-      | ((prev: typeof storyState) => typeof storyState)
-      | undefined;
+      ((prev: typeof storyState) => typeof storyState) | undefined;
     const prevState = {
       ...storyState,
       chapters: storyState.chapters.map((c: Chapter) => ({ ...c })),

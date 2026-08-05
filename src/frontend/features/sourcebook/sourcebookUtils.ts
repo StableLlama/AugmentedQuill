@@ -50,9 +50,8 @@ export const updateSourcebookEntryInList = (
   previousId: string,
   updated: SourcebookEntry
 ): SourcebookEntry[] => {
-  return entries.map(
-    (value: SourcebookEntry): SourcebookEntry =>
-      value.id === previousId ? updated : value
+  return entries.map((value: SourcebookEntry): SourcebookEntry =>
+    value.id === previousId ? updated : value
   );
 };
 

@@ -196,23 +196,21 @@ it('patchSourcebook updates the reactive story store immediately', async () => {
   const hook = await hookWithStory('initial', [buildChapter('1', 'Hello')]);
 
   act(() => {
-    useStoryStore.getState().setStory(
-      (prev: StoryState): StoryState => ({
-        ...prev,
-        sourcebook: [
-          {
-            id: 'tt-1',
-            name: '1985 -> 1955',
-            description: 'Temporal jump',
-            category: 'Time Travel',
-            synonyms: [],
-            images: [],
-            destination_datetime: '1955-11-05T20:00:00Z',
-            creates_new_timeline: false,
-          },
-        ],
-      })
-    );
+    useStoryStore.getState().setStory((prev: StoryState): StoryState => ({
+      ...prev,
+      sourcebook: [
+        {
+          id: 'tt-1',
+          name: '1985 -> 1955',
+          description: 'Temporal jump',
+          category: 'Time Travel',
+          synonyms: [],
+          images: [],
+          destination_datetime: '1955-11-05T20:00:00Z',
+          creates_new_timeline: false,
+        },
+      ],
+    }));
   });
 
   act(() => {

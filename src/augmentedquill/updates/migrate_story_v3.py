@@ -87,7 +87,7 @@ def migrate_project_v3(project_dir: Path) -> None:
         return
 
     version = story.get("metadata", {}).get("version", 0)
-    if isinstance(version, int) and version >= 3 and not _contains_prose_link(story):
+    if isinstance(version, int) and version >= 3:
         return
 
     # ------------------------------------------------------------------

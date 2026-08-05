@@ -96,7 +96,7 @@ def migrate_project_v8(project_dir: Path) -> None:
             if _normalize_relation_bounds(relation):
                 changed = True
 
-    if metadata.get("version") != 8:
+    if metadata.get("version") < 8:
         metadata["version"] = 8
         changed = True
 

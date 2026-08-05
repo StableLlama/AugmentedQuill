@@ -58,8 +58,7 @@ export interface StoryStoreState {
   setCurrentChapterId: (id: string | null) => void;
   setHistory: (
     historyOrUpdater:
-      | StoryHistoryEntry[]
-      | ((prev: StoryHistoryEntry[]) => StoryHistoryEntry[])
+      StoryHistoryEntry[] | ((prev: StoryHistoryEntry[]) => StoryHistoryEntry[])
   ) => void;
   setCurrentIndex: (index: number) => void;
   setBaselineState: (state: StoryState) => void;
@@ -159,8 +158,7 @@ export const useStoryStore = create<StoryStoreState>()(
 
     setHistory: (
       historyOrUpdater:
-        | StoryHistoryEntry[]
-        | ((prev: StoryHistoryEntry[]) => StoryHistoryEntry[])
+        StoryHistoryEntry[] | ((prev: StoryHistoryEntry[]) => StoryHistoryEntry[])
     ) =>
       set((state: StoryStoreState): { history: StoryHistoryEntry[] } => ({
         history:
@@ -384,20 +382,18 @@ type StoryHistorySnapshot = {
 /** Subscribe to story metadata only (title, summary, tags, notes, language, etc.). */
 export function useStoryMeta(): StoryMetadataSnapshot {
   return useStoryStore(
-    useShallow(
-      (s: StoryStoreState): StoryMetadataSnapshot => ({
-        id: s.story.id,
-        title: s.story.title,
-        summary: s.story.summary,
-        notes: s.story.notes,
-        private_notes: s.story.private_notes,
-        styleTags: s.story.styleTags,
-        draftIsEmpty: !s.story.draft?.content?.trim(),
-        projectType: s.story.projectType,
-        language: s.story.language,
-        conflicts: s.story.conflicts,
-      })
-    )
+    useShallow((s: StoryStoreState): StoryMetadataSnapshot => ({
+      id: s.story.id,
+      title: s.story.title,
+      summary: s.story.summary,
+      notes: s.story.notes,
+      private_notes: s.story.private_notes,
+      styleTags: s.story.styleTags,
+      draftIsEmpty: !s.story.draft?.content?.trim(),
+      projectType: s.story.projectType,
+      language: s.story.language,
+      conflicts: s.story.conflicts,
+    }))
   );
 }
 

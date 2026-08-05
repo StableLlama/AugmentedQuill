@@ -88,9 +88,8 @@ export function useSettingsDialogProviderState({
           .filter((model: MachineModelConfig): model is MachineModelConfig =>
             Boolean(model && typeof model === 'object')
           )
-          .map(
-            (model: MachineModelConfig): LLMConfig =>
-              machineModelToProvider(model, DEFAULT_LLM_CONFIG)
+          .map((model: MachineModelConfig): LLMConfig =>
+            machineModelToProvider(model, DEFAULT_LLM_CONFIG)
           );
 
         if (cancelled || providers.length === 0) return;
@@ -191,9 +190,8 @@ export function useSettingsDialogProviderState({
   const updateProvider = (id: string, updates: Partial<LLMConfig>): void => {
     setLocalSettings((prev: AppSettings) => ({
       ...prev,
-      providers: prev.providers.map(
-        (provider: LLMConfig): LLMConfig =>
-          provider.id === id ? { ...provider, ...updates } : provider
+      providers: prev.providers.map((provider: LLMConfig): LLMConfig =>
+        provider.id === id ? { ...provider, ...updates } : provider
       ),
     }));
   };

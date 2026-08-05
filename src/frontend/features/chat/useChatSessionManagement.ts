@@ -177,11 +177,8 @@ export function useChatSessionManagement({
       const { currentChatId, isIncognito } = useChatStore.getState();
       if (isIncognito && currentChatId) {
         setIncognitoSessions((prev: ChatSession[]): ChatSession[] =>
-          prev.map(
-            (session: ChatSession): ChatSession =>
-              session.id === currentChatId
-                ? { ...session, scratchpad: content }
-                : session
+          prev.map((session: ChatSession): ChatSession =>
+            session.id === currentChatId ? { ...session, scratchpad: content } : session
           )
         );
       }
@@ -312,19 +309,18 @@ export function useChatSessionManagement({
           useChatStore
             .getState()
             .setIncognitoSessions((prev: ChatSession[]): ChatSession[] =>
-              prev.map(
-                (session: ChatSession): ChatSession =>
-                  session.id === currentChatId
-                    ? {
-                        ...session,
-                        name,
-                        messages: chatMessages,
-                        systemPrompt,
-                        allowWebSearch,
-                        scratchpad,
-                        projectContextRevision,
-                      }
-                    : session
+              prev.map((session: ChatSession): ChatSession =>
+                session.id === currentChatId
+                  ? {
+                      ...session,
+                      name,
+                      messages: chatMessages,
+                      systemPrompt,
+                      allowWebSearch,
+                      scratchpad,
+                      projectContextRevision,
+                    }
+                  : session
               )
             );
         } else {

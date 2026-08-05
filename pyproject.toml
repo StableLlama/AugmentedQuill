@@ -12,27 +12,27 @@ authors = [
     {name = "StableLlamaAI"},
 ]
 dependencies = [
-    "fastapi>=0.135.3",
-    "uvicorn[standard]>=0.44.0",
-    "pydantic>=2.12.5",
-    "jinja2>=3.1",
-    "httpx>=0.27",
-    "python-multipart>=0.0.26",
+    "fastapi>=0.141.1",
+    "uvicorn[standard]>=0.52.1",
+    "pydantic>=2.13.4",
+    "jinja2>=3.1.6",
+    "httpx>=0.28.1",
+    "python-multipart>=0.0.32",
     "jsonschema>=4.26.0",
-    "EbookLib>=0.18",
-    "beautifulsoup4>=4.12",
-    "ddgs>=9.5",
-    "Markdown>=3.6",
-    "jellyfish>=0.11",
+    "EbookLib>=0.20",
+    "beautifulsoup4>=4.15.0",
+    "ddgs>=9.14.4",
+    "Markdown>=3.10.3",
+    "jellyfish>=1.2.1",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=9.0.3",
+    "pytest>=9.1.1",
     "ruff>=0.16.1,<0.17.0",
-    "black>=26.3.1",
-    "requests>=2.33.0",
-    "pre-commit",
+    "black>=26.5.1",
+    "requests>=2.34.2",
+    "pre-commit>=4.6.1",
 ]
 
 [project.scripts]

@@ -92,7 +92,7 @@ def migrate_project_v5(project_dir: Path) -> None:
         if changed:
             story["sourcebook_relations"] = normalized_relations
 
-    if metadata.get("version") != 5:
+    if metadata.get("version") < 5:
         metadata["version"] = 5
         changed = True
 

@@ -68,8 +68,8 @@ const conflictsEqualByContent = (
 
 const normalizeMetadataParams = (value: MetadataParams): MetadataParams => ({
   ...value,
-  conflicts: (value.conflicts || []).map(
-    (conflict: Conflict): Conflict => normalizeConflict(conflict)
+  conflicts: (value.conflicts || []).map((conflict: Conflict): Conflict =>
+    normalizeConflict(conflict)
   ),
 });
 
@@ -122,8 +122,8 @@ function useMetadataDataState({
   const [isFullscreen, setIsFullscreen] = useState(true);
   const [showDiff, setShowDiff] = useState(true);
   const [conflicts, setConflicts] = useState<Conflict[]>(
-    (initialData.conflicts || []).map(
-      (conflict: Conflict): Conflict => normalizeConflict(conflict)
+    (initialData.conflicts || []).map((conflict: Conflict): Conflict =>
+      normalizeConflict(conflict)
     )
   );
 
@@ -164,8 +164,8 @@ function useMetadataDataState({
     const raw = baseline || initialData;
     return {
       ...raw,
-      conflicts: (raw.conflicts || []).map(
-        (conflict: Conflict): Conflict => normalizeConflict(conflict)
+      conflicts: (raw.conflicts || []).map((conflict: Conflict): Conflict =>
+        normalizeConflict(conflict)
       ),
     };
   });
@@ -174,8 +174,8 @@ function useMetadataDataState({
     const normalizedBaseline = baseline
       ? {
           ...baseline,
-          conflicts: (baseline.conflicts || []).map(
-            (conflict: Conflict): Conflict => normalizeConflict(conflict)
+          conflicts: (baseline.conflicts || []).map((conflict: Conflict): Conflict =>
+            normalizeConflict(conflict)
           ),
         }
       : null;
@@ -214,8 +214,8 @@ function useMetadataDataState({
     setData((prev: MetadataParams) => ({ ...prev, ...updates }));
     if (updates.conflicts) {
       setConflicts(
-        updates.conflicts.map(
-          (conflict: Conflict): Conflict => normalizeConflict(conflict)
+        updates.conflicts.map((conflict: Conflict): Conflict =>
+          normalizeConflict(conflict)
         )
       );
     }
@@ -247,9 +247,8 @@ function useMetadataDataState({
 
   const updateConflict = (id: string, field: keyof Conflict, value: string): void => {
     setConflicts(
-      conflicts.map(
-        (conflict: Conflict): Conflict =>
-          conflict.id === id ? { ...conflict, [field]: value } : conflict
+      conflicts.map((conflict: Conflict): Conflict =>
+        conflict.id === id ? { ...conflict, [field]: value } : conflict
       )
     );
   };

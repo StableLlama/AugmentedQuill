@@ -27,9 +27,8 @@ export function useChatMessageActions({
   const handleEditMessage = useCallback(
     (id: string, newText: string): void => {
       setChatMessages((previous: ChatMessage[]): ChatMessage[] =>
-        previous.map(
-          (message: ChatMessage): ChatMessage =>
-            message.id === id ? { ...message, text: newText } : message
+        previous.map((message: ChatMessage): ChatMessage =>
+          message.id === id ? { ...message, text: newText } : message
         )
       );
     },

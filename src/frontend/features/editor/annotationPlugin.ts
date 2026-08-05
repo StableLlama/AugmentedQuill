@@ -71,13 +71,11 @@ export const annotationRangesField = StateField.define<AnnotationRange[]>({
     if (tr.docChanged && !tr.annotation(externalValueSyncAnnotation)) {
       const startLen = tr.startState.doc.length;
       return value
-        .map(
-          (r: AnnotationRange): AnnotationRange => ({
-            ...r,
-            from: r.from <= startLen ? tr.changes.mapPos(r.from, 1) : r.from,
-            to: r.to <= startLen ? tr.changes.mapPos(r.to, -1) : r.to,
-          })
-        )
+        .map((r: AnnotationRange): AnnotationRange => ({
+          ...r,
+          from: r.from <= startLen ? tr.changes.mapPos(r.from, 1) : r.from,
+          to: r.to <= startLen ? tr.changes.mapPos(r.to, -1) : r.to,
+        }))
         .filter((r: AnnotationRange): boolean => r.from < r.to);
     }
     return value;
