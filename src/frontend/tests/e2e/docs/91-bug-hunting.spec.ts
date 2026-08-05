@@ -32,10 +32,8 @@ test.describe('Bug hunting — destructive flows', () => {
     await openSidebar(page);
   });
 
-  // BUG (reported): the header Undo button is enabled after an edit but does
-  // NOT revert the last change — only the keyboard shortcut (Ctrl+Z) works.
-  // The test asserts the expected behavior; marked fixme until fixed.
-  test.fixme('BUG: the header Undo button reverts the last edit', async ({
+  // The header Undo button must revert the last edit (like Ctrl+Z).
+  test('the header Undo button reverts the last edit', async ({
     page,
   }: {
     page: Page;
@@ -58,10 +56,9 @@ test.describe('Bug hunting — destructive flows', () => {
     });
   });
 
-  // BUG (reported): docs/user_manual/04 says a chapter is "deleted immediately
-  // after confirmation", but clicking Delete Chapter deletes with NO
-  // confirmation prompt at all.  The test asserts a confirmation appears.
-  test.fixme('BUG: deleting a chapter asks for confirmation first', async ({
+  // docs/user_manual/04 says a chapter is "deleted immediately after
+  // confirmation" — deleting a chapter must ask for confirmation first.
+  test('deleting a chapter asks for confirmation first', async ({
     page,
   }: {
     page: Page;
@@ -83,10 +80,9 @@ test.describe('Bug hunting — destructive flows', () => {
     ).toBeVisible({ timeout: 5000 });
   });
 
-  // BUG (reported): docs/user_manual/07 says deleting the active chat session
-  // happens "after confirmation", but the header Delete Current Chat button
-  // deletes immediately with no prompt.
-  test.fixme('BUG: deleting the current chat asks for confirmation first', async ({
+  // docs/user_manual/07 says deleting the active chat session happens "after
+  // confirmation" — the header Delete Current Chat button must confirm first.
+  test('deleting the current chat asks for confirmation first', async ({
     page,
   }: {
     page: Page;
@@ -100,10 +96,9 @@ test.describe('Bug hunting — destructive flows', () => {
     ).toBeVisible({ timeout: 5000 });
   });
 
-  // BUG (reported): docs/user_manual/07 says each saved session row deletes
-  // "after confirmation", but the per-row delete in the chat history panel
-  // deletes immediately with no prompt.
-  test.fixme('BUG: deleting a chat history session asks for confirmation first', async ({
+  // docs/user_manual/07 says each saved session row deletes "after
+  // confirmation" — the per-row delete must confirm first.
+  test('deleting a chat history session asks for confirmation first', async ({
     page,
   }: {
     page: Page;

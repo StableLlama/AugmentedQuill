@@ -15,7 +15,7 @@
  * seeded projects are never damaged.
  */
 
-import { test, expect, type Page, type Locator, type Dialog } from '@playwright/test';
+import { test, expect, type Page, type Locator } from '@playwright/test';
 import {
   DEMO_PROJECT,
   SERIES_PROJECT,
@@ -52,10 +52,8 @@ test.describe('Error paths — destructive actions', () => {
     await openSidebar(page);
   });
 
-  // NOTE: the sourcebook entry delete uses the native window.confirm dialog
-  // (the entry dialog never calls useConfirm() — a real inconsistency, see the
-  // findings report).  Playwright auto-dismisses native dialogs, which is the
-  // "cancel" path below.
+  // The sourcebook entry delete must use the app's ConfirmDialog and keep the
+  // entry when cancelled.
   test('cancelling a sourcebook entry delete keeps the entry', async ({
     page,
   }: {
@@ -72,10 +70,7 @@ test.describe('Error paths — destructive actions', () => {
       timeout: 8000,
     });
 
-    // Open the entry and start deleting it, then cancel the native confirm.
-    page.on('dialog', (d: Dialog) => {
-      void d.dismiss();
-    });
+    // Open the entry, start deleting it, then cancel the confirmation.
     await page.locator(`text="${name}"`).first().click();
     await page.waitForTimeout(800);
     await page
@@ -84,7 +79,7 @@ test.describe('Error paths — destructive actions', () => {
       .locator('button:has-text("Delete")')
       .first()
       .click();
-    await page.waitForTimeout(800);
+    await clickConfirm(page, 'Cancel');
 
     // The entry survives.
     await expect(page.locator(`text="${name}"`).first()).toBeAttached({
@@ -93,13 +88,12 @@ test.describe('Error paths — destructive actions', () => {
     await closeDialog(page);
   });
 
-  // BUG (reported): confirming the sourcebook entry delete removes the entry
-  // from the backend but the sourcebook LIST keeps showing it until the page
-  // is reloaded (syncEntries fails to drop the row — the dialog closes and the
-  // deletion persists on disk, but the stale row remains visible).  The test
-  // below asserts the expected behavior; it is marked fixme until the list
-  // refresh is fixed.  Remove the fixme when fixed.
-  test.fixme('BUG: confirming a sourcebook entry delete removes the entry from the list', async ({
+  // Confirming the sourcebook entry delete removes the entry from the visible
+  // list immediately (no stale row until reload).
+  // Confirming the sourcebook entry delete permanently deletes the entry: it is
+  // removed on the backend and the normal entry row is replaced by a
+  // struck-through "deleted" marker (the app's diff-tracking indicator).
+  test('confirming a sourcebook entry delete removes the entry from the list', async ({
     page,
   }: {
     page: Page;
@@ -115,10 +109,7 @@ test.describe('Error paths — destructive actions', () => {
       timeout: 8000,
     });
 
-    // Accept the native confirm to complete the deletion.
-    page.on('dialog', (d: Dialog) => {
-      void d.accept();
-    });
+    // Confirm the deletion through the app's ConfirmDialog.
     await page.locator(`text="${name}"`).first().click();
     await page.waitForTimeout(800);
     await page
@@ -127,12 +118,14 @@ test.describe('Error paths — destructive actions', () => {
       .locator('button:has-text("Delete")')
       .first()
       .click();
-    await page.waitForTimeout(1500);
+    await clickConfirm(page, 'OK');
+    await page.waitForTimeout(1000);
 
-    // The entry is gone from the visible list.
-    await expect(page.locator(`text="${name}"`).first()).not.toBeVisible({
-      timeout: 8000,
-    });
+    // The normal (clickable) entry row is gone; a struck-through "deleted"
+    // marker row takes its place.
+    await expect(
+      page.getByRole('listitem', { name: `${name} (deleted)` }).first()
+    ).toBeAttached({ timeout: 8000 });
   });
 
   test('cancelling an image delete keeps the image', async ({
@@ -334,10 +327,8 @@ test.describe('Error paths — destructive actions', () => {
     await closeDialog(page);
   });
 
-  // NOTE: the chat-history "Clear All" action uses the native window.confirm
-  // (useChatSessionManagement calls confirm() without useConfirm()) — a real
-  // inconsistency, see the findings report.  Playwright auto-dismisses it,
-  // which is the "cancel" path below.
+  // The chat-history "Clear All" action must use the app's ConfirmDialog and
+  // keep the sessions when cancelled.
   test('cancelling chat history Clear All keeps the saved sessions', async ({
     page,
   }: {
@@ -348,11 +339,8 @@ test.describe('Error paths — destructive actions', () => {
     const clearAll = page.locator('button:has-text("Clear All")').first();
     await expect(clearAll).toBeAttached({ timeout: 8000 });
 
-    page.on('dialog', (d: Dialog) => {
-      void d.dismiss();
-    });
     await clearAll.click();
-    await page.waitForTimeout(1000);
+    await clickConfirm(page, 'Cancel');
 
     // No crash and the panel is still open: a seeded session is still listed.
     await expect(
@@ -371,12 +359,9 @@ test.describe('Error paths — LLM and chat failures', () => {
     await gotoApp(page, DEMO_PROJECT);
   });
 
-  // BUG (reported): when the upstream LLM fails, the backend's api_chat_stream
-  // drops the yielded {"error": ...} chunk (it only forwards content/thinking/
-  // tool_calls), so the chat ends silently with NO error message for the user.
-  // The test below asserts the expected graceful behavior; it is marked fixme
-  // until the backend forwards upstream errors.  Remove the fixme when fixed.
-  test.fixme('BUG: an upstream chat failure surfaces an AI Error message', async ({
+  // An upstream LLM failure in the CHAT flow must be surfaced as an "AI Error"
+  // message instead of silently ending the stream.
+  test('an upstream chat failure surfaces an AI Error message', async ({
     page,
   }: {
     page: Page;

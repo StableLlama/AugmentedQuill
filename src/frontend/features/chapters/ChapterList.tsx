@@ -729,9 +729,13 @@ function ChapterListInner({
             <Edit size={14} />
           </button>
           <button
-            onClick={(e: React.MouseEvent<HTMLButtonElement, MouseEvent>): void => {
+            onClick={async (
+              e: React.MouseEvent<HTMLButtonElement, MouseEvent>
+            ): Promise<void> => {
               e.stopPropagation();
-              onDelete(chapter.id);
+              if (await confirm(t('Are you sure you want to delete this chapter?'))) {
+                onDelete(chapter.id);
+              }
             }}
             className="p-1 text-brand-gray-400 hover:text-red-500"
             title={t('Delete Chapter')}
