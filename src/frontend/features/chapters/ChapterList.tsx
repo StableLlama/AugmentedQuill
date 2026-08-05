@@ -13,6 +13,7 @@ import React, { useState, useEffect, useMemo, Fragment } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Chapter, Book, AppTheme, Scene } from '../../types';
 import { MetadataParams } from '../story/metadataSync';
+import { toBookMetadataParams, toChapterMetadataParams } from './chapterMetadataParams';
 import { useConfirm } from '../layout/ConfirmDialogContext';
 import { useThemeClasses } from '../layout/ThemeContext';
 import { MetadataEditorDialog } from '../story/MetadataEditorDialog';
@@ -478,6 +479,21 @@ function ChapterListInner({
     }
   }, [editingMetadata, displayChapters, displayBooks]);
 
+  // Build an explicit MetadataParams literal for the dialog so entity fields
+  // (e.g. `content` or `chapters`) can never leak into its local state and
+  // from there into the save payload (issue #264).
+  const activeEditingMetadataParams = useMemo((): MetadataParams | null | undefined => {
+    if (!editingMetadata) return null;
+    if (editingMetadata.type === 'chapter') {
+      const chapter = displayChapters.find(
+        (c: Chapter): boolean => c.id === editingMetadata.id
+      );
+      return chapter ? toChapterMetadataParams(chapter) : undefined;
+    }
+    const book = displayBooks.find((b: Book): boolean => b.id === editingMetadata.id);
+    return book ? toBookMetadataParams(book) : undefined;
+  }, [editingMetadata, displayChapters, displayBooks]);
+
   const chapterScenesForEditor = useMemo((): Array<{
     id: string;
     summary: string;
@@ -555,8 +571,17 @@ function ChapterListInner({
         });
 
         if (onUpdateChapter) {
-          onUpdateChapter(editingMetadata.id, data, false, false);
-          setPendingMetadataUpdate({ id: editingMetadata.id, data });
+          // Build an explicit metadata-only payload so entity fields (e.g.
+          // `content`) can never leak into the chapter state (issue #264).
+          const chapterMetadata = {
+            title: data.title,
+            summary: data.summary,
+            notes: data.notes,
+            private_notes: data.private_notes,
+            conflicts: data.conflicts,
+          };
+          onUpdateChapter(editingMetadata.id, chapterMetadata, false, false);
+          setPendingMetadataUpdate({ id: editingMetadata.id, data: chapterMetadata });
         } else {
           if (data.title !== activeEditingData.title) {
             await api.chapters.updateTitle(id, data.title || '');
@@ -564,13 +589,14 @@ function ChapterListInner({
         }
       } else {
         const id = editingMetadata.id;
-        await api.books.updateBookMetadata(id, {
+        const bookMetadata = {
           title: data.title,
           summary: data.summary,
           notes: data.notes,
           private_notes: data.private_notes,
-        });
-        onUpdateBook?.(id, data);
+        };
+        await api.books.updateBookMetadata(id, bookMetadata);
+        onUpdateBook?.(id, bookMetadata);
       }
     } catch (e) {
       console.error(e);
@@ -729,9 +755,13 @@ function ChapterListInner({
             <Edit size={14} />
           </button>
           <button
-            onClick={(e: React.MouseEvent<HTMLButtonElement, MouseEvent>): void => {
+            onClick={async (
+              e: React.MouseEvent<HTMLButtonElement, MouseEvent>
+            ): Promise<void> => {
               e.stopPropagation();
-              onDelete(chapter.id);
+              if (await confirm(t('Are you sure you want to delete this chapter?'))) {
+                onDelete(chapter.id);
+              }
             }}
             className="p-1 text-brand-gray-400 hover:text-red-500"
             title={t('Delete Chapter')}
@@ -748,7 +778,7 @@ function ChapterListInner({
       id="chapter-list"
       className={`flex flex-col flex-1 min-h-0 border-r relative ${bgClass}`}
     >
-      {editingMetadata && activeEditingData && (
+      {editingMetadata && activeEditingData && activeEditingMetadataParams && (
         <MetadataEditorDialog
           type={editingMetadata.type}
           language={language}
@@ -758,7 +788,7 @@ function ChapterListInner({
               ? t('Edit Chapter: {{title}}', { title: activeEditingData.title })
               : t('Edit Book: {{title}}', { title: activeEditingData.title })
           }
-          initialData={activeEditingData}
+          initialData={activeEditingMetadataParams}
           initialTab={
             editingMetadata.type === 'chapter'
               ? chapterMetadataDialog.initialTab
@@ -766,9 +796,14 @@ function ChapterListInner({
           }
           baseline={
             editingMetadata.type === 'chapter'
-              ? baselineChapters.find(
-                  (c: Chapter): boolean => String(c.id) === String(editingMetadata.id)
-                )
+              ? (() => {
+                  const baselineChapter = baselineChapters.find(
+                    (c: Chapter): boolean => String(c.id) === String(editingMetadata.id)
+                  );
+                  return baselineChapter
+                    ? toChapterMetadataParams(baselineChapter)
+                    : undefined;
+                })()
               : undefined
           }
           onSave={saveMetadata as (data: MetadataParams) => Promise<void>}

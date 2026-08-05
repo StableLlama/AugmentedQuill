@@ -130,6 +130,8 @@ export const es = {
     'Untitled Scene': 'Escena sin título',
     'Edit Metadata': 'Editar metadatos',
     'Delete Chapter': 'Eliminar capítulo',
+    'Are you sure you want to delete this chapter?':
+      '¿Seguro que quieres eliminar este capítulo?',
     'Edit Chapter: {{title}}': 'Editar capítulo: {{title}}',
     'Edit Book: {{title}}': 'Editar libro: {{title}}',
     'Summary AI is unavailable because no working EDITING model is configured.':
@@ -241,6 +243,8 @@ export const es = {
     'Recent Chats': 'Chats recientes',
     'Delete all chat sessions': 'Eliminar todas las sesiones de chat',
     'Clear All': 'Borrar todo',
+    'Are you sure you want to delete ALL chats (including incognito)? This cannot be undone.':
+      '¿Estás seguro de que quieres eliminar TODOS los chats (incluido el incógnito)? Esto no se puede deshacer.',
     'Close chat history panel': 'Cerrar panel de historial de chat',
     'No saved chats yet.': 'Aún no hay chats guardados.',
     'Not saved to disk': 'No guardado en disco',

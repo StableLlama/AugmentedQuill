@@ -156,6 +156,17 @@ On wide screens, three small dropdowns appear at the far right of the center bar
 
 Each dropdown button shows a colored status dot (green = connected, red = failed) and the provider's name. Click it to swap providers instantly without opening Settings. If the selected provider supports image input (<img src="assets/eye.svg" alt="Eye icon" width="16" height="16" style="vertical-align:text-bottom;" /> Vision icon) or function calling (<img src="assets/wand.svg" alt="Wand icon" width="16" height="16" style="vertical-align:text-bottom;" /> Wand icon), small indicators appear beside the name. Configure providers in [Machine Settings](02_projects_and_settings.md#the-machine-settings-tab).
 
+### Model Settings Popup
+
+On narrower wide screens — or whenever the inline selectors are not shown — the same three role selectors are tucked behind a single **Models** button in the center bar (tooltip: _Model settings_), shown as a CPU icon with a <img src="assets/chevron-down.svg" alt="Chevron down icon" width="16" height="16" style="vertical-align:text-bottom;" /> chevron.
+
+- Click **Models** to open a small popup listing the three roles — **Writing** (<img src="assets/swatches/violet.svg" alt="Violet swatch" width="16" height="16" style="vertical-align:text-bottom;" /> Violet), **Editing** (<img src="assets/swatches/fuchsia.svg" alt="Fuchsia swatch" width="16" height="16" style="vertical-align:text-bottom;" /> Fuchsia) and **Chat** (<img src="assets/swatches/blue.svg" alt="Blue swatch" width="16" height="16" style="vertical-align:text-bottom;" /> Blue) — stacked vertically.
+- Each row is the same dropdown selector described in [Model Selectors](#model-selectors): a colored status dot (green = connected, red = unreachable, spinner = testing), the provider's name, and small capability icons when supported.
+- Pick a provider from any row to instantly reassign that role, exactly as you would from the inline selectors; the change applies immediately and is saved with your app settings.
+- Clicking a row also triggers a connectivity re-check for that provider, so the status dot stays fresh.
+
+Clicking **Models** again (or clicking elsewhere) closes the popup. Adding, removing, or editing the underlying providers is still done in [Machine Settings](02_projects_and_settings.md#the-machine-settings-tab).
+
 ---
 
 ## AI Writing Tools (<img src="assets/book-open.svg" alt="Book Open icon" width="16" height="16" style="vertical-align:text-bottom;" /> WRITING Model <img src="assets/swatches/violet.svg" alt="Violet swatch" width="16" height="16" style="vertical-align:text-bottom;" />)

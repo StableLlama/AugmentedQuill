@@ -16,22 +16,26 @@
  */
 
 import { useCallback, useEffect, startTransition } from 'react';
+import { useTranslation } from 'react-i18next';
 import { v4 as uuidv4 } from 'uuid';
 
 import { ChatSession, ChatMessage } from '../../types';
 import { api } from '../../services/api';
 import { useChatStore, ChatStoreState } from '../../stores/chatStore';
 import { useStoryStore } from '../../stores/storyStore';
+import type { ConfirmFn } from '../layout/ConfirmDialogContext';
 
 type UseChatSessionManagementParams = {
   storyId: string;
   getSystemPrompt: () => string;
+  confirm: ConfirmFn;
 };
 
 /** Custom React hook that manages chat session management. */
 export function useChatSessionManagement({
   storyId,
   getSystemPrompt,
+  confirm,
 }: UseChatSessionManagementParams): {
   refreshChatList: () => Promise<void>;
   handleNewChat: (incognito?: boolean) => void;
@@ -57,6 +61,8 @@ export function useChatSessionManagement({
     setProjectContextRevision,
     // Setters are stable — read via getState() to avoid subscribing to every token.
   } = useChatStore.getState();
+
+  const { t } = useTranslation();
 
   // Update systemPrompt when the project changes.
   useEffect((): void => {
@@ -205,6 +211,12 @@ export function useChatSessionManagement({
         return;
       }
 
+      // Incognito sessions are in-memory only, so removing them needs no
+      // confirmation; saved sessions are deleted permanently after a prompt.
+      if (!(await confirm(t('Delete this chat?')))) {
+        return;
+      }
+
       try {
         await api.chat.delete(id);
         await refreshChatList();
@@ -215,14 +227,16 @@ export function useChatSessionManagement({
         console.error('Failed to delete chat', error);
       }
     },
-    [handleNewChat, refreshChatList, setIncognitoSessions]
+    [handleNewChat, refreshChatList, setIncognitoSessions, confirm, t]
   );
 
   const handleDeleteAllChats = useCallback(async (): Promise<void> => {
     if (
-      !confirm(
-        'Are you sure you want to delete ALL chats (including incognito)? This cannot be undone.'
-      )
+      !(await confirm(
+        t(
+          'Are you sure you want to delete ALL chats (including incognito)? This cannot be undone.'
+        )
+      ))
     ) {
       return;
     }
@@ -235,7 +249,7 @@ export function useChatSessionManagement({
     } catch (error) {
       console.error('Failed to delete all chats', error);
     }
-  }, [refreshChatList, handleNewChat, setIncognitoSessions]);
+  }, [refreshChatList, handleNewChat, setIncognitoSessions, confirm, t]);
 
   // ---------------------------------------------------------------------------
   // Initial chat load

@@ -114,6 +114,25 @@ const App: React.FC = () => {
     redo,
   });
 
+  // Header Undo/Redo: prefer the CodeMirror editor's own undo stack so text
+  // edits revert immediately (like Ctrl+Z); fall back to the story history for
+  // non-editor actions (metadata, sourcebook, chapter ops).
+  const handleHeaderUndo = useCallback((): void => {
+    if (editorRef.current?.canUndo?.()) {
+      editorRef.current.undo();
+    } else {
+      void undo();
+    }
+  }, [editorRef, undo]);
+
+  const handleHeaderRedo = useCallback((): void => {
+    if (editorRef.current?.canRedo?.()) {
+      editorRef.current.redo();
+    } else {
+      void redo();
+    }
+  }, [editorRef, redo]);
+
   const {
     currentChapter,
     currentChapterContext,
@@ -311,6 +330,7 @@ const App: React.FC = () => {
     prompts,
     activeChatConfig,
     isChatAvailable: roleAvailability.chat,
+    confirm,
     currentChapterId,
     currentChapterContext,
     advanceBaselineToCurrentStory,
@@ -577,8 +597,8 @@ const App: React.FC = () => {
   const appHeaderProps = useAppHeaderProps({
     storyTitle: story.title,
     sidebarControls,
-    undo,
-    redo,
+    undo: handleHeaderUndo,
+    redo: handleHeaderRedo,
     undoSteps,
     redoSteps,
     undoOptions,

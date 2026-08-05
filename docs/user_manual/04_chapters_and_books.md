@@ -86,6 +86,14 @@ The Metadata Editor is a full-screen or sidebar panel that opens whenever you cl
   - A <img src="assets/trash-2.svg" alt="Trash icon" width="16" height="16" style="vertical-align:text-bottom;" /> delete button to remove the row.
 - Unresolved conflicts show as a **red count badge** on the chapter card in the sidebar so you can see at a glance which chapters still have open threads.
 
+**Scenes tab** _(chapter only)_:
+
+- The Metadata Editor for a chapter includes a **Scenes** tab labelled with the number of attached scenes (e.g. "Scenes 2"); books do not have this tab.
+- The tab lists every scene belonging to the chapter as an ordered list, each row showing the scene's summary. Scenes are shown in their narrative order.
+- If no scenes are attached yet, the tab shows _"No scenes currently assigned to this chapter."_
+- The tab is informational (read-only): it lets you review which scenes this chapter contains, but scenes are created, reordered, and linked from the **Scenes** workspace (Page/Scenes/Split mode), not from here.
+- The count badge updates automatically as scenes are added or removed in the Scenes workspace.
+
 ![Conflicts tab showing two conflict rows with description, resolution plan, and reorder arrows](screenshots/04_conflicts_tab.png)
 
 > **In this screenshot:** the Conflicts tab with two rows. Each row pairs a **Conflict Description** with a **Resolution Plan**, and the arrow buttons let you order them by importance.

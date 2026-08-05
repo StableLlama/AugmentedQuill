@@ -1051,6 +1051,14 @@ async def api_chat_stream(
                     yield f"data: {_json.dumps({'thinking': chunk['thinking']})}\n\n"
                 if "tool_calls" in chunk:
                     yield f"data: {_json.dumps({'tool_calls': chunk['tool_calls']})}\n\n"
+                if "error" in chunk:
+                    # Forward upstream/parse failures so the client can surface
+                    # them ("AI Error") instead of the stream ending silently.
+                    error_payload: dict[str, Any] = {"error": chunk["error"]}
+                    for key in ("status", "data", "message", "traceback"):
+                        if chunk.get(key) is not None:
+                            error_payload[key] = chunk[key]
+                    yield f"data: {_json.dumps(error_payload)}\n\n"
         except Exception as e:
             # Mask internal errors to prevent information exposure, but log for debugability
             logger.exception("Chat stream error")

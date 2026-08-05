@@ -16,6 +16,7 @@ import type { Scene, SceneId } from '../../types';
 import { SourcebookUpsertPayload } from '../../services/apiTypes';
 import { useThemeClasses } from '../layout/ThemeContext';
 import { useFocusTrap } from '../layout/useFocusTrap';
+import { useConfirm } from '../layout/ConfirmDialogContext';
 import { buildSourcebookTimelineOptions } from '../scenes/timelineOptions';
 import { SourcebookEntryDialogView } from './SourcebookEntryDialogView';
 import { useSourcebookEntryDialogState } from './useSourcebookEntryDialogState';
@@ -61,6 +62,7 @@ export const SourcebookEntryDialog: React.FC<SourcebookEntryDialogProps> = ({
   onAppRedo,
 }: SourcebookEntryDialogProps) => {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const state = useSourcebookEntryDialogState({
     entry,
     allEntries,

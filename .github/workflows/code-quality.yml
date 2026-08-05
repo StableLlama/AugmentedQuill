@@ -108,6 +108,10 @@ jobs:
       run: |
         cd src/frontend
         npx playwright test --config=playwright.config.ts
+    - name: Run E2E docs/user_manual tests
+      run: |
+        cd src/frontend
+        npx playwright test --config=playwright.docs.config.ts
     - name: Run E2E fullstack tests
       run: |
         cd src/frontend

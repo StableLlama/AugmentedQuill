@@ -19,6 +19,12 @@ import React, {
 import { EditorView } from '@codemirror/view';
 import type { StateEffect } from '@codemirror/state';
 import {
+  undo as undoCommand,
+  redo as redoCommand,
+  undoDepth,
+  redoDepth,
+} from '@codemirror/commands';
+import {
   EditorSettings,
   SuggestionGenerationMode,
   ViewMode,
@@ -114,6 +120,10 @@ export interface EditorHandle {
   insertImage: (filename: string, url: string, altText?: string) => void;
   focus: () => void;
   format: (type: string) => void;
+  undo: () => void;
+  redo: () => void;
+  canUndo: () => boolean;
+  canRedo: () => boolean;
   openImageManager?: () => void;
   jumpToPosition: (start: number, end: number) => void;
   getEditorView: () => EditorView | null;
@@ -710,6 +720,26 @@ export const Editor = React.memo(
           editorViewRef.current?.focus();
         },
         format: (type: string): void => format(type),
+        undo: (): void => {
+          const view = editorViewRef.current;
+          if (!view || undoDepth(view.state) <= 0) return;
+          undoCommand(view);
+          view.focus();
+        },
+        redo: (): void => {
+          const view = editorViewRef.current;
+          if (!view || redoDepth(view.state) <= 0) return;
+          redoCommand(view);
+          view.focus();
+        },
+        canUndo: (): boolean => {
+          const view = editorViewRef.current;
+          return Boolean(view && undoDepth(view.state) > 0);
+        },
+        canRedo: (): boolean => {
+          const view = editorViewRef.current;
+          return Boolean(view && redoDepth(view.state) > 0);
+        },
         jumpToPosition: (start: number, end: number): void => {
           const view = editorViewRef.current;
           if (!view) return;

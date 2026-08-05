@@ -127,6 +127,8 @@ export const de = {
     'Untitled Scene': 'Unbenannte Szene',
     'Edit Metadata': 'Metadaten bearbeiten',
     'Delete Chapter': 'Kapitel löschen',
+    'Are you sure you want to delete this chapter?':
+      'Möchtest du dieses Kapitel wirklich löschen?',
     'Edit Chapter: {{title}}': 'Kapitel bearbeiten: {{title}}',
     'Edit Book: {{title}}': 'Buch bearbeiten: {{title}}',
     'Summary AI is unavailable because no working EDITING model is configured.':
@@ -238,6 +240,8 @@ export const de = {
     'Recent Chats': 'Letzte Chats',
     'Delete all chat sessions': 'Alle Chatsitzungen löschen',
     'Clear All': 'Alle löschen',
+    'Are you sure you want to delete ALL chats (including incognito)? This cannot be undone.':
+      'Möchten Sie wirklich ALLE Chats (einschließlich Inkognito) löschen? Dies kann nicht rückgängig gemacht werden.',
     'Close chat history panel': 'Chatverlaufs-Panel schließen',
     'No saved chats yet.': 'Noch keine gespeicherten Chats.',
     'Not saved to disk': 'Nicht auf Datenträger gespeichert',

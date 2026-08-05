@@ -38,6 +38,7 @@ type UseAppChatRuntimeParams = {
   prompts: PromptsState;
   activeChatConfig: LLMConfig;
   isChatAvailable: boolean;
+  confirm: import('../layout/ConfirmDialogContext').ConfirmFn;
   currentChapterId: string | null;
   currentChapterContext: CurrentChapterContext;
   advanceBaselineToCurrentStory: () => void;
@@ -155,6 +156,7 @@ export function useAppChatRuntime({
   prompts,
   activeChatConfig,
   isChatAvailable,
+  confirm,
   currentChapterId,
   currentChapterContext,
   advanceBaselineToCurrentStory,
@@ -183,6 +185,7 @@ export function useAppChatRuntime({
   const sessionState = useChatSessionManagement({
     storyId,
     getSystemPrompt,
+    confirm,
   });
 
   const { handleEditMessage, handleDeleteMessage } = useChatMessageActions({
