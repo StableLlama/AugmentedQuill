@@ -6,16 +6,19 @@
 // (at your option) any later version.
 
 /**
- * Defines the docs-screenshots playwright.config unit.
+ * Defines the playwright.docs playwright.config unit.
  *
- * This config is responsible for booting a fully isolated AugmentedQuill
- * (backend + frontend) against a temporary data directory and seeding rich
- * demo projects so the documentation screenshots always capture meaningful,
- * reproducible UI states.  It intentionally never touches real user data
- * under `data/` (see AGENTS.md "Test Data Safety").
+ * This config runs the high-level, black-box E2E suite that verifies every
+ * feature described in `docs/user_manual/`.  It boots a fully isolated
+ * AugmentedQuill (mock LLM + backend + frontend) against a temporary data
+ * directory and seeds rich demo projects (novel, series, time travel).
+ *
+ * The mock LLM runs with MOCK_LLM_TOOLS=1 so chat-driven tool actions
+ * (create project/chapter/book/sourcebook entry/scene, update story summary,
+ * search/replace) execute against the real backend tool pipeline.
  *
  * Run with:
- *   npx playwright test --config=docs-screenshots.config.ts
+ *   npx playwright test --config=playwright.docs.config.ts
  */
 
 import { defineConfig } from '@playwright/test';
@@ -28,39 +31,35 @@ import {
   seedDemoProjects,
 } from './tests/e2e/support/seed-projects';
 
-const BACKEND_PORT = 28010;
-const FRONTEND_PORT = 28011;
-const MOCK_LLM_PORT = 28012;
+const BACKEND_PORT = 28020;
+const FRONTEND_PORT = 28021;
+const MOCK_LLM_PORT = 28022;
 
 // Scratch data dir, created at config-evaluation time so the webServer
-// commands and the capture spec can reference it.  Removed on teardown.
-const TMP_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'aq-docs-shots-'));
+// commands and the specs can reference it.  Removed on teardown.
+const TMP_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'aq-docs-e2e-'));
 const configDir = path.join(TMP_DIR, 'config');
 fs.mkdirSync(configDir, { recursive: true });
-
-// ---------------------------------------------------------------------------
-// Minimal, valid machine/projects config so the backend boots cleanly.
-// ---------------------------------------------------------------------------
 
 writeMachineConfig(configDir, MOCK_LLM_PORT);
 writeProjectsRegistry(configDir);
 
-const metaPath = path.join(os.tmpdir(), 'aq-docs-shots-meta.json');
+const metaPath = path.join(os.tmpdir(), 'aq-docs-e2e-meta.json');
 seedDemoProjects(TMP_DIR, configDir, metaPath);
 
 export default defineConfig({
-  testDir: './tests/docs-screenshots',
-  timeout: 120000,
-  retries: 0,
+  testDir: './tests/e2e/docs',
+  timeout: 90000,
+  retries: 1,
   // A single worker keeps the shared backend (single active-project registry
-  // and shared screenshot output dir) deterministic.
+  // and shared project files) deterministic across the feature specs.
   workers: 1,
   outputDir: path.join(TMP_DIR, 'test-artifacts'),
-  globalSetup: './tests/docs-screenshots/global-setup.ts',
-  globalTeardown: './tests/docs-screenshots/global-teardown.ts',
+  globalSetup: './tests/e2e/docs/global-setup.ts',
+  globalTeardown: './tests/e2e/docs/global-teardown.ts',
   webServer: [
     {
-      command: `MOCK_LLM_PORT=${MOCK_LLM_PORT} node tests/docs-screenshots/mock-llm-server.mjs`,
+      command: `MOCK_LLM_TOOLS=1 MOCK_LLM_PORT=${MOCK_LLM_PORT} node tests/docs-screenshots/mock-llm-server.mjs`,
       url: `http://127.0.0.1:${MOCK_LLM_PORT}/v1/models`,
       reuseExistingServer: false,
       timeout: 30000,

@@ -156,6 +156,10 @@ On wide screens, three small dropdowns appear at the far right of the center bar
 
 Each dropdown button shows a colored status dot (green = connected, red = failed) and the provider's name. Click it to swap providers instantly without opening Settings. If the selected provider supports image input (<img src="assets/eye.svg" alt="Eye icon" width="16" height="16" style="vertical-align:text-bottom;" /> Vision icon) or function calling (<img src="assets/wand.svg" alt="Wand icon" width="16" height="16" style="vertical-align:text-bottom;" /> Wand icon), small indicators appear beside the name. Configure providers in [Machine Settings](02_projects_and_settings.md#the-machine-settings-tab).
 
+### Model Settings Popup
+
+> **TODO (documentation stub):** The header also exposes a **Models** control (labelled "Models", tooltip "Model settings") in the center bar. Its exact behavior — what it opens, how it relates to the per-role model selectors, and how providers/roles can be changed from it — needs to be documented by the documentation editor.
+
 ---
 
 ## AI Writing Tools (<img src="assets/book-open.svg" alt="Book Open icon" width="16" height="16" style="vertical-align:text-bottom;" /> WRITING Model <img src="assets/swatches/violet.svg" alt="Violet swatch" width="16" height="16" style="vertical-align:text-bottom;" />)
