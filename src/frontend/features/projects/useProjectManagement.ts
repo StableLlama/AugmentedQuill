@@ -351,6 +351,7 @@ export function useProjectManagement({
         }
       } catch (error) {
         console.error('Failed to load project', error);
+        notifyError(`Failed to load project: ${formatError(error)}`, error);
       }
     },
     [
@@ -448,7 +449,14 @@ export function useProjectManagement({
         const trimmedName = name.trim();
         const previousProjectId = storyId;
         const result = await api.projects.create(trimmedName, type, language);
-        if (!result.ok) return;
+        if (!result.ok) {
+          notifyError(
+            result.message ||
+              result.detail ||
+              `Failed to create project: ${trimmedName}`
+          );
+          return;
+        }
 
         const listing = await api.projects.list();
         if (listing.available) {

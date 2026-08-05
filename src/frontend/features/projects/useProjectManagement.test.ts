@@ -55,6 +55,12 @@ vi.mock('../../services/api', () => ({
   },
 }));
 
+vi.mock('../../services/errorNotifier', () => ({
+  formatError: (error: unknown, fallback: string = 'Unknown error'): string =>
+    error instanceof Error ? error.message : fallback,
+  notifyError: vi.fn(),
+}));
+
 const baseStory = {
   id: 'active-story',
   title: 'Active Story',
@@ -543,5 +549,135 @@ describe('useProjectManagement: non-tracked field changes', () => {
     expect(after?.updatedAt).toBe(before?.updatedAt);
     expect(after?.title).toBe(before?.title);
     expect(after?.language).toBe(before?.language);
+  });
+});
+
+describe('useProjectManagement: create project flow', () => {
+  beforeEach(setupProjectManagementMocks);
+
+  const renderCreateHook = (
+    overrides: Record<string, unknown> = {}
+  ): ReturnType<
+    typeof renderHook<
+      ReturnType<typeof useProjectManagement>,
+      Parameters<typeof useProjectManagement>[0]
+    >
+  > =>
+    renderHook(() =>
+      useProjectManagement({
+        storyId: baseStory.id,
+        storyTitle: baseStory.title,
+        storyProjectType: baseStory.projectType,
+        storyLanguage: baseStory.language ?? 'en',
+        storySummary: baseStory.summary,
+        storyStyleTags: baseStory.styleTags,
+        storyConflicts: baseStory.conflicts,
+        refreshStory: vi.fn().mockResolvedValue(undefined),
+        loadStory: vi.fn(),
+        updateStoryMetadata: vi.fn().mockResolvedValue(undefined),
+        handleSelectChat: vi.fn().mockResolvedValue(undefined),
+        handleNewChat: vi.fn(),
+        setChatHistoryList: vi.fn(),
+        getErrorMessage: (): string => 'error',
+        isSettingsOpen: false,
+        setIsSettingsOpen: vi.fn(),
+        ...overrides,
+      })
+    );
+
+  it('opens the create project dialog when handleCreateProject is called', () => {
+    const { result } = renderCreateHook();
+
+    act(() => {
+      result.current.handleCreateProject();
+    });
+
+    expect(result.current.isCreateProjectOpen).toBe(true);
+  });
+
+  it('creates a novel project, loads it into the store and closes both dialogs', async () => {
+    const loadStory = vi.fn();
+    const handleNewChat = vi.fn();
+    const setIsSettingsOpen = vi.fn();
+    const { result } = renderCreateHook({
+      loadStory,
+      handleNewChat,
+      isSettingsOpen: true,
+      setIsSettingsOpen,
+    });
+
+    vi.mocked(api.projects.create).mockResolvedValue({
+      ok: true,
+      message: 'Project created: New Proj',
+      story: {
+        project_title: 'New Proj',
+        story_summary: '',
+        notes: '',
+        private_notes: '',
+        tags: [],
+        image_style: null,
+        image_additional_info: null,
+        project_type: 'novel',
+        language: 'en',
+        books: [],
+        sourcebook: [],
+        conflicts: [],
+        llm_prefs: null,
+        chapters: [],
+        scenes: [],
+      },
+    } as unknown as Awaited<ReturnType<typeof api.projects.create>>);
+    vi.mocked(api.projects.list).mockResolvedValue({
+      available: [
+        { name: 'New Proj', title: 'New Proj', type: 'novel', language: 'en' },
+      ],
+    } as unknown as Awaited<ReturnType<typeof api.projects.list>>);
+
+    await act(async () => {
+      await result.current.handleCreateProjectConfirm('New Proj', 'novel', 'en');
+    });
+
+    expect(api.projects.create).toHaveBeenCalledWith('New Proj', 'novel', 'en');
+    expect(loadStory).toHaveBeenCalledTimes(1);
+    expect(loadStory).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'New Proj', projectType: 'novel' })
+    );
+    expect(handleNewChat).toHaveBeenCalledWith(false);
+    expect(result.current.isCreateProjectOpen).toBe(false);
+    expect(setIsSettingsOpen).toHaveBeenCalledWith(false);
+  });
+
+  it('surfaces an error when the backend rejects the create request', async () => {
+    const { notifyError } = await import('../../services/errorNotifier');
+    vi.mocked(api.projects.create).mockRejectedValue(
+      new Error('Failed to create project')
+    );
+
+    const { result } = renderCreateHook();
+
+    await act(async () => {
+      await result.current.handleCreateProjectConfirm('New Proj', 'novel', 'en');
+    });
+
+    expect(vi.mocked(notifyError)).toHaveBeenCalledWith(
+      expect.stringContaining('Failed to create project'),
+      expect.any(Error)
+    );
+  });
+
+  it('surfaces an error when selecting the target project fails', async () => {
+    const { notifyError } = await import('../../services/errorNotifier');
+    vi.mocked(api.projects.select).mockRejectedValue(new Error('boom'));
+
+    const { result } = renderCreateHook();
+
+    await act(async () => {
+      await result.current.handleLoadProject('p1');
+    });
+
+    expect(vi.mocked(notifyError)).toHaveBeenCalledWith(
+      expect.stringContaining('Failed to load project'),
+      expect.any(Error)
+    );
   });
 });
