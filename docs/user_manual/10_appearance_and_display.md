@@ -8,7 +8,9 @@ AugmentedQuill gives you fine-grained control over how the writing environment l
 
 Click the <img src="assets/type.svg" alt="Type icon" width="16" height="16" style="vertical-align:text-bottom;" /> **Appearance** button (the "Aa" / Type icon) on the right side of the top header bar and a dropdown panel appears below it.
 
-`[SCREENSHOT: The Appearance popup open, showing the Design Mode toggle and the five sliders]`
+![The Appearance popup open, showing the Design Mode toggle and the five sliders](screenshots/08_appearance.png)
+
+> **In this screenshot:** the Appearance popup. The **Design Mode** toggle switches the whole theme (Light / Mixed / Dark), and the five sliders below tune the editor paper, typography, and sidebar width instantly.
 
 ### Design Mode
 
@@ -46,7 +48,9 @@ The **Debug Logs** dialog is a developer-focused tool that shows a full transcri
 
 Open it by clicking the **Bug** icon on the right side of the top header bar.
 
-`[SCREENSHOT: Debug Logs dialog showing the aggregated view with a list of request entries, one expanded to show the request and response JSON]`
+![Debug Logs dialog showing the aggregated view with a list of request entries, one expanded to show the request and response JSON](screenshots/08_debug_logs.png)
+
+> **In this screenshot:** the Debug Logs dialog in Aggregated view. Each request is listed with the model and timing; one entry is expanded to show the full request and response JSON.
 
 ### View Modes
 

@@ -21,15 +21,31 @@ export interface TimelineJumpEvent {
   destinationSceneId: SceneId | null;
   departureEpochNs: bigint;
   destinationEpochNs: bigint | null;
+  /** Column (swimlane) of the timeline the jump departs from. */
   sourceLane: number;
+  /**
+   * Column (swimlane) of the timeline the jump lands on — the new branch for a
+   * branch-creating jump, or the timeline it joins for a non-branching jump.
+   */
   destinationLane: number;
+  /**
+   * The jump's OWN swimlane column.  Universal rule: every swimlane holds at
+   * most one thing — either one timeline OR one time jump.  A jump is never
+   * drawn over the timeline it travels along, and two jumps never share a
+   * column.  Because every jump reserves its own swimlane, the timeline after a
+   * run of jumps may land on an even swimlane instead of an odd one.
+   */
+  lane: number;
 }
 
 export interface TimelinePanelModel {
   laneBySceneId: Map<SceneId, number>;
   timelineIdByLane: Map<number, string>;
   events: TimelineJumpEvent[];
+  /** Every occupied swimlane (timelines AND jumps), sorted ascending. */
   laneNumbers: number[];
+  /** Swimlanes occupied by timelines only (vertical lines + spawns). */
+  timelineLaneNumbers: number[];
 }
 
 interface CandidateTimelineEvent {
@@ -43,9 +59,9 @@ interface CandidateTimelineEvent {
   destinationTimelineId: string;
 }
 
-interface TimelineInterval {
-  startEpochNs: bigint;
-  endEpochNs: bigint;
+interface ColumnLayout {
+  colByTimeline: Map<string, number>;
+  colByEvent: Map<string, number>;
 }
 
 const MAIN_TIMELINE_ID = 'main';
@@ -176,24 +192,27 @@ const pickDepartureSceneForEntry = (
   return ordered[0] ?? null;
 };
 
-const recordTimelineEpoch = (
-  intervalsByTimelineId: Map<string, TimelineInterval>,
-  timelineId: string,
-  epochNs: bigint
-): void => {
-  const existing = intervalsByTimelineId.get(timelineId);
-  if (existing === undefined) {
-    intervalsByTimelineId.set(timelineId, {
-      startEpochNs: epochNs,
-      endEpochNs: epochNs,
-    });
-    return;
-  }
-
-  intervalsByTimelineId.set(timelineId, {
-    startEpochNs: epochNs < existing.startEpochNs ? epochNs : existing.startEpochNs,
-    endEpochNs: epochNs > existing.endEpochNs ? epochNs : existing.endEpochNs,
+/**
+ * For a non-branching jump, find the scene the jump lands on.  The destination
+ * is the timeline being joined: a scene at the exact arrival epoch on the
+ * source timeline when one exists, otherwise the first scene anywhere at that
+ * epoch (so a jump to another existing timeline anchors to that timeline).
+ */
+const findDestinationSceneAtEpoch = (
+  candidates: Scene[],
+  targetNs: bigint,
+  sceneEpochNanosecondsById: ReadonlyMap<SceneId, bigint>,
+  preferTimelineId: string
+): Scene | null => {
+  const matching = candidates.filter((scene: Scene): boolean => {
+    const sceneNs = sceneEpochNanosecondsById.get(scene.id);
+    return sceneNs !== undefined && sceneNs === targetNs;
   });
+  if (matching.length === 0) return null;
+  const preferred = matching.find(
+    (scene: Scene): boolean => getSceneTimelineId(scene) === preferTimelineId
+  );
+  return preferred ?? matching[0] ?? null;
 };
 
 const buildTimelineIds = (
@@ -236,100 +255,97 @@ const buildTimelineIds = (
   return timelineIds;
 };
 
-const buildTimelineIntervals = (
-  sortedScenes: Scene[],
-  sourcebookEntries: SourcebookEntry[],
-  sceneEpochNanosecondsById: ReadonlyMap<SceneId, bigint>
-): ReadonlyMap<string, TimelineInterval> => {
-  const intervalsByTimelineId = new Map<string, TimelineInterval>();
-
-  sortedScenes.forEach((scene: Scene): void => {
-    const epochNs = sceneEpochNanosecondsById.get(scene.id);
-    if (epochNs === undefined) {
-      return;
+/**
+ * Order a timeline's outgoing jumps for swimlane placement: non-branching jumps
+ * (which simply join a timeline) come first — each reserving its own swimlane
+ * next to the timeline — then branch-creating jumps ordered by destination
+ * epoch DESCENDING so the branch that arrives latest sits closest to its parent
+ * (its spawn line stays short, earlier-arriving siblings run further right).
+ */
+const sortOutgoingEvents = (events: CandidateTimelineEvent[]): void => {
+  events.sort((a: CandidateTimelineEvent, b: CandidateTimelineEvent): number => {
+    const aBranch = a.createsNewTimeline ? 1 : 0;
+    const bBranch = b.createsNewTimeline ? 1 : 0;
+    if (aBranch !== bBranch) return aBranch - bBranch;
+    if (aBranch === 1) {
+      const aEpoch = a.destinationEpochNs;
+      const bEpoch = b.destinationEpochNs;
+      if (aEpoch !== null && bEpoch !== null) {
+        if (aEpoch > bEpoch) return -1;
+        if (aEpoch < bEpoch) return 1;
+      }
+      return a.entry.id.localeCompare(b.entry.id);
     }
-    recordTimelineEpoch(intervalsByTimelineId, getSceneTimelineId(scene), epochNs);
+    if (a.departureEpochNs < b.departureEpochNs) return -1;
+    if (a.departureEpochNs > b.departureEpochNs) return 1;
+    return a.entry.id.localeCompare(b.entry.id);
   });
-
-  sourcebookEntries.forEach((entry: SourcebookEntry): void => {
-    if (entry.category !== 'Time Travel') {
-      return;
-    }
-
-    const createsNewTimeline = !!entry.creates_new_timeline;
-    const departureScene = pickDepartureSceneForEntry(
-      entry,
-      sortedScenes,
-      sceneEpochNanosecondsById
-    );
-    const departureSceneEpochNs =
-      departureScene !== null
-        ? (sceneEpochNanosecondsById.get(departureScene.id) ?? null)
-        : null;
-    const departureEpochNs = parseEpochNs(entry.origin_date) ?? departureSceneEpochNs;
-    const destinationEpochNs = parseEpochNs(entry.destination_datetime);
-
-    const sourceTimelineId = resolveSourceTimelineId(
-      entry,
-      createsNewTimeline,
-      departureScene
-    );
-    if (departureEpochNs !== null) {
-      recordTimelineEpoch(intervalsByTimelineId, sourceTimelineId, departureEpochNs);
-    }
-    if (destinationEpochNs !== null) {
-      recordTimelineEpoch(intervalsByTimelineId, sourceTimelineId, destinationEpochNs);
-    }
-
-    if (destinationEpochNs !== null) {
-      const destinationTimelineId = createsNewTimeline
-        ? getBranchTimelineId(entry)
-        : getSourceTimelineId(entry);
-      recordTimelineEpoch(
-        intervalsByTimelineId,
-        destinationTimelineId,
-        destinationEpochNs
-      );
-    }
-  });
-
-  return intervalsByTimelineId;
 };
 
-const buildLaneByTimelineId = (
-  timelineIds: string[],
-  intervalsByTimelineId: ReadonlyMap<string, TimelineInterval>
-): ReadonlyMap<string, number> => {
-  const laneByTimelineId = new Map<string, number>();
-  laneByTimelineId.set(MAIN_TIMELINE_ID, 0);
+/**
+ * Swimlane (column) layout for the whole panel.
+ *
+ * Universal rule: every swimlane holds at most ONE thing — either one timeline
+ * or one time jump — so no two timelines or jumps are ever drawn over each
+ * other.  Every timeline occupies a column; every jump reserves its own column
+ * in its source timeline's group (a branch-creating jump is immediately
+ * followed by the column of the timeline it creates).  Because jumps consume
+ * columns, a timeline may land on an even swimlane when several jumps sit to
+ * its left.
+ */
+const buildColumnLayout = (
+  candidateEvents: CandidateTimelineEvent[],
+  timelineIds: string[]
+): ColumnLayout => {
+  const colByTimeline = new Map<string, number>();
+  const colByEvent = new Map<string, number>();
 
-  const nonMainTimelineIds = timelineIds.filter(
-    (timelineId: string): boolean => timelineId !== MAIN_TIMELINE_ID
+  const eventsBySource = new Map<string, CandidateTimelineEvent[]>();
+  candidateEvents.forEach((ev: CandidateTimelineEvent): void => {
+    const list = eventsBySource.get(ev.sourceTimelineId) ?? [];
+    list.push(ev);
+    eventsBySource.set(ev.sourceTimelineId, list);
+  });
+  eventsBySource.forEach(sortOutgoingEvents);
+
+  let nextColumn = 0;
+  const place = (timelineId: string): void => {
+    if (colByTimeline.has(timelineId)) return;
+    colByTimeline.set(timelineId, nextColumn);
+    nextColumn += 1;
+    const events = eventsBySource.get(timelineId) ?? [];
+    events.forEach((ev: CandidateTimelineEvent): void => {
+      colByEvent.set(ev.entry.id, nextColumn);
+      nextColumn += 1;
+      if (ev.createsNewTimeline) {
+        place(ev.destinationTimelineId);
+      }
+    });
+  };
+  place(MAIN_TIMELINE_ID);
+
+  // Timelines not reachable through a branch-creating jump are appended after
+  // the jump tree.
+  const remaining = timelineIds.filter(
+    (timelineId: string): boolean => !colByTimeline.has(timelineId)
   );
-
-  nonMainTimelineIds.sort((a: string, b: string): number => {
-    const ai = intervalsByTimelineId.get(a);
-    const bi = intervalsByTimelineId.get(b);
-    if (ai !== undefined && bi !== undefined) {
-      if (ai.startEpochNs < bi.startEpochNs) return -1;
-      if (ai.startEpochNs > bi.startEpochNs) return 1;
-      if (ai.endEpochNs < bi.endEpochNs) return -1;
-      if (ai.endEpochNs > bi.endEpochNs) return 1;
-    } else if (ai !== undefined) {
-      return -1;
-    } else if (bi !== undefined) {
-      return 1;
-    }
-    return a.localeCompare(b);
+  remaining.forEach((timelineId: string): void => {
+    colByTimeline.set(timelineId, nextColumn);
+    nextColumn += 1;
+  });
+  remaining.forEach((timelineId: string): void => {
+    const events = eventsBySource.get(timelineId) ?? [];
+    events.forEach((ev: CandidateTimelineEvent): void => {
+      if (colByEvent.has(ev.entry.id)) return;
+      colByEvent.set(ev.entry.id, nextColumn);
+      nextColumn += 1;
+      if (ev.createsNewTimeline) {
+        place(ev.destinationTimelineId);
+      }
+    });
   });
 
-  let nextLane = 1;
-  nonMainTimelineIds.forEach((timelineId: string): void => {
-    laneByTimelineId.set(timelineId, nextLane);
-    nextLane += 1;
-  });
-
-  return laneByTimelineId;
+  return { colByTimeline, colByEvent };
 };
 
 export const buildTimelinePanelModel = (
@@ -338,24 +354,6 @@ export const buildTimelinePanelModel = (
   sceneEpochNanosecondsById: ReadonlyMap<SceneId, bigint>
 ): TimelinePanelModel => {
   const timelineIds = buildTimelineIds(sortedScenes, sourcebookEntries);
-  const intervalsByTimelineId = buildTimelineIntervals(
-    sortedScenes,
-    sourcebookEntries,
-    sceneEpochNanosecondsById
-  );
-  const laneByTimelineId = buildLaneByTimelineId(timelineIds, intervalsByTimelineId);
-
-  const laneBySceneId = new Map<SceneId, number>();
-  sortedScenes.forEach((scene: Scene): void => {
-    const timelineId = getSceneTimelineId(scene);
-    laneBySceneId.set(scene.id, laneByTimelineId.get(timelineId) ?? 0);
-  });
-
-  const timelineIdByLane = new Map<number, string>();
-  laneByTimelineId.forEach((lane: number, timelineId: string): void => {
-    timelineIdByLane.set(lane, timelineId);
-  });
-
   const timeTravelEntries = sourcebookEntries.filter(
     (entry: SourcebookEntry): boolean => entry.category === 'Time Travel'
   );
@@ -380,25 +378,54 @@ export const buildTimelinePanelModel = (
       return;
     }
 
+    // A time-travel entry with incomplete data (no destination) cannot draw an
+    // arrow: both endpoints must be known.  Such entries are kept in the
+    // sourcebook but produce no timeline-panel event.
     const destinationEpochNs = parseEpochNs(entry.destination_datetime);
+    if (destinationEpochNs === null) {
+      return;
+    }
+
     const createsNewTimeline = !!entry.creates_new_timeline;
-    const sourceTimelineId = resolveSourceTimelineId(
-      entry,
-      createsNewTimeline,
-      departureScene
-    );
-    const destinationTimelineId = createsNewTimeline
-      ? getBranchTimelineId(entry)
-      : sourceTimelineId;
-    const destinationScene =
-      destinationEpochNs !== null
-        ? findExactSceneAtEpochInTimeline(
-            sortedScenes,
-            destinationEpochNs,
-            destinationTimelineId,
-            sceneEpochNanosecondsById
-          )
-        : null;
+
+    // Resolve the timelines a jump departs from and lands on.
+    let sourceTimelineId: string;
+    let destinationTimelineId: string;
+    let destinationScene: Scene | null = null;
+    if (createsNewTimeline) {
+      // A branch's parent is the timeline it starts off (entry.timeline_id with
+      // the "common ancestor" fallback); this drives the tree layout.
+      sourceTimelineId = resolveSourceTimelineId(entry, true, departureScene);
+      destinationTimelineId = getBranchTimelineId(entry);
+      destinationScene = findExactSceneAtEpochInTimeline(
+        sortedScenes,
+        destinationEpochNs,
+        destinationTimelineId,
+        sceneEpochNanosecondsById
+      );
+    } else {
+      // A non-branching jump JOINS a timeline.  The arrow departs from the
+      // departure scene's OWN timeline — the line its marker dot sits on —
+      // and joins the destination timeline, so an arrow is never drawn on one
+      // timeline while its scene marker is elsewhere.  A return with no scene
+      // at the arrival epoch loops back to the line it left (its future).
+      // When there is no departure scene at all (the backend does not store
+      // `timeline_id` for non-branching entries), the jump is local to the
+      // line it lands on — its destination scene's line.
+      destinationScene = findDestinationSceneAtEpoch(
+        sortedScenes,
+        destinationEpochNs,
+        sceneEpochNanosecondsById,
+        MAIN_TIMELINE_ID
+      );
+      const destinationTimelineIdFromScene =
+        destinationScene !== null ? getSceneTimelineId(destinationScene) : null;
+      sourceTimelineId =
+        departureScene !== null
+          ? getSceneTimelineId(departureScene)
+          : (destinationTimelineIdFromScene ?? getSourceTimelineId(entry));
+      destinationTimelineId = destinationTimelineIdFromScene ?? sourceTimelineId;
+    }
 
     candidateEvents.push({
       entry,
@@ -414,12 +441,30 @@ export const buildTimelinePanelModel = (
 
   candidateEvents.sort(sortCandidateEvents);
 
+  // Swimlane layout: every timeline AND every time jump owns exactly one
+  // swimlane (column).  A timeline's outgoing jumps each reserve the next
+  // column, and a branch-creating jump is immediately followed by the column
+  // of the timeline it creates — so a timeline can land on an even swimlane
+  // when several jumps sit to its left.
+  const { colByTimeline, colByEvent } = buildColumnLayout(candidateEvents, timelineIds);
+
+  const laneBySceneId = new Map<SceneId, number>();
+  sortedScenes.forEach((scene: Scene): void => {
+    const timelineId = getSceneTimelineId(scene);
+    laneBySceneId.set(scene.id, colByTimeline.get(timelineId) ?? 0);
+  });
+
+  const timelineIdByLane = new Map<number, string>();
+  colByTimeline.forEach((lane: number, timelineId: string): void => {
+    timelineIdByLane.set(lane, timelineId);
+  });
+
   const events: TimelineJumpEvent[] = [];
 
   candidateEvents.forEach((ev: CandidateTimelineEvent): void => {
-    const sourceLane = laneByTimelineId.get(ev.sourceTimelineId) ?? 0;
-    const destinationLane =
-      laneByTimelineId.get(ev.destinationTimelineId) ?? sourceLane;
+    const sourceLane = colByTimeline.get(ev.sourceTimelineId) ?? 0;
+    const destinationLane = colByTimeline.get(ev.destinationTimelineId) ?? sourceLane;
+    const lane = colByEvent.get(ev.entry.id) ?? sourceLane;
 
     events.push({
       entryId: ev.entry.id,
@@ -431,18 +476,22 @@ export const buildTimelinePanelModel = (
       destinationEpochNs: ev.destinationEpochNs,
       sourceLane,
       destinationLane,
+      lane,
     });
   });
 
-  const usedLanes = new Set<number>(laneBySceneId.values());
-  events.forEach((event: TimelineJumpEvent): void => {
-    usedLanes.add(event.sourceLane);
-    usedLanes.add(event.destinationLane);
-  });
-
   const laneNumbers = Array.from(
-    new Set<number>([...laneBySceneId.values(), ...usedLanes.values()])
+    new Set<number>([...colByTimeline.values(), ...colByEvent.values()])
   ).sort((a: number, b: number) => a - b);
+  const timelineLaneNumbers = Array.from(colByTimeline.values()).sort(
+    (a: number, b: number) => a - b
+  );
 
-  return { laneBySceneId, timelineIdByLane, events, laneNumbers };
+  return {
+    laneBySceneId,
+    timelineIdByLane,
+    events,
+    laneNumbers,
+    timelineLaneNumbers,
+  };
 };

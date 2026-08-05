@@ -4,6 +4,8 @@ The main column of AugmentedQuill is your prose studio. It shows the active chap
 
 ![Main editor view with the Chapter AI badge visible at the top and the suggestion footer offering cards](screenshots/main.png)
 
+> **In this screenshot:** the writing surface. The **Chapter AI** badge floats above the paper with **Extend** and **Rewrite**, and the **Suggest next paragraph** footer waits at the bottom. The header above holds view modes, formatting, and model selectors.
+
 ## Editor Workspace
 
 The editor is a flexible canvas: when the view mode is **Visual**, the prose renders like a word processor; when it is **Markdown** or **Raw**, you edit the UTF-8 markdown directly.
@@ -162,6 +164,8 @@ All three writing-focused actions — Extend, Rewrite, and Suggest — use the *
 
 ![Chapter AI badge showing Extend and Rewrite on a light background plus the Suggest button in the footer](screenshots/03_chapter_ai.png)
 
+> **In this screenshot:** the three AI writing tools — **Extend** and **Rewrite** in the floating badge, and **Suggest next paragraph** in the footer — all powered by the WRITING model.
+
 ### Extend Chapter
 
 The first Chapter AI button is `Extend` with the <img src="assets/wand.svg" alt="Wand icon" width="16" height="16" style="vertical-align:text-bottom;" /> Wand icon. Clicking it asks the <img src="assets/book-open.svg" alt="Book Open icon" width="16" height="16" style="vertical-align:text-bottom;" /> <img src="assets/swatches/violet.svg" alt="Violet swatch" width="16" height="16" style="vertical-align:text-bottom;" /> WRITING model to continue from the end of the current chapter, injecting new prose while keeping existing formatting and style tags intact. The button is disabled while the model is processing, and a spinner appears until the new text is appended.
@@ -173,6 +177,8 @@ Next to Extend is `Rewrite`, decorated with the <img src="assets/file-pen.svg" a
 ### Suggest Next Paragraph
 
 ![The suggestion footer open with two or three continuation cards and the Dismiss button](screenshots/03_continuation.png)
+
+> **In this screenshot:** the continuation pane open. Each card is a different way to continue your scene — click one to insert it at the cursor, or press **Dismiss** to keep your draft untouched.
 
 At the bottom of the editor sits the pulsing `Suggest next paragraph` pill with the <img src="assets/sparkles.svg" alt="Sparkles icon" width="16" height="16" style="vertical-align:text-bottom;" /> Sparkles icon. Click it to open the **continuation pane**. The <img src="assets/book-open.svg" alt="Book Open icon" width="16" height="16" style="vertical-align:text-bottom;" /> <img src="assets/swatches/violet.svg" alt="Violet swatch" width="16" height="16" style="vertical-align:text-bottom;" /> WRITING model generates two or more short continuation options, each shown as a card. Click any card to insert that text at the cursor and close the pane, or press **Dismiss** to discard all suggestions without changing your draft.
 
@@ -216,6 +222,8 @@ The summary tab inside the Metadata Editor dialog (covered in [Chapters and Book
 These controls update the planning layer around a chapter rather than the prose itself. The summaries they produce help CHAT steer the project and help WRITING stay aligned when it generates new text.
 
 ![Metadata summary tab with AI Write/Update/Rewrite buttons highlighted](screenshots/03_metadata_summary.png)
+
+> **In this screenshot:** the Metadata Editor's Summary tab. **AI Write** drafts a summary from your chapter, then becomes **AI Update** and **AI Rewrite** once text exists.
 
 ---
 

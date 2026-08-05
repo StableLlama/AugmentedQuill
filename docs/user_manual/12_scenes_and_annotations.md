@@ -14,6 +14,7 @@ This chapter covers the major new features: the **Scenes** system (for planning 
    - [Narrative View](#narrative-view)
    - [Pinboard View](#pinboard-view)
    - [Convergence Map](#convergence-map)
+   - [A Time-Travel Story in Practice](#a-time-travel-story-in-practice)
 4. [Creating and Managing Scenes](#creating-and-managing-scenes)
    - [Scene Properties](#scene-properties)
    - [Causal Ordering](#causal-ordering)
@@ -63,6 +64,10 @@ Click the **workspace mode buttons** in the top header bar to switch between lay
 
 Once you're in **Scenes** or **Split** mode, use the segmented buttons labelled **Pinboard**, **Narrative**, **Chronological**, and **Convergence Map** to switch between view types.
 
+![The Scenes workspace in Narrative view, with scene cards grouped under their chapters and causal links](screenshots/12_scenes_narrative.png)
+
+> **In this screenshot:** the Scenes workspace in **Narrative** view. The view-mode buttons sit in the toolbar at the top, scene cards are grouped under their chapters, and arrows show which scenes cause which.
+
 ### Narrative View
 
 The **Narrative View** (default) displays all scenes as a vertical list. Divider lines appear at chapter and book boundaries so you can see how scenes map onto your story structure.
@@ -76,6 +81,10 @@ The **Narrative View** (default) displays all scenes as a vertical list. Divider
 
 The **Pinboard View** provides an infinite canvas where you can freely position scene cards.
 
+![The Scenes workspace in Pinboard view, with freely positioned scene cards linked by causal arrows](screenshots/12_scenes_pinboard.png)
+
+> **In this screenshot:** the **Pinboard** — cards are placed freely on the canvas and linked with causal arrows. Alt+drag from one card toward another draws a new arrow.
+
 - **Pan:** Middle-mouse button drag, or **Alt+drag** on the background.
 - **Zoom:** Scroll wheel.
 - **Move cards:** Drag any card to reposition it.
@@ -84,15 +93,53 @@ The **Pinboard View** provides an infinite canvas where you can freely position 
 - **Lasso select:** Drag on empty space to draw a selection rectangle.
 - Same multi-select shortcuts as Narrative View (**Ctrl+click**, **Shift+click**).
 
+### Chronological View
+
+The **Chronological** view sorts every scene by its **in-story time** (the _Scene Time_ you set in the Scene Editor) rather than by narrative order. This is the fastest way to spot pacing problems, timeline conflicts, or scenes that are dated incorrectly.
+
+![The Scenes workspace in Chronological view, sorting scenes by their in-story time](screenshots/12_scenes_chronological.png)
+
+> **In this screenshot:** the **Chronological** view — the same cards as the Narrative view, re-sorted by when each scene happens in the story, with scenes that share a time slot grouped together.
+
 ### Convergence Map
 
 The **Convergence Map** is designed for **time-travel stories**. It shows scenes sorted by their in-story time, with one coloured snake path per sourcebook character drawn behind the cards.
+
+![The Convergence Map, with character lanes and snake paths tracing each character through the timeline](screenshots/12_scenes_convergence.png)
+
+> **In this screenshot:** the **Convergence Map**. Each character gets a coloured lane with a snake path that traces how they move through the story's timeline. When a character travels in time, the path doubles back as a U-turn.
 
 - Each character or sourcebook entry gets its own **coloured lane** at the top.
 - The snake shows the character's **experience order** through the story.
 - Time-travel jumps appear as **U-turns** in the snake path.
 - Scene cards are positioned by chronological story time, not narrative order.
 - Click a character's lane button to highlight their path.
+
+### A Time-Travel Story in Practice
+
+The Convergence Map really earns its keep when your story jumps through time. The map below is the same view rendered for a series built as **one book per movie** of the _Back to the Future_ trilogy — 22 scenes spanning 1885, 1955, 1985 and 2015, covering all 14 time-travel events:
+
+![The Convergence Map for a time-travel story, with snake paths that double back when characters jump through time](screenshots/12_scenes_convergence_bttf.png)
+
+> **In this screenshot:** the scenes are laid out chronologically, from 1885 at the top to 2015 at the bottom — but the characters experience them in a different order. Every time a character jumps to a scene that happened _earlier_, their snake doubles back in a **U-turn**. Marty's and Doc's snakes cross themselves again and again as the trilogy rewrites its own history.
+
+Scenes from the same movie share one **colour tag** (blue for Part I, orange for Part II, green for Part III), so even though the map is sorted purely by in-story time you can still tell at a glance which movie each scene belongs to.
+
+Every time-travel event is also stored as a **Time Travel** sourcebook entry, and that is what draws the **timeline panel** on the left. Each complete event (one with both an origin and a destination) gets its own **arrow** in its own **swimlane** — one swimlane per timeline OR per time jump, never two things drawn over each other — and every event that opens a new branch is connected to the timeline it starts off with a **spawn line**: a short horizontal connector followed by a rounded knee down into the new lane, like a directory tree. An entry with incomplete data (no destination) draws **no arrow** — the panel only draws a jump when both endpoints are known, and its arrow head always lines up vertically with the scene that marks the arrival (or points at empty space when no scene covers that moment).
+
+`main` is **only the original 1985** — the timeline of the very first scenes. Once a character changes the past, every later scene lives on an altered line. The rule is simple: **a time travel to the past always opens a new branch; a time travel to the future stays on the same line.** In the trilogy that means: Marty's trip to 1955, Old Biff's trip to 1955, Doc's return from 2015 to warn, the trip to the alternate 1985, the return to 1955 that fixes it, and the two trips to 1885 all open branches — while every return to 1985 or trip to 2015 stays on the line the traveller was on (the returns loop back to their own line with a short horizontal segment). Every arrow **starts at the scene dot it departs from** — on the very timeline that scene lives on — so an arrow is never drawn on one timeline while its scene marker sits on another; it then runs in its own swimlane and joins the line it lands on. Each branch starts off a timeline that exists at the moment it branches: Old Biff's 1955 and the restored 1955 split off the first 1955 line, the alternate 1985 branches off Old Biff's 1955, Marty's 1885 opens a second Old West line off Doc's 1885, and the first 1955 and Doc's 1885 fall back to `main` (their direct departure timeline — 2015, the alternate 1985 — does not exist at the branch's creation moment). This keeps the tree connected and no lane ever appears to start from nothing. (Doc's 10:28 a.m. return to warn is the one branch with no scenes on it — a past travel that must fork, but one that lands at the very end of the story.)
+
+### How to Specify Time Travel in Your Scenes
+
+The Convergence Map has no special "time travel" flag — it reads three ordinary scene properties and infers the jumps from them:
+
+1. **Set a precise Scene Time on every scene.** The map sorts scenes by their [Scene Time](#scene-properties), _not_ by narrative order or by which book they belong to. A scene in Book 2 can land chronologically before a scene in Book 1 — that mismatch is exactly what draws the U-turn. Use the clock button in the Scene Editor to set an exact date and time (e.g. `1955-11-12T22:04Z`).
+2. **Tag the time-travelling characters.** Put each character who is present in the scene's **Active** or **Passive** characters. The map draws one snake per tagged character, visiting their scenes in _experience_ order (the order the story shows them). When a character's next scene is earlier on the timeline than their previous one, the snake turns back.
+3. **Put branch timelines on their own `timeline_id`.** Scenes in an alternate reality or a separate branch (e.g. an alternate 1985) should use a `timeline_id` other than `main`. The left-hand timeline panel groups branches separately so alternate-reality scenes don't tangle with the main timeline.
+4. **Use colour tags to group scenes by story arc.** Setting the same **Colour Tag** on every scene of a movie, volume or act makes a chronologically sorted view readable: readers can immediately tell which scenes belong together even when they're scattered across the timeline.
+5. **Model each time jump as a Time Travel sourcebook entry.** For every jump in your story, add a **Time Travel** category entry in the Sourcebook: set the departure time as **Origin Date**, the arrival time as **Destination Date/Time**, and tick **Creates New Timeline** whenever the jump opens a new branch. The left-hand timeline panel draws one **arrow** per entry and connects every new branch to the timeline it left with a **spawn arc**. Name each entry (e.g. `1985 -> 1955`), set the scenes that land on the branch to `timeline_id = branch:<entry name>` (the sourcebook auto-fills this), and add the entry to the **departure scene's** sourcebook tags so the arrow starts at a real scene dot.
+
+For characters who travel as individuals — including a time traveller meeting their younger self in the same scene — see [Per-Scene Personal Datetime Overrides](#per-scene-personal-datetime-overrides) and the [Sourcebook Time Travel Features](#sourcebook-time-travel-features).
 
 ---
 
@@ -139,6 +186,10 @@ Each scene can contain **Beats** — smaller sub-units of action within the scen
 
 **Double-click** any scene card, or ask the AI to edit a scene, to open the **Scene Editor Dialog**. This provides a full form where you can:
 
+![Scene Editor Dialog with summary, beats, characters, time, location, and color tag](screenshots/12_scene_editor.png)
+
+> **In this screenshot:** the **Scene Editor** for one scene — summary, beats, active/passive characters, scene time, location, color tag, and causal links, all in a single form.
+
 - Edit the **summary**, **location**, **time**, and **status**.
 - Manage **Active** and **Passive character** lists.
 - Assign a **color tag** for visual organization.
@@ -151,6 +202,10 @@ Each scene can contain **Beats** — smaller sub-units of action within the scen
 ## Inline Annotations
 
 **Annotations** let you attach notes, comments, or reminders to specific ranges of text. They appear as coloured highlights in the editor.
+
+![The editor showing inline annotation highlights with the Annotation panel listing them on the right](screenshots/12_annotations_editor.png)
+
+> **In this screenshot:** two inline annotations highlighted in the prose, with the **Annotation panel** open on the right listing each comment. Click an entry to jump to its highlight in the text.
 
 ### Adding an Annotation
 

@@ -21,7 +21,9 @@ This tab is useful for troubleshooting, bug reports, and confirming exactly whic
 
 The Projects tab lists every project stored on this machine and lets you create, rename, delete, import, and export them.
 
-`[SCREENSHOT: The Settings Dialog showing the Projects tab with a list of projects]`
+![The Settings Dialog showing the Projects tab with a list of projects](screenshots/02_settings_projects.png)
+
+> **In this screenshot:** the Settings dialog's Projects tab. The toolbar refreshes, imports, or creates projects; each card below shows the project's type, language, export buttons, and an "Active" badge on the current project.
 
 ### Toolbar
 
@@ -50,6 +52,8 @@ Each project in the list shows:
 Clicking **New Project** opens a small dialog:
 
 ![The Create Project dialog showing the name field and three project type radio buttons](screenshots/02_create_project_dialog.png)
+
+> **In this screenshot:** the Create Project dialog. Give your story a name and pick the structure that fits — Short Story, Novel, or Series — then click **Create Project**.
 
 | Field                         | Description                                                                                                                              |
 | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |

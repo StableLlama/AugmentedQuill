@@ -4,6 +4,8 @@ AugmentedQuill provides a project-wide **Search and Replace** tool that lets you
 
 ![Search and Replace dialog open with results grouped by section](screenshots/12_search_and_replace_dialog.png)
 
+> **In this screenshot:** the Search and Replace dialog after a project-wide search. Results are grouped by section (chapter prose, metadata, sourcebook), and each match can be replaced individually or all at once.
+
 ---
 
 ## Opening Search & Replace
@@ -23,12 +25,12 @@ By default, search is case-insensitive: searching for `the` also finds `The` and
 
 Enable **`.*`** to use [regular expressions](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_expressions). Examples:
 
-| Pattern      | Matches                     |                           |
-| ------------ | --------------------------- | ------------------------- |
-| `\bElena\b`  | Only the whole word "Elena" |                           |
-| `Elena       | Elara`                      | Either "Elena" or "Elara" |
-| `Chapt(er)?` | "Chapter" or "Chapt"        |                           |
-| `[0-9]+`     | Any sequence of digits      |                           |
+| Pattern      | Matches                     |                          |
+| ------------ | --------------------------- | ------------------------ |
+| `\bElena\b`  | Only the whole word "Elena" |                          |
+| `Elena       | Vera`                       | Either "Elena" or "Vera" |
+| `Chapt(er)?` | "Chapter" or "Chapt"        |                          |
+| `[0-9]+`     | Any sequence of digits      |                          |
 
 > **Note:** Regex and Phonetic modes are mutually exclusive — enabling one disables the other.
 
@@ -90,7 +92,7 @@ Only the currently highlighted match is replaced; the search reruns automaticall
 
 Click **Replace All** to replace every match in the current scope simultaneously. The match count updates to reflect the result (typically 0 if all replacements succeeded).
 
-> **Caution:** Replace All modifies files on disk immediately. Use [Checkpoints](04_chapters_and_books.md#checkpoints) to save a snapshot before a mass replacement if you want an easy way to undo.
+> **Caution:** Replace All modifies files on disk immediately. Use [Project Checkpoints](02_projects_and_settings.md#project-checkpoints) to save a snapshot before a mass replacement if you want an easy way to undo.
 
 ---
 
@@ -123,7 +125,7 @@ The tool returns a list of matches grouped by section, which the AI formats into
 
 Ask the AI to rename a character or fix a recurring phrase:
 
-> _"Rename Elena to Elara everywhere in the project."_
+> _"Rename Elena to Vera everywhere in the project."_
 > _"Replace all occurrences of 'the king's sword' with 'Excalibur'."_
 
 The tool runs a global replace and reports how many occurrences were changed and in which sections.
@@ -138,7 +140,7 @@ The tool runs a global replace and reports how many occurrences were changed and
 | ------------------------------------------ | ------------------------------- | ------------------- |
 | Find all uses of "said"                    | Case-insensitive, All scope     | `said`              |
 | Find only whole-word "King" (not "Viking") | Regex enabled                   | `\bKing\b`          |
-| Find name variants of Elara                | Phonetic enabled, All scope     | `Elara`             |
+| Find name variants of Vera                 | Phonetic enabled, All scope     | `Vera`              |
 | Rename a character across all chapters     | Replace All, All Chapters scope | old name → new name |
 | Check if any chapter summary lacks a date  | Metadata scope                  | `[0-9]{4}`          |
 

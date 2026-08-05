@@ -162,6 +162,7 @@ const HeaderRightControls: React.FC<HeaderRightControlsProps> = ({
         variant="secondary"
         size="sm"
         onClick={(): void => setIsChatOpen(!isChatOpen)}
+        aria-label={t('Toggle AI Chat')}
         icon={isChatOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}
       >
         <span className="hidden xl:inline">{isChatOpen ? t('Hide') : t('AI')}</span>

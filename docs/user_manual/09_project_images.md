@@ -2,7 +2,7 @@
 
 The **Project Images** dialog is where you manage all visual assets attached to a story — reference artwork, character portraits, location sketches, or any images you want the AI to describe or use in prompts. Open it from the header by clicking the <img src="assets/eye.svg" alt="Image icon" width="16" height="16" style="vertical-align:text-bottom;" /> Image icon on the right side of the top bar.
 
-`[SCREENSHOT: The Project Images dialog showing the settings accordion, the action bar with three buttons, and an image grid with cards]`
+![The Project Images dialog showing the settings accordion, the action bar with three buttons, and an image grid with cards](screenshots/06_project_images.png)
 
 ---
 
@@ -35,7 +35,7 @@ You can also drag and drop an image file directly anywhere onto the dialog to up
 
 Uploaded and placeholder images are shown in a responsive grid (1–4 columns depending on screen width). Each image card contains:
 
-`[SCREENSHOT: A single image card showing the thumbnail, title input, description textarea, and action buttons]`
+![A single image card showing the thumbnail, title input, description textarea, and action buttons](screenshots/06_image_card.png)
 
 ### Thumbnail Area
 
@@ -47,7 +47,7 @@ Uploaded and placeholder images are shown in a responsive grid (1–4 columns de
 
 | Field                                                                                                                                                         | Description                                                                                                                               |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| **Title** text input                                                                                                                                          | An editable name for this image (e.g. "Elara — Chapter 3"). Shown below the thumbnail and used when inserting the image into the editor.  |
+| **Title** text input                                                                                                                                          | An editable name for this image (e.g. "Vera — Chapter 3"). Shown below the thumbnail and used when inserting the image into the editor.   |
 | **Description** textarea                                                                                                                                      | A resizable text area for a written description of the image. The AI uses this description when referencing the image in prompts or chat. |
 | **Save** button (<img src="assets/save.svg" alt="Save icon" width="16" height="16" style="vertical-align:text-bottom;" /> appears when unsaved changes exist) | Writes the title and description to disk. Changes to the text fields are not auto-saved — you must click Save to persist them.            |
 
@@ -73,6 +73,10 @@ Clicking a thumbnail opens the **Lightbox** — a full-screen overlay showing th
 ## Generated Prompt Popup
 
 When you click **Create prompt** on an image card, a popup panel appears showing the AI-generated image-generation prompt. The prompt streams in word by word so you can see it being written.
+
+> **In this screenshot:** the generated prompt popup open above an image card. The read-only output streams the AI-written prompt, and the **Copy to Clipboard** button lets you take it straight into your image tool of choice.
+
+![Project Images dialog showing an image card with the generated prompt popup open](screenshots/06_generated_prompt.png)
 
 | Control                                                                                                                            | Description                                                                                         |
 | ---------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |

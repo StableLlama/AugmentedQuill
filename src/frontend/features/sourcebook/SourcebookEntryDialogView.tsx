@@ -47,7 +47,6 @@ interface SourcebookEntryDialogViewProps {
   originDate: string | null;
   destinationDatetime: string | null;
   destinationRelative: string;
-  createsNewTimeline: boolean;
   timelineId: string;
   timelineOptions: Array<{ id: string; label: string }>;
   images: string[];
@@ -87,7 +86,6 @@ interface SourcebookEntryDialogViewProps {
   onOriginDateChange: (value: string | null) => void;
   onDestinationDatetimeChange: (value: string | null) => void;
   onDestinationRelativeChange: (value: string) => void;
-  onCreatesNewTimelineChange: (value: boolean) => void;
   onTimelineIdChange: (value: string) => void;
   onToggleImagesExpanded: () => void;
   onOpenImagePicker: () => void;
@@ -165,13 +163,11 @@ export const SourcebookEntryDialogView: React.FC<SourcebookEntryDialogViewProps>
     originDate,
     destinationDatetime,
     destinationRelative,
-    createsNewTimeline,
     timelineId,
     timelineOptions,
     onOriginDateChange,
     onDestinationDatetimeChange,
     onDestinationRelativeChange,
-    onCreatesNewTimelineChange,
     onTimelineIdChange,
     onToggleImagesExpanded,
     onOpenImagePicker,
@@ -228,7 +224,6 @@ export const SourcebookEntryDialogView: React.FC<SourcebookEntryDialogViewProps>
               originDate={originDate}
               destinationDatetime={destinationDatetime}
               destinationRelative={destinationRelative}
-              createsNewTimeline={createsNewTimeline}
               timelineId={timelineId}
               timelineOptions={timelineOptions}
               inputBorderClass={inputBorderClass}
@@ -245,7 +240,6 @@ export const SourcebookEntryDialogView: React.FC<SourcebookEntryDialogViewProps>
               onOriginDateChange={onOriginDateChange}
               onDestinationDatetimeChange={onDestinationDatetimeChange}
               onDestinationRelativeChange={onDestinationRelativeChange}
-              onCreatesNewTimelineChange={onCreatesNewTimelineChange}
               onTimelineIdChange={onTimelineIdChange}
             />
 

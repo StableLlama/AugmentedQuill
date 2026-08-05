@@ -1,13 +1,13 @@
 repos:
   - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.14.11
+    rev: v0.16.1
     hooks:
       - id: ruff
         # Do not auto-fix in pre-commit; only report issues for manual review
         language_version: python3
 
   - repo: https://github.com/psf/black
-    rev: 26.1.0
+    rev: 26.3.1
     hooks:
       - id: black
         # Run black in check-only mode so it does not modify files automatically

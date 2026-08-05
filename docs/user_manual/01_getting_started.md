@@ -4,6 +4,14 @@ AugmentedQuill is designed to be a seamless extension of your creative process. 
 
 > Your story belongs to you. AugmentedQuill keeps you in the driver seat: every beat, character voice, and plot decision is always yours. AI is here as a collaborator—to brainstorm, refine, and ghostwrite in ways that match your intent, not replace it.
 
+## What AugmentedQuill Can Do For You
+
+- **Write with AI that knows your world** — the editor's **Extend**, **Rewrite**, and **Suggest** tools draft, continue, and polish prose using your story's own context.
+- **Keep every character, place, and rule consistent** — the [Sourcebook](05_sourcebook.md) feeds the AI the same canon on every call, so names and lore stay straight.
+- **Plan structure like a pro** — chapters, [conflicts](04_chapters_and_books.md#managing-chapters), and books keep long-form work organized, from short story to multi-volume series.
+- **Turn your sketches into prompts** — [manage reference art](09_project_images.md) and ask an artist or use external AI to generate image prompts in your project's style.
+- **Coordinate everything through chat** — brainstorm, delegate prose, update metadata, and build your world without leaving the writing flow.
+
 ## Important Limits (As of 2026)
 
 - AugmentedQuill is local-first and not designed for public internet deployment without adding your own security layer.
@@ -26,6 +34,8 @@ Before diving in, it's helpful to understand how AugmentedQuill organizes your w
 When you open AugmentedQuill, you'll be greeted by the main writing environment. The interface is divided into three main panels plus a persistent header bar across the top:
 
 ![The main dashboard showing the three-panel layout: Left Sidebar, Editor, and Right Sidebar](screenshots/main.png)
+
+> **In this screenshot:** the three-panel workspace. **Left:** Story Metadata, Chapters, and Sourcebook. **Center:** the editor with your active chapter. **Right:** the AI Chat Assistant. The header bar across the top holds settings, undo/redo, view modes, and model selectors.
 
 1. **Left Sidebar** — Your project's control center. Scroll through it to find:
    - **Story Metadata**: The story title, summary, style tags, and LLM-visible notes at a glance. Click the <img src="assets/edit-2.svg" alt="Edit icon" width="16" height="16" style="vertical-align:text-bottom;" /> pencil icon to open the full Metadata Editor.
@@ -81,12 +91,12 @@ On mobile a single **View** dropdown (showing the current mode and a chevron) co
 
 On medium screens the less common buttons collapse into a **Format** dropdown (the <img src="assets/type.svg" alt="Type icon" width="16" height="16" style="vertical-align:text-bottom;" /> Type icon with chevron). See [The Writing Interface](03_writing_interface.md#supported-markdown-elements) for the full list of all supported markdown elements, including tables and inline code.
 
-**Chapter AI** — Two quick actions that call the <img src="assets/book-open.svg" alt="Book Open icon" width="16" height="16" style="vertical-align:text-bottom;" /> <img src="assets/swatches/violet.svg" alt="Violet swatch" width="16" height="16" style="vertical-align:text-bottom;" /> [WRITING model](02_projects_and_settings.md#the-three-ai-models) on the current chapter:
+**Chapter AI** — Two quick actions that call the <img src="assets/book-open.svg" alt="Book Open icon" width="16" height="16" style="vertical-align:text-bottom;" /> <img src="assets/swatches/violet.svg" alt="Violet swatch" width="16" height="16" style="vertical-align:text-bottom;" /> [WRITING model](02_projects_and_settings.md#the-three-ai-model-roles) on the current chapter:
 
 - **Extend** (<img src="assets/wand.svg" alt="Wand icon" width="16" height="16" style="vertical-align:text-bottom;" />): Appends a continuation of the chapter using the story context.
 - **Rewrite** (<img src="assets/file-pen.svg" alt="File Edit icon" width="16" height="16" style="vertical-align:text-bottom;" />): Regenerates the chapter body while keeping the same summary and style tags.
 
-**Model Selectors** (visible on wide screens) — Three small dropdowns show which AI provider is assigned to each role. Click one to swap providers on the fly without opening Settings. See [Projects and Settings](02_projects_and_settings.md#the-three-ai-models) for the meaning of each role.
+**Model Selectors** (visible on wide screens) — Three small dropdowns show which AI provider is assigned to each role. Click one to swap providers on the fly without opening Settings. See [Projects and Settings](02_projects_and_settings.md#the-three-ai-model-roles) for the meaning of each role.
 
 ### Right Section
 
