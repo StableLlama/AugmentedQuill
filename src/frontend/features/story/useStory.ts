@@ -444,19 +444,18 @@ export const useStory = (dialogs: StoryDialogs = defaultDialogs) => {
                 !isAiDiffPending &&
                 baselineChapter !== undefined &&
                 (baselineChapter.content ?? '') === '';
-              const updatedChapters = state.story.chapters.map(
-                (c: Chapter): Chapter =>
-                  c.id === currentChapterId
-                    ? {
-                        ...c,
-                        content: res.content,
-                        notes: res.notes ?? undefined,
-                        private_notes: res.private_notes ?? undefined,
-                        conflicts: (res.conflicts ?? []) as Conflict[],
-                        title: res.title ?? undefined,
-                        summary: res.summary ?? undefined,
-                      }
-                    : c
+              const updatedChapters = state.story.chapters.map((c: Chapter): Chapter =>
+                c.id === currentChapterId
+                  ? {
+                      ...c,
+                      content: res.content,
+                      notes: res.notes ?? undefined,
+                      private_notes: res.private_notes ?? undefined,
+                      conflicts: (res.conflicts ?? []) as Conflict[],
+                      title: res.title ?? undefined,
+                      summary: res.summary ?? undefined,
+                    }
+                  : c
               );
 
               // Only back-fill `content` in the history entry: it is the sole
@@ -753,8 +752,8 @@ export const useStory = (dialogs: StoryDialogs = defaultDialogs) => {
         }
       );
 
-      const newChapters = currentStory.chapters.map(
-        (ch: Chapter): Chapter => (ch.id === id ? { ...ch, ...partial } : ch)
+      const newChapters = currentStory.chapters.map((ch: Chapter): Chapter =>
+        ch.id === id ? { ...ch, ...partial } : ch
       );
       const newState = {
         ...currentStory,

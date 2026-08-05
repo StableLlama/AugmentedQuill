@@ -35,22 +35,18 @@ export const useSidebarIntents = ({
 
   const openAndExpandStory = useCallback((): void => {
     setIsSidebarOpen(true);
-    setEditorSettings(
-      (prev: EditorSettings): EditorSettings => ({
-        ...prev,
-        sidebar: { ...prev.sidebar, isStoryCollapsed: false },
-      })
-    );
+    setEditorSettings((prev: EditorSettings): EditorSettings => ({
+      ...prev,
+      sidebar: { ...prev.sidebar, isStoryCollapsed: false },
+    }));
   }, [setIsSidebarOpen, setEditorSettings]);
 
   const openAndExpandSourcebook = useCallback((): void => {
     setIsSidebarOpen(true);
-    setEditorSettings(
-      (prev: EditorSettings): EditorSettings => ({
-        ...prev,
-        sidebar: { ...prev.sidebar, isSourcebookCollapsed: false },
-      })
-    );
+    setEditorSettings((prev: EditorSettings): EditorSettings => ({
+      ...prev,
+      sidebar: { ...prev.sidebar, isSourcebookCollapsed: false },
+    }));
   }, [setIsSidebarOpen, setEditorSettings]);
 
   const openStoryMetadataDialog = useCallback(

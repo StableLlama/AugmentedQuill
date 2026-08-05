@@ -203,23 +203,21 @@ export function useProjectManagement({
         exists.type === storyProjectType &&
         exists.language === language
       ) {
-        return prev.map(
-          (project: ProjectMetadata): ProjectMetadata =>
-            project.id === storyId ? { ...project, updatedAt: Date.now() } : project
+        return prev.map((project: ProjectMetadata): ProjectMetadata =>
+          project.id === storyId ? { ...project, updatedAt: Date.now() } : project
         );
       }
       if (exists) {
-        return prev.map(
-          (project: ProjectMetadata): ProjectMetadata =>
-            project.id === storyId
-              ? {
-                  ...project,
-                  title: storyTitle,
-                  type: storyProjectType,
-                  language,
-                  updatedAt: Date.now(),
-                }
-              : project
+        return prev.map((project: ProjectMetadata): ProjectMetadata =>
+          project.id === storyId
+            ? {
+                ...project,
+                title: storyTitle,
+                type: storyProjectType,
+                language,
+                updatedAt: Date.now(),
+              }
+            : project
         );
       }
       return [
@@ -615,11 +613,10 @@ export function useProjectManagement({
       }
 
       setProjects((prev: ProjectMetadata[]): ProjectMetadata[] =>
-        prev.map(
-          (project: ProjectMetadata): ProjectMetadata =>
-            project.id === id
-              ? { ...project, title: newName, language: newLang || project.language }
-              : project
+        prev.map((project: ProjectMetadata): ProjectMetadata =>
+          project.id === id
+            ? { ...project, title: newName, language: newLang || project.language }
+            : project
         )
       );
       const saved = localStorage.getItem(`project_${id}`);

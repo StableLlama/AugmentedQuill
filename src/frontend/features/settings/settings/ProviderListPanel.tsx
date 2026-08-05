@@ -73,8 +73,7 @@ interface ProviderListItemProps {
   connectionStatus: ProviderStatus;
   modelStatus: ProviderStatus;
   capabilities:
-    | { is_multimodal: boolean; supports_function_calling: boolean }
-    | undefined;
+    { is_multimodal: boolean; supports_function_calling: boolean } | undefined;
   isLight: boolean;
   onSelect: () => void;
   onDuplicate: () => void;

@@ -338,9 +338,8 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
 
         return {
           ...prev,
-          chapters: prev.chapters.map(
-            (chapter: Chapter): Chapter =>
-              chapter.id === currentChapter.id ? { ...chapter, content } : chapter
+          chapters: prev.chapters.map((chapter: Chapter): Chapter =>
+            chapter.id === currentChapter.id ? { ...chapter, content } : chapter
           ),
         };
       });

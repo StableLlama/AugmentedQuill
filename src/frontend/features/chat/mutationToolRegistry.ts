@@ -159,16 +159,14 @@ function buildSceneMutation(
     };
   }
 
-  return sceneIds.map(
-    (sceneId: string): SessionMutation => ({
-      id: `scene-${Date.now()}-${Math.random()}`,
-      type: 'scene',
-      label: 'Scene',
-      targetId: sceneId,
-      sceneChangeHint:
-        changedFields.length > 0 ? { changedFields: [...changedFields] } : undefined,
-    })
-  );
+  return sceneIds.map((sceneId: string): SessionMutation => ({
+    id: `scene-${Date.now()}-${Math.random()}`,
+    type: 'scene',
+    label: 'Scene',
+    targetId: sceneId,
+    sceneChangeHint:
+      changedFields.length > 0 ? { changedFields: [...changedFields] } : undefined,
+  }));
 }
 
 const isNoopSceneMutationResult = (result: unknown): boolean => {

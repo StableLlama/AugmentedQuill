@@ -11,11 +11,7 @@
 
 export type MarkdownBlockType = 'h1' | 'h2' | 'h3' | 'quote' | 'ul' | 'ol';
 export type InlineFormatType =
-  | 'bold'
-  | 'italic'
-  | 'strikethrough'
-  | 'subscript'
-  | 'superscript';
+  'bold' | 'italic' | 'strikethrough' | 'subscript' | 'superscript';
 export type TextSelectionRange = { start: number; end: number };
 
 export const getLineAtOffset = (text: string, offset: number): string => {

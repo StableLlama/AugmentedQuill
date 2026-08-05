@@ -911,11 +911,10 @@ export const ProjectImages: React.FC<ProjectImagesProps> = ({
     try {
       await api.projects.updateImage(filename, newDesc, newTitle);
       setImages((prev: ImageEntry[]): ImageEntry[] =>
-        prev.map(
-          (img: ImageEntry): ImageEntry =>
-            img.filename === filename
-              ? { ...img, description: newDesc, title: newTitle }
-              : img
+        prev.map((img: ImageEntry): ImageEntry =>
+          img.filename === filename
+            ? { ...img, description: newDesc, title: newTitle }
+            : img
         )
       );
       setEdits((prev: Record<string, { description?: string; title?: string }>) => {

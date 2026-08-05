@@ -557,10 +557,7 @@ export const buildToolPayload = (
       tool_call_id?: string;
     } = {
       role: (message.role === 'model' ? 'assistant' : message.role) as
-        | 'user'
-        | 'assistant'
-        | 'system'
-        | 'tool',
+        'user' | 'assistant' | 'system' | 'tool',
       content: message.text || null,
     };
 
@@ -658,9 +655,8 @@ export const applyScratchpadToolResult = (
 
   if (isIncognito && currentChatId) {
     setIncognitoSessions((prev: ChatSession[]): ChatSession[] =>
-      prev.map(
-        (session: ChatSession): ChatSession =>
-          session.id === currentChatId ? { ...session, scratchpad: content } : session
+      prev.map((session: ChatSession): ChatSession =>
+        session.id === currentChatId ? { ...session, scratchpad: content } : session
       )
     );
   }
