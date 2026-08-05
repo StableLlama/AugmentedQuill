@@ -61,6 +61,31 @@ test.describe('The AI Chat Assistant', () => {
     ).toBeAttached();
   });
 
+  test('files can be attached to a chat message', async ({ page }: { page: Page }) => {
+    // The documented Attach files control is present when there are no attachments.
+    await expect(page.locator('[title="Attach files"]').first()).toBeAttached({
+      timeout: 10000,
+    });
+
+    // Attach a text file through the composer's hidden file input.
+    await page.locator('[data-testid="chat-attachment-input"]').setInputFiles({
+      name: 'research-notes.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from('Notes about the valley.'),
+    });
+    await page.waitForTimeout(1000);
+
+    // The attachment appears as a chip showing the file name.
+    await expect(page.locator('text=research-notes.txt').first()).toBeAttached({
+      timeout: 8000,
+    });
+
+    // The Send button becomes enabled once an attachment is present.
+    await expect(page.locator('[aria-label="Send Message"]').first()).toBeEnabled({
+      timeout: 8000,
+    });
+  });
+
   test('the chat history panel lists past sessions', async ({
     page,
   }: {

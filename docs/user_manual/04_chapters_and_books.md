@@ -88,7 +88,11 @@ The Metadata Editor is a full-screen or sidebar panel that opens whenever you cl
 
 **Scenes tab** _(chapter only)_:
 
-> **TODO (documentation stub):** The Metadata Editor for a chapter also includes a **Scenes** tab (labelled with the number of attached scenes, e.g. "Scenes 2") that shows the scenes belonging to this chapter. The exact contents of this tab — how scenes are listed, whether they can be created or linked here, and how the count badge behaves — need to be documented by the documentation editor.
+- The Metadata Editor for a chapter includes a **Scenes** tab labelled with the number of attached scenes (e.g. "Scenes 2"); books do not have this tab.
+- The tab lists every scene belonging to the chapter as an ordered list, each row showing the scene's summary. Scenes are shown in their narrative order.
+- If no scenes are attached yet, the tab shows _"No scenes currently assigned to this chapter."_
+- The tab is informational (read-only): it lets you review which scenes this chapter contains, but scenes are created, reordered, and linked from the **Scenes** workspace (Page/Scenes/Split mode), not from here.
+- The count badge updates automatically as scenes are added or removed in the Scenes workspace.
 
 ![Conflicts tab showing two conflict rows with description, resolution plan, and reorder arrows](screenshots/04_conflicts_tab.png)
 

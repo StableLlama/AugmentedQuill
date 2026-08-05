@@ -158,7 +158,14 @@ Each dropdown button shows a colored status dot (green = connected, red = failed
 
 ### Model Settings Popup
 
-> **TODO (documentation stub):** The header also exposes a **Models** control (labelled "Models", tooltip "Model settings") in the center bar. Its exact behavior — what it opens, how it relates to the per-role model selectors, and how providers/roles can be changed from it — needs to be documented by the documentation editor.
+On narrower wide screens — or whenever the inline selectors are not shown — the same three role selectors are tucked behind a single **Models** button in the center bar (tooltip: _Model settings_), shown as a CPU icon with a <img src="assets/chevron-down.svg" alt="Chevron down icon" width="16" height="16" style="vertical-align:text-bottom;" /> chevron.
+
+- Click **Models** to open a small popup listing the three roles — **Writing** (<img src="assets/swatches/violet.svg" alt="Violet swatch" width="16" height="16" style="vertical-align:text-bottom;" /> Violet), **Editing** (<img src="assets/swatches/fuchsia.svg" alt="Fuchsia swatch" width="16" height="16" style="vertical-align:text-bottom;" /> Fuchsia) and **Chat** (<img src="assets/swatches/blue.svg" alt="Blue swatch" width="16" height="16" style="vertical-align:text-bottom;" /> Blue) — stacked vertically.
+- Each row is the same dropdown selector described in [Model Selectors](#model-selectors): a colored status dot (green = connected, red = unreachable, spinner = testing), the provider's name, and small capability icons when supported.
+- Pick a provider from any row to instantly reassign that role, exactly as you would from the inline selectors; the change applies immediately and is saved with your app settings.
+- Clicking a row also triggers a connectivity re-check for that provider, so the status dot stays fresh.
+
+Clicking **Models** again (or clicking elsewhere) closes the popup. Adding, removing, or editing the underlying providers is still done in [Machine Settings](02_projects_and_settings.md#the-machine-settings-tab).
 
 ---
 

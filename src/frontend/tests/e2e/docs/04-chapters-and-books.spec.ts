@@ -87,6 +87,42 @@ test.describe('Chapters and Books', () => {
     await closeDialog(page);
   });
 
+  test('the Metadata Editor Scenes tab lists the chapter scenes', async ({
+    page,
+  }: {
+    page: Page;
+  }) => {
+    await gotoApp(page, DEMO_PROJECT);
+    await openSidebar(page);
+
+    // Open the metadata editor for the active chapter ("The Faded Map").
+    await page.locator('[title="Edit Metadata"]').first().click({ timeout: 10000 });
+    await page.waitForTimeout(1000);
+    const dialog = page.locator('[role="dialog"]').last();
+    await expect(dialog).toBeAttached({ timeout: 10000 });
+
+    // The chapter-only Scenes tab is present with a count badge.
+    const scenesTab = dialog.locator('button:has-text("Scenes")').first();
+    await expect(scenesTab).toBeAttached({ timeout: 5000 });
+    await expect(
+      scenesTab.locator('[aria-label^="Scene count:"]').first()
+    ).toBeAttached();
+
+    // Clicking the tab shows the chapter's scenes (or the empty state). The
+    // exact count depends on the runtime data, so only the structure is asserted.
+    await scenesTab.click();
+    await page.waitForTimeout(600);
+    await expect(
+      dialog.locator('text=/Scenes in this chapter/i').first()
+    ).toBeAttached();
+    const listedScenes = await dialog.locator('ol li').count();
+    const showsEmptyState = await dialog
+      .locator('text=/No scenes currently assigned to this chapter/i')
+      .count();
+    expect(listedScenes > 0 || showsEmptyState > 0).toBe(true);
+    await closeDialog(page);
+  });
+
   test('the chapter summary can be edited in the Metadata Editor', async ({
     page,
   }: {

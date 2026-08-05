@@ -260,4 +260,39 @@ test.describe('Writing Interface', () => {
     await page.keyboard.press('Escape');
     await page.waitForTimeout(400);
   });
+
+  test('the Models control exposes the per-role selectors and status', async ({
+    page,
+  }: {
+    page: Page;
+  }) => {
+    const modelsBtn = page.locator('[title="Model settings"]').first();
+
+    // On wide windows the per-role selectors may be shown inline instead of
+    // behind the Models button; open the popup when the button is present.
+    if ((await modelsBtn.count()) > 0) {
+      await modelsBtn.click();
+      await page.waitForTimeout(600);
+    }
+
+    // Each role selector shows the active provider (the seeded demo provider)
+    // with a status indicator.
+    await expect(
+      page.locator('[title="Selected: Demo Provider"]').first()
+    ).toBeAttached({ timeout: 10000 });
+    // A green "connected" dot confirms the provider is reachable.
+    await expect(page.locator('.bg-emerald-500').first()).toBeAttached({
+      timeout: 5000,
+    });
+
+    // When the popup is open it labels the Editing and Chat roles.
+    if ((await modelsBtn.count()) > 0) {
+      await expect(page.locator('label:has-text("Editing")').first()).toBeAttached();
+      await expect(page.locator('label:has-text("Chat")').first()).toBeAttached();
+      // Close the popup via the dismiss overlay (the Models button itself is
+      // covered while the popup is open).
+      await page.locator('[aria-label=\"Close model menu\"]').click();
+      await page.waitForTimeout(300);
+    }
+  });
 });
