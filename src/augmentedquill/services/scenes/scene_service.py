@@ -75,7 +75,10 @@ def _migrate_project_latest(project_dir: Path) -> None:
     migrate_project_v7(project_dir)
 
 
-def _scope_signature(project_dir: Path) -> tuple[tuple[str, int, int], ...]:
+def _scope_signature(
+    project_dir: Path,
+    story: dict[str, Any] | None = None,
+) -> tuple[tuple[str, int, int], ...]:
     """Build a strict cache key for all marker-relevant files in a project."""
     story_path = project_dir / "story.json"
     signature: list[tuple[str, int, int]] = []
@@ -84,7 +87,7 @@ def _scope_signature(project_dir: Path) -> tuple[tuple[str, int, int], ...]:
         stat = story_path.stat()
         signature.append((str(story_path), stat.st_mtime_ns, stat.st_size))
 
-    for _, path in _scope_candidates(project_dir):
+    for _, path in _scope_candidates(project_dir, story):
         if not path.exists():
             signature.append((str(path), -1, -1))
             continue
@@ -95,14 +98,18 @@ def _scope_signature(project_dir: Path) -> tuple[tuple[str, int, int], ...]:
     return tuple(signature)
 
 
-def _scope_candidates(project_dir: Path) -> list[tuple[dict[str, Any], Path]]:
+def _scope_candidates(
+    project_dir: Path,
+    story: dict[str, Any] | None = None,
+) -> list[tuple[dict[str, Any], Path]]:
     """Return candidate prose scopes and resolved file paths for marker scans."""
-    story = load_story_config(project_dir / "story.json") or {}
+    if story is None:
+        story = load_story_config(project_dir / "story.json") or {}
     candidates: list[tuple[dict[str, Any], Path]] = []
     seen: set[Path] = set()
 
     def _add(link: dict[str, Any]) -> None:
-        path = _scene_content_path(project_dir, link)
+        path = _scene_content_path(project_dir, link, story)
         if path is None or path in seen:
             return
         seen.add(path)
@@ -196,13 +203,14 @@ def _scope_candidates(project_dir: Path) -> list[tuple[dict[str, Any], Path]]:
 
 def _marker_locations_by_scene(project_dir: Path) -> dict[SceneId, dict[str, Any]]:
     """Return runtime prose-link payloads computed from file markers."""
-    signature = _scope_signature(project_dir)
+    story = load_story_config(project_dir / "story.json") or {}
+    signature = _scope_signature(project_dir, story)
     cached = _MARKER_LOCATIONS_CACHE.get(project_dir)
     if cached is not None and cached[0] == signature:
         return {scene_id: link.copy() for scene_id, link in cached[1].items()}
 
     locations: dict[SceneId, dict[str, Any]] = {}
-    for link, path in _scope_candidates(project_dir):
+    for link, path in _scope_candidates(project_dir, story):
         if not path.exists():
             continue
         try:
@@ -307,7 +315,11 @@ def _drop_prose_links_for_persistence(
     return cleaned
 
 
-def _scene_content_path(project_dir: Path, link: dict[str, Any]) -> Path | None:
+def _scene_content_path(
+    project_dir: Path,
+    link: dict[str, Any],
+    story: dict[str, Any] | None = None,
+) -> Path | None:
     """Resolve the prose file path for a given prose-link dict."""
     scope = link.get("scope_type", "")
     if scope == "story":
@@ -326,7 +338,8 @@ def _scene_content_path(project_dir: Path, link: dict[str, Any]) -> Path | None:
         if not chapter_id:
             return None
 
-        story = load_story_config(project_dir / "story.json") or {}
+        if story is None:
+            story = load_story_config(project_dir / "story.json") or {}
 
         def _safe_int(text: str) -> int | None:
             try:

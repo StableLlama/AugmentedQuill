@@ -60,7 +60,7 @@ def migrate_project_v9(project_dir: Path) -> None:
         story["annotations"] = []
         changed = True
 
-    if metadata.get("version") != 9:
+    if metadata.get("version") < 9:
         metadata["version"] = 9
         changed = True
 

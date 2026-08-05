@@ -109,7 +109,7 @@ def migrate_project_v4(project_dir: Path) -> None:
                 entry_data["timeline_id"] = timeline_id
                 changed = True
 
-    if metadata.get("version") != 4:
+    if metadata.get("version") < 4:
         metadata["version"] = 4
         changed = True
 

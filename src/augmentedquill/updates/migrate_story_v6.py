@@ -160,7 +160,7 @@ def migrate_project_v6(project_dir: Path) -> None:
             story["scenes"] = raw_scenes
     else:
         changed = False
-        if metadata.get("version") != 6:
+        if metadata.get("version") < 6:
             metadata["version"] = 6
             changed = True
         if not changed:
@@ -170,7 +170,7 @@ def migrate_project_v6(project_dir: Path) -> None:
         )
         return
 
-    if metadata.get("version") != 6:
+    if metadata.get("version") < 6:
         metadata["version"] = 6
         changed = True
 
