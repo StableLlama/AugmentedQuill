@@ -521,6 +521,44 @@ describe('CodeMirrorEditor Diff Highlighting', () => {
     expect(container.querySelector('.cm-diff-inserted')).toBeNull();
     expect(container.querySelector('.cm-diff-deleted')).toBeNull();
   });
+
+  it('marks streaming insertions as provisional (cm-diff-streaming)', async () => {
+    const ref = React.createRef<EditorView | null>();
+    const { container } = render(
+      <CodeMirrorEditor
+        ref={ref}
+        value="Hello World"
+        baselineValue="Hello"
+        showDiff={true}
+        streamingMode={true}
+        onChange={vi.fn()}
+      />
+    );
+    await act(async () => {});
+
+    const streaming = container.querySelector('.cm-diff-streaming');
+    expect(streaming).toBeTruthy();
+    // It still belongs to the diff-inserted family so accept/reject logic works.
+    expect(streaming?.classList.contains('cm-diff-inserted')).toBe(true);
+  });
+
+  it('does not tag ordinary insertions as streaming', async () => {
+    const ref = React.createRef<EditorView | null>();
+    const { container } = render(
+      <CodeMirrorEditor
+        ref={ref}
+        value="Hello World"
+        baselineValue="Hello"
+        showDiff={true}
+        streamingMode={false}
+        onChange={vi.fn()}
+      />
+    );
+    await act(async () => {});
+
+    expect(container.querySelector('.cm-diff-inserted')).toBeTruthy();
+    expect(container.querySelector('.cm-diff-streaming')).toBeNull();
+  });
 });
 
 // ─── User-edit diff suppression ─────────────────────────────────────────────

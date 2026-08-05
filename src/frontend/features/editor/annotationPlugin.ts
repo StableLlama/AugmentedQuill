@@ -260,11 +260,18 @@ const annotationCursorHandler = EditorView.updateListener.of(
 // ---------------------------------------------------------------------------
 
 const theme = EditorView.baseTheme({
+  // Annotation cue: a dotted underline in a distinct (violet) hue with a very
+  // subtle background.  Dotted + offset keeps it visually separate from the
+  // browser's native red wavy spellcheck squiggle, and the hue no longer
+  // collides with the amber search highlight or the warm scene tint.  Colours
+  // come from per-paper tokens set by the editor's highlight-colours theme.
   '.cm-annotation-range': {
     textDecoration:
-      'underline wavy var(--aq-annotation-underline, rgba(251, 191, 36, 0.85))',
+      'underline dotted var(--aq-annotation-underline, rgba(124, 58, 237, 0.60))',
     textDecorationSkipInk: 'none',
-    backgroundColor: 'var(--aq-annotation-bg, rgba(254, 243, 199, 0.2))',
+    textUnderlineOffset: '3px',
+    textDecorationThickness: '1.5px',
+    backgroundColor: 'var(--aq-annotation-bg, rgba(124, 58, 237, 0.07))',
     cursor: 'pointer',
   },
 });

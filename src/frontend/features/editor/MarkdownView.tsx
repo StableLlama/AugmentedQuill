@@ -317,7 +317,7 @@ const MarkdownViewComponent: React.FC<MarkdownViewProps> = ({
               <mark
                 key={idx}
                 className="search-highlight rounded"
-                style={{ backgroundColor: 'rgba(245, 158, 11, 0.25)' }}
+                style={{ backgroundColor: 'var(--aq-search-bg)' }}
               >
                 {inline}
               </mark>

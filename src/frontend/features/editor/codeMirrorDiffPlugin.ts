@@ -37,6 +37,13 @@ const diffMark = Decoration.mark({
   class: 'cm-diff-inserted',
 });
 
+// In-progress (LLM streaming) insertion: same green family as a committed diff
+// but carries the extra `cm-diff-streaming` class so the theme can render it
+// with a dashed rule, signalling "still being written" vs. a settled change.
+const streamingDiffMark = Decoration.mark({
+  class: 'cm-diff-inserted cm-diff-streaming',
+});
+
 type DeletedWsKind = 'space' | 'tab' | 'newline';
 
 /** Represents plain deleted text widget. */
@@ -480,7 +487,7 @@ export const buildDiffPlugin = (
             addDeletedDecorations(decs, prefixLen, deletedSuffix, showWhitespace);
           }
           if (insertedEnd > prefixLen) {
-            decs.push(diffMark.range(prefixLen, insertedEnd));
+            decs.push(streamingDiffMark.range(prefixLen, insertedEnd));
           }
           return decs.length > 0 ? Decoration.set(decs, true) : Decoration.none;
         }

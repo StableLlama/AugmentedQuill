@@ -651,8 +651,8 @@ function ChapterListInner({
             <span
               key={i}
               style={{
-                backgroundColor: 'rgba(34, 197, 94, 0.15)',
-                borderBottom: '1px solid rgba(34, 197, 94, 0.4)',
+                backgroundColor: 'var(--aq-diff-insert-bg)',
+                borderBottom: '1px solid var(--aq-diff-insert-border)',
               }}
             >
               {text}

@@ -16,6 +16,31 @@ body {
   background-color: #0c0a09;
 }
 
+/* Highlight design tokens used by non-CodeMirror surfaces (MarkdownView,
+   chapter summaries, search marks).  Defaults are tuned for light/chrome;
+   body.dark overrides them for the dark/mixed chrome.  The CodeMirror
+   editor overrides the same variables per-paper (cream/white vs dark)
+   via its highlight-colours compartment. */
+:root {
+  --aq-search-bg: rgba(245, 158, 11, 0.22);
+  --aq-annotation-underline: rgba(124, 58, 237, 0.6);
+  --aq-annotation-bg: rgba(124, 58, 237, 0.07);
+  --aq-diff-insert-bg: rgba(34, 197, 94, 0.12);
+  --aq-diff-insert-border: rgba(34, 197, 94, 0.4);
+  --aq-diff-delete-bg: rgba(239, 68, 68, 0.12);
+  --aq-diff-delete-border: rgba(239, 68, 68, 0.4);
+}
+
+body.dark {
+  --aq-search-bg: rgba(245, 158, 11, 0.3);
+  --aq-annotation-underline: rgba(167, 139, 250, 0.85);
+  --aq-annotation-bg: rgba(139, 92, 246, 0.14);
+  --aq-diff-insert-bg: rgba(34, 197, 94, 0.2);
+  --aq-diff-insert-border: rgba(74, 222, 128, 0.55);
+  --aq-diff-delete-bg: rgba(239, 68, 68, 0.2);
+  --aq-diff-delete-border: rgba(248, 113, 113, 0.55);
+}
+
 /* Force no smooth scrolling globally to prevent scrollbar lag */
 html,
 body {
@@ -63,8 +88,8 @@ body.light ::-webkit-scrollbar-thumb:hover {
 /* AI diff highlight — shows text added/changed since the last undo/redo point.
    Used in WYSIWYG mode and Markdown view renderings outside the CM editor. */
 .diff-inserted {
-  background-color: rgba(34, 197, 94, 0.12);
-  border-bottom: 1px solid rgba(34, 197, 94, 0.4);
+  background-color: var(--aq-diff-insert-bg);
+  border-bottom: 1px solid var(--aq-diff-insert-border);
   border-radius: 2px;
 }
 
@@ -90,14 +115,14 @@ body.light ::-webkit-scrollbar-thumb:hover {
 }
 
 .cm-ws-marker[data-ws-diff='1'][data-ws-selected='1'] {
-  background-color: rgba(34, 197, 94, 0.15) !important;
-  border-bottom-color: rgba(34, 197, 94, 0.4) !important;
+  background-color: var(--aq-diff-insert-bg) !important;
+  border-bottom-color: var(--aq-diff-insert-border) !important;
 }
 
 .cm-diff-deleted .cm-ws-marker[data-ws-diff='1'][data-ws-selected='1'],
 .cm-ws-marker.cm-diff-deleted[data-ws-diff='1'][data-ws-selected='1'] {
-  background-color: rgba(239, 68, 68, 0.15) !important;
-  border-bottom-color: rgba(239, 68, 68, 0.4) !important;
+  background-color: var(--aq-diff-delete-bg) !important;
+  border-bottom-color: var(--aq-diff-delete-border) !important;
 }
 
 .cm-ws-marker[data-ws-selected='1'] .cm-ws-glyph {
@@ -150,14 +175,14 @@ body.light ::-webkit-scrollbar-thumb:hover {
 
 .search-highlight,
 mark.search-highlight {
-  background-color: rgba(245, 158, 11, 0.25);
+  background-color: var(--aq-search-bg);
   border-radius: 2px;
   color: inherit;
 }
 
 .diff-deleted {
-  background-color: rgba(239, 68, 68, 0.12);
-  border-bottom: 1px solid rgba(239, 68, 68, 0.4);
+  background-color: var(--aq-diff-delete-bg);
+  border-bottom: 1px solid var(--aq-diff-delete-border);
   text-decoration: line-through;
   opacity: 0.8;
   border-radius: 2px;
@@ -176,13 +201,13 @@ mark.search-highlight {
 }
 
 .diff-block-old {
-  background-color: rgba(239, 68, 68, 0.06);
-  border-left: 3px solid rgba(239, 68, 68, 0.5);
+  background-color: color-mix(in srgb, var(--aq-diff-delete-bg) 50%, transparent);
+  border-left: 3px solid var(--aq-diff-delete-border);
 }
 
 .diff-block-new {
-  background-color: rgba(34, 197, 94, 0.06);
-  border-left: 3px solid rgba(34, 197, 94, 0.5);
+  background-color: color-mix(in srgb, var(--aq-diff-insert-bg) 50%, transparent);
+  border-left: 3px solid var(--aq-diff-insert-border);
 }
 
 .prose-editor:focus,

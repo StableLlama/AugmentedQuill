@@ -223,9 +223,11 @@ const state = EditorState.create({
         lineHeight: '1.6',
       },
       '.cm-prose-link-highlight': {
-        backgroundColor: 'rgba(245, 158, 11, 0.40)',
+        // Mirrors the real editor: a subtle tint (no per-line bottom rule) so
+        // the prose stays comfortable to read through; the scene is identified
+        // by its boundary handles instead.
+        backgroundColor: 'rgba(180, 110, 0, 0.06)',
         borderRadius: '2px',
-        boxShadow: 'inset 0 -2px 0 rgba(180,110,0,0.45)',
       },
       '.cm-prose-handle': {
         display: 'inline-block',

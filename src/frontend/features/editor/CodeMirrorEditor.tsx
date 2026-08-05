@@ -63,6 +63,29 @@ export interface ProseHighlightRange {
   to: number;
 }
 
+/**
+ * Per-paper highlight colour tokens.  The editor lives on a cream/white
+ * "paper" page in light and mixed themes and on a dark page with light
+ * letters in dark theme; supplying tuned values per paper keeps every
+ * highlight legible without washing out the prose the user reads through.
+ * All fields are optional — omitted tokens fall back to theme defaults.
+ */
+export interface EditorHighlightColors {
+  /** Subtle grouping tint behind scene-linked prose (must stay easy to read through). */
+  proseHighlightBg?: string;
+  /** Search-hit background. */
+  searchHighlightBg?: string;
+  /** Annotation dotted-underline colour and its very subtle background. */
+  annotationUnderline?: string;
+  annotationBg?: string;
+  /** Diff inserted background and bottom border. */
+  diffInsertBg?: string;
+  diffInsertBorder?: string;
+  /** Diff deleted background and bottom border. */
+  diffDeleteBg?: string;
+  diffDeleteBorder?: string;
+}
+
 /** Callback type for prose-link boundary drag events. */
 export type ProseBoundaryCallback = (
   sceneId: SceneId,
@@ -296,6 +319,17 @@ const baseTheme = EditorView.theme({
     // The selectionBgCompartment overrides these at runtime.
     '--aq-selection-bg': 'rgba(99,102,241,0.25)',
     '--aq-selection-bg-focused': 'rgba(99,102,241,0.35)',
+    // Default highlight tokens tuned for the light/cream paper.  The
+    // highlight-colours compartment overrides these per paper (light/mixed
+    // cream vs dark), keeping every layer comfortable to read through.
+    '--aq-prose-highlight-bg': 'rgba(180, 110, 0, 0.06)',
+    '--aq-search-bg': 'rgba(245, 158, 11, 0.22)',
+    '--aq-annotation-underline': 'rgba(124, 58, 237, 0.60)',
+    '--aq-annotation-bg': 'rgba(124, 58, 237, 0.07)',
+    '--aq-diff-insert-bg': 'rgba(34, 197, 94, 0.14)',
+    '--aq-diff-insert-border': 'rgba(34, 197, 94, 0.45)',
+    '--aq-diff-delete-bg': 'rgba(239, 68, 68, 0.14)',
+    '--aq-diff-delete-border': 'rgba(239, 68, 68, 0.45)',
   },
   '.cm-scroller': {
     fontFamily: 'inherit',
@@ -367,20 +401,20 @@ const baseTheme = EditorView.theme({
     borderBottomColor: 'transparent !important',
   },
   ".cm-ws-marker[data-ws-diff='1'][data-ws-selected='1']": {
-    backgroundColor: 'rgba(34, 197, 94, 0.15) !important',
-    borderBottomColor: 'rgba(34, 197, 94, 0.4) !important',
+    backgroundColor: 'var(--aq-diff-insert-bg) !important',
+    borderBottomColor: 'var(--aq-diff-insert-border) !important',
   },
   ".cm-diff-deleted .cm-ws-marker[data-ws-diff='1'][data-ws-selected='1'], .cm-ws-marker.cm-diff-deleted[data-ws-diff='1'][data-ws-selected='1']":
     {
-      backgroundColor: 'rgba(239, 68, 68, 0.15) !important',
-      borderBottomColor: 'rgba(239, 68, 68, 0.4) !important',
+      backgroundColor: 'var(--aq-diff-delete-bg) !important',
+      borderBottomColor: 'var(--aq-diff-delete-border) !important',
     },
   ".cm-ws-marker[data-ws-diff='1']": {
     opacity: '1',
-    backgroundColor: 'rgba(34, 197, 94, 0.15)',
+    backgroundColor: 'var(--aq-diff-insert-bg)',
     borderBottomStyle: 'solid',
     borderBottomWidth: '1px',
-    borderBottomColor: 'rgba(34, 197, 94, 0.4)',
+    borderBottomColor: 'var(--aq-diff-insert-border)',
     borderRadius: '0',
   },
   ".cm-ws-marker[data-ws-diff='1'] .cm-ws-glyph": {
@@ -388,28 +422,28 @@ const baseTheme = EditorView.theme({
     color: 'color-mix(in srgb, currentColor 35%, transparent)',
   },
   ".cm-ws-marker[data-ws-diff='1'][data-ws-tab='1']": {
-    backgroundColor: 'rgba(34, 197, 94, 0.15)',
+    backgroundColor: 'var(--aq-diff-insert-bg)',
     borderBottomStyle: 'solid',
     borderBottomWidth: '1px',
-    borderBottomColor: 'rgba(34, 197, 94, 0.4)',
+    borderBottomColor: 'var(--aq-diff-insert-border)',
     borderRadius: '0',
     padding: '0',
     margin: '0',
   },
   ".cm-diff-deleted .cm-ws-marker[data-ws-diff='1']": {
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    backgroundColor: 'var(--aq-diff-delete-bg)',
     borderBottomStyle: 'solid',
     borderBottomWidth: '1px',
-    borderBottomColor: 'rgba(239, 68, 68, 0.4)',
+    borderBottomColor: 'var(--aq-diff-delete-border)',
     textDecorationLine: 'line-through',
     textDecorationColor: 'currentColor',
     textDecorationSkipInk: 'none',
   },
   ".cm-ws-marker.cm-diff-deleted[data-ws-diff='1']": {
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    backgroundColor: 'var(--aq-diff-delete-bg)',
     borderBottomStyle: 'solid',
     borderBottomWidth: '1px',
-    borderBottomColor: 'rgba(239, 68, 68, 0.4)',
+    borderBottomColor: 'var(--aq-diff-delete-border)',
     textDecorationLine: 'line-through',
     textDecorationColor: 'currentColor',
     textDecorationSkipInk: 'none',
@@ -420,25 +454,25 @@ const baseTheme = EditorView.theme({
     textDecorationSkipInk: 'none',
   },
   '.diff-inserted': {
-    backgroundColor: 'rgba(34, 197, 94, 0.25) !important', // brand-green-500 @ 0.25
+    backgroundColor: 'var(--aq-diff-insert-bg) !important',
     borderBottomStyle: 'dashed',
     borderBottomWidth: '1px',
-    borderBottomColor: 'rgba(34, 197, 94, 0.5)',
+    borderBottomColor: 'var(--aq-diff-insert-border)',
     borderRadius: '2px',
     transition: 'background-color 0.2s ease',
   },
   '.cm-search-highlight': {
-    backgroundColor: 'rgba(245, 158, 11, 0.25)',
+    backgroundColor: 'var(--aq-search-bg)',
     borderRadius: '2px',
   },
-  // Prose-link highlight: page colour with elevated saturation/brightness so the
-  // reader can immediately see which prose passage is linked to the selected card.
-  // A box-shadow bottom-line provides a secondary visual cue on all themes.
-  // The exact colour is overridden per-theme via proseHighlightBgCompartment.
+  // Prose-link highlight: a deliberately subtle tint so the reader can keep
+  // reading through the whole scene without distraction.  The primary cues are
+  // the draggable boundary handles and the scene-title pill; the tint is only a
+  // soft grouping assist.  The exact colour is overridden per-paper via the
+  // highlight-colours compartment.
   '.cm-prose-link-highlight': {
-    backgroundColor: 'rgba(245, 158, 11, 0.40)',
+    backgroundColor: 'var(--aq-prose-highlight-bg, rgba(180, 110, 0, 0.06))',
     borderRadius: '2px',
-    boxShadow: 'inset 0 -2px 0 rgba(180, 110, 0, 0.45)',
   },
   // Draggable boundary handles rendered at the start/end of each prose-link
   // highlight.  The marker is an absolutely-positioned ::before pill — zero
@@ -471,17 +505,23 @@ const baseTheme = EditorView.theme({
     fontStyle: 'normal',
   },
   '.cm-diff-inserted': {
-    backgroundColor: 'rgba(34, 197, 94, 0.15)', // Light green
+    backgroundColor: 'var(--aq-diff-insert-bg)',
     borderBottomStyle: 'solid',
     borderBottomWidth: '1px',
-    borderBottomColor: 'rgba(34, 197, 94, 0.4)',
+    borderBottomColor: 'var(--aq-diff-insert-border)',
+  },
+  // Provisional in-progress insertions (LLM streaming): same green family but
+  // with a dashed rule so the user can tell "still being written" apart from a
+  // committed diff until they accept it.
+  '.cm-diff-inserted.cm-diff-streaming': {
+    borderBottomStyle: 'dashed',
   },
   '.cm-diff-deleted': {
-    backgroundColor: 'rgba(239, 68, 68, 0.15)', // Light red
+    backgroundColor: 'var(--aq-diff-delete-bg)',
     textDecoration: 'line-through',
     borderBottomStyle: 'solid',
     borderBottomWidth: '1px',
-    borderBottomColor: 'rgba(239, 68, 68, 0.4)',
+    borderBottomColor: 'var(--aq-diff-delete-border)',
   },
   '.cm-diff-deleted.cm-widget': {
     display: 'inline',
@@ -560,13 +600,14 @@ export interface CodeMirrorEditorProps {
    */
   selectionBg?: string;
   /**
-   * Background colour for the prose-link highlight decoration (the tinted mark
-   * shown when a scene card with a linked range is selected on the Pinboard).
-   * Should be based on the page colour with higher saturation/contrast so the
-   * highlight feels like the page itself is "waking up" around the passage.
-   * Pass a theme-appropriate computed value from the Editor component.
+   * Per-paper highlight colour tokens.  Every layer (scene prose-link, its
+   * title pill, search, annotation, and diff insert/delete) is driven by CSS
+   * variables that this object overrides.  Supply tuned values for the cream/
+   * white paper (light + mixed themes) and the dark paper (dark theme) so
+   * highlights stay legible yet comfortable to read through.  Omitted tokens
+   * fall back to theme defaults.
    */
-  proseHighlightBg?: string;
+  highlightColors?: EditorHighlightColors;
   /** Called when a drag starts from inside the editor. Use to set custom dataTransfer data. */
   onDragStart?: (event: DragEvent, view: EditorView) => void;
   /**
@@ -619,7 +660,7 @@ export const CodeMirrorEditor = React.forwardRef<
       spellCheck = false,
       onOpenSearch,
       selectionBg,
-      proseHighlightBg,
+      highlightColors,
       onDragStart,
       onProseBoundaryChange,
       hideSceneMarkers = false,
@@ -672,7 +713,7 @@ export const CodeMirrorEditor = React.forwardRef<
     const mdDecorationCompartment = useRef(new Compartment());
     const markerHideCompartment = useRef(new Compartment());
     const selectionBgCompartment = useRef(new Compartment());
-    const proseHighlightBgCompartment = useRef(new Compartment());
+    const highlightColorsCompartment = useRef(new Compartment());
     // ── Extension builders ──────────────────────────────────────────────────
 
     const buildAttributesExtension = (
@@ -796,16 +837,29 @@ export const CodeMirrorEditor = React.forwardRef<
       });
     };
 
-    // Overrides the CSS variable --aq-prose-highlight-bg used by
-    // .cm-prose-link-highlight so the background matches the editor page colour
-    // with elevated saturation/contrast (computed by the parent Editor component).
-    const buildProseHighlightBgExtension = (bg: string | undefined): Extension => {
-      if (!bg) return [];
+    // Overrides the highlight colour tokens on the editor root (CSS variables
+    // consumed by .cm-prose-link-highlight, .cm-search-highlight,
+    // .cm-annotation-range and the diff marks).  The parent Editor component
+    // computes values for the cream/white paper (light + mixed themes) and the
+    // dark paper, so every layer stays legible yet comfortable to read through.
+    const buildHighlightColorsExtension = (
+      colors: EditorHighlightColors | undefined
+    ): Extension => {
+      if (!colors) return [];
+      const setVar = (
+        name: string,
+        value: string | undefined
+      ): Record<string, string> | undefined => (value ? { [name]: value } : undefined);
       return EditorView.theme({
-        '.cm-prose-link-highlight': {
-          backgroundColor: `${bg} !important`,
-          // Keep the bottom-shadow underline consistent across theme overrides.
-          boxShadow: 'inset 0 -2px 0 rgba(180, 110, 0, 0.45) !important',
+        '&': {
+          ...setVar('--aq-prose-highlight-bg', colors.proseHighlightBg),
+          ...setVar('--aq-search-bg', colors.searchHighlightBg),
+          ...setVar('--aq-annotation-underline', colors.annotationUnderline),
+          ...setVar('--aq-annotation-bg', colors.annotationBg),
+          ...setVar('--aq-diff-insert-bg', colors.diffInsertBg),
+          ...setVar('--aq-diff-insert-border', colors.diffInsertBorder),
+          ...setVar('--aq-diff-delete-bg', colors.diffDeleteBg),
+          ...setVar('--aq-diff-delete-border', colors.diffDeleteBorder),
         },
       });
     };
@@ -865,8 +919,8 @@ export const CodeMirrorEditor = React.forwardRef<
         mdDecorationCompartment.current.of(buildMdDecorationExtension(viewMode)),
         markerHideCompartment.current.of(buildSceneMarkerHideExtension()),
         selectionBgCompartment.current.of(buildSelectionBgExtension(selectionBg)),
-        proseHighlightBgCompartment.current.of(
-          buildProseHighlightBgExtension(proseHighlightBg)
+        highlightColorsCompartment.current.of(
+          buildHighlightColorsExtension(highlightColors)
         ),
         // Prose-link highlight: StateField persists the ranges, ViewPlugin renders them.
         proseHighlightField,
@@ -989,12 +1043,12 @@ export const CodeMirrorEditor = React.forwardRef<
 
     useEffect((): void => {
       viewRef.current?.dispatch({
-        effects: proseHighlightBgCompartment.current.reconfigure(
-          buildProseHighlightBgExtension(proseHighlightBg)
+        effects: highlightColorsCompartment.current.reconfigure(
+          buildHighlightColorsExtension(highlightColors)
         ),
         annotations: Transaction.addToHistory.of(false),
       });
-    }, [proseHighlightBg]);
+    }, [highlightColors]);
 
     useEffect((): void => {
       viewRef.current?.dispatch({
