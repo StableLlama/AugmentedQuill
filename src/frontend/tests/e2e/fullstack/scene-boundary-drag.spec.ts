@@ -581,10 +581,11 @@ test.describe('Scene boundary drag — browser UX', () => {
         '<!--scene:16:start-->',
         '<!--scene:16:end-->',
       ],
-      aligned: [
-        [13, 14],
-        [14, 16],
-      ],
+      // Shrinking scene 14 internally releases its first char into an
+      // UNLINKED prose gap (scenes need not be adjacent), so no strict
+      // file adjacency is expected here.  Ordering/non-overlap is still
+      // enforced by the scene-marker checks.
+      aligned: [],
     });
   });
 
@@ -695,10 +696,10 @@ test.describe('Scene boundary drag — browser UX', () => {
         '<!--scene:14:start-->',
         '<!--scene:16:end-->',
       ],
-      aligned: [
-        [13, 14],
-        [14, 16],
-      ],
+      // Shrinking scene 14 internally releases its last char into an
+      // UNLINKED prose gap (scenes need not be adjacent), so no strict
+      // file adjacency is expected here.
+      aligned: [],
     });
   });
 

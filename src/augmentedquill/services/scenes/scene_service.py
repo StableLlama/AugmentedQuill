@@ -1068,12 +1068,24 @@ def relink_scope_prose(
             injection_points.append((end, elen))
         injection_points.sort(key=lambda x: x[0])
 
-        def _map_to_linked(stripped_pos: int) -> int:
+        def _map_to_linked(stripped_pos: int, *, is_end: bool) -> int:
             """Map a position in the fully-stripped space to the linked
-            (scene-injected) content space."""
+            (scene-injected) content space.
+
+            The two boundary kinds need opposite semantics at a position that
+            coincides with a scene marker start:
+
+            - ``is_end=False`` (a range that *opens* here, e.g. an annotation
+              start): the marker must land AFTER a scene marker starting at
+              the same position, so ``pt <= stripped_pos`` contributes.
+            - ``is_end=True`` (a range that *closes* here, e.g. an annotation
+              end): the marker must land BEFORE a scene marker starting at the
+              same position (the range stays inside its scene), so only
+              ``pt < stripped_pos`` contributes.
+            """
             result = stripped_pos
             for pt, delta in injection_points:
-                if pt <= stripped_pos:
+                if pt < stripped_pos or (not is_end and pt == stripped_pos):
                     result += delta
                 else:
                     break
@@ -1085,8 +1097,8 @@ def relink_scope_prose(
             ann_start_stripped,
             ann_end_stripped,
         ) in annotation_stripped_positions:
-            ann_start = _map_to_linked(ann_start_stripped)
-            ann_end = _map_to_linked(ann_end_stripped)
+            ann_start = _map_to_linked(ann_start_stripped, is_end=False)
+            ann_end = _map_to_linked(ann_end_stripped, is_end=True)
 
             # Snap outside any internal marker tokens in the linked content
             safe_start = ann_start

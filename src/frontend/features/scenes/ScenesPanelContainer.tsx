@@ -1264,6 +1264,78 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
             : endOffset,
         });
 
+        // Capture the PRE-drag linked offsets so undo can restore the exact
+        // marker state through the same batch endpoint the drag used.  Scene
+        // prose ranges are never persisted by the backend — they are
+        // re-derived from markers on load — so relinking the original offsets
+        // restores the file to its exact pre-drag bytes.
+        const undoAssignments: SceneBoundaryAssignment[] = [];
+        for (const other of latestScenes) {
+          const otherLink = other.prose_link;
+          if (!otherLink) continue;
+          if (otherLink.scope_type !== link.scope_type) continue;
+          if (
+            link.scope_type === 'chapter' &&
+            otherLink.chapter_id !== link.chapter_id
+          ) {
+            continue;
+          }
+          const uStart = Number(otherLink.start_offset ?? 0);
+          const uEnd = Number(otherLink.end_offset ?? uStart);
+          if (uStart >= uEnd) continue;
+          undoAssignments.push({
+            scene_id: other.id,
+            start_offset: fullContent
+              ? toVisibleLinkedOffset(
+                  uStart,
+                  null as unknown as never,
+                  [],
+                  true,
+                  fullContent
+                )
+              : uStart,
+            end_offset: fullContent
+              ? toVisibleLinkedOffset(
+                  uEnd,
+                  null as unknown as never,
+                  [],
+                  true,
+                  fullContent
+                )
+              : uEnd,
+          });
+        }
+
+        // Persist a boundary state to the backend and resync the store so
+        // undo/redo of a drag restores the FILE markers, not just the
+        // in-memory scene state.
+        const persistBoundaryBatch = async (
+          assignments: SceneBoundaryAssignment[],
+          unlinkIds: SceneId[]
+        ): Promise<void> => {
+          const updated = await api.scenes.batchLinkProse({
+            scope_type: link.scope_type,
+            chapter_id: link.chapter_id ?? null,
+            book_id: link.book_id ?? null,
+            assignments,
+            unlink_ids: unlinkIds,
+          });
+          updated.forEach((s: Scene) => patchScene(s));
+          if (link.chapter_id) {
+            const ch = await api.chapters.get(Number(link.chapter_id));
+            updateCurrentChapterContent(ch.content ?? '');
+          } else {
+            try {
+              const storyContent = await api.story.getContent();
+              if (storyContent.ok) {
+                updateCurrentChapterContent(storyContent.content);
+              }
+            } catch {
+              /* non-critical */
+            }
+          }
+        };
+
         if (typeof window !== 'undefined' && window.__AQ_DEBUG_RANGES) {
           console.log(
             '[AQ:handleProseBoundaryChange] batch assignments:',
@@ -1327,7 +1399,17 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
         if (link.chapter_id) {
           const ch = await api.chapters.get(Number(link.chapter_id));
           if (seq !== boundaryDragSeqRef.current) return;
-          recordSceneHistory('Adjust scene prose boundary', nextScenes);
+          recordSceneHistory('Adjust scene prose boundary', nextScenes, {
+            // Persist the restored markers so the backend file matches the
+            // in-memory state after undo/redo (undo was leaving the file with
+            // the post-drag markers).
+            onUndo: async (): Promise<void> => {
+              await persistBoundaryBatch(undoAssignments, []);
+            },
+            onRedo: async (): Promise<void> => {
+              await persistBoundaryBatch(batchAssignments, toUnlink);
+            },
+          });
           updateCurrentChapterContent(ch.content ?? '');
         } else {
           // Story-scope: refresh content.md
@@ -1335,7 +1417,14 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
             const storyContent = await api.story.getContent();
             if (seq !== boundaryDragSeqRef.current) return;
             if (storyContent.ok) {
-              recordSceneHistory('Adjust scene prose boundary', nextScenes);
+              recordSceneHistory('Adjust scene prose boundary', nextScenes, {
+                onUndo: async (): Promise<void> => {
+                  await persistBoundaryBatch(undoAssignments, []);
+                },
+                onRedo: async (): Promise<void> => {
+                  await persistBoundaryBatch(batchAssignments, toUnlink);
+                },
+              });
               updateCurrentChapterContent(storyContent.content);
             }
           } catch {

@@ -52,6 +52,45 @@ const PRISTINE_END_ANNO =
   '<!--scene:1:start--><!--annotation:anno-a:start-->Alpha<!--annotation:anno-a:end--> Bravo Charlie<!--scene:1:end-->' +
   '<!--scene:2:start-->Delta Echo <!--annotation:anno-b:start-->Foxtrot<!--annotation:anno-b:end--><!--scene:2:end-->';
 
+const PRISTINE_START_ANNO =
+  '<!--scene:1:start--><!--annotation:anno-a:start-->Alpha<!--annotation:anno-a:end--> Bravo Charlie<!--scene:1:end-->' +
+  '<!--scene:2:start--><!--annotation:anno-b:start-->Delta<!--annotation:anno-b:end--> Echo Foxtrot<!--scene:2:end-->';
+
+const PRE_SEEDED_ANNOS = ['anno-a', 'anno-b'];
+
+/**
+ * Restore *project* to its pristine seeded state via the API.  A single PUT of
+ * the pristine chapter content fully resets coordinate state (scene ranges and
+ * annotation offsets are re-derived from content markers on load, never
+ * persisted).  Stray annotation records that are not pre-seeded are deleted.
+ */
+async function resetProject(
+  request: APIRequestContext,
+  project: string,
+  pristine: string
+): Promise<void> {
+  const put = await request.put(
+    `${BACKEND}/api/v1/projects/${project}/chapters/1/content`,
+    { data: { content: pristine } }
+  );
+  if (!put.ok()) {
+    throw new Error(`Reset chapter content failed: ${put.status()}`);
+  }
+  const annsResp = await request.get(
+    `${BACKEND}/api/v1/projects/${project}/annotations`
+  );
+  if (!annsResp.ok()) {
+    throw new Error(`GET annotations failed: ${annsResp.status()}`);
+  }
+  const anns = (await annsResp.json()) as Array<{ id: string }>;
+  for (const ann of anns) {
+    if (PRE_SEEDED_ANNOS.includes(ann.id)) continue;
+    await request.delete(
+      `${BACKEND}/api/v1/projects/${project}/annotations/${encodeURIComponent(ann.id)}`
+    );
+  }
+}
+
 function stripMarkers(content: string): string {
   return content.replace(/<!--(?:scene|annotation):[^:>]+:(?:start|end)-->/g, '');
 }
@@ -142,6 +181,7 @@ test.describe('REPORTED BUG: annotation at scene 2 end', () => {
   test.beforeEach(
     async ({ page, request }: { page: Page; request: APIRequestContext }) => {
       await page.setViewportSize({ width: 1920, height: 1080 });
+      await resetProject(request, PROJECT_END_ANNO, PRISTINE_END_ANNO);
       await selectProject(request, PROJECT_END_ANNO);
       await openApp(page);
       await switchToSplitMode(page);
@@ -265,6 +305,7 @@ test.describe('Control: annotation at scene 2 start', () => {
   test.beforeEach(
     async ({ page, request }: { page: Page; request: APIRequestContext }) => {
       await page.setViewportSize({ width: 1920, height: 1080 });
+      await resetProject(request, PROJECT_START_ANNO, PRISTINE_START_ANNO);
       await selectProject(request, PROJECT_START_ANNO);
       await openApp(page);
       await switchToSplitMode(page);
@@ -299,6 +340,7 @@ test.describe('Undo after the reorder drag', () => {
   test.beforeEach(
     async ({ page, request }: { page: Page; request: APIRequestContext }) => {
       await page.setViewportSize({ width: 1920, height: 1080 });
+      await resetProject(request, PROJECT_END_ANNO, PRISTINE_END_ANNO);
       await selectProject(request, PROJECT_END_ANNO);
       await openApp(page);
       await switchToSplitMode(page);
@@ -322,7 +364,7 @@ test.describe('Undo after the reorder drag', () => {
       .locator('[role="menuitem"]')
       .filter({ hasText: 'Adjust scene prose boundary' })
       .first();
-    await undoItem.click({ timeout: 5000 });
+    await undoItem.click();
     await page.waitForTimeout(2500);
 
     // The file must be byte-for-byte identical to the pristine content.
