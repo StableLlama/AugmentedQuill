@@ -352,10 +352,16 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
   // VISIBLE (marker-stripped) coordinate space, but the backend link-prose
   // API stores RAW (marker-inclusive) offsets.  Convert before persisting,
   // exactly like the annotation creation path (see
-  // AppMainLayout.handleCreateAnnotation).  Snap past any marker sitting
-  // exactly at a selection boundary so a range that starts/ends right after
-  // an already-linked scene maps to the first prose position after the
-  // marker (BUG-1).
+  // AppMainLayout.handleCreateAnnotation).
+  //
+  // Start vs end snapping is intentionally DIFFERENT:
+  //   - The START snaps past a marker sitting exactly on the boundary so a
+  //     range that begins right after an already-linked scene maps to the
+  //     first prose position after the marker (BUG-1).
+  //   - The END must NOT snap past: an end that lands exactly on a marker
+  //     boundary maps to that marker's start position, so the link never
+  //     swallows the marker or the prose beyond it (which previously linked
+  //     the next scene's first word into the new scene's range).
   const convertProseDropOffsetsToOriginal = useCallback(
     (data: ProseDropData): { startOffset: number; endOffset: number } => {
       const latestChapter = currentChapterRef.current;
@@ -377,9 +383,7 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
         startOffset: toOriginalOffsetWithSnap(fullContent, data.startOffset, {
           snapPastMarkers: true,
         }),
-        endOffset: toOriginalOffsetWithSnap(fullContent, data.endOffset, {
-          snapPastMarkers: true,
-        }),
+        endOffset: toOriginalOffsetWithSnap(fullContent, data.endOffset),
       };
     },
     []

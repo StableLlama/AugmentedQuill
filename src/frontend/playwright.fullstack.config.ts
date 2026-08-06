@@ -166,6 +166,213 @@ function createTestProject(name: string): void {
 }
 
 /**
+ * Create a pristine project with two ADJACENT linked scenes, each containing
+ * an annotation inside its prose.  Used by the boundary-drag bug hunt so the
+ * coordinate conversion is exercised with annotation markers present inside
+ * both scenes (the reported bug: dragging the first scene's end marker into
+ * the second scene moves the second scene's UNCHANGED end marker).
+ *
+ *   Visible: "Alpha Bravo CharlieDelta Echo Foxtrot"
+ *   scene 1: "Alpha Bravo Charlie"  (anno-a wraps "Alpha")
+ *   scene 2: "Delta Echo Foxtrot"   (anno-b wraps "Delta")
+ */
+function createBoundaryAnnoProject(name: string): void {
+  const root = path.join(TMP_DIR, 'projects', name);
+  const chapters = path.join(root, 'chapters');
+  fs.mkdirSync(chapters, { recursive: true });
+
+  const annoA = 'anno-a';
+  const annoB = 'anno-b';
+  const chapterContent =
+    marker(1, 'start') +
+    annoMarker(annoA, 'start') +
+    'Alpha' +
+    annoMarker(annoA, 'end') +
+    ' Bravo Charlie' +
+    marker(1, 'end') +
+    marker(2, 'start') +
+    annoMarker(annoB, 'start') +
+    'Delta' +
+    annoMarker(annoB, 'end') +
+    ' Echo Foxtrot' +
+    marker(2, 'end');
+
+  fs.writeFileSync(
+    path.join(root, 'story.json'),
+    JSON.stringify(
+      {
+        metadata: { version: 9 },
+        project_title: 'Boundary + Annotation',
+        format: 'markdown',
+        project_type: 'novel',
+        chapters: [{ id: 1, title: 'Chapter 1', summary: '', filename: '0001.txt' }],
+        annotations: [
+          {
+            id: annoA,
+            comment: 'anno in scene 1',
+            scope_type: 'chapter',
+            chapter_id: '1',
+            book_id: null,
+          },
+          {
+            id: annoB,
+            comment: 'anno in scene 2',
+            scope_type: 'chapter',
+            chapter_id: '1',
+            book_id: null,
+          },
+        ],
+        scenes: {
+          1: {
+            id: 1,
+            summary: 'Scene 1',
+            beats: [],
+            active_characters: [],
+            passive_characters: [],
+            causes: [],
+            status: 'active',
+            pinboard_x: 100,
+            pinboard_y: 100,
+            prose_link: {
+              scope_type: 'chapter',
+              chapter_id: '1',
+              book_id: null,
+              start_offset: 20,
+              end_offset: 97,
+            },
+          },
+          2: {
+            id: 2,
+            summary: 'Scene 2',
+            beats: [],
+            active_characters: [],
+            passive_characters: [],
+            causes: [],
+            status: 'active',
+            pinboard_x: 300,
+            pinboard_y: 100,
+            prose_link: {
+              scope_type: 'chapter',
+              chapter_id: '1',
+              book_id: null,
+              start_offset: 115,
+              end_offset: 211,
+            },
+          },
+        },
+      },
+      null,
+      2
+    )
+  );
+
+  fs.writeFileSync(path.join(chapters, '0001.txt'), chapterContent);
+}
+
+/**
+ * Create a pristine project with two ADJACENT linked scenes where the
+ * annotation inside scene 2 wraps scene 2's LAST word ("Foxtrot").  This is
+ * the configuration that reproduces the reported bug: dragging scene 1's end
+ * marker into scene 2 moves/reorders scene 2's UNCHANGED end marker.
+ *
+ *   Visible: "Alpha Bravo CharlieDelta Echo Foxtrot"
+ *   scene 1: "Alpha Bravo Charlie"  (anno-a wraps "Alpha")
+ *   scene 2: "Delta Echo Foxtrot"   (anno-b wraps "Foxtrot" — at scene 2's end)
+ */
+function createBoundaryAnnoEndProject(name: string): void {
+  const root = path.join(TMP_DIR, 'projects', name);
+  const chapters = path.join(root, 'chapters');
+  fs.mkdirSync(chapters, { recursive: true });
+
+  const annoA = 'anno-a';
+  const annoB = 'anno-b';
+  const chapterContent =
+    marker(1, 'start') +
+    annoMarker(annoA, 'start') +
+    'Alpha' +
+    annoMarker(annoA, 'end') +
+    ' Bravo Charlie' +
+    marker(1, 'end') +
+    marker(2, 'start') +
+    'Delta Echo ' +
+    annoMarker(annoB, 'start') +
+    'Foxtrot' +
+    annoMarker(annoB, 'end') +
+    marker(2, 'end');
+
+  fs.writeFileSync(
+    path.join(root, 'story.json'),
+    JSON.stringify(
+      {
+        metadata: { version: 9 },
+        project_title: 'Boundary + Annotation at end',
+        format: 'markdown',
+        project_type: 'novel',
+        chapters: [{ id: 1, title: 'Chapter 1', summary: '', filename: '0001.txt' }],
+        annotations: [
+          {
+            id: annoA,
+            comment: 'anno in scene 1',
+            scope_type: 'chapter',
+            chapter_id: '1',
+            book_id: null,
+          },
+          {
+            id: annoB,
+            comment: 'anno at scene 2 end',
+            scope_type: 'chapter',
+            chapter_id: '1',
+            book_id: null,
+          },
+        ],
+        scenes: {
+          1: {
+            id: 1,
+            summary: 'Scene 1',
+            beats: [],
+            active_characters: [],
+            passive_characters: [],
+            causes: [],
+            status: 'active',
+            pinboard_x: 100,
+            pinboard_y: 100,
+            prose_link: {
+              scope_type: 'chapter',
+              chapter_id: '1',
+              book_id: null,
+              start_offset: 20,
+              end_offset: 97,
+            },
+          },
+          2: {
+            id: 2,
+            summary: 'Scene 2',
+            beats: [],
+            active_characters: [],
+            passive_characters: [],
+            causes: [],
+            status: 'active',
+            pinboard_x: 300,
+            pinboard_y: 100,
+            prose_link: {
+              scope_type: 'chapter',
+              chapter_id: '1',
+              book_id: null,
+              start_offset: 115,
+              end_offset: 211,
+            },
+          },
+        },
+      },
+      null,
+      2
+    )
+  );
+
+  fs.writeFileSync(path.join(chapters, '0001.txt'), chapterContent);
+}
+
+/**
  * Create a project with a single chapter of plain, space-separated prose and
  * NO scenes.  Used by the scene-linked-prose-undo spec so it can create and
  * link scenes from scratch and assert clean word boundaries.
@@ -279,8 +486,124 @@ function createSceneLinkRegressionProject(name: string): void {
   );
 }
 
+// Scene marker token lengths (used to seed prose_link offsets).
+const SCENE_START_LEN = '<!--scene:1:start-->'.length; // 20
+const SCENE_END_LEN = '<!--scene:1:end-->'.length; // 18
+
+/**
+ * Create a pristine project with two linked scenes and one pre-existing
+ * annotation used by the scene/annotation integrity spec:
+ *
+ *   Visible text: "Alpha Bravo CharlieDelta Echo Foxtrot"
+ *     scene 1 -> "Alpha Bravo Charlie"  (visible [0, 18))
+ *     scene 2 -> "Delta Echo Foxtrot"   (visible [18, 36))
+ *     anno-1  -> "Alpha"                (visible [0, 5))
+ *
+ * Markers are embedded in the chapter file; prose_link offsets are stored in
+ * story.json in RAW (marker-inclusive) space:
+ *   scene1: start_offset = SCENE_START_LEN (20), end_offset = 97
+ *   scene2: start_offset = 115, end_offset = 133
+ */
+function createIntegrityProject(name: string): void {
+  const root = path.join(TMP_DIR, 'projects', name);
+  const chapters = path.join(root, 'chapters');
+  fs.mkdirSync(chapters, { recursive: true });
+
+  const annoStart = '<!--annotation:anno-1:start-->'; // 30
+  const annoEnd = '<!--annotation:anno-1:end-->'; // 28
+
+  const chapterContent =
+    marker(1, 'start') +
+    annoStart +
+    'Alpha' +
+    annoEnd +
+    ' Bravo Charlie' +
+    marker(1, 'end') +
+    marker(2, 'start') +
+    'Delta Echo Foxtrot' +
+    marker(2, 'end');
+
+  const scene1Start = SCENE_START_LEN;
+  const scene1End = scene1Start + annoStart.length + 5 + annoEnd.length + 14; // 97
+  const scene2Start = scene1End + SCENE_END_LEN; // 115
+  const scene2End = scene2Start + 18; // 133
+
+  fs.writeFileSync(
+    path.join(root, 'story.json'),
+    JSON.stringify(
+      {
+        metadata: { version: 9 },
+        project_title: 'Scene/Annotation Integrity',
+        format: 'markdown',
+        project_type: 'novel',
+        chapters: [{ id: 1, title: 'Chapter 1', summary: '', filename: '0001.txt' }],
+        annotations: [
+          {
+            id: 'anno-1',
+            comment: 'Annotation on "Alpha"',
+            scope_type: 'chapter',
+            chapter_id: '1',
+            book_id: null,
+          },
+        ],
+        scenes: {
+          1: {
+            id: 1,
+            summary: 'Scene 1',
+            beats: [],
+            active_characters: [],
+            passive_characters: [],
+            causes: [],
+            status: 'active',
+            pinboard_x: 100,
+            pinboard_y: 100,
+            prose_link: {
+              scope_type: 'chapter',
+              chapter_id: '1',
+              book_id: null,
+              start_offset: scene1Start,
+              end_offset: scene1End,
+            },
+          },
+          2: {
+            id: 2,
+            summary: 'Scene 2',
+            beats: [],
+            active_characters: [],
+            passive_characters: [],
+            causes: [],
+            status: 'active',
+            pinboard_x: 300,
+            pinboard_y: 100,
+            prose_link: {
+              scope_type: 'chapter',
+              chapter_id: '1',
+              book_id: null,
+              start_offset: scene2Start,
+              end_offset: scene2End,
+            },
+          },
+        },
+      },
+      null,
+      2
+    )
+  );
+
+  fs.writeFileSync(path.join(chapters, '0001.txt'), chapterContent);
+}
+
 // Project used by scene-boundary-drag (mutates scene structure).
 createTestProject('e2e-boundary-test');
+// Dedicated project used by the scene/annotation integrity spec (mutates
+// scenes, annotations, prose, markers).
+createIntegrityProject('e2e-integrity-test');
+// Dedicated project used by the boundary-drag bug hunt: two adjacent linked
+// scenes, each containing an annotation (mutates scene boundaries).
+createBoundaryAnnoProject('e2e-boundary-anno-test');
+// Dedicated project reproducing the reported boundary-drag reorder bug: the
+// annotation inside scene 2 wraps scene 2's LAST word (mutates boundaries).
+createBoundaryAnnoEndProject('e2e-boundary-anno-end-test');
 // Dedicated pristine project used by scene-cursor-highlight so drag/annotation
 // mutations can never corrupt the scene ranges it asserts.
 createTestProject('e2e-cursor-test');

@@ -29,6 +29,8 @@
  * ambiguous marker content before it can be used to compute positions.
  */
 
+import { diff_match_patch } from 'diff-match-patch';
+
 export type SceneMarkerEdge = 'start' | 'end';
 export type MarkerLayerName = 'scene' | 'annotation';
 
@@ -131,6 +133,10 @@ interface MarkerSpan {
   /** The full marker token including brackets, e.g. `<!--scene:1:start-->` */
   startToken: string;
   endToken: string;
+  /** Raw (marker-inclusive) offset of the first prose char after the start token. */
+  proseStart: number;
+  /** Raw (marker-inclusive) offset just past the last prose char (the end token's position). */
+  proseEnd: number;
   /** The prose text between the markers in the old content. */
   prose: string;
 }
@@ -170,6 +176,8 @@ function parseAllMarkerSpans(content: string): MarkerSpan[] {
           spans.push({
             startToken: opened.startToken,
             endToken: fullToken,
+            proseStart: opened.proseStart,
+            proseEnd: match.index,
             prose: content.slice(opened.proseStart, match.index),
           });
           break;
@@ -181,13 +189,67 @@ function parseAllMarkerSpans(content: string): MarkerSpan[] {
 }
 
 /**
- * Transfer internal markers (scene + annotation) from *oldFullContent* to
- * *newStrippedContent*.  For each marker span found in the old content, the
- * prose text between the markers is located in the new content and the
- * markers are re-inserted around it.
+ * Build a function mapping every position of *oldText* to the corresponding
+ * position of *newText* after the edit, using a diff-match-patch alignment.
  *
- * When a span's prose cannot be found in the new content the markers are
- * silently dropped (the edit removed that text entirely).
+ * The returned mapper is exact for unchanged regions and shifts positions
+ * correctly across insertions and deletions (insertions push the boundary
+ * right, deletions pull it left).  Positions that fell inside deleted text
+ * map to the deletion anchor.
+ */
+function buildVisibleEditMapping(
+  oldText: string,
+  newText: string
+): (oldPos: number) => number {
+  const dmp = new diff_match_patch();
+  dmp.Diff_Timeout = 0.5;
+  const diffs = dmp.diff_main(oldText, newText);
+  dmp.diff_cleanupSemantic(diffs);
+
+  const map = new Array<number>(oldText.length + 1);
+  let oldCursor = 0;
+  let newCursor = 0;
+  for (const [op, text] of diffs) {
+    if (op === 0) {
+      for (let i = 0; i < text.length; i++) {
+        map[oldCursor + i] = newCursor + i;
+      }
+      oldCursor += text.length;
+      newCursor += text.length;
+    } else if (op === -1) {
+      for (let i = 0; i < text.length; i++) {
+        map[oldCursor + i] = newCursor;
+      }
+      oldCursor += text.length;
+    } else {
+      newCursor += text.length;
+    }
+  }
+  map[oldText.length] = newCursor;
+
+  return (oldPos: number): number => {
+    const clamped = Math.max(0, Math.min(oldPos, oldText.length));
+    const mapped = map[clamped];
+    return mapped === undefined
+      ? newCursor
+      : Math.max(0, Math.min(mapped, newText.length));
+  };
+}
+
+/**
+ * Transfer internal markers (scene + annotation) from *oldFullContent* to
+ * *newStrippedContent*.
+ *
+ * Every marker boundary is moved through the user's edit by aligning the old
+ * and new VISIBLE documents with a diff and mapping each boundary's old
+ * position to its new position.  This keeps markers correctly attached when
+ * the user inserts or deletes text INSIDE a span (the prose between the
+ * markers changes, so exact-prose matching would silently drop the markers
+ * and unlink the scene/annotation — data corruption).
+ *
+ * When a span's entire prose is deleted the markers are kept as an empty
+ * adjacent pair so the scene/annotation stays linked instead of silently
+ * disappearing.
  *
  * Returns the new content with markers re-injected.
  */
@@ -200,47 +262,86 @@ export function transferInternalMarkers(
     return newStrippedContent;
   }
 
-  // Sort spans by the position of their prose in the new content so we can
-  // inject markers from right to left without invalidating offsets.
-  const injections: Array<{
+  const oldStripped = stripInlineInternalMarkers(oldFullContent);
+  const mapVisible = buildVisibleEditMapping(oldStripped, newStrippedContent);
+
+  // Collect every marker boundary as an individual token insertion in the
+  // coordinate space of the ORIGINAL stripped content.  Injecting tokens
+  // (instead of wrapping a fixed-width slice) keeps nested/overlapping
+  // markers from cutting through each other.
+  interface MarkerToken {
     pos: number;
-    startToken: string;
-    endToken: string;
-    proseLen: number;
-  }> = [];
+    token: string;
+    /** 'end' of a non-empty span, empty-span start, empty-span end, non-empty start. */
+    order: number;
+    /** secondary sort key (span extent at this position). */
+    extent: number;
+  }
 
+  const tokens: MarkerToken[] = [];
   for (const span of spans) {
-    const idx = newStrippedContent.indexOf(span.prose);
-    if (idx < 0) continue; // prose not found — drop this marker span
-    injections.push({
-      pos: idx,
-      startToken: span.startToken,
-      endToken: span.endToken,
-      proseLen: span.prose.length,
-    });
+    const oldVisibleStart = toVisibleOffset(oldFullContent, span.proseStart);
+    const oldVisibleEnd = toVisibleOffset(oldFullContent, span.proseEnd);
+    const newStart = mapVisible(oldVisibleStart);
+    const newEnd = Math.max(newStart, mapVisible(oldVisibleEnd));
+    if (newStart === newEnd) {
+      // Fully-deleted span — keep an empty adjacent marker pair.
+      tokens.push({ pos: newStart, token: span.startToken, order: 1, extent: 0 });
+      tokens.push({ pos: newEnd, token: span.endToken, order: 2, extent: 0 });
+    } else {
+      tokens.push({
+        pos: newStart,
+        token: span.startToken,
+        order: 3,
+        extent: newEnd,
+      });
+      tokens.push({
+        pos: newEnd,
+        token: span.endToken,
+        order: 0,
+        extent: newStart,
+      });
+    }
   }
 
-  if (injections.length === 0) {
-    return newStrippedContent;
+  // Group by insertion position.
+  const byPos = new Map<number, MarkerToken[]>();
+  for (const t of tokens) {
+    const group = byPos.get(t.pos);
+    if (group) {
+      group.push(t);
+    } else {
+      byPos.set(t.pos, [t]);
+    }
   }
 
-  // Sort by position (ascending) so we can inject right-to-left
-  injections.sort(
-    (
-      a: { pos: number; startToken: string; endToken: string; proseLen: number },
-      b: { pos: number; startToken: string; endToken: string; proseLen: number }
-    ): number => a.pos - b.pos
-  );
-
-  // Build result by injecting markers from right to left
-  let result = newStrippedContent;
-  for (let i = injections.length - 1; i >= 0; i--) {
-    const { pos, startToken, endToken, proseLen } = injections[i];
-    const before = result.slice(0, pos);
-    const prose = result.slice(pos, pos + proseLen);
-    const after = result.slice(pos + proseLen);
-    result = before + startToken + prose + endToken + after;
+  // Within a position group, the order encodes nesting:
+  //   1. non-empty END tokens first, inner spans first (larger start first);
+  //   2. empty-span START, then empty-span END;
+  //   3. non-empty START tokens last, outer spans first (larger end first).
+  // This yields `scene1:end scene2:start` for adjacent spans, `start end`
+  // for empty spans, and `outerStart innerStart ... innerEnd outerEnd` for
+  // nested spans.
+  for (const group of byPos.values()) {
+    group.sort(
+      (a: MarkerToken, b: MarkerToken): number =>
+        a.order - b.order || b.extent - a.extent
+    );
   }
+
+  // Build the result by walking the stripped content and emitting tokens at
+  // their positions.
+  const positions = [...byPos.keys()].sort((a: number, b: number): number => a - b);
+  let result = '';
+  let cursor = 0;
+  for (const pos of positions) {
+    result += newStrippedContent.slice(cursor, pos);
+    for (const t of byPos.get(pos) as MarkerToken[]) {
+      result += t.token;
+    }
+    cursor = pos;
+  }
+  result += newStrippedContent.slice(cursor);
 
   return result;
 }
@@ -307,7 +408,13 @@ export function toOriginalOffset(
   opts?: { snapPastMarkers?: boolean }
 ): number {
   const snapPastMarkers = opts?.snapPastMarkers === true;
-  if (visibleOffset <= 0) return 0;
+  // A negative offset always clamps to 0.  A zero offset returns 0 unless we
+  // are snapping past markers (annotation-creation start boundaries): then we
+  // fall through to the walk so a document that STARTS with markers maps the
+  // selection start to the first prose character AFTER those markers, instead
+  // of into the leading marker tokens.
+  if (visibleOffset < 0) return 0;
+  if (visibleOffset === 0 && !snapPastMarkers) return 0;
   if (fullContent.length === 0) return 0;
 
   let visibleCount = 0;

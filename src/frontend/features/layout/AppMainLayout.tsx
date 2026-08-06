@@ -411,12 +411,22 @@ export const AppMainLayout: React.FC<AppMainLayoutProps> = React.memo(
 
     useEffect((): (() => void) | void => {
       if (!annotationMenu.open) return;
-      const closeMenu = (): void => {
+      // Close the annotation context menu when the user presses anywhere
+      // OUTSIDE the menu.  This must run on `mousedown` (not `click`) and must
+      // ignore presses inside the menu: a capture-phase `click` listener that
+      // unconditionally closes the menu unmounts it during the same click
+      // dispatch, so the menu item's own `onClick` never runs and its action
+      // is silently swallowed.
+      const closeMenu = (e: MouseEvent): void => {
+        const target = e.target;
+        if (target instanceof HTMLElement && target.closest('[role="menu"]')) {
+          return;
+        }
         setAnnotationMenu({ open: false, x: 0, y: 0 });
       };
-      window.addEventListener('click', closeMenu, true);
+      window.addEventListener('mousedown', closeMenu, true);
       return (): void => {
-        window.removeEventListener('click', closeMenu, true);
+        window.removeEventListener('mousedown', closeMenu, true);
       };
     }, [annotationMenu.open]);
 
@@ -428,13 +438,22 @@ export const AppMainLayout: React.FC<AppMainLayoutProps> = React.memo(
         // for the backend API.  The editor strips internal marker tokens
         // from the visible document, so getSelection() returns stripped
         // positions that must be mapped back to the raw file coordinates.
+        //
+        // Start vs end snapping is intentionally DIFFERENT:
+        //   - The START snaps past any marker sitting exactly on the
+        //     boundary, so a selection that begins right after a marker maps
+        //     to the first prose character after it (never into the marker).
+        //   - The END must NOT snap past: an end that lands exactly on a
+        //     marker boundary maps to that marker's start position (the end
+        //     of the selected prose), so the annotation never swallows the
+        //     marker or the prose beyond it.  Snapping the end too would
+        //     extend the annotation across the marker and corrupt the
+        //     adjacent scene/prose linkage.
         const fullContent = currentChapter.content ?? '';
         const fromFull = toOriginalOffset(fullContent, pendingSelection.from, {
           snapPastMarkers: true,
         });
-        const toFull = toOriginalOffset(fullContent, pendingSelection.to, {
-          snapPastMarkers: true,
-        });
+        const toFull = toOriginalOffset(fullContent, pendingSelection.to);
 
         const created = await createAnnotation({
           ...annotationScope,
