@@ -71,6 +71,30 @@ describe('CodeMirrorEditor', () => {
     expect(ref.current?.state.doc.toString()).toBe('initial text');
   });
 
+  it('accepts per-paper highlight colour tokens without breaking rendering', async () => {
+    const ref = React.createRef<EditorView | null>();
+    const { container } = render(
+      <CodeMirrorEditor
+        ref={ref}
+        value="Hello world"
+        onChange={vi.fn()}
+        highlightColors={{
+          proseHighlightBg: 'rgba(180, 110, 0, 0.06)',
+          searchHighlightBg: 'rgba(245, 158, 11, 0.22)',
+          annotationUnderline: 'rgba(124, 58, 237, 0.65)',
+          annotationBg: 'rgba(124, 58, 237, 0.08)',
+          diffInsertBg: 'rgba(34, 197, 94, 0.14)',
+          diffInsertBorder: 'rgba(34, 197, 94, 0.45)',
+          diffDeleteBg: 'rgba(239, 68, 68, 0.14)',
+          diffDeleteBorder: 'rgba(239, 68, 68, 0.45)',
+        }}
+      />
+    );
+    await act(async () => {});
+    expect(ref.current?.state.doc.toString()).toBe('Hello world');
+    expect(container.querySelector('.cm-content')).not.toBeNull();
+  });
+
   it('clears the forwardRef on unmount', async () => {
     const ref = React.createRef<EditorView | null>();
     const { unmount } = render(

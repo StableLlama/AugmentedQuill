@@ -44,6 +44,7 @@ import {
   setProseHighlightEffect,
   type ProseHighlightRange,
   type ProseBoundaryCallback,
+  type EditorHighlightColors,
 } from './CodeMirrorEditor';
 import { setAnnotationRangesEffect, type AnnotationRange } from './annotationPlugin';
 import {
@@ -846,23 +847,39 @@ export const Editor = React.memo(
         selectionBg = 'rgba(99,102,241,0.22)';
       }
 
-      // Prose-link highlight: the page warm hue pushed to high saturation and
-      // consistently lower lightness so the highlighted passage stands out at
-      // every brightness level.  Both formulas use a fixed lightness delta from
-      // the page so the contrast is stable regardless of the slider position.
-      let proseHighlightBg: string;
-      if (settings.theme === 'dark') {
-        // Dark page: hsl(24, 10%, b%) where b = brightness*20 (10–20%).
-        // Highlight is always ~22 points brighter with rich saturation.
-        const b = settings.brightness * 20;
-        proseHighlightBg = `hsl(24, 65%, ${Math.min(b + 22, 44)}%)`;
-      } else {
-        // Light/Mixed page: hsl(38, 25%, brightness*100%).
-        // Highlight is always 28 points darker with rich saturation so it
-        // never blends into the background, even at low brightness settings.
-        const pageL = settings.brightness * 100;
-        proseHighlightBg = `hsl(38, 88%, ${Math.max(pageL - 28, 20)}%)`;
-      }
+      // Per-paper highlight colour tokens.  Every highlight layer (scene
+      // prose-link tint, search, annotation, and diff insert/delete) is tuned
+      // for the paper the reader actually sees:
+      //   – light + mixed: a cream/white "paper" with dark letters
+      //   – dark: a dark paper with light letters
+      // The scene tint is deliberately subtle (and has no per-line bottom rule)
+      // so the user can keep reading through a long scene without distraction;
+      // the scene is identified by its boundary handles and the pinboard card.
+      const highlightColors: EditorHighlightColors = (() => {
+        if (settings.theme === 'dark') {
+          return {
+            proseHighlightBg: 'rgba(245, 158, 11, 0.10)',
+            searchHighlightBg: 'rgba(245, 158, 11, 0.30)',
+            annotationUnderline: 'rgba(167, 139, 250, 0.85)',
+            annotationBg: 'rgba(139, 92, 246, 0.16)',
+            diffInsertBg: 'rgba(34, 197, 94, 0.22)',
+            diffInsertBorder: 'rgba(74, 222, 128, 0.55)',
+            diffDeleteBg: 'rgba(239, 68, 68, 0.22)',
+            diffDeleteBorder: 'rgba(248, 113, 113, 0.55)',
+          };
+        }
+        // Cream/white paper (light + mixed themes)
+        return {
+          proseHighlightBg: 'rgba(180, 110, 0, 0.06)',
+          searchHighlightBg: 'rgba(245, 158, 11, 0.22)',
+          annotationUnderline: 'rgba(124, 58, 237, 0.65)',
+          annotationBg: 'rgba(124, 58, 237, 0.08)',
+          diffInsertBg: 'rgba(34, 197, 94, 0.14)',
+          diffInsertBorder: 'rgba(34, 197, 94, 0.45)',
+          diffDeleteBg: 'rgba(239, 68, 68, 0.14)',
+          diffDeleteBorder: 'rgba(239, 68, 68, 0.45)',
+        };
+      })();
 
       const isMonospace = viewMode === 'raw';
       const fontFamily = isMonospace
@@ -1129,7 +1146,7 @@ export const Editor = React.memo(
                       enterBehavior="softbreak"
                       isLight={settings.theme === 'light'}
                       selectionBg={selectionBg}
-                      proseHighlightBg={proseHighlightBg}
+                      highlightColors={highlightColors}
                       hideSceneMarkers={true}
                       onProseBoundaryChange={(
                         sceneId: SceneId,
