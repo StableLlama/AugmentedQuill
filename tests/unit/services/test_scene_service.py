@@ -2630,6 +2630,129 @@ class TestRelinkScopeProse:
         assert anno_in_a or anno_in_b, "Annotation markers lost from both scenes"
         assert not (anno_in_a and anno_in_b), "Annotation markers duplicated"
 
+    def test_relink_keeps_annotation_end_before_scene_end_at_boundary(
+        self, project_dir: Path
+    ) -> None:
+        """Regression: relinking a scope must never reorder an annotation whose
+        END coincides with a scene's END boundary past that scene's end marker.
+
+        The reported bug: a boundary drag re-runs relink_scope_prose, whose
+        annotation re-injection mapped an annotation END that coincided with a
+        scene END boundary to AFTER the scene's end marker (the old
+        ``pt <= stripped_pos`` boundary logic), "moving" the unchanged scene
+        end marker.  The annotation end must stay INSIDE its scene, and the
+        relink must be a byte-for-byte no-op."""
+        from augmentedquill.services.scenes.scene_markers import (
+            annotation_marker_token,
+            validate_internal_marker_tokens,
+        )
+
+        a, b = _link_two_adjacent_scenes(project_dir)
+        content_path = project_dir / "content.md"
+        content_before = content_path.read_text(encoding="utf-8")
+
+        spans_before = {s.scene_id: s for s in parse_scene_spans(content_before)}
+        b_span = spans_before[b["id"]]
+
+        # Annotate scene B's ENTIRE prose ("Bravo") so the annotation's END
+        # marker coincides exactly with scene B's END boundary.
+        start_tok = annotation_marker_token("anno-end", "start")
+        end_tok = annotation_marker_token("anno-end", "end")
+        annotated = (
+            content_before[: b_span.start]
+            + start_tok
+            + content_before[b_span.start : b_span.end]
+            + end_tok
+            + content_before[b_span.end :]
+        )
+        content_path.write_text(annotated, encoding="utf-8")
+
+        story_path = project_dir / "story.json"
+        story = json.loads(story_path.read_text(encoding="utf-8"))
+        story.setdefault("annotations", []).append(
+            {
+                "id": "anno-end",
+                "comment": "Annotation covering scene B's last word",
+                "scope_type": "story",
+                "chapter_id": None,
+                "book_id": None,
+            }
+        )
+        story_path.write_text(json.dumps(story), encoding="utf-8")
+
+        content_with_anno = content_path.read_text(encoding="utf-8")
+        validate_internal_marker_tokens(content_with_anno)
+
+        # Visible (fully-stripped) offsets using ALL internal markers.
+        _ALL_MARKER_PATTERN = re.compile(
+            r"<!--(?:scene:\d+|annotation:[^:>]+):(?:start|end)-->"
+        )
+
+        def vis_offset_all(content: str, offset: int) -> int:
+            visible_count = 0
+            last_index = 0
+            for match in _ALL_MARKER_PATTERN.finditer(content):
+                if match.start() >= offset:
+                    break
+                gap = match.start() - last_index
+                visible_count += gap
+                last_index = match.end()
+            if last_index < offset:
+                visible_count += offset - last_index
+            return visible_count
+
+        spans_after = {s.scene_id: s for s in parse_scene_spans(content_with_anno)}
+        a_span = spans_after[a["id"]]
+        b_span2 = spans_after[b["id"]]
+
+        # Relink BOTH scenes at their current visible offsets (a no-op
+        # relink) — this still re-runs annotation re-injection, which is
+        # what triggered the reorder bug.
+        relink_scope_prose(
+            project_dir,
+            scope_type="story",
+            chapter_id=None,
+            book_id=None,
+            assignments=[
+                (
+                    a["id"],
+                    vis_offset_all(content_with_anno, a_span.start),
+                    vis_offset_all(content_with_anno, a_span.end),
+                ),
+                (
+                    b["id"],
+                    vis_offset_all(content_with_anno, b_span2.start),
+                    vis_offset_all(content_with_anno, b_span2.end),
+                ),
+            ],
+        )
+
+        content_after = content_path.read_text(encoding="utf-8")
+        validate_internal_marker_tokens(content_after)
+
+        # The annotation end marker must stay BEFORE scene B's end marker.
+        anno_end_idx = content_after.index(end_tok)
+        scene_b_end_idx = content_after.index(f"<!--scene:{b['id']}:end-->")
+        assert anno_end_idx < scene_b_end_idx, (
+            f"annotation end reordered past scene end: "
+            f"anno end={anno_end_idx} scene end={scene_b_end_idx}"
+        )
+
+        # Annotation still wraps "Bravo".
+        anno_start_idx = content_after.index(start_tok) + len(start_tok)
+        assert content_after[anno_start_idx:anno_end_idx] == "Bravo", (
+            f"Annotation text changed: "
+            f"{content_after[anno_start_idx:anno_end_idx]!r}"
+        )
+
+        # The no-op relink must be byte-for-byte identical (nothing else,
+        # including the unchanged scene B end marker, may move).
+        assert content_after == content_with_anno, (
+            "no-op relink changed the file:\n"
+            f"  expected: {content_with_anno!r}\n"
+            f"  received: {content_after!r}"
+        )
+
     def test_relink_with_overlapping_annotations_preserves_integrity(
         self, project_dir: Path
     ) -> None:

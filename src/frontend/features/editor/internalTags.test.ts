@@ -26,6 +26,7 @@ import {
   stripInlineInternalMarkers,
   toOriginalOffset,
   toVisibleOffset,
+  transferInternalMarkers,
   validateMarkerIntegrity,
 } from './internalTags';
 
@@ -230,5 +231,73 @@ describe('validateMarkerIntegrity', () => {
       '<!--scene:1:start-->Alpha<!--scene:1:end-->' +
       '<!--scene:2:start-->Bravo<!--scene:2:end-->';
     expect(() => validateMarkerIntegrity(content)).not.toThrow();
+  });
+});
+
+describe('transferInternalMarkers', () => {
+  const scene1 = '<!--scene:1:start-->';
+  const scene1e = '<!--scene:1:end-->';
+  const anno = '<!--annotation:a1:start-->';
+  const annoe = '<!--annotation:a1:end-->';
+
+  it('returns the stripped content unchanged when there are no markers', () => {
+    expect(transferInternalMarkers('plain text', 'plain text')).toBe('plain text');
+  });
+
+  it('preserves a scene span when text is inserted INSIDE it', () => {
+    const oldContent = `${scene1}Alpha Bravo Charlie${scene1e} Delta`;
+    // Insert "X" right after "Alpha" inside scene 1.
+    const newStripped = 'AlphaX Bravo Charlie Delta';
+    const result = transferInternalMarkers(oldContent, newStripped);
+    expect(result).toBe(`${scene1}AlphaX Bravo Charlie${scene1e} Delta`);
+  });
+
+  it('preserves a scene span when text is deleted INSIDE it', () => {
+    const oldContent = `${scene1}Alpha Bravo Charlie${scene1e} Delta`;
+    // Delete " Bravo" inside scene 1.
+    const newStripped = 'Alpha Charlie Delta';
+    const result = transferInternalMarkers(oldContent, newStripped);
+    expect(result).toBe(`${scene1}Alpha Charlie${scene1e} Delta`);
+  });
+
+  it('shifts a scene span right when text is inserted BEFORE it', () => {
+    const oldContent = `Intro ${scene1}Alpha${scene1e}`;
+    const newStripped = 'Long intro Alpha';
+    const result = transferInternalMarkers(oldContent, newStripped);
+    expect(result).toBe(`Long intro ${scene1}Alpha${scene1e}`);
+  });
+
+  it('keeps the span empty (not dropped) when all its prose is deleted', () => {
+    const oldContent = `${scene1}Alpha${scene1e} Bravo`;
+    const newStripped = ' Bravo';
+    const result = transferInternalMarkers(oldContent, newStripped);
+    expect(result).toBe(`${scene1}${scene1e} Bravo`);
+  });
+
+  it('preserves multiple adjacent scene spans after an edit', () => {
+    const oldContent = `${scene1}Alpha${scene1e} ${'<!--scene:2:start-->'}Bravo${'<!--scene:2:end-->'}`;
+    // Insert "X" INSIDE scene 1 (mid-word, unambiguous; the space between
+    // the scenes is unmarked prose).
+    const newStripped = 'AlphaX Bravo';
+    const result = transferInternalMarkers(oldContent, newStripped);
+    expect(result).toBe(
+      `${scene1}AlphaX${scene1e} ${'<!--scene:2:start-->'}Bravo${'<!--scene:2:end-->'}`
+    );
+  });
+
+  it('preserves an annotation span nested inside a scene span after an edit', () => {
+    const oldContent = `${scene1}${anno}Alpha${annoe} Bravo${scene1e}`;
+    // Insert "X" inside the annotation's prose.
+    const newStripped = 'AlphaX Bravo';
+    const result = transferInternalMarkers(oldContent, newStripped);
+    expect(result).toBe(`${scene1}${anno}AlphaX${annoe} Bravo${scene1e}`);
+  });
+
+  it('re-injected content is valid per validateMarkerIntegrity', () => {
+    const oldContent = `${scene1}${anno}Alpha${annoe} Bravo${scene1e}${'<!--scene:2:start-->'}Delta${'<!--scene:2:end-->'}`;
+    const newStripped = 'Alpha! Bravo! Delta!';
+    const result = transferInternalMarkers(oldContent, newStripped);
+    expect(() => validateMarkerIntegrity(result)).not.toThrow();
+    expect(stripInlineInternalMarkers(result)).toBe(newStripped);
   });
 });

@@ -132,6 +132,31 @@ export function toOriginalOffset(visibleOffset: number, fullContent: string): nu
   return toOriginalOffsetCore(fullContent, visibleOffset);
 }
 
+/**
+ * Look up a scene's live marker span and convert it to visible coordinates.
+ * Returns null when *content* has no scene markers or the scene's span is
+ * absent/collapsed.
+ */
+function markerSpanRangeToVisible(
+  content: string,
+  sceneId: SceneId,
+  convertToVisible: boolean
+): { from: number; to: number } | null {
+  if (!hasInlineSceneMarkers(content)) {
+    return null;
+  }
+  const markerRange = getSceneMarkerSpanRange(content, sceneId);
+  if (!markerRange) {
+    return null;
+  }
+  if (convertToVisible) {
+    const from = toVisibleOffset(content, markerRange.from);
+    const to = toVisibleOffset(content, markerRange.to);
+    return from < to ? { from, to } : null;
+  }
+  return markerRange.from < markerRange.to ? markerRange : null;
+}
+
 export function toVisibleRange(
   scene: Scene,
   unit: WritingUnit,
@@ -146,11 +171,24 @@ export function toVisibleRange(
     return null;
   }
 
-  if (hasInlineSceneMarkers(unit.content)) {
-    const markerRange = getSceneMarkerSpanRange(unit.content, scene.id);
-    if (markerRange) {
-      return markerRange.from < markerRange.to ? markerRange : null;
-    }
+  // Prefer the live marker spans whenever the current full content contains
+  // scene markers: after the user inserts an annotation (or edits prose)
+  // inside a scene, the stored prose_link offsets go stale relative to the
+  // real marker positions, so the marker span is the only accurate source.
+  // The editor document strips markers, so convert the raw span to visible
+  // offsets when we are reading from fullContent.
+  const fullMarker = fullContent
+    ? markerSpanRangeToVisible(fullContent, scene.id, true)
+    : null;
+  if (fullMarker) {
+    return fullMarker;
+  }
+
+  // Some callers pass a marker-inclusive unit content; the span is then
+  // already in the editor's coordinate space (markers visible).
+  const unitMarker = markerSpanRangeToVisible(unit.content, scene.id, false);
+  if (unitMarker) {
+    return unitMarker;
   }
 
   const rawFrom = Math.max(Number(link.start_offset ?? 0), 0);
