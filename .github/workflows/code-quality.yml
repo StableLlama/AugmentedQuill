@@ -71,7 +71,20 @@ jobs:
         cd src/frontend
         npm run build
 
+    - name: Check if frontend dependencies changed
+      if: github.event_name == 'pull_request'
+      id: deps-changed
+      uses: dorny/paths-filter@v3
+      with:
+        filters: |
+          frontend-deps:
+            - 'src/frontend/package.json'
+            - 'src/frontend/package-lock.json'
+
     - name: Run npm audit
+      # Skip auditing for PRs that do not touch frontend dependencies; pushes
+      # to main/develop always audit to guard the merged tree.
+      if: github.event_name != 'pull_request' || steps.deps-changed.outputs.frontend-deps == 'true'
       run: |
         cd src/frontend
         npm audit --audit-level=high
