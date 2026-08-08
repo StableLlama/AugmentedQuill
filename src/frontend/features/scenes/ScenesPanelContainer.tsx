@@ -45,11 +45,13 @@ import type { UIStoreState } from '../../stores/uiStore';
 import { externalValueSyncAnnotation } from '../editor/codeMirrorDiffPlugin';
 import {
   getSceneMarkerSpanRange,
+  hasInlineInternalMarkers,
   hasInlineSceneMarkers,
   sceneMarkerTokenLength,
   stripInlineInternalMarkers,
   toOriginalOffset as toOriginalOffsetWithSnap,
   toVisibleOffset,
+  transferInternalMarkers,
 } from '../editor/internalTags';
 import {
   getLinkedProseFromTextSource,
@@ -329,17 +331,42 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
         );
       }
       setStory((prev: StoryState) => {
+        const currentContent =
+          currentChapter.scope === 'story'
+            ? (prev.draft?.content ?? '')
+            : (prev.chapters.find(
+                (chapter: Chapter): boolean => chapter.id === currentChapter.id
+              )?.content ?? '');
+
+        // The editor document is marker-free (hideSceneMarkers=true), so callers
+        // pass the visible doc here (e.g. view.state.doc.toString()).  The store
+        // and backend content MUST stay marker-inclusive — otherwise every
+        // visible↔original offset conversion (getLinkedProseText, prose-drop,
+        // boundary-drag, save-prose, subsequent writes) reads marker-inclusive
+        // prose_link offsets against marker-free text and truncates/corrupts the
+        // scene prose.  When the incoming content is marker-free but the current
+        // store content has markers, re-inject them from the current content
+        // (same mechanism the Editor's debounced save uses).  Genuinely
+        // marker-free chapters stay marker-free, and already-marker-inclusive
+        // inputs (API refetches) pass through untouched.
+        const nextContent =
+          hasInlineInternalMarkers(content) || !hasInlineInternalMarkers(currentContent)
+            ? content
+            : transferInternalMarkers(currentContent, content);
+
         if (currentChapter.scope === 'story') {
           return {
             ...prev,
-            draft: prev.draft ? { ...prev.draft, content } : prev.draft,
+            draft: prev.draft ? { ...prev.draft, content: nextContent } : prev.draft,
           };
         }
 
         return {
           ...prev,
           chapters: prev.chapters.map((chapter: Chapter): Chapter =>
-            chapter.id === currentChapter.id ? { ...chapter, content } : chapter
+            chapter.id === currentChapter.id
+              ? { ...chapter, content: nextContent }
+              : chapter
           ),
         };
       });

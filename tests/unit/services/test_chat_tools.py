@@ -2989,6 +2989,65 @@ class ChatToolsTest(TestCase):
         self.assertEqual(result.get("write_mode"), "append")
         self.assertTrue(result.get("written"))
 
+    def test_call_writing_llm_append_anchor_strips_scene_markers(self):
+        """Append-mode preceding-content anchor must never leak internal markers.
+
+        The chapter file on disk is marker-inclusive (scene markers), but the
+        WRITING LLM must only ever see clean prose — never the internal
+        ``<!--scene:...-->`` tokens.  The append anchor is built from the raw
+        file, so it must strip markers before being placed in the prompt.
+        """
+        self._bootstrap_project()
+        self._post_single_tool(
+            "update_story_metadata",
+            {
+                "conflicts": [
+                    {
+                        "id": "c1",
+                        "description": "Test conflict",
+                        "resolution": "Test resolution",
+                    }
+                ]
+            },
+        )
+
+        chapter_file = self.projects_root / "demo" / "chapters" / "0001.txt"
+        chapter_file.write_text(
+            "First paragraph.\n\n"
+            "<!--scene:1:start-->Second scene prose.<!--scene:1:end-->",
+            encoding="utf-8",
+        )
+
+        mock_chat = _CapturingStreamMock(" Continuation.")
+        with (
+            patch(
+                "augmentedquill.services.llm.llm.resolve_openai_credentials",
+                return_value=("http://localhost:11434/v1", None, "dummy", 30, "dummy"),
+            ),
+            patch(
+                "augmentedquill.services.llm.llm.unified_chat_stream",
+                new=mock_chat,
+            ),
+        ):
+            self._post_single_tool(
+                "call_writing_llm",
+                {
+                    "instruction": "Continue the story",
+                    "context": "A high-level summary without exact tail text.",
+                    "write_mode": "append",
+                    "chap_id": 1,
+                },
+            )
+
+        sent_messages = mock_chat.await_args.kwargs["messages"]
+        prompt = sent_messages[1]["content"]
+        # The scene prose itself must be present as the anchor...
+        self.assertIn("Second scene prose.", prompt)
+        # ...but the internal markers must never reach the WRITING LLM prompt.
+        self.assertNotIn("<!--scene:", prompt)
+        self.assertNotIn(":start-->", prompt)
+        self.assertNotIn(":end-->", prompt)
+
     def test_chat_sourcebook_create_is_visible_in_project_select_payload(self):
         self._bootstrap_project()
         data = self._post_single_tool(

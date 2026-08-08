@@ -23,7 +23,10 @@ from augmentedquill.models.scene import (
 )
 from augmentedquill.services.chat.chat_tool_decorator import WRITING_ROLE
 from augmentedquill.services.llm import llm
-from augmentedquill.services.scenes.scene_markers import remove_markers
+from augmentedquill.services.scenes.scene_markers import (
+    remove_markers,
+    strip_internal_markers,
+)
 from augmentedquill.services.scenes.scene_service import (
     _scene_content_path,
     _write_text_atomic,
@@ -445,7 +448,8 @@ async def write_scene_and_link(
         model_overrides = resolved_model_overrides
 
     system_msg = get_system_message("story_writer", model_overrides, language=language)
-    existing_tail_text = remove_markers(existing_text)
+    # The prompt tail must never leak internal scene/annotation marker tokens.
+    existing_tail_text = strip_internal_markers(existing_text)
     story_notes = context.get("story_notes") or ""
     story_notes_section = f"## Story notes\n{story_notes}" if story_notes else ""
 

@@ -29,6 +29,7 @@ import type { EditorView } from '@codemirror/view';
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import i18n from '../app/i18n';
 import { SceneEditorDialog } from './SceneEditorDialog';
+import { getLinkedProseFromTextSource } from './proseLinkCoordinates';
 import { useScenes } from '../../stores/storyStore';
 import type {
   Scene,
@@ -36,7 +37,7 @@ import type {
   SourcebookEntry,
   SceneTagPersonalDatetime,
 } from '../../types';
-import type { Chapter, Book } from '../../types/domain';
+import type { Chapter, Book, WritingUnit } from '../../types/domain';
 import { TemporalApi } from '../../utils/temporal';
 
 const { sourcebookEntriesState } = vi.hoisted(() => ({
@@ -1253,6 +1254,130 @@ describe('SceneEditorDialog save flow', () => {
         .getByRole('button', { name: /Toggle diff view/i })
         .getAttribute('aria-pressed')
     ).toBe('true');
+  });
+
+  it('displays the COMPLETE generated prose in the Linked Prose editor after write in a marker-bearing chapter', async () => {
+    // Faithful model of the real container + editor:
+    //  - The editor document (hideSceneMarkers=true) is marker-free.
+    //  - prose_link offsets are marker-inclusive (backend coordinate space).
+    //  - During a write the container syncs the marker-free editor doc into
+    //    the store (updateCurrentChapterContent), so getLinkedProseText is
+    //    called with a marker-free unit while the link offsets are still
+    //    marker-inclusive.  The dialog's Linked Prose editor must show the
+    //    FULL generated text, not a version missing its first characters.
+    vi.useFakeTimers();
+    try {
+      const markerStart = '<!--scene:1:start-->';
+      const markerEnd = '<!--scene:1:end-->';
+      const oldProse = 'Old scene prose here.';
+      const fullContent = `${markerStart}${oldProse}${markerEnd}`;
+      const proseStart = fullContent.indexOf(oldProse);
+      const proseEnd = fullContent.indexOf(markerEnd);
+      // Short enough to skip the progressive chunk loop (chunkSize = 48) so the
+      // full text is set directly; long enough that the marker-inclusive start
+      // offset (> 0) would drop leading characters if mis-applied.
+      const generated = 'Brand new prose replaces the old text';
+
+      let editorDoc = oldProse; // marker-free visible editor document
+      let chapterContent = fullContent; // store content (marker-inclusive before write)
+
+      const scene = makeScene({
+        id: '1',
+        prose_link: {
+          scope_type: 'chapter',
+          chapter_id: 'ch-1',
+          start_offset: proseStart,
+          end_offset: proseEnd,
+          content_hash: 'abc',
+          book_id: null,
+          is_stale: false,
+        } as SceneProseLink,
+      });
+      const scenes = [scene];
+
+      const getLinkedProseText = vi.fn((link: SceneProseLink): string | null =>
+        getLinkedProseFromTextSource(
+          editorDoc,
+          link,
+          {
+            id: 'ch-1',
+            scope: 'chapter',
+            title: 'Chapter 1',
+            summary: '',
+            content: chapterContent,
+          } as WritingUnit,
+          scenes
+        )
+      );
+
+      const onWriteScene = vi.fn(async (): Promise<string> => {
+        // Container: streamEditorReplace replaces the visible scene range.
+        editorDoc = generated;
+        // Container: updateCurrentChapterContent stores the marker-free doc.
+        chapterContent = editorDoc;
+        // Container: patchScene updates the scene with marker-inclusive offsets.
+        scene.prose_link = {
+          scope_type: 'chapter',
+          chapter_id: 'ch-1',
+          start_offset: proseStart,
+          end_offset: proseStart + generated.length,
+          content_hash: 'abc',
+          book_id: null,
+          is_stale: false,
+        };
+        return generated;
+      });
+
+      const { rerender } = wrap(
+        <SceneEditorDialog
+          scene={scene}
+          isOpen
+          onClose={NOOP_CLOSE}
+          onSave={NOOP_SAVE}
+          onDelete={NOOP_DELETE}
+          getLinkedProseText={getLinkedProseText}
+          onWriteScene={onWriteScene}
+        />
+      );
+      // patchScene re-renders the dialog with the new (marker-inclusive) link.
+      rerender(
+        <I18nextProvider i18n={i18n}>
+          <SceneEditorDialog
+            scene={scene}
+            isOpen
+            onClose={NOOP_CLOSE}
+            onSave={NOOP_SAVE}
+            onDelete={NOOP_DELETE}
+            getLinkedProseText={getLinkedProseText}
+            onWriteScene={onWriteScene}
+          />
+        </I18nextProvider>
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: /Write Scene/i }));
+
+      await act(async () => {
+        vi.advanceTimersByTime(5000);
+        await Promise.resolve();
+      });
+
+      // The in-flight sync polls getLinkedProseText while writing.  It must
+      // return the COMPLETE generated prose — this is what the Linked Prose
+      // editor shows while the write streams in.
+      expect(getLinkedProseText(scene.prose_link as SceneProseLink)).toBe(generated);
+
+      // Write Scene switches the dialog into diff view; the diff decorations
+      // mix the deleted baseline with the current text in the DOM, so toggle
+      // the diff off to read the plain current value the user sees.
+      fireEvent.click(screen.getByRole('button', { name: /Toggle diff view/i }));
+
+      // The dialog must show the complete generated prose — nothing dropped
+      // from the front of the text.
+      expect(readLinkedProseEditorText()).toBe(generated);
+    } finally {
+      vi.unstubAllGlobals();
+      vi.useRealTimers();
+    }
   });
 });
 

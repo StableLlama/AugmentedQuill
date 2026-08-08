@@ -1484,4 +1484,55 @@ describe('getLinkedProseFromTextSource', () => {
     // Expected: "There was no need" (without annotation marker)
     expect(result).toBe('There was no need');
   });
+
+  it('returns the complete prose when unit content is marker-free but offsets are marker-inclusive (post-write store sync)', () => {
+    // After Write Scene in a marker-bearing chapter, the container syncs the
+    // marker-free editor document back into the store
+    // (updateCurrentChapterContent), so unit.content is marker-free while the
+    // scene's prose_link offsets are still marker-inclusive (the backend always
+    // computes them against the full marker-bearing content).  The dialog's
+    // linked-prose polling (getLinkedProseText) reads through this function, so
+    // it must return the COMPLETE prose — previously it returned a slice
+    // missing the first characters.
+    const markerContent =
+      '<!--scene:20:start-->Hello World<!--scene:20:end-->' +
+      '<!--scene:13:start-->Other Scene Text<!--scene:13:end-->';
+    const strippedText = stripInlineInternalMarkers(markerContent);
+
+    const scenes = [
+      {
+        id: '20',
+        prose_link: makeLink({
+          scope_type: 'chapter',
+          chapter_id: 'ch-1',
+          start_offset: 21, // marker-inclusive: right after <!--scene:20:start-->
+          end_offset: 32, // marker-inclusive: right before <!--scene:20:end-->
+        }),
+      },
+      {
+        id: '13',
+        prose_link: makeLink({
+          scope_type: 'chapter',
+          chapter_id: 'ch-1',
+          start_offset: 72, // marker-inclusive: right after <!--scene:13:start-->
+          end_offset: 88, // marker-inclusive: right before <!--scene:13:end-->
+        }),
+      },
+    ] as Scene[];
+
+    // unit.content is marker-free (the post-write store state).
+    const unit = makeUnit({ content: strippedText });
+    const link = makeLink({
+      scope_type: 'chapter',
+      chapter_id: 'ch-1',
+      start_offset: 21,
+      end_offset: 32,
+    });
+
+    const result = getLinkedProseFromTextSource(strippedText, link, unit, scenes);
+    // The full "Hello World" must be returned, not a slice that drops the
+    // first characters because the marker-inclusive offsets were applied to a
+    // marker-free representation.
+    expect(result).toBe('Hello World');
+  });
 });
