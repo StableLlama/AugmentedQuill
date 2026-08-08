@@ -26,7 +26,7 @@ import {
 } from '@testing-library/react';
 import { I18nextProvider } from 'react-i18next';
 import type { EditorView } from '@codemirror/view';
-import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach, beforeAll } from 'vitest';
 import i18n from '../app/i18n';
 import { SceneEditorDialog } from './SceneEditorDialog';
 import { getLinkedProseFromTextSource } from './proseLinkCoordinates';
@@ -87,6 +87,7 @@ vi.mock('../layout/ThemeContext', () => ({
     muted: '',
     input: '',
   })),
+  useTheme: vi.fn(() => ({ currentTheme: 'dark' })),
 }));
 
 // ---------------------------------------------------------------------------
@@ -420,6 +421,77 @@ describe('SceneEditorDialog rendering', () => {
     // The diff button should be pressed
     const diffButton = screen.getByRole('button', { name: /Toggle diff view/i });
     expect(diffButton.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('renders a wholesale summary rewrite with Diff/Old/New tabs', () => {
+    // An LLM scene rewrite replaces the whole summary → the dialog shows a
+    // compact Diff/Old/New tab control instead of consuming lots of space.
+    baselineScenesState.push(
+      makeScene({
+        id: 'scene-block',
+        summary: 'The original scene summary that is completely different.',
+      })
+    );
+
+    wrap(
+      <SceneEditorDialog
+        scene={makeScene({
+          id: 'scene-block',
+          summary: 'A brand new scene summary written wholesale by the AI.',
+        })}
+        isOpen={true}
+        openedViaTrigger={true}
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+      />
+    );
+
+    // Diff/Old/New tabs are present for the changed summary.
+    expect(screen.getByRole('tablist', { name: /Diff view/i })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: /Old/i })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: /New/i })).toBeTruthy();
+
+    // The Diff tab is active by default (inline diff view).
+    const diffTab = screen.getByRole('tab', { name: /^Diff$/i });
+    expect(diffTab.getAttribute('aria-selected')).toBe('true');
+
+    // Switch to the Old tab → the previous summary is shown.
+    fireEvent.click(screen.getByRole('tab', { name: /Old/i }));
+    expect(screen.getByText(/original scene summary/i)).toBeTruthy();
+
+    // Switch to the New tab → the current summary is shown.
+    fireEvent.click(screen.getByRole('tab', { name: /New/i }));
+    expect(screen.getByText(/brand new scene summary/i)).toBeTruthy();
+  });
+
+  it('keeps the inline diff for a small summary edit', () => {
+    // A small word-level summary edit stays as the CodeMirror inline diff in
+    // the default Diff tab.
+    baselineScenesState.push(
+      makeScene({
+        id: 'scene-small',
+        summary: 'The quick brown fox',
+      })
+    );
+
+    wrap(
+      <SceneEditorDialog
+        scene={makeScene({
+          id: 'scene-small',
+          summary: 'The quick red fox',
+        })}
+        isOpen={true}
+        openedViaTrigger={true}
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+      />
+    );
+
+    expect(screen.getByRole('tablist', { name: /Diff view/i })).toBeTruthy();
+    const summaryEditor = document.querySelector('.cm-content');
+    expect(summaryEditor?.innerHTML).toContain('cm-diff-inserted');
   });
 
   it('does not show diff after user accepts all diffs and reopens dialog normally', () => {
@@ -2568,5 +2640,110 @@ describe('Spec: SceneEditorDialog diff rules', () => {
       const diffSection = document.body.querySelector('[data-diff="changed"]');
       expect(diffSection).toBeTruthy();
     });
+  });
+});
+
+// ─── Diff accept ends the diff view ─────────────────────────────────────────
+// Accepting a linked-prose diff must end the Diff/Old/New diff view so only
+// the new content remains.
+
+describe('SceneEditorDialog diff accept', () => {
+  let pointStore: Map<string, Element | null>;
+
+  beforeAll(() => {
+    if (!('elementFromPoint' in document)) {
+      Object.defineProperty(document, 'elementFromPoint', {
+        value: (x: number, y: number): Element | null => {
+          const key = `${Math.round(x)},${Math.round(y)}`;
+          return pointStore?.get(key) ?? null;
+        },
+        writable: true,
+        configurable: true,
+      });
+    }
+  });
+
+  beforeEach(() => {
+    pointStore = new Map();
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: Element
+    ): DOMRect {
+      return {
+        top: 200,
+        bottom: 240,
+        left: 100,
+        right: 500,
+        width: 400,
+        height: 40,
+        x: 100,
+        y: 200,
+        toJSON: (): object => ({}),
+      };
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const makeProseLink = (): SceneProseLink => ({
+    scope_type: 'story',
+    start_offset: 0,
+    end_offset: 5,
+    content_hash: 'abc',
+    chapter_id: null,
+    book_id: null,
+    is_stale: false,
+  });
+
+  it('ends the diff view when the user accepts the linked prose diff', async () => {
+    const proseLink = makeProseLink();
+    baselineScenesState.push(makeScene({ id: 'scene-accept', prose_link: proseLink }));
+
+    wrap(
+      <SceneEditorDialog
+        scene={makeScene({ id: 'scene-accept', prose_link: proseLink })}
+        isOpen
+        openedViaTrigger
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+        getLinkedProseText={() => 'New LLM prose'}
+      />
+    );
+
+    // Diff/Old/New tabs are visible for the changed linked prose.
+    await waitFor(() => {
+      expect(screen.getByRole('tablist', { name: /Diff view/i })).toBeTruthy();
+    });
+
+    // Hover the linked-prose section to reveal the floating accept toolbar.
+    const dialog = document.querySelector(
+      '[role="dialog"][aria-label="Edit Scene"]'
+    ) as HTMLElement;
+    const scroller = dialog.querySelector('.overflow-y-auto') as HTMLElement;
+    const section = Array.from(dialog.querySelectorAll('[data-diff="changed"]')).find(
+      (s: Element): boolean =>
+        s.querySelector('label')?.textContent?.includes('Linked Prose') ?? false
+    ) as HTMLElement;
+    expect(section).toBeTruthy();
+    const rect = section.getBoundingClientRect();
+    const cx = Math.round(rect.left + rect.width / 2);
+    const cy = Math.round(rect.top + rect.height / 2);
+    pointStore.set(`${cx},${cy}`, section);
+    fireEvent.mouseMove(scroller, { clientX: cx, clientY: cy });
+
+    const acceptBtn = await screen.findByLabelText('Accept change');
+    fireEvent.click(acceptBtn);
+
+    // The diff view ends: no tabs and no inline diff marks remain.
+    await waitFor(() => {
+      expect(screen.queryByRole('tablist', { name: /Diff view/i })).toBeNull();
+    });
+    const linkedProseEditor = screen.getByRole('textbox', {
+      name: /Linked Prose/i,
+    });
+    expect(linkedProseEditor.innerHTML).not.toContain('cm-diff-inserted');
+    expect(linkedProseEditor.innerHTML).not.toContain('cm-diff-deleted');
   });
 });

@@ -1967,6 +1967,7 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
           scene={editingScene}
           isOpen={true}
           viewMode={viewMode}
+          editorSettings={editorSettings}
           openedViaTrigger={dialogOpenedViaTrigger}
           defaultShowDiff={false}
           sceneChangeHint={sceneEditorDialog.mutationHint}

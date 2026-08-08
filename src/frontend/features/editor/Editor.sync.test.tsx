@@ -87,6 +87,20 @@ const defaultProps = {
   },
 };
 
+/**
+ * True when the editor shows any diff mark.  Whole-field rewrites render as
+ * block mode (cm-diff-block-*), smaller edits render inline
+ * (cm-diff-inserted / cm-diff-deleted); both count as a visible diff.
+ */
+const hasDiffMark = (root: ParentNode): boolean => {
+  const html = root.querySelector('.cm-content')?.innerHTML ?? '';
+  return (
+    html.includes('cm-diff-inserted') ||
+    html.includes('cm-diff-deleted') ||
+    html.includes('cm-diff-block')
+  );
+};
+
 describe('Editor diff highlighting', () => {
   it('shows diff decoration when AI inserts text (baseline differs from content)', async () => {
     const aiChapter = { ...mockChapter, content: 'Original content with AI paragraph' };
@@ -188,8 +202,7 @@ describe('Editor diff highlighting', () => {
     );
 
     // Verify diff IS visible initially (baseline ≠ content)
-    const cmContent = document.querySelector('.cm-content');
-    expect(cmContent?.innerHTML).toContain('diff-inserted');
+    expect(hasDiffMark(document)).toBe(true);
 
     // Simulate the parent clearing the baseline once the user's edit is
     // acknowledged (i.e., baselineContent advances to match the new content).
@@ -362,8 +375,7 @@ describe('Spec: undo/redo shows diff', () => {
 
     await act(async () => {});
 
-    const cmContent = container.querySelector('.cm-content');
-    expect(cmContent?.innerHTML).toContain('diff-inserted');
+    expect(hasDiffMark(container)).toBe(true);
   });
 
   it('shows NO diff after undo when there is no saved baseline', async () => {
@@ -399,9 +411,7 @@ describe('Spec: normal chapter switch shows no diff', () => {
     await act(async () => {});
 
     // First chapter has diff
-    expect(container.querySelector('.cm-content')?.innerHTML).toContain(
-      'diff-inserted'
-    );
+    expect(hasDiffMark(container)).toBe(true);
 
     // Switch to new chapter with undefined baseline
     await act(async () => {
@@ -439,9 +449,7 @@ describe('Spec: user typing does not show diff', () => {
     await act(async () => {});
 
     // Diff IS visible initially
-    expect(container.querySelector('.cm-content')?.innerHTML).toContain(
-      'diff-inserted'
-    );
+    expect(hasDiffMark(container)).toBe(true);
 
     // Simulate user typing: parent sets baseline to undefined
     await act(async () => {
@@ -484,8 +492,7 @@ describe('Spec: FloatingDiffToolbar for prose editor', () => {
     await act(async () => {});
 
     // Diff IS visible (correct)
-    const cmContent = container.querySelector('.cm-content');
-    expect(cmContent?.innerHTML).toContain('diff-inserted');
+    expect(hasDiffMark(container)).toBe(true);
 
     // But there is NO FloatingDiffToolbar in the DOM
     // (it would render a role="toolbar" element via portal)

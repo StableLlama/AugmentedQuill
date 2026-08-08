@@ -12,20 +12,18 @@
  * programmatic value syncs from user edits.
  */
 
-import {
-  Decoration,
-  DecorationSet,
-  EditorView,
-  ViewPlugin,
-  ViewUpdate,
-  WidgetType,
-} from '@codemirror/view';
-import { Annotation } from '@codemirror/state';
-import type { Extension } from '@codemirror/state';
+import { Decoration, DecorationSet, EditorView, WidgetType } from '@codemirror/view';
+import { Annotation, StateField } from '@codemirror/state';
+import type { Extension, Text, Transaction } from '@codemirror/state';
 import type { Range } from '@codemirror/state';
 import { diff_match_patch } from 'diff-match-patch';
 import { createWhitespaceMarkerElement } from './codeMirrorWhitespacePlugin';
 import { stripInlineInternalMarkers } from './internalTags';
+import {
+  buildDiffSegments,
+  shouldUseFieldBlock,
+  type DiffSegment,
+} from './diffBlockMode';
 
 // Marks transactions that mirror external prop updates so the updateListener
 // can skip emitting onChange for programmatic document replacements.
@@ -203,89 +201,59 @@ function addDeletedDecorations(
 }
 
 /**
- * Maximum gap (equal-text chars) between changed segments that are still
- * considered part of the same rewrite zone.  Gaps larger than this break
- * the zone and are rendered as normal unchanged text.
+ * Represents a large paragraph-level replacement.  The removed old text is
+ * rendered as a full-width block (red, struck-through) so the reader can
+ * immediately see that whole paragraphs changed, instead of a wall of
+ * inline strikethrough glyphs.
  */
-const ZONE_GAP_THRESHOLD = 20;
-
-/**
- * Minimum total changed characters (inserted + deleted) required for a
- * zone to be rendered as a block replacement instead of word-level inline.
- */
-const ZONE_MIN_CHANGED = 80;
-
-/**
- * Merge adjacent diff segments that belong to the same local rewrite
- * zone into consolidated delete/insert pairs.  A zone is a run of
- * changed segments separated only by tiny equal gaps (≤ gapThreshold).
- * Zones with total changed text ≥ minZoneChars are rendered as block
- * replacements (deleted-old + inserted-new); everything else stays as
- * word-level inline diff.
- *
- * This is a LOCAL decision — a single-scene rewrite inside a long
- * chapter produces one block-mode zone while the rest of the chapter
- * renders as normal inline diff.
- */
-function mergeDiffZones(
-  diffs: import('diff-match-patch').Diff[],
-  gapThreshold: number,
-  minZoneChars: number
-): import('diff-match-patch').Diff[] {
-  const merged: import('diff-match-patch').Diff[] = [];
-  let i = 0;
-
-  while (i < diffs.length) {
-    const [op, text] = diffs[i];
-
-    // Unchanged text — pass through unchanged.
-    if (op === 0) {
-      merged.push([op, text]);
-      i++;
-      continue;
-    }
-
-    // Start of a changed run — scan ahead to find the zone boundary.
-    let zoneDeleted = '';
-    let zoneInserted = '';
-    if (op === -1) zoneDeleted += text;
-    else zoneInserted += text;
-    let j = i + 1;
-
-    while (j < diffs.length) {
-      const [nextOp, nextText] = diffs[j];
-
-      if (nextOp === 0 && nextText.length <= gapThreshold) {
-        // Tiny equal gap — absorb into the zone (will be rendered as
-        // part of the deleted+inserted block).
-        zoneDeleted += nextText;
-        zoneInserted += nextText;
-        j++;
-      } else if (nextOp === -1 || nextOp === 1) {
-        // Adjacent changed segment — extend the zone.
-        if (nextOp === -1) zoneDeleted += nextText;
-        else zoneInserted += nextText;
-        j++;
-      } else {
-        // Large equal gap — end of zone.
-        break;
-      }
-    }
-
-    const totalChanged = zoneDeleted.length + zoneInserted.length;
-    if (totalChanged >= minZoneChars) {
-      // Large enough for block mode — emit as a single delete/insert pair.
-      if (zoneDeleted.length > 0) merged.push([-1, zoneDeleted]);
-      if (zoneInserted.length > 0) merged.push([1, zoneInserted]);
-    } else {
-      // Too small — keep the original segments for word-level inline diff.
-      for (let k = i; k < j; k++) merged.push(diffs[k]);
-    }
-
-    i = j;
+class DeletedBlockWidget extends WidgetType {
+  constructor(readonly text: string) {
+    super();
   }
+  /** Convert dom. */
+  toDOM(): HTMLDivElement {
+    const wrap = document.createElement('div');
+    wrap.className = 'cm-diff-block cm-diff-block-old';
+    wrap.textContent = this.text;
+    return wrap;
+  }
+  /** Number of line breaks inside the block, for height estimation. */
+  get lineBreaks(): number {
+    let count = 0;
+    for (let i = 0; i < this.text.length; i++) {
+      if (this.text.charCodeAt(i) === 10) count++;
+    }
+    return count;
+  }
+}
 
-  return merged;
+/** Marks the inserted (new) text of a block segment. */
+const diffBlockMark = Decoration.mark({ class: 'cm-diff-block-inserted' });
+
+/** Full-width block background for lines fully covered by a block insertion. */
+const diffBlockLine = Decoration.line({ class: 'cm-diff-block-inserted-line' });
+
+/**
+ * Add a full-width block background to every line that lies entirely inside
+ * the range [from, to).  Partial lines only get the inline mark; whole lines
+ * read as one continuous green block.
+ */
+function addFullLineBlockDecorations(
+  decs: Range<Decoration>[],
+  doc: Text,
+  from: number,
+  to: number
+): void {
+  if (to <= from) return;
+  const startLine = doc.lineAt(from);
+  const endLine = doc.lineAt(to - 1);
+  for (let n = startLine.number; n <= endLine.number; n++) {
+    const line = doc.line(n);
+    if (line.from >= from && line.to <= to) {
+      // Line decorations must be zero-length, placed at the line start.
+      decs.push(diffBlockLine.range(line.from));
+    }
+  }
 }
 
 /**
@@ -395,132 +363,172 @@ export const buildDiffPlugin = (
     return { baselineFrom, baselineTo, prefix, suffix };
   }
 
-  return ViewPlugin.fromClass(
-    class {
-      decorations: DecorationSet;
-      constructor(view: EditorView) {
-        this.decorations = this.build(view);
-      }
-      /** Update the requested value. */
-      update(u: ViewUpdate): void {
-        if (!u.docChanged) return;
+  /** Build the decorations for the given document. */
+  function build(doc: Text): DecorationSet {
+    const currentText = doc.toString();
+    // The editor document is always stripped of internal markers
+    // (hideSceneMarkers=true).  Strip the baseline too so that
+    // marker-only differences (e.g. after creating an annotation)
+    // don't produce a spurious diff.
+    const strippedBaseline = stripInlineInternalMarkers(baselineRef.current);
+    if (strippedBaseline === currentText) return Decoration.none;
 
-        // External value syncs (undo/redo, AI insertion, chapter switch)
-        // are single atomic replacements — keep the baseline unchanged so
-        // the diff highlights what the automatic process changed.
-        const isExternalSync = u.transactions.some(
-          (tr: import('@codemirror/state').Transaction) =>
-            tr.annotation(externalValueSyncAnnotation)
+    if (streamingMode) {
+      // During streaming we use a common-prefix strategy instead of LCS:
+      //   – Find the longest shared prefix between baseline and the partial
+      //     streamed text (handles both rewrite and extend correctly).
+      //   – Show baseline[prefix:] as a deleted widget at the prefix position.
+      //   – Mark currentText[prefix:] as inserted (green).
+      // This avoids flickering caused by diff_match_patch finding accidental
+      // common subsequences inside a partially-written rewrite, which made
+      // earlier chunks look "equal" and only the latest chunk look new.
+      const prefixLen = commonPrefixLength(strippedBaseline, currentText);
+      const deletedSuffix = strippedBaseline.slice(prefixLen);
+      const insertedEnd = currentText.length;
+      const decs: Range<Decoration>[] = [];
+      if (deletedSuffix.length > 0) {
+        addDeletedDecorations(decs, prefixLen, deletedSuffix, showWhitespace);
+      }
+      if (insertedEnd > prefixLen) {
+        decs.push(streamingDiffMark.range(prefixLen, insertedEnd));
+      }
+      return decs.length > 0 ? Decoration.set(decs, true) : Decoration.none;
+    }
+
+    // Collapse adjacent changed segments into zones.  Large paragraph-level
+    // rewrites become `block` segments (rendered as stacked old/new blocks);
+    // smaller changes stay as word-level inline segments.  When whitespace
+    // visibility is on, block mode is disabled so the precise inline
+    // whitespace markers stay visible.
+    const segments = buildDiffSegments(strippedBaseline, currentText, {
+      blockMode: !showWhitespace,
+    });
+
+    // Whole-field block mode: when a short field (e.g. a scene summary) is
+    // rewritten wholesale, render the entire old content as a red block and
+    // the entire new content as green blocks.  This is what makes a single-
+    // line summary rewrite read as clear stacked blocks instead of a wall of
+    // inline marks.
+    const maxLen = Math.max(strippedBaseline.length, currentText.length);
+    if (!showWhitespace && shouldUseFieldBlock(segments, maxLen)) {
+      const fieldDecs: Range<Decoration>[] = [];
+      if (strippedBaseline.length > 0) {
+        fieldDecs.push(
+          Decoration.widget({
+            widget: new DeletedBlockWidget(strippedBaseline),
+            block: true,
+            side: -1,
+          }).range(0)
         );
-
-        if (isExternalSync) {
-          this.decorations = this.build(u.view);
-          return;
-        }
-
-        // User edit: patch the baseline with the same change so the
-        // user's own typing does NOT produce diff decorations.
-        // We compute the diff between baseline and the *old* document to
-        // build a position map, then apply the user's edit at the
-        // corresponding baseline positions.
-        const oldDoc = u.startState.doc.toString();
-        const strippedBaseline = stripInlineInternalMarkers(baselineRef.current);
-        const oldDiff = dmp.diff_main(strippedBaseline, oldDoc);
-        dmp.diff_cleanupSemantic(oldDiff);
-
-        let patchedBaseline = baselineRef.current;
-        u.changes.iterChanges(
-          (
-            fromA: number,
-            toA: number,
-            _fromB: number,
-            _toB: number,
-            inserted: import('@codemirror/state').Text
-          ): void => {
-            const { baselineFrom, baselineTo, prefix, suffix } = mapDocRangeToBaseline(
-              fromA,
-              toA,
-              oldDiff
-            );
-            patchedBaseline =
-              patchedBaseline.slice(0, baselineFrom) +
-              prefix +
-              inserted.toString() +
-              suffix +
-              patchedBaseline.slice(baselineTo);
-          }
-        );
-        baselineRef.current = patchedBaseline;
-
-        // Rebuild immediately so the user sees clean text for their own
-        // edits while AI diffs in untouched regions stay visible.
-        this.decorations = this.build(u.view);
       }
-      /** Helper for the requested value. */
-      destroy(): void {
-        // no-op — pending timer removed
+      if (currentText.length > 0) {
+        addFullLineBlockDecorations(fieldDecs, doc, 0, currentText.length);
+        fieldDecs.push(diffBlockMark.range(0, currentText.length));
       }
-      /** Build the requested value. */
-      build(view: EditorView): DecorationSet {
-        const currentText = view.state.doc.toString();
-        // The editor document is always stripped of internal markers
-        // (hideSceneMarkers=true).  Strip the baseline too so that
-        // marker-only differences (e.g. after creating an annotation)
-        // don't produce a spurious diff.
-        const strippedBaseline = stripInlineInternalMarkers(baselineRef.current);
-        if (strippedBaseline === currentText) return Decoration.none;
+      return Decoration.set(fieldDecs, true);
+    }
 
-        if (streamingMode) {
-          // During streaming we use a common-prefix strategy instead of LCS:
-          //   – Find the longest shared prefix between baseline and the partial
-          //     streamed text (handles both rewrite and extend correctly).
-          //   – Show baseline[prefix:] as a deleted widget at the prefix position.
-          //   – Mark currentText[prefix:] as inserted (green).
-          // This avoids flickering caused by diff_match_patch finding accidental
-          // common subsequences inside a partially-written rewrite, which made
-          // earlier chunks look "equal" and only the latest chunk look new.
-          const prefixLen = commonPrefixLength(strippedBaseline, currentText);
-          const deletedSuffix = strippedBaseline.slice(prefixLen);
-          const insertedEnd = currentText.length;
-          const decs: Range<Decoration>[] = [];
-          if (deletedSuffix.length > 0) {
-            addDeletedDecorations(decs, prefixLen, deletedSuffix, showWhitespace);
-          }
-          if (insertedEnd > prefixLen) {
-            decs.push(streamingDiffMark.range(prefixLen, insertedEnd));
-          }
-          return decs.length > 0 ? Decoration.set(decs, true) : Decoration.none;
+    const decs: Range<Decoration>[] = [];
+    let pos = 0;
+
+    for (const seg of segments) {
+      if (seg.kind === 'equal') {
+        // UNCHANGED
+        pos += seg.text.length;
+      } else if (seg.kind === 'insert') {
+        // INSERTED — decorate the added range in the current document.
+        decs.push(diffMark.range(pos, pos + seg.text.length));
+        pos += seg.text.length;
+      } else if (seg.kind === 'delete') {
+        // DELETED — exists in baseline only, inject as a widget.
+        addDeletedDecorations(decs, pos, seg.text, showWhitespace);
+      } else {
+        // BLOCK — a large paragraph-level replacement.  Show the removed
+        // text as a block widget and the new text as a block mark.  The
+        // widget must sit at a line start in the current document; when the
+        // position lands mid-line we fall back to inline rendering.
+        const segBlock: Extract<DiffSegment, { kind: 'block' }> = seg;
+        const atLineStart = doc.lineAt(pos).from === pos;
+        if (atLineStart && segBlock.deleted.length > 0) {
+          decs.push(
+            Decoration.widget({
+              widget: new DeletedBlockWidget(segBlock.deleted),
+              block: true,
+              side: -1,
+            }).range(pos)
+          );
+        } else if (segBlock.deleted.length > 0) {
+          addDeletedDecorations(decs, pos, segBlock.deleted, showWhitespace);
         }
-
-        const rawDiffs = dmp.diff_main(strippedBaseline, currentText);
-        dmp.diff_cleanupSemantic(rawDiffs);
-
-        // Merge adjacent changed segments into block-mode zones when the
-        // change is locally substantial.  This is a local decision — a
-        // single-scene rewrite inside a long chapter produces one block
-        // zone while the rest of the chapter stays inline.
-        const diffs = mergeDiffZones(rawDiffs, ZONE_GAP_THRESHOLD, ZONE_MIN_CHANGED);
-
-        const decs: Range<Decoration>[] = [];
-        let pos = 0;
-
-        for (const [op, text] of diffs) {
-          if (op === 0) {
-            // UNCHANGED
-            pos += text.length;
-          } else if (op === 1) {
-            // INSERTED — decorate the added range in the current document.
-            decs.push(diffMark.range(pos, pos + text.length));
-            pos += text.length;
-          } else if (op === -1) {
-            // DELETED — exists in baseline only, inject as a widget in the current doc.
-            addDeletedDecorations(decs, pos, text, showWhitespace);
+        if (segBlock.inserted.length > 0) {
+          const insertedFrom = pos;
+          const insertedTo = pos + segBlock.inserted.length;
+          if (atLineStart) {
+            decs.push(diffBlockMark.range(insertedFrom, insertedTo));
+            addFullLineBlockDecorations(decs, doc, insertedFrom, insertedTo);
+          } else {
+            decs.push(diffMark.range(insertedFrom, insertedTo));
           }
+          pos = insertedTo;
         }
-
-        return Decoration.set(decs, true);
       }
+    }
+
+    return Decoration.set(decs, true);
+  }
+
+  return StateField.define<DecorationSet>({
+    create(state: import('@codemirror/state').EditorState): DecorationSet {
+      return build(state.doc);
     },
-    { decorations: (v: { decorations: DecorationSet }): DecorationSet => v.decorations }
-  );
+    update(deco: DecorationSet, tr: Transaction): DecorationSet {
+      if (!tr.docChanged) return deco;
+
+      // External value syncs (undo/redo, AI insertion, chapter switch)
+      // are single atomic replacements — keep the baseline unchanged so
+      // the diff highlights what the automatic process changed.
+      if (tr.annotation(externalValueSyncAnnotation)) {
+        return build(tr.state.doc);
+      }
+
+      // User edit: patch the baseline with the same change so the
+      // user's own typing does NOT produce diff decorations.
+      // We compute the diff between baseline and the *old* document to
+      // build a position map, then apply the user's edit at the
+      // corresponding baseline positions.
+      const oldDoc = tr.startState.doc.toString();
+      const strippedBaseline = stripInlineInternalMarkers(baselineRef.current);
+      const oldDiff = dmp.diff_main(strippedBaseline, oldDoc);
+      dmp.diff_cleanupSemantic(oldDiff);
+
+      let patchedBaseline = baselineRef.current;
+      tr.changes.iterChanges(
+        (
+          fromA: number,
+          toA: number,
+          _fromB: number,
+          _toB: number,
+          inserted: Text
+        ): void => {
+          const { baselineFrom, baselineTo, prefix, suffix } = mapDocRangeToBaseline(
+            fromA,
+            toA,
+            oldDiff
+          );
+          patchedBaseline =
+            patchedBaseline.slice(0, baselineFrom) +
+            prefix +
+            inserted.toString() +
+            suffix +
+            patchedBaseline.slice(baselineTo);
+        }
+      );
+      baselineRef.current = patchedBaseline;
+
+      // Rebuild immediately so the user sees clean text for their own
+      // edits while AI diffs in untouched regions stay visible.
+      return build(tr.state.doc);
+    },
+    provide: (f: StateField<DecorationSet>) => EditorView.decorations.from(f),
+  });
 };

@@ -561,6 +561,119 @@ describe('CodeMirrorEditor Diff Highlighting', () => {
   });
 });
 
+// ─── Paragraph-level "block mode" diff ─────────────────────────────────────
+// Large changes (whole paragraphs) should render as clearly separated blocks
+// (red old / green new) instead of a wall of inline strikethrough + green
+// marks.  Small word-level changes must stay inline.
+
+describe('CodeMirrorEditor – paragraph-level block diff', () => {
+  const LONG_BASELINE = 'Para one sentence here.\nPara two sentence here.\n';
+  const LONG_CURRENT =
+    'Completely different paragraph.\nAnother brand new paragraph.\n';
+
+  it('renders large multi-line replacements as stacked old/new blocks', async () => {
+    const { container } = render(
+      <CodeMirrorEditor
+        value={LONG_CURRENT}
+        baselineValue={LONG_BASELINE}
+        showDiff={true}
+        onChange={vi.fn()}
+      />
+    );
+    await act(async () => {});
+
+    const oldBlock = container.querySelector('.cm-diff-block.cm-diff-block-old');
+    expect(oldBlock).toBeTruthy();
+    expect(oldBlock?.textContent).toContain('Para one sentence');
+    expect(oldBlock?.textContent).toContain('Para two sentence');
+
+    const inserted = container.querySelector('.cm-diff-block-inserted');
+    expect(inserted).toBeTruthy();
+    expect(inserted?.textContent).toContain('Completely different paragraph');
+
+    // Fully-covered lines get a full-width green block background.
+    expect(
+      container.querySelectorAll('.cm-diff-block-inserted-line').length
+    ).toBeGreaterThan(0);
+  });
+
+  it('renders a whole single-line summary rewrite as stacked blocks', async () => {
+    // A classic LLM scene-summary rewrite: one line, wholesale replacement.
+    const oldSummary = 'A group of adventurers discovers a hidden temple.';
+    const newSummary = 'A band of explorers stumbles upon an ancient city.';
+
+    const { container } = render(
+      <CodeMirrorEditor
+        value={newSummary}
+        baselineValue={oldSummary}
+        showDiff={true}
+        onChange={vi.fn()}
+      />
+    );
+    await act(async () => {});
+
+    const oldBlock = container.querySelector('.cm-diff-block.cm-diff-block-old');
+    expect(oldBlock).toBeTruthy();
+    expect(oldBlock?.textContent).toContain('adventurers');
+
+    // The new content gets a full-width green block background.
+    expect(container.querySelector('.cm-diff-block-inserted-line')).toBeTruthy();
+    expect(container.querySelector('.cm-diff-block-inserted')).toBeTruthy();
+  });
+
+  it('keeps small word-level changes inline (no block classes)', async () => {
+    const { container } = render(
+      <CodeMirrorEditor
+        value="The quick red fox"
+        baselineValue="The quick brown fox"
+        showDiff={true}
+        onChange={vi.fn()}
+      />
+    );
+    await act(async () => {});
+
+    expect(container.querySelector('.cm-diff-block')).toBeNull();
+    expect(container.querySelector('.cm-diff-inserted')).toBeTruthy();
+  });
+
+  it('keeps precise inline whitespace rendering when whitespace is visible', async () => {
+    const { container } = render(
+      <CodeMirrorEditor
+        value={LONG_CURRENT}
+        baselineValue={LONG_BASELINE}
+        showWhitespace={true}
+        showDiff={true}
+        onChange={vi.fn()}
+      />
+    );
+    await act(async () => {});
+
+    expect(container.querySelector('.cm-diff-block')).toBeNull();
+    expect(container.querySelector('.cm-diff-deleted')).toBeTruthy();
+  });
+
+  it('keeps inline rendering for a mid-line change in a long field', async () => {
+    // A long field is too long for whole-field blocks, and a zone that starts
+    // mid-line falls back to inline rendering (no block widget).
+    const filler = 'A repeated filler sentence providing long context. ';
+    const baseline = filler.repeat(11) + 'Alpha line one\nAlpha line two';
+    const current = filler.repeat(11) + 'Beta line one\nBeta line two';
+
+    const { container } = render(
+      <CodeMirrorEditor
+        value={current}
+        baselineValue={baseline}
+        showDiff={true}
+        onChange={vi.fn()}
+      />
+    );
+    await act(async () => {});
+
+    expect(container.querySelector('.cm-diff-block')).toBeNull();
+    expect(container.querySelector('.cm-diff-inserted')).toBeTruthy();
+  });
+});
+
 // ─── User-edit diff suppression ─────────────────────────────────────────────
 // When the user manually types, their own edits must NOT produce diff
 // decorations.  Only automatic (external-sync) changes should show diffs.

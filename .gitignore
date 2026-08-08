@@ -226,3 +226,5 @@ tools.json
 # Generated per-run mapping of docs screenshot markers to files
 docs/user_manual/screenshots/.screenshot-manifest.json
 
+# Chrome used for testing / MCP
+.chrome_profile

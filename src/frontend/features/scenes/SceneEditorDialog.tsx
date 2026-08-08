@@ -23,11 +23,18 @@ import type {
   SourcebookEntry,
   SceneId,
   StoryState,
+  EditorSettings,
 } from '../../types';
 import type { Chapter, Book } from '../../types/domain';
-import { useThemeClasses } from '../layout/ThemeContext';
+import { useTheme, useThemeClasses } from '../layout/ThemeContext';
 import { useFocusTrap } from '../layout/useFocusTrap';
-import { CodeMirrorEditor } from '../editor/CodeMirrorEditor';
+import {
+  CodeMirrorEditor,
+  type EditorHighlightColors,
+} from '../editor/CodeMirrorEditor';
+import { getEditorHighlightColors } from '../editor/highlightColors';
+import { getPaperColors } from '../editor/paperColors';
+import { DiffViewTabs, type DiffViewTab } from './DiffViewTabs';
 import type { EditorView } from '@codemirror/view';
 import {
   useScenes,
@@ -351,6 +358,9 @@ interface SceneEditorDialogProps {
   linkedProseEditorRef?: React.Ref<EditorView | null>;
   onNavigateScene?: (sceneId: SceneId) => void;
   viewMode?: 'pinboard' | 'narrative' | 'chronological' | 'convergence-map';
+  /** Editor appearance settings (theme / brightness / contrast) used to render
+   * the dialog's paper-like content fields exactly like the main paper. */
+  editorSettings?: EditorSettings;
 }
 
 const normalizeToken = (value: string): string => value.trim().toLowerCase();
@@ -397,9 +407,41 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
   linkedProseEditorRef,
   onNavigateScene,
   viewMode = 'narrative',
+  editorSettings,
 }: SceneEditorDialogProps) => {
   const { t, i18n } = useTranslation();
-  const tc = useThemeClasses();
+  const tcBase = useThemeClasses();
+  const { currentTheme } = useTheme();
+  // Softer typography for the dark/mixed chrome: body text uses the gentle
+  // gray-300 (not the harsher gray-100) like every other dialog in the app.
+  const tc = useMemo(
+    () => ({
+      ...tcBase,
+      text: tcBase.isLight ? 'text-brand-gray-900' : 'text-brand-gray-300',
+    }),
+    [tcBase]
+  );
+  // The dialog's content fields follow the app's "paper" scheme exactly like
+  // the main editor, driven by the same theme / brightness / contrast
+  // settings, so the "paper" inputs behave identically to the writing paper.
+  // The chrome (header, labels, borders) stays on the standard dialog surface.
+  const paperTheme = editorSettings?.theme ?? currentTheme;
+  const paperBrightness = editorSettings?.brightness ?? 0.85;
+  const paperContrast = editorSettings?.contrast ?? 0.85;
+  const contentSurface = useMemo<React.CSSProperties>(() => {
+    const paper = getPaperColors(paperTheme, paperBrightness, paperContrast);
+    return { backgroundColor: paper.backgroundColor, color: paper.textColor };
+  }, [paperTheme, paperBrightness, paperContrast]);
+  // Diff highlight tokens are tuned for the paper the content actually sits on
+  // (cream vs dark), identical to how the main editor picks its tokens.
+  const highlightColors = useMemo(
+    (): EditorHighlightColors => getEditorHighlightColors(paperTheme === 'dark'),
+    [paperTheme]
+  );
+  // Diff/Old/New tabs per content field (reset when the dialog opens for a
+  // different scene).
+  const [summaryTab, setSummaryTab] = useState<DiffViewTab>('diff');
+  const [linkedProseTab, setLinkedProseTab] = useState<DiffViewTab>('diff');
   const storyLanguage = useStoryLanguage();
   const allScenes = useScenes();
   const { projectType } = useStoryMeta();
@@ -459,6 +501,7 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
     timeline_id: string;
     color_tag: string | null;
     status: string;
+    linkedProse: string;
   }>;
   const [acceptedBaseline, setAcceptedBaseline] = useState<AcceptedBaseline>({});
   // Reset accepted baseline when the dialog opens for a different scene.
@@ -910,6 +953,8 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
     setHoveredEntry(null);
     setShowDiff(Boolean(openedViaTrigger || defaultShowDiff));
     setAcceptedBaseline({});
+    setSummaryTab('diff');
+    setLinkedProseTab('diff');
 
     initialSnapshotRef.current = {
       summary: scene.summary,
@@ -1201,6 +1246,7 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
     ((baselineScene ? status !== baselineStatus : false) || hasFieldHint('status'));
   const linkedProseChanged =
     showDiff &&
+    !('linkedProse' in acceptedBaseline) &&
     (localProseText !== (linkedProseBaseline ?? localProseText) ||
       JSON.stringify(proseLink ?? null) !== JSON.stringify(baselineProseLink ?? null) ||
       hasFieldHint('prose_link'));
@@ -1254,19 +1300,19 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
 
   const diffSectionCls = (changed: boolean): string =>
     changed
-      ? `rounded-md ring-2 ring-brand-500/30 ${tc.isLight ? 'bg-brand-50' : 'bg-brand-gray-800'}`
+      ? `rounded-md ring-1 ring-brand-500/25 ${tc.isLight ? 'bg-brand-50' : 'bg-brand-gray-800/50'}`
       : '';
   const diffItemCls = (changed: boolean): string =>
     changed
-      ? `rounded-md ${tc.isLight ? 'bg-brand-50 p-2' : 'bg-brand-gray-800/60 p-2'}`
+      ? `rounded-md ${tc.isLight ? 'bg-brand-50 p-2' : 'bg-brand-gray-800/40 p-2'}`
       : '';
   const diffAddedItemCls = (changed: boolean): string =>
     changed
-      ? `rounded-md p-2 ring-1 ring-green-500/30 ${tc.isLight ? 'bg-green-50' : 'bg-green-900/20'}`
+      ? `rounded-md p-2 ring-1 ring-green-500/25 ${tc.isLight ? 'bg-green-50' : 'bg-green-900/20'}`
       : '';
   const diffRemovedItemCls = (changed: boolean): string =>
     changed
-      ? `rounded-md p-2 ring-1 ring-red-500/30 ${tc.isLight ? 'bg-red-50' : 'bg-red-900/20'}`
+      ? `rounded-md p-2 ring-1 ring-red-500/25 ${tc.isLight ? 'bg-red-50' : 'bg-red-900/20'}`
       : '';
   const diffTagCls = (changed: boolean): string =>
     changed
@@ -1274,6 +1320,11 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
       : '';
 
   const inputCls = `w-full px-3 py-2 rounded-md border ${tc.border} ${tc.input} ${tc.text} text-sm focus:outline-none focus:ring-2 focus:ring-brand-500`;
+  // Content fields (summary, beats, linked prose) sit on the app's "paper"
+  // surface — background and text colour come from the paper style, so no
+  // chrome input/text classes are applied here.
+  const contentEditorCls =
+    'w-full px-3 py-2 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand-500';
   const labelCls = `block text-xs font-semibold uppercase tracking-wide ${tc.muted} mb-1`;
   const sectionCls = `space-y-2 pb-4 border-b ${tc.border}`;
 
@@ -1588,6 +1639,14 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
   const onProseTextChange = (value: string): void => {
     setLocalProseText(value);
     setProseDirty(true);
+    // Clear diff on user edit: typing in the prose is an implicit acceptance
+    // of the automatic change, mirroring the summary field.
+    if (showDiff && linkedProseChanged) {
+      setAcceptedBaseline((prev: AcceptedBaseline) => ({
+        ...prev,
+        linkedProse: value,
+      }));
+    }
   };
 
   // ─── Diff accept / reject (unified — dispatched by element) ────────────
@@ -1595,6 +1654,16 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
   /** Determine which diff section an element belongs to and accept it. */
   const handleDiffAccept = (el: HTMLElement): void => {
     const section = el.closest('[data-diff="changed"]');
+    const label = section?.querySelector('label')?.textContent ?? '';
+    if (label.includes('Linked Prose')) {
+      // Accepting the linked prose accepts the current prose state, so the
+      // diff view ends and only the new content remains.
+      setAcceptedBaseline((prev: AcceptedBaseline) => ({
+        ...prev,
+        linkedProse: localProseText,
+      }));
+      return;
+    }
     if (!section) {
       // Hovering over an inline CodeMirror diff — accept all for the summary.
       setAcceptedBaseline((prev: AcceptedBaseline) => ({ ...prev, summary }));
@@ -1619,6 +1688,18 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
   /** Determine which diff section an element belongs to and reject it. */
   const handleDiffReject = (el: HTMLElement): void => {
     const section = el.closest('[data-diff="changed"]');
+    const label = section?.querySelector('label')?.textContent ?? '';
+    if (label.includes('Linked Prose')) {
+      // Reject: revert the prose to the baseline and clear the acceptance.
+      const fallback = linkedProseBaseline ?? '';
+      setLocalProseText(fallback);
+      setAcceptedBaseline((prev: AcceptedBaseline) => {
+        const next = { ...prev };
+        delete next.linkedProse;
+        return next;
+      });
+      return;
+    }
     if (!section) {
       // Inline CodeMirror diff — revert summary to baseline.
       const fallback = baselineScene?.summary ?? '';
@@ -1661,6 +1742,7 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
       timeline_id: timelineId,
       color_tag: colorTag,
       status,
+      linkedProse: localProseText,
     });
   };
 
@@ -1784,34 +1866,54 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
           >
             <div className="flex items-center justify-between">
               <label className={labelCls}>{t('Scene Summary')}</label>
+              {showDiff && summaryChanged && (
+                <DiffViewTabs tab={summaryTab} onChange={setSummaryTab} />
+              )}
             </div>
-            <div
-              className={`rounded-md border ${tc.border} ${tc.input} overflow-hidden`}
-            >
-              <CodeMirrorEditor
-                ref={summaryEditorRef}
-                value={summary}
-                onChange={(value: string): void => {
-                  setSummary(value);
-                  // Clear diff on user edit: typing in the summary is an
-                  // implicit acceptance of the automatic change.
-                  if (showDiff && summaryChanged) {
-                    setAcceptedBaseline((prev: AcceptedBaseline) => ({
-                      ...prev,
-                      summary: value,
-                    }));
+            {summaryTab === 'old' ? (
+              <div
+                className={`rounded-md border ${tc.border} px-3 py-2 text-sm whitespace-pre-wrap overflow-hidden`}
+                style={contentSurface}
+              >
+                {summaryBaseline || (
+                  <span className="italic opacity-60">{t('No previous content')}</span>
+                )}
+              </div>
+            ) : (
+              <div
+                className={`rounded-md border ${tc.border} overflow-hidden`}
+                style={contentSurface}
+              >
+                <CodeMirrorEditor
+                  ref={summaryEditorRef}
+                  value={summary}
+                  onChange={(value: string): void => {
+                    setSummary(value);
+                    // Clear diff on user edit: typing in the summary is an
+                    // implicit acceptance of the automatic change.
+                    if (showDiff && summaryChanged) {
+                      setAcceptedBaseline((prev: AcceptedBaseline) => ({
+                        ...prev,
+                        summary: value,
+                      }));
+                    }
+                  }}
+                  baselineValue={
+                    summaryTab === 'diff' && summaryChanged
+                      ? summaryBaseline
+                      : undefined
                   }
-                }}
-                baselineValue={summaryBaseline}
-                showDiff={showDiff}
-                searchHighlightRanges={[]}
-                language={storyLanguage}
-                spellCheck={true}
-                mode="markdown"
-                className={`${inputCls} min-h-[120px]`}
-                placeholder={t('Scene summary...')}
-              />
-            </div>
+                  showDiff={summaryTab === 'diff' && summaryChanged ? showDiff : false}
+                  highlightColors={highlightColors}
+                  searchHighlightRanges={[]}
+                  language={storyLanguage}
+                  spellCheck={true}
+                  mode="markdown"
+                  className={`${contentEditorCls} min-h-[120px]`}
+                  placeholder={t('Scene summary...')}
+                />
+              </div>
+            )}
           </div>
 
           <div
@@ -1838,7 +1940,8 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
                   className={`${diffItemCls(beatChanged)} flex gap-2 items-start`}
                 >
                   <textarea
-                    className={`${inputCls} flex-1`}
+                    className={`${contentEditorCls} flex-1 border ${tc.border}`}
+                    style={contentSurface}
                     rows={2}
                     placeholder={t('Beat text...')}
                     value={beat.text}
@@ -2385,8 +2488,16 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
             </select>
           </div>
 
-          <div className={`${sectionCls} ${diffSectionCls(linkedProseChanged)}`}>
-            <label className={labelCls}>{t('Linked Prose')}</label>
+          <div
+            className={`${sectionCls} ${diffSectionCls(linkedProseChanged)}`}
+            data-diff={linkedProseChanged ? 'changed' : undefined}
+          >
+            <div className="flex items-center justify-between">
+              <label className={labelCls}>{t('Linked Prose')}</label>
+              {showDiff && linkedProseChanged && (
+                <DiffViewTabs tab={linkedProseTab} onChange={setLinkedProseTab} />
+              )}
+            </div>
             {onWriteScene && (
               <button
                 type="button"
@@ -2399,43 +2510,70 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
             )}
             {isLinkedProseLink(proseLink) ? (
               <>
-                {getLinkedProseText ? (
-                  <div className="rounded-md border border-brand-gray-300 dark:border-brand-gray-700 overflow-hidden">
-                    <CodeMirrorEditor
-                      ref={linkedProseEditorRef}
-                      value={localProseText}
-                      onChange={onProseTextChange}
-                      className={`${inputCls} min-h-[9rem] font-mono`}
-                      placeholder={t('Linked Prose')}
-                      language={storyLanguage || 'en'}
-                      spellCheck
-                      viewMode="raw"
-                      showDiff={showDiff}
-                      baselineValue={linkedProseBaseline}
-                      searchHighlightRanges={[]}
-                    />
+                {linkedProseTab === 'old' ? (
+                  <div
+                    className={`rounded-md border ${tc.border} px-3 py-2 text-sm font-mono whitespace-pre-wrap overflow-hidden`}
+                    style={contentSurface}
+                  >
+                    {linkedProseBaseline || (
+                      <span className="italic opacity-60">
+                        {t('No previous content')}
+                      </span>
+                    )}
                   </div>
                 ) : (
-                  <p className={`text-xs ${tc.muted}`}>
-                    {t('Open in split mode to edit linked prose')}
-                  </p>
+                  <>
+                    {getLinkedProseText ? (
+                      <div
+                        className={`rounded-md border ${tc.border} overflow-hidden`}
+                        style={contentSurface}
+                      >
+                        <CodeMirrorEditor
+                          ref={linkedProseEditorRef}
+                          value={localProseText}
+                          onChange={onProseTextChange}
+                          className={`${contentEditorCls} min-h-[9rem] font-mono`}
+                          placeholder={t('Linked Prose')}
+                          language={storyLanguage || 'en'}
+                          spellCheck
+                          viewMode="raw"
+                          showDiff={
+                            linkedProseTab === 'diff' && linkedProseChanged
+                              ? showDiff
+                              : false
+                          }
+                          highlightColors={highlightColors}
+                          baselineValue={
+                            linkedProseTab === 'diff' && linkedProseChanged
+                              ? linkedProseBaseline
+                              : undefined
+                          }
+                          searchHighlightRanges={[]}
+                        />
+                      </div>
+                    ) : (
+                      <p className={`text-xs ${tc.muted}`}>
+                        {t('Open in split mode to edit linked prose')}
+                      </p>
+                    )}
+                    <button
+                      type="button"
+                      className="text-xs text-red-500 hover:text-red-600 font-medium mt-1"
+                      onClick={async (): Promise<void> => {
+                        if (onUnlinkProse) {
+                          try {
+                            await onUnlinkProse(scene.id);
+                            setProseLink(null);
+                          } catch {
+                            // error will be displayed by parent
+                          }
+                        }
+                      }}
+                    >
+                      {t('Unlink prose')}
+                    </button>
+                  </>
                 )}
-                <button
-                  type="button"
-                  className="text-xs text-red-500 hover:text-red-600 font-medium mt-1"
-                  onClick={async (): Promise<void> => {
-                    if (onUnlinkProse) {
-                      try {
-                        await onUnlinkProse(scene.id);
-                        setProseLink(null);
-                      } catch {
-                        // error will be displayed by parent
-                      }
-                    }
-                  }}
-                >
-                  {t('Unlink prose')}
-                </button>
               </>
             ) : (
               <p className={`text-xs italic ${tc.muted}`}>
