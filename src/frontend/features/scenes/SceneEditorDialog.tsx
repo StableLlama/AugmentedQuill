@@ -48,6 +48,7 @@ import type { StoryStoreState } from '../../stores/storyStore';
 import { SourcebookHoverCard } from '../sourcebook/SourcebookHoverCard';
 import { listProjectImages } from '../sourcebook/sourcebookApi';
 import { ProjectImage } from '../../services/apiTypes';
+import { notifyError } from '../../services/errorNotifier';
 import { SceneTemporalDialog } from './SceneTemporalDialog';
 import {
   getSceneEpochNanoseconds,
@@ -346,8 +347,8 @@ interface SceneEditorDialogProps {
   getLinkedProseText?: (link: SceneProseLink) => string | null;
   /** Saves new prose content back to the file at the link range. */
   onSaveProseContent?: (text: string) => Promise<void>;
-  /** Generates prose for this scene and links the result. */
-  onWriteScene?: () => Promise<string | null | void>;
+  /** Generates prose for this scene and links the result. Pass an onProse callback to receive streamed prose live. */
+  onWriteScene?: (onProse?: (text: string) => void) => Promise<string | null | void>;
   /** Unlinks the scene from its current prose range. */
   onUnlinkProse?: (sceneId: SceneId) => Promise<void>;
   /** Open sourcebook dialog for an entry id. */
@@ -878,6 +879,9 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
   const [hoverPos, setHoverPos] = useState({ x: 0, y: 0 });
   const [availableImages, setAvailableImages] = useState<ProjectImage[]>([]);
   const initializedSceneIdRef = useRef<SceneId | null>(null);
+  // True while write-scene prose is being streamed live into the dialog, so the
+  // linked-prose polling effect does not clobber the in-flight text.
+  const streamedProseRef = useRef(false);
 
   const initialSnapshotRef = useRef<DirtySnapshot | null>(null);
 
@@ -987,6 +991,8 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
 
     const syncFromLinkedProse = (): void => {
       if (cancelled) return;
+      // Do not clobber prose that is being streamed live into the dialog.
+      if (streamedProseRef.current) return;
 
       const nextText = getLinkedProseText(proseLink) ?? '';
       setLocalProseText((prev: string) => {
@@ -1585,10 +1591,22 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
     if (!onWriteScene) return;
     setShowDiff(true);
     setIsWritingScene(true);
+    streamedProseRef.current = false;
     try {
-      const generatedText = await onWriteScene();
+      const generatedText = await onWriteScene((text: string): void => {
+        if (text) {
+          streamedProseRef.current = true;
+          setLocalProseText(text);
+        }
+      });
       const generated = typeof generatedText === 'string' ? generatedText : '';
-      if (generated.length > 0) {
+      if (streamedProseRef.current) {
+        // Text was already streamed live; reconcile to the exact final value.
+        if (generated.length > 0) {
+          setLocalProseText(generated);
+        }
+        streamedProseRef.current = false;
+      } else if (generated.length > 0) {
         const chunkSize = 48;
         for (let end = chunkSize; end < generated.length; end += chunkSize) {
           setLocalProseText(generated.slice(0, end));
@@ -1602,6 +1620,8 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
         }
         setLocalProseText(generated);
       }
+    } catch (err) {
+      notifyError(t('Write Scene'), err);
     } finally {
       setIsWritingScene(false);
     }

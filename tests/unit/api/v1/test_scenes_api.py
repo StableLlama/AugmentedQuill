@@ -741,6 +741,47 @@ class ScenesApiTest(ApiTestCase):
         self.assertEqual(payload["generated_text"], "Generated scene prose.")
         self.assertEqual(payload["scene"]["id"], scene["id"])
 
+    def test_write_scene_streams_prose_chunks_and_final_result(self) -> None:
+        """The streaming write-scene route emits prose_chunk then result events."""
+        scene = self._create(summary="Write scene stream")
+
+        async def fake_stream(**kwargs):
+            yield {"content": "Generated"}
+            yield {"content": " scene prose."}
+
+        with patch(
+            "augmentedquill.services.scenes.scene_generation_service.llm.unified_chat_stream",
+            new=fake_stream,
+        ):
+            resp = self.client.post(
+                self._url(f"/{scene['id']}/write/stream"),
+                json={
+                    "scope_type": "story",
+                    "include_following_scenes": 0,
+                    "detect_boundaries": False,
+                },
+            )
+
+        self.assertEqual(resp.status_code, 200, resp.text)
+        self.assertTrue(
+            resp.headers.get("content-type", "").startswith("text/event-stream"),
+            resp.headers.get("content-type"),
+        )
+        # Both prose chunks are streamed with accumulated text.
+        self.assertIn(
+            'data: {"type": "prose_chunk", "accumulated": "Generated"}', resp.text
+        )
+        self.assertIn(
+            'data: {"type": "prose_chunk", "accumulated": "Generated scene prose."}',
+            resp.text,
+        )
+        # The final result event carries the same payload shape as the
+        # non-streaming response.
+        self.assertIn('"type": "result"', resp.text)
+        self.assertIn('"generated_text": "Generated scene prose."', resp.text)
+        self.assertIn(f'"id": {scene["id"]}', resp.text)
+        self.assertTrue(resp.text.endswith("data: [DONE]\n\n"), repr(resp.text))
+
     def test_write_scene_writes_complete_generated_prose_to_disk(self) -> None:
         """The file on disk must contain the COMPLETE generated prose in markers.
 

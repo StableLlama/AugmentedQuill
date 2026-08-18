@@ -1767,6 +1767,32 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/projects/{project_name}/scenes/{scene_id}/write/stream': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Write Scene Prose Stream
+     * @description Stream generated prose for one scene and auto-link generated boundaries.
+     *
+     *     Emits SSE events:
+     *     - ``{"type": "prose_chunk", "accumulated": str}`` as tokens are generated
+     *     - ``{"type": "result", "scene": ..., "generated_text": ..., "assignments": ..., "scenes": ...}``
+     *       once generation and linking complete
+     *     - ``{"type": "error", "error": str}`` on failure
+     */
+    post: operations['write_scene_prose_stream_api_v1_projects__project_name__scenes__scene_id__write_stream_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/projects/{project_name}/scenes/auto-link-scope': {
     parameters: {
       query?: never;
@@ -7065,6 +7091,43 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['SceneWriteResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  write_scene_prose_stream_api_v1_projects__project_name__scenes__scene_id__write_stream_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        scene_id: number;
+        /** @description Directory name of the project */
+        project_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SceneWriteRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
         };
       };
       /** @description Validation Error */

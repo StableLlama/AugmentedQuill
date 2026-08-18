@@ -4226,6 +4226,66 @@
         }
       }
     },
+    "/api/v1/projects/{project_name}/scenes/{scene_id}/write/stream": {
+      "post": {
+        "tags": ["Scenes"],
+        "summary": "Write Scene Prose Stream",
+        "description": "Stream generated prose for one scene and auto-link generated boundaries.\n\nEmits SSE events:\n- ``{\"type\": \"prose_chunk\", \"accumulated\": str}`` as tokens are generated\n- ``{\"type\": \"result\", \"scene\": ..., \"generated_text\": ..., \"assignments\": ..., \"scenes\": ...}``\n  once generation and linking complete\n- ``{\"type\": \"error\", \"error\": str}`` on failure",
+        "operationId": "write_scene_prose_stream_api_v1_projects__project_name__scenes__scene_id__write_stream_post",
+        "parameters": [
+          {
+            "name": "scene_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Scene Id"
+            }
+          },
+          {
+            "name": "project_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Directory name of the project",
+              "title": "Project Name"
+            },
+            "description": "Directory name of the project"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SceneWriteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_name}/scenes/auto-link-scope": {
       "post": {
         "tags": ["Scenes"],

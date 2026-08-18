@@ -1080,6 +1080,55 @@ describe('SceneEditorDialog save flow', () => {
     }
   });
 
+  it('renders prose live from the onProse stream callback during write-scene', async () => {
+    vi.useFakeTimers();
+    try {
+      const proseLink: SceneProseLink = {
+        scope_type: 'story',
+        start_offset: 0,
+        end_offset: 5,
+        content_hash: 'abc',
+        chapter_id: null,
+        book_id: null,
+        is_stale: false,
+      };
+
+      const getLinkedProseText = vi.fn(() => 'initial prose');
+      const onWriteScene = vi.fn(
+        async (onProse?: (text: string) => void): Promise<string> => {
+          onProse?.('chunk 1');
+          onProse?.('chunk 1 chunk 2');
+          return 'chunk 1 chunk 2 final';
+        }
+      );
+
+      wrap(
+        <SceneEditorDialog
+          scene={makeScene({ prose_link: proseLink })}
+          isOpen
+          onClose={NOOP_CLOSE}
+          onSave={NOOP_SAVE}
+          onDelete={NOOP_DELETE}
+          getLinkedProseText={getLinkedProseText}
+          onWriteScene={onWriteScene}
+        />
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: /Write Scene/i }));
+
+      await act(async () => {
+        await Promise.resolve();
+        vi.advanceTimersByTime(40);
+      });
+
+      // The streamed chunks appear live and are not clobbered by the stale
+      // linked-prose polling (which still returns 'initial prose').
+      expect(readLinkedProseEditorText()).toContain('chunk 1 chunk 2');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('enables diff view after write-scene without rendering a separate prose preview block', async () => {
     const proseLink: SceneProseLink = {
       scope_type: 'story',

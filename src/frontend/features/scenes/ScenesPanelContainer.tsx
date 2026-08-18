@@ -1602,234 +1602,247 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
     ]
   );
 
-  // eslint-disable-next-line complexity
-  const handleWriteScene = useCallback(async (): Promise<string | null> => {
-    if (!editingSceneId) return null;
+  const handleWriteScene = useCallback(
+    // eslint-disable-next-line complexity
+    async (onProse?: (text: string) => void): Promise<string | null> => {
+      if (!editingSceneId) return null;
 
-    const sceneBeforeWrite = scenes.find((s: Scene) => s.id === editingSceneId);
-    const linkedScope = sceneBeforeWrite?.prose_link;
+      const sceneBeforeWrite = scenes.find((s: Scene) => s.id === editingSceneId);
+      const linkedScope = sceneBeforeWrite?.prose_link;
 
-    const replaceRange = (
-      content: string,
-      startOffset: number,
-      endOffset: number,
-      insert: string
-    ): string => {
-      const docLen = content.length;
-      const from = Math.min(Math.max(Number(startOffset), 0), docLen);
-      const to = Math.min(Math.max(Number(endOffset), from), docLen);
-      return `${content.slice(0, from)}${insert}${content.slice(to)}`;
-    };
+      const replaceRange = (
+        content: string,
+        startOffset: number,
+        endOffset: number,
+        insert: string
+      ): string => {
+        const docLen = content.length;
+        const from = Math.min(Math.max(Number(startOffset), 0), docLen);
+        const to = Math.min(Math.max(Number(endOffset), from), docLen);
+        return `${content.slice(0, from)}${insert}${content.slice(to)}`;
+      };
 
-    const updateLinkedScopeContent = (
-      link: SceneProseLink | null | undefined,
-      text: string
-    ): void => {
-      if (!link) return;
+      const updateLinkedScopeContent = (
+        link: SceneProseLink | null | undefined,
+        text: string
+      ): void => {
+        if (!link) return;
 
-      if (link.scope_type === 'story') {
-        setStory((prev: StoryState) => {
-          if (!prev.draft) return prev;
-          const nextDraftContent = replaceRange(
-            prev.draft.content ?? '',
-            Number(link.start_offset ?? 0),
-            Number(link.end_offset ?? link.start_offset ?? 0),
-            text
-          );
-          return {
-            ...prev,
-            draft: {
-              ...prev.draft,
-              content: nextDraftContent,
-            },
-          };
-        });
-        return;
-      }
+        if (link.scope_type === 'story') {
+          setStory((prev: StoryState) => {
+            if (!prev.draft) return prev;
+            const nextDraftContent = replaceRange(
+              prev.draft.content ?? '',
+              Number(link.start_offset ?? 0),
+              Number(link.end_offset ?? link.start_offset ?? 0),
+              text
+            );
+            return {
+              ...prev,
+              draft: {
+                ...prev.draft,
+                content: nextDraftContent,
+              },
+            };
+          });
+          return;
+        }
 
-      if (link.scope_type !== 'chapter') return;
-      const targetChapterId = normalizeChapterId(link.chapter_id);
-      if (!targetChapterId) return;
+        if (link.scope_type !== 'chapter') return;
+        const targetChapterId = normalizeChapterId(link.chapter_id);
+        if (!targetChapterId) return;
 
-      setStory((prev: StoryState) => ({
-        ...prev,
-        chapters: prev.chapters.map((chapter: Chapter): Chapter => {
-          if (normalizeChapterId(chapter.id) !== targetChapterId) {
-            return chapter;
-          }
-          const nextContent = replaceRange(
-            chapter.content ?? '',
-            Number(link.start_offset ?? 0),
-            Number(link.end_offset ?? link.start_offset ?? 0),
-            text
-          );
-          return {
-            ...chapter,
-            content: nextContent,
-          };
-        }),
-      }));
-    };
+        setStory((prev: StoryState) => ({
+          ...prev,
+          chapters: prev.chapters.map((chapter: Chapter): Chapter => {
+            if (normalizeChapterId(chapter.id) !== targetChapterId) {
+              return chapter;
+            }
+            const nextContent = replaceRange(
+              chapter.content ?? '',
+              Number(link.start_offset ?? 0),
+              Number(link.end_offset ?? link.start_offset ?? 0),
+              text
+            );
+            return {
+              ...chapter,
+              content: nextContent,
+            };
+          }),
+        }));
+      };
 
-    const payload =
-      linkedScope?.scope_type === 'chapter' &&
-      normalizeChapterId(linkedScope.chapter_id).length > 0
-        ? {
-            scope_type: 'chapter' as const,
-            chapter_id: normalizeChapterId(linkedScope.chapter_id),
-            book_id: linkedScope.book_id ?? null,
-            include_following_scenes: 1,
-            detect_boundaries: true,
-          }
-        : linkedScope?.scope_type === 'story'
+      const payload =
+        linkedScope?.scope_type === 'chapter' &&
+        normalizeChapterId(linkedScope.chapter_id).length > 0
           ? {
-              scope_type: 'story' as const,
+              scope_type: 'chapter' as const,
+              chapter_id: normalizeChapterId(linkedScope.chapter_id),
+              book_id: linkedScope.book_id ?? null,
               include_following_scenes: 1,
               detect_boundaries: true,
             }
-          : currentChapter?.scope === 'chapter'
+          : linkedScope?.scope_type === 'story'
             ? {
-                scope_type: 'chapter' as const,
-                chapter_id: currentChapter.id,
-                book_id: currentChapter.book_id ?? null,
-                include_following_scenes: 1,
-                detect_boundaries: true,
-              }
-            : {
                 scope_type: 'story' as const,
                 include_following_scenes: 1,
                 detect_boundaries: true,
-              };
+              }
+            : currentChapter?.scope === 'chapter'
+              ? {
+                  scope_type: 'chapter' as const,
+                  chapter_id: currentChapter.id,
+                  book_id: currentChapter.book_id ?? null,
+                  include_following_scenes: 1,
+                  detect_boundaries: true,
+                }
+              : {
+                  scope_type: 'story' as const,
+                  include_following_scenes: 1,
+                  detect_boundaries: true,
+                };
 
-    const result = await api.scenes.writeScene(editingSceneId, payload);
-    // Capture whether the scene was previously unlinked before patching the store,
-    // so we can decide whether to include the surrounding scene markers in the
-    // editor dispatch below.
-    const isNewWrite = !sceneBeforeWrite?.prose_link;
-    const updates = [result.scene, ...result.scenes];
-    updates.forEach((scene: Scene): void => {
-      patchScene(scene);
-    });
-    recordSceneHistory('Write scene prose', applyScenePatches(scenes, updates));
-
-    const linkedScopeAfterWrite =
-      result.scene.prose_link ?? sceneBeforeWrite?.prose_link;
-
-    const editedAssignment = result.assignments.find(
-      (assignment: SceneBoundaryAssignment): boolean =>
-        String(assignment.scene_id) === String(editingSceneId)
-    );
-    const view: EditorView | null = editorRef?.current?.getEditorView() ?? null;
-    if (!view || !currentChapter) {
-      updateLinkedScopeContent(linkedScopeAfterWrite, result.generated_text);
-      return result.generated_text;
-    }
-
-    const isScopeMatch =
-      payload.scope_type === 'story'
-        ? currentChapter.scope === 'story'
-        : currentChapter.scope === 'chapter' &&
-          normalizeChapterId(currentChapter.id) ===
-            normalizeChapterId(payload.chapter_id ?? currentChapter.id);
-    if (!isScopeMatch) {
-      updateLinkedScopeContent(linkedScopeAfterWrite, result.generated_text);
-      return result.generated_text;
-    }
-
-    const docLen = view.state.doc.length;
-
-    if (isNewWrite) {
-      // Keep the visible editor marker-free. Marker offsets are maintained
-      // through prose_link metadata and translated by useSceneProseSync.
-      const currentContent = view.state.doc.toString();
-      const separator =
-        currentContent.length > 0 && !currentContent.endsWith('\n') ? '\n' : '';
-      await streamEditorReplace(
-        view,
-        docLen,
-        docLen,
-        `${separator}${result.generated_text}`
+      const result = await api.scenes.streamWriteScene(
+        editingSceneId,
+        payload,
+        (accumulated: string): void => {
+          onProse?.(accumulated);
+        }
       );
-    } else {
-      // For an existing linked scene the markers are already in the editor;
-      // only the prose text between them needs to be replaced.
-      const fallbackLink = result.scene.prose_link ?? sceneBeforeWrite?.prose_link;
-      const proseLinkSource = fallbackLink
-        ? {
-            start_offset: fallbackLink.start_offset,
-            end_offset: fallbackLink.end_offset ?? docLen,
-          }
-        : null;
-      const docText = view.state.doc.sliceString(0, docLen);
-      const markerSpanRange = getSceneMarkerSpanRange(docText, editingSceneId);
-      if (markerSpanRange) {
+      // Capture whether the scene was previously unlinked before patching the store,
+      // so we can decide whether to include the surrounding scene markers in the
+      // editor dispatch below.
+      const isNewWrite = !sceneBeforeWrite?.prose_link;
+      const updates = [result.scene, ...result.scenes];
+      updates.forEach((scene: Scene): void => {
+        patchScene(scene);
+      });
+      recordSceneHistory('Write scene prose', applyScenePatches(scenes, updates));
+
+      const linkedScopeAfterWrite =
+        result.scene.prose_link ?? sceneBeforeWrite?.prose_link;
+
+      const editedAssignment = result.assignments.find(
+        (assignment: SceneBoundaryAssignment): boolean =>
+          String(assignment.scene_id) === String(editingSceneId)
+      );
+      const view: EditorView | null = editorRef?.current?.getEditorView() ?? null;
+      if (!view || !currentChapter) {
+        updateLinkedScopeContent(linkedScopeAfterWrite, result.generated_text);
+        return result.generated_text;
+      }
+
+      const isScopeMatch =
+        payload.scope_type === 'story'
+          ? currentChapter.scope === 'story'
+          : currentChapter.scope === 'chapter' &&
+            normalizeChapterId(currentChapter.id) ===
+              normalizeChapterId(payload.chapter_id ?? currentChapter.id);
+      if (!isScopeMatch) {
+        updateLinkedScopeContent(linkedScopeAfterWrite, result.generated_text);
+        return result.generated_text;
+      }
+
+      const docLen = view.state.doc.length;
+
+      if (isNewWrite) {
+        // Keep the visible editor marker-free. Marker offsets are maintained
+        // through prose_link metadata and translated by useSceneProseSync.
+        const currentContent = view.state.doc.toString();
+        const separator =
+          currentContent.length > 0 && !currentContent.endsWith('\n') ? '\n' : '';
         await streamEditorReplace(
           view,
-          markerSpanRange.from,
-          markerSpanRange.to,
-          result.generated_text
+          docLen,
+          docLen,
+          `${separator}${result.generated_text}`
         );
-        updateCurrentChapterContent(view.state.doc.toString());
-        return result.generated_text;
+      } else {
+        // For an existing linked scene the markers are already in the editor;
+        // only the prose text between them needs to be replaced.
+        const fallbackLink = result.scene.prose_link ?? sceneBeforeWrite?.prose_link;
+        const proseLinkSource = fallbackLink
+          ? {
+              start_offset: fallbackLink.start_offset,
+              end_offset: fallbackLink.end_offset ?? docLen,
+            }
+          : null;
+        const docText = view.state.doc.sliceString(0, docLen);
+        const markerSpanRange = getSceneMarkerSpanRange(docText, editingSceneId);
+        if (markerSpanRange) {
+          await streamEditorReplace(
+            view,
+            markerSpanRange.from,
+            markerSpanRange.to,
+            result.generated_text
+          );
+          updateCurrentChapterContent(view.state.doc.toString());
+          return result.generated_text;
+        }
+
+        const chapterHasInlineSceneMarkers =
+          typeof currentChapter.content === 'string' &&
+          hasInlineSceneMarkers(currentChapter.content);
+        const docHasInlineSceneMarkers = hasInlineSceneMarkers(docText);
+        const hasInlineMarkers =
+          chapterHasInlineSceneMarkers || docHasInlineSceneMarkers;
+
+        // Use this scene's prose_link range first. Assignment offsets can be
+        // computed in a different coordinate space and should not drive
+        // single-scene replacement when a stable scene-local link is available.
+        const linkSource = proseLinkSource ?? editedAssignment ?? null;
+        if (hasInlineMarkers && !proseLinkSource) {
+          updateCurrentChapterContent(view.state.doc.toString());
+          return result.generated_text;
+        }
+
+        if (!linkSource) return result.generated_text;
+
+        // prose_link offsets are marker-inclusive.  When the editor document
+        // is marker-stripped (hideSceneMarkers=true), convert to visible space
+        // so the replacement targets the correct range.
+        const fullContent: string = currentChapter.content ?? '';
+        const rawFrom = Math.min(
+          Math.max(
+            docHasInlineSceneMarkers
+              ? linkSource.start_offset
+              : toVisibleOffset(fullContent, linkSource.start_offset),
+            0
+          ),
+          docLen
+        );
+        const rawTo = Math.min(
+          Math.max(
+            docHasInlineSceneMarkers
+              ? (linkSource.end_offset ?? rawFrom)
+              : toVisibleOffset(
+                  fullContent,
+                  linkSource.end_offset ?? fullContent.length
+                ),
+            rawFrom
+          ),
+          docLen
+        );
+        const { from, to } = hasInlineMarkers
+          ? snapRangeOutsideMarkers(docText, rawFrom, rawTo)
+          : { from: rawFrom, to: rawTo };
+        await streamEditorReplace(view, from, to, result.generated_text);
       }
 
-      const chapterHasInlineSceneMarkers =
-        typeof currentChapter.content === 'string' &&
-        hasInlineSceneMarkers(currentChapter.content);
-      const docHasInlineSceneMarkers = hasInlineSceneMarkers(docText);
-      const hasInlineMarkers = chapterHasInlineSceneMarkers || docHasInlineSceneMarkers;
-
-      // Use this scene's prose_link range first. Assignment offsets can be
-      // computed in a different coordinate space and should not drive
-      // single-scene replacement when a stable scene-local link is available.
-      const linkSource = proseLinkSource ?? editedAssignment ?? null;
-      if (hasInlineMarkers && !proseLinkSource) {
-        updateCurrentChapterContent(view.state.doc.toString());
-        return result.generated_text;
-      }
-
-      if (!linkSource) return result.generated_text;
-
-      // prose_link offsets are marker-inclusive.  When the editor document
-      // is marker-stripped (hideSceneMarkers=true), convert to visible space
-      // so the replacement targets the correct range.
-      const fullContent: string = currentChapter.content ?? '';
-      const rawFrom = Math.min(
-        Math.max(
-          docHasInlineSceneMarkers
-            ? linkSource.start_offset
-            : toVisibleOffset(fullContent, linkSource.start_offset),
-          0
-        ),
-        docLen
-      );
-      const rawTo = Math.min(
-        Math.max(
-          docHasInlineSceneMarkers
-            ? (linkSource.end_offset ?? rawFrom)
-            : toVisibleOffset(fullContent, linkSource.end_offset ?? fullContent.length),
-          rawFrom
-        ),
-        docLen
-      );
-      const { from, to } = hasInlineMarkers
-        ? snapRangeOutsideMarkers(docText, rawFrom, rawTo)
-        : { from: rawFrom, to: rawTo };
-      await streamEditorReplace(view, from, to, result.generated_text);
-    }
-
-    updateCurrentChapterContent(view.state.doc.toString());
-    return result.generated_text;
-  }, [
-    currentChapter,
-    editingSceneId,
-    editorRef,
-    patchScene,
-    recordSceneHistory,
-    scenes,
-    setStory,
-    updateCurrentChapterContent,
-  ]);
+      updateCurrentChapterContent(view.state.doc.toString());
+      return result.generated_text;
+    },
+    [
+      currentChapter,
+      editingSceneId,
+      editorRef,
+      patchScene,
+      recordSceneHistory,
+      scenes,
+      setStory,
+      updateCurrentChapterContent,
+    ]
+  );
 
   return (
     <div className="flex flex-col w-full h-full">

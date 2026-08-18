@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
@@ -367,14 +368,19 @@ async def detect_scene_boundaries_and_link(
     return {"assignments": assignments, "scenes": modified}
 
 
-async def write_scene_and_link(
+def _prepare_write_scene_generation(
     *,
     project_dir: Path,
     scene_id: int,
     request: SceneWriteRequest,
     payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Generate prose for one scene and link generated text via markers."""
+    """Build the full context needed to generate prose for one scene.
+
+    Returns every value required by ``_finalize_write_scene_and_link`` so the
+    streaming and non-streaming write paths share identical prompt building
+    and linking behaviour.
+    """
     payload = payload or {}
     scene = get_scene(project_dir, scene_id)
     if scene is None:
@@ -487,20 +493,45 @@ async def write_scene_and_link(
     )
     user_msg = sanitize_prompt(user_msg)
 
-    response = await llm.unified_chat_complete(
-        caller_id="scene_generation.write_scene_and_link",
-        model_type=WRITING_ROLE,
-        messages=[
+    return {
+        "project_dir": project_dir,
+        "scene_id": scene_id,
+        "request": request,
+        "payload": payload,
+        "scene": scene,
+        "scope_type": scope_type,
+        "chapter_id": chapter_id,
+        "book_id": book_id,
+        "content_path": content_path,
+        "existing_text": existing_text,
+        "selected_scenes": selected_scenes,
+        "base_url": base_url,
+        "api_key": api_key,
+        "model_id": model_id,
+        "timeout_s": timeout_s,
+        "model_name": model_name,
+        "messages": [
             {"role": "system", "content": system_msg},
             {"role": "user", "content": user_msg},
         ],
-        base_url=base_url,
-        api_key=api_key,
-        model_id=model_id,
-        timeout_s=timeout_s,
-        model_name=model_name,
-    )
-    generated_text = str(response.get("content") or "").strip()
+    }
+
+
+async def _finalize_write_scene_and_link(
+    prepared: dict[str, Any], generated_text: str
+) -> dict[str, Any]:
+    """Link generated prose into the scope and return the scene write result."""
+    project_dir = prepared["project_dir"]
+    scene = prepared["scene"]
+    scene_id = prepared["scene_id"]
+    scope_type = prepared["scope_type"]
+    chapter_id = prepared["chapter_id"]
+    book_id = prepared["book_id"]
+    content_path = prepared["content_path"]
+    existing_text = prepared["existing_text"]
+    request = prepared["request"]
+    payload = prepared["payload"]
+    selected_scenes = prepared["selected_scenes"]
 
     existing_link = (
         scene.get("prose_link") if isinstance(scene.get("prose_link"), dict) else None
@@ -599,6 +630,89 @@ async def write_scene_and_link(
         "generated_text": generated_text,
         "assignments": assignments,
         "scenes": updated_scenes,
+    }
+
+
+async def write_scene_and_link(
+    *,
+    project_dir: Path,
+    scene_id: int,
+    request: SceneWriteRequest,
+    payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Generate prose for one scene and link generated text via markers.
+
+    Non-streaming variant: blocks until the full generation completes and
+    returns the complete result.  Because the model timeout acts as a hard
+    deadline for non-streaming requests, prose-heavy workflows should prefer
+    ``stream_write_scene_and_link`` via the streaming route.
+    """
+    prepared = _prepare_write_scene_generation(
+        project_dir=project_dir,
+        scene_id=scene_id,
+        request=request,
+        payload=payload,
+    )
+    response = await llm.unified_chat_complete(
+        caller_id="scene_generation.write_scene_and_link",
+        model_type=WRITING_ROLE,
+        messages=prepared["messages"],
+        base_url=prepared["base_url"],
+        api_key=prepared["api_key"],
+        model_id=prepared["model_id"],
+        timeout_s=prepared["timeout_s"],
+        model_name=prepared["model_name"],
+    )
+    generated_text = str(response.get("content") or "").strip()
+    return await _finalize_write_scene_and_link(prepared, generated_text)
+
+
+async def stream_write_scene_and_link(
+    *,
+    project_dir: Path,
+    scene_id: int,
+    request: SceneWriteRequest,
+    payload: dict[str, Any] | None = None,
+) -> AsyncIterator[dict[str, Any]]:
+    """Stream prose generation for one scene and link the final text.
+
+    Yields SSE-compatible event dicts:
+    - ``{"type": "prose_chunk", "accumulated": str}`` for every content delta
+    - ``{"type": "result", "scene": ..., "generated_text": ..., "assignments": ..., "scenes": ...}``
+      once the text is generated and linked.
+    """
+    prepared = _prepare_write_scene_generation(
+        project_dir=project_dir,
+        scene_id=scene_id,
+        request=request,
+        payload=payload,
+    )
+    accumulated = ""
+    async for chunk_dict in llm.unified_chat_stream(
+        caller_id="scene_generation.stream_write_scene_and_link",
+        model_type=WRITING_ROLE,
+        messages=prepared["messages"],
+        base_url=prepared["base_url"],
+        api_key=prepared["api_key"],
+        model_id=prepared["model_id"],
+        timeout_s=prepared["timeout_s"],
+        model_name=prepared["model_name"],
+    ):
+        content = chunk_dict.get("content") or ""
+        if content:
+            accumulated += content
+            yield {"type": "prose_chunk", "accumulated": accumulated}
+
+    generated_text = accumulated.strip()
+    result = await _finalize_write_scene_and_link(prepared, generated_text)
+    yield {
+        "type": "result",
+        "scene": result["scene"],
+        "generated_text": result["generated_text"],
+        "assignments": [
+            assignment.model_dump(mode="json") for assignment in result["assignments"]
+        ],
+        "scenes": result["scenes"],
     }
 
 

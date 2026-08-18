@@ -107,11 +107,17 @@ const {
       refreshHash: vi.fn(),
       updateProseContent: vi.fn(),
       writeScene: vi.fn(),
+      streamWriteScene: vi.fn(),
     },
     story: {
       getContent: vi.fn(),
     },
   };
+  // streamWriteScene delegates to writeScene so the write-scene mocks below
+  // keep working unchanged (the container now streams via streamWriteScene).
+  apiMock.scenes.streamWriteScene.mockImplementation((...args: unknown[]) =>
+    apiMock.scenes.writeScene(...args)
+  );
   // Mutable holder — spy stubs close over this object; tests read from it.
   const captured: {
     pinboard: unknown;

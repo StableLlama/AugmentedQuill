@@ -154,3 +154,72 @@ describe('createScenesApi prose linking', () => {
     );
   });
 });
+
+describe('createScenesApi streamWriteScene', () => {
+  const sseResponse = (sse: string): Response =>
+    new Response(new TextEncoder().encode(sse).buffer, {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    });
+
+  it('posts to the stream endpoint and forwards prose chunks live', async () => {
+    const onProse = vi.fn();
+    const sse =
+      'data: {"type":"prose_chunk","accumulated":"The"}\n\n' +
+      'data: {"type":"prose_chunk","accumulated":"The night"}\n\n' +
+      'data: {"type":"result","scene":' +
+      JSON.stringify(stubScene()) +
+      ',"generated_text":"The night is dark","assignments":[],"scenes":[]}\n\n' +
+      'data: [DONE]\n\n';
+
+    const fetchMock = vi.fn().mockResolvedValue(sseResponse(sse));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const result = await api.streamWriteScene(
+        1,
+        { scope_type: 'story', detect_boundaries: true },
+        onProse
+      );
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        `/api/v1${BASE}/1/write/stream`,
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ scope_type: 'story', detect_boundaries: true }),
+        })
+      );
+      expect(onProse).toHaveBeenNthCalledWith(1, 'The');
+      expect(onProse).toHaveBeenLastCalledWith('The night');
+      expect(result.generated_text).toBe('The night is dark');
+      expect(result.scene).toEqual(stubScene());
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('rejects when the stream reports an error event', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(sseResponse('data: {"type":"error","error":"boom"}\n\n'));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      await expect(api.streamWriteScene(1, { scope_type: 'story' })).rejects.toThrow(
+        'boom'
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('rejects when the stream ends without a result', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(sseResponse('data: [DONE]\n\n'));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      await expect(api.streamWriteScene(1, { scope_type: 'story' })).rejects.toThrow(
+        'without a result'
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
