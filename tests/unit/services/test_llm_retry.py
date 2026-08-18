@@ -129,6 +129,53 @@ class TestLoggedRequestRetry:
         assert resp.status_code == 200
         assert call_count == 2
 
+    def test_retries_on_read_timeout_then_returns_success(self) -> None:
+        """A transient transport error on the first attempt must not poison the
+        result of a later successful retry.
+
+        Regression: after a ReadTimeout the loop retried, and the second attempt
+        succeeded, but the stale ``last_exc`` was re-raised anyway, so the app
+        discarded the successful response and reported the old timeout.
+        """
+        ok_resp = self._make_response(200)
+        call_count = 0
+
+        async def _run() -> httpx.Response:
+            nonlocal call_count
+
+            async def fake_request(*args, **kwargs):
+                nonlocal call_count
+                call_count += 1
+                if call_count == 1:
+                    raise httpx.ReadTimeout("timed out", request=MagicMock())
+                return ok_resp
+
+            with patch("httpx.AsyncClient") as mock_client_cls:
+                mock_client = AsyncMock()
+                mock_client_cls.return_value.__aenter__.return_value = mock_client
+                mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+                mock_client.request = fake_request
+                with (
+                    patch("augmentedquill.services.llm.llm_http_ops.add_llm_log"),
+                    patch(
+                        "augmentedquill.services.llm.llm_http_ops.create_log_entry",
+                        return_value={"response": {}},
+                    ),
+                    patch("asyncio.sleep", new_callable=AsyncMock),
+                ):
+                    return await logged_request(
+                        caller_id="test",
+                        method="POST",
+                        url="https://api.example.com/v1/chat",
+                        headers={},
+                        timeout=self._timeout(),
+                        body={},
+                    )
+
+        resp = asyncio.run(_run())
+        assert resp.status_code == 200
+        assert call_count == 2
+
     def test_does_not_retry_400(self) -> None:
         """A 400 response should NOT trigger a retry."""
         bad_resp = self._make_response(400)
