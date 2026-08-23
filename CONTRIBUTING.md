@@ -21,7 +21,7 @@ Thank you for your interest in contributing to AugmentedQuill! We welcome contri
 
 ## Development Setup
 
-See the [README.md](../README.md) for detailed installation and development workflow instructions.
+See the [Developer Guide](../DEVELOPMENT.md) for detailed installation and development workflow instructions.
 
 ## Coding Standards
 

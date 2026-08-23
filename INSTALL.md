@@ -110,7 +110,7 @@ If you want to modify the code, contribute to the project, or just prefer runnin
    ```
    Then open `http://127.0.0.1:8000` in your browser.
 
-For hot-reloading during development, see the Development Workflow section in the `README.md`.
+For hot-reloading during development, see the Development Workflow section in the [Developer Guide](DEVELOPMENT.md).
 
 ### Branching notes for contributors
 

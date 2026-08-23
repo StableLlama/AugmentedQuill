@@ -1,0 +1,102 @@
+{
+  // Dev container definition for AugmentedQuill.
+  // Python 3.12 backend + Node 24 frontend, fully sandboxed in Docker.
+  // See README.md in this folder for usage.
+  "name": "AugmentedQuill Dev",
+  "image": "mcr.microsoft.com/devcontainers/python:3.12",
+  "remoteUser": "vscode",
+
+  // Pin Node.js to the version the frontend requires (engines: >= 24).
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "24"
+    }
+  },
+
+  // Pass through LLM endpoint config from the host without committing secrets.
+  // Unset variables simply expand to empty and fall back to app defaults.
+  "remoteEnv": {
+    "OPENAI_API_KEY": "${localEnv:OPENAI_API_KEY}",
+    "OPENAI_BASE_URL": "${localEnv:OPENAI_BASE_URL}",
+    "OPENAI_MODEL": "${localEnv:OPENAI_MODEL}",
+    "OPENAI_TIMEOUT_S": "${localEnv:OPENAI_TIMEOUT_S}",
+    "VITE_BACKEND_URL": "${localEnv:VITE_BACKEND_URL}"
+  },
+
+  // Keep the container's Python venv, node_modules and Playwright browser cache
+  // in isolated named volumes instead of sharing the host copies:
+  //  - the host venv may point at a different interpreter path,
+  //  - node_modules contains platform-specific native binaries,
+  //  - browsers are ~150 MB and would otherwise be re-downloaded on every rebuild.
+  // The volumes shadow the host paths only inside the container; the host setup
+  // stays untouched and remains usable outside the container.
+  "mounts": [
+    "source=augmentedquill-venv,target=${containerWorkspaceFolder}/venv,type=volume",
+    "source=augmentedquill-node_modules,target=${containerWorkspaceFolder}/src/frontend/node_modules,type=volume",
+    "source=augmentedquill-playwright,target=/home/vscode/.cache/ms-playwright,type=volume"
+  ],
+
+  "postCreateCommand": "bash .devcontainer/postCreateCommand.sh",
+
+  // Ports used during development. The backend binds 127.0.0.1, so VS Code
+  // forwarding makes both servers reachable from the host browser.
+  "forwardPorts": [5173, 28000, 8000, 5199],
+  "portsAttributes": {
+    "5173": { "label": "Vite dev server (frontend)" },
+    "28000": { "label": "Backend dev server (--reload)" },
+    "8000": { "label": "Backend (default port)" },
+    "5199": { "label": "E2E fixture server" }
+  },
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-python.black-formatter",
+        "charliermarsh.ruff",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "bradlc.vscode-tailwindcss",
+        "ms-playwright.playwright"
+      ],
+      "settings": {
+        // Point tooling at the container-managed venv.
+        "python.defaultInterpreterPath": "${containerWorkspaceFolder}/venv/bin/python",
+        "python.terminal.activateEnvironment": false,
+        "python.testing.pytestEnabled": true,
+        "python.testing.unittestEnabled": false,
+        "python.testing.pytestArgs": ["tests"],
+        "ruff.nativeServer": "on",
+        "editor.formatOnSave": true,
+        "eslint.validate": [
+          "javascript",
+          "javascriptreact",
+          "typescript",
+          "typescriptreact"
+        ],
+        "[python]": {
+          "editor.defaultFormatter": "ms-python.black-formatter"
+        },
+        "[typescript]": {
+          "editor.defaultFormatter": "esbenp.prettier-vscode"
+        },
+        "[typescriptreact]": {
+          "editor.defaultFormatter": "esbenp.prettier-vscode"
+        },
+        "[javascript]": {
+          "editor.defaultFormatter": "esbenp.prettier-vscode"
+        },
+        "[javascriptreact]": {
+          "editor.defaultFormatter": "esbenp.prettier-vscode"
+        },
+        "[json]": {
+          "editor.defaultFormatter": "esbenp.prettier-vscode"
+        },
+        "[markdown]": {
+          "editor.defaultFormatter": "esbenp.prettier-vscode"
+        }
+      }
+    }
+  }
+}
