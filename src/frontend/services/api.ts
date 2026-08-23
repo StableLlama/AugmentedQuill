@@ -282,6 +282,9 @@ export const api = {
     ) => currentProjectApi().scenes.autoLinkScope(...args),
     writeScene: (...args: Parameters<ProjectApiClients['scenes']['writeScene']>) =>
       currentProjectApi().scenes.writeScene(...args),
+    streamWriteScene: (
+      ...args: Parameters<ProjectApiClients['scenes']['streamWriteScene']>
+    ) => currentProjectApi().scenes.streamWriteScene(...args),
   },
   annotations: {
     list: (...args: Parameters<ProjectApiClients['annotations']['list']>) =>

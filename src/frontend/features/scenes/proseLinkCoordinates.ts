@@ -237,41 +237,45 @@ export function getLinkedProseFromTextSource(
 ): string {
   const rawFrom = Math.max(Number(link.start_offset ?? 0), 0);
   const rawEnd = Math.max(Number(link.end_offset ?? rawFrom), rawFrom);
-  const rawText = sourceText.slice(
-    Math.min(rawFrom, sourceText.length),
-    Math.min(rawEnd, sourceText.length)
-  );
+
+  const sliceAt = (from: number, to: number): string =>
+    sourceText.slice(
+      Math.min(Math.max(from, 0), sourceText.length),
+      Math.min(Math.max(to, 0), sourceText.length)
+    );
 
   // If sourceText itself has inline scene markers, the raw offsets are in the
   // same coordinate space — slice directly without adjustment.
   if (hasInlineSceneMarkers(sourceText)) {
-    return rawText;
+    return sliceAt(rawFrom, rawEnd);
   }
 
-  // sourceText is stripped of markers.  Two sub-cases:
-  //
-  // 1. unit.content also lacks markers AND the raw slice produced non-empty
-  //    text → the offsets were computed against the same stripped
-  //    representation, return the raw slice as-is.
-  // 2. Otherwise (unit.content has markers, or the raw slice is empty because
-  //    offsets are beyond the stripped text) → the offsets live in
-  //    marker-inclusive space.  Walk the markers in unit.content to derive
-  //    visible offsets, then slice the stripped sourceText.
-  if (rawText.length > 0 && !hasInlineSceneMarkers(unit.content)) {
-    return rawText;
+  // sourceText is stripped of markers.  When unit.content has markers it is
+  // the full-content reference: convert the marker-inclusive offsets with the
+  // exact marker walk.
+  if (hasInlineInternalMarkers(unit.content)) {
+    return sliceAt(
+      toVisibleOffset(unit.content, rawFrom),
+      toVisibleOffset(unit.content, rawEnd)
+    );
   }
 
-  // Adjust: convert marker-inclusive offsets to visible offsets.
-  // Use unit.content (which has markers) as the full-content reference when
-  // available; otherwise fall back to the approximate per-scene subtraction.
-  const fullContent =
-    hasInlineSceneMarkers(unit.content) || hasInlineInternalMarkers(unit.content)
-      ? unit.content
-      : sourceText;
+  // Both sourceText and unit.content are marker-free.  The offsets are either
+  // visible-space (the chapter genuinely has no markers) or marker-inclusive
+  // (the chapter HAS markers but unit.content was stripped — e.g. the
+  // container synced the marker-free editor doc back into the store via
+  // updateCurrentChapterContent after a Write Scene, while the scene's
+  // prose_link offsets remain marker-inclusive).  Only return the raw slice
+  // when the offsets are NOT marker-inclusive; shouldAdjustOffsets is the
+  // heuristic that distinguishes the two cases.
+  if (!shouldAdjustOffsets(unit, scenes)) {
+    return sliceAt(rawFrom, rawEnd);
+  }
 
-  const from = toVisibleLinkedOffset(rawFrom, unit, scenes, true, fullContent);
-  const end = toVisibleLinkedOffset(rawEnd, unit, scenes, true, fullContent);
-  const boundedFrom = Math.min(Math.max(from, 0), sourceText.length);
-  const boundedEnd = Math.min(Math.max(end, boundedFrom), sourceText.length);
-  return sourceText.slice(boundedFrom, boundedEnd);
+  // Offsets are marker-inclusive against a stripped representation — subtract
+  // the fixed marker-token lengths to derive the visible offsets.
+  return sliceAt(
+    toVisibleLinkedOffset(rawFrom, unit, scenes, true, undefined),
+    toVisibleLinkedOffset(rawEnd, unit, scenes, true, undefined)
+  );
 }

@@ -147,6 +147,111 @@ export interface ScenesApi {
     sceneId: SceneId,
     payload: SceneWritePayload
   ) => Promise<SceneWriteResponse>;
+  /** Stream scene prose generation; onProse receives accumulated text live. */
+  streamWriteScene: (
+    sceneId: SceneId,
+    payload: SceneWritePayload,
+    onProse?: (accumulated: string) => void
+  ) => Promise<SceneWriteResponse>;
+}
+
+type WriteSceneStreamEvent =
+  | { type: 'prose_chunk'; accumulated?: string }
+  | {
+      type: 'result';
+      scene: Scene;
+      generated_text: string;
+      assignments: SceneBoundaryAssignment[];
+      scenes: Scene[];
+    }
+  | { type: 'error'; error?: string };
+
+/**
+ * Read the write-scene SSE stream, forwarding accumulated prose to *onProse*
+ * and resolving once the final ``result`` event arrives.
+ */
+async function streamWriteSceneProse(
+  projectName: string,
+  sceneId: SceneId,
+  payload: SceneWritePayload,
+  onProse?: (accumulated: string) => void
+): Promise<SceneWriteResponse> {
+  const response = await fetch(
+    `/api/v1${projectEndpoint(projectName, `/scenes/${sceneId}/write/stream`)}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }
+  );
+
+  if (!response.ok) {
+    const detail = await response
+      .text()
+      .catch((): string => 'Write scene stream failed');
+    throw new Error(detail || 'Write scene stream failed');
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) {
+    throw new Error('Write scene stream produced no response body');
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let result: SceneWriteResponse | null = null;
+  let failed: Error | null = null;
+
+  const handleEvent = (event: WriteSceneStreamEvent): void => {
+    if (event.type === 'prose_chunk') {
+      onProse?.(event.accumulated ?? '');
+    } else if (event.type === 'result') {
+      result = {
+        scene: event.scene,
+        generated_text: event.generated_text,
+        assignments: event.assignments,
+        scenes: event.scenes,
+      };
+    } else if (event.type === 'error') {
+      failed = new Error(event.error || 'Write scene failed');
+    }
+  };
+
+  const processChunk = (chunk: string): void => {
+    buffer += chunk;
+    const lines = buffer.split('\n\n');
+    buffer = lines.pop() ?? '';
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('data: ')) continue;
+      const dataStr = trimmed.slice(6);
+      if (dataStr === '[DONE]') continue;
+      try {
+        handleEvent(JSON.parse(dataStr) as WriteSceneStreamEvent);
+      } catch {
+        // Skip malformed SSE frames; the next chunk usually repairs the buffer.
+      }
+    }
+  };
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      processChunk(decoder.decode(value, { stream: true }));
+    }
+    processChunk(decoder.decode());
+  } finally {
+    try {
+      await reader.cancel();
+    } catch {
+      // Ignore cancel failures; the stream is already closed.
+    }
+  }
+
+  if (failed) throw failed;
+  if (result) return result;
+  throw new Error('Write scene stream ended without a result');
 }
 
 export const createScenesApi = (projectName: string): ScenesApi => {
@@ -228,5 +333,12 @@ export const createScenesApi = (projectName: string): ScenesApi => {
         payload,
         'Failed to write scene prose'
       ),
+
+    streamWriteScene: (
+      sceneId: SceneId,
+      payload: SceneWritePayload,
+      onProse?: (accumulated: string) => void
+    ): Promise<SceneWriteResponse> =>
+      streamWriteSceneProse(projectName, sceneId, payload, onProse),
   };
 };

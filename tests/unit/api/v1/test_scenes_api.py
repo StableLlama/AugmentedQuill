@@ -741,6 +741,139 @@ class ScenesApiTest(ApiTestCase):
         self.assertEqual(payload["generated_text"], "Generated scene prose.")
         self.assertEqual(payload["scene"]["id"], scene["id"])
 
+    def test_write_scene_streams_prose_chunks_and_final_result(self) -> None:
+        """The streaming write-scene route emits prose_chunk then result events."""
+        scene = self._create(summary="Write scene stream")
+
+        async def fake_stream(**kwargs):
+            yield {"content": "Generated"}
+            yield {"content": " scene prose."}
+
+        with patch(
+            "augmentedquill.services.scenes.scene_generation_service.llm.unified_chat_stream",
+            new=fake_stream,
+        ):
+            resp = self.client.post(
+                self._url(f"/{scene['id']}/write/stream"),
+                json={
+                    "scope_type": "story",
+                    "include_following_scenes": 0,
+                    "detect_boundaries": False,
+                },
+            )
+
+        self.assertEqual(resp.status_code, 200, resp.text)
+        self.assertTrue(
+            resp.headers.get("content-type", "").startswith("text/event-stream"),
+            resp.headers.get("content-type"),
+        )
+        # Both prose chunks are streamed with accumulated text.
+        self.assertIn(
+            'data: {"type": "prose_chunk", "accumulated": "Generated"}', resp.text
+        )
+        self.assertIn(
+            'data: {"type": "prose_chunk", "accumulated": "Generated scene prose."}',
+            resp.text,
+        )
+        # The final result event carries the same payload shape as the
+        # non-streaming response.
+        self.assertIn('"type": "result"', resp.text)
+        self.assertIn('"generated_text": "Generated scene prose."', resp.text)
+        self.assertIn(f'"id": {scene["id"]}', resp.text)
+        self.assertTrue(resp.text.endswith("data: [DONE]\n\n"), repr(resp.text))
+
+    def test_write_scene_writes_complete_generated_prose_to_disk(self) -> None:
+        """The file on disk must contain the COMPLETE generated prose in markers.
+
+        A marker-free / marker-inclusive coordinate mix-up would write the new
+        prose at a wrong offset and truncate it, so assert the exact full
+        generated text sits between the scene's start and end markers.
+        """
+        scope_payload, content_path = self._configure_scope(project_case="novel")
+        scene = self._create(summary="Write scene")
+        content_path.write_text("Alpha beta gamma delta.", encoding="utf-8")
+
+        link_resp = self.client.post(
+            self._url(f"/{scene['id']}/link-prose"),
+            json={**scope_payload, "start_offset": 0, "end_offset": 10},
+        )
+        self.assertEqual(link_resp.status_code, 200, link_resp.text)
+
+        generated = "The complete replacement prose written by the model."
+        with patch(
+            "augmentedquill.services.scenes.scene_generation_service.llm.unified_chat_complete",
+            new=AsyncMock(return_value={"content": generated}),
+        ):
+            write_resp = self.client.post(
+                self._url(f"/{scene['id']}/write"),
+                json={
+                    **scope_payload,
+                    "include_following_scenes": 0,
+                    "detect_boundaries": False,
+                },
+            )
+
+        self.assertEqual(write_resp.status_code, 200, write_resp.text)
+
+        content = content_path.read_text(encoding="utf-8")
+        marker_start = f"<!--scene:{scene['id']}:start-->"
+        marker_end = f"<!--scene:{scene['id']}:end-->"
+        self.assertIn(f"{marker_start}{generated}{marker_end}", content)
+        self.assertEqual(
+            self._extract_scene_payload(content, scene["id"]),
+            generated,
+        )
+
+    def test_write_scene_prompt_is_marker_free_with_marker_bearing_chapter(
+        self,
+    ) -> None:
+        """Write-scene prompt must never contain internal scene markers.
+
+        The chapter file on disk is marker-inclusive, but the WRITING LLM must
+        only ever see clean prose in the "recent prose tail" — not the internal
+        ``<!--scene:...-->`` tokens.
+        """
+        scope_payload, content_path = self._configure_scope(project_case="novel")
+        marker_start = "<!--scene:1:start-->"
+        marker_end = "<!--scene:1:end-->"
+        content_path.write_text(
+            f"First paragraph.\n\n{marker_start}Second scene prose.{marker_end}",
+            encoding="utf-8",
+        )
+
+        scene = self._create(summary="Write scene")
+
+        captured: dict[str, str] = {}
+
+        async def fake_complete(**kwargs: object) -> dict[str, str]:
+            messages = kwargs.get("messages") or []
+            captured["prompt"] = "\n\n".join(
+                str(m.get("content", "")) for m in messages
+            )
+            return {"content": "Generated prose."}
+
+        with patch(
+            "augmentedquill.services.scenes.scene_generation_service.llm.unified_chat_complete",
+            new=AsyncMock(side_effect=fake_complete),
+        ):
+            write_resp = self.client.post(
+                self._url(f"/{scene['id']}/write"),
+                json={
+                    **scope_payload,
+                    "include_following_scenes": 0,
+                    "detect_boundaries": False,
+                },
+            )
+
+        self.assertEqual(write_resp.status_code, 200, write_resp.text)
+        prompt = captured["prompt"]
+        # The clean scene prose must be present as the tail anchor...
+        self.assertIn("Second scene prose.", prompt)
+        # ...but the internal markers must never reach the WRITING LLM prompt.
+        self.assertNotIn("<!--scene:", prompt)
+        self.assertNotIn(":start-->", prompt)
+        self.assertNotIn(":end-->", prompt)
+
     def test_write_scene_prompt_includes_notes_and_next_scene_preview(self) -> None:
         scope_payload, _ = self._configure_scope(project_case="novel")
         pdir = self.projects_root / self.pname

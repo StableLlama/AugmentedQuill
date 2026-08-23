@@ -26,9 +26,10 @@ import {
 } from '@testing-library/react';
 import { I18nextProvider } from 'react-i18next';
 import type { EditorView } from '@codemirror/view';
-import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach, beforeAll } from 'vitest';
 import i18n from '../app/i18n';
 import { SceneEditorDialog } from './SceneEditorDialog';
+import { getLinkedProseFromTextSource } from './proseLinkCoordinates';
 import { useScenes } from '../../stores/storyStore';
 import type {
   Scene,
@@ -36,7 +37,7 @@ import type {
   SourcebookEntry,
   SceneTagPersonalDatetime,
 } from '../../types';
-import type { Chapter, Book } from '../../types/domain';
+import type { Chapter, Book, WritingUnit } from '../../types/domain';
 import { TemporalApi } from '../../utils/temporal';
 
 const { sourcebookEntriesState } = vi.hoisted(() => ({
@@ -86,6 +87,7 @@ vi.mock('../layout/ThemeContext', () => ({
     muted: '',
     input: '',
   })),
+  useTheme: vi.fn(() => ({ currentTheme: 'dark' })),
 }));
 
 // ---------------------------------------------------------------------------
@@ -419,6 +421,77 @@ describe('SceneEditorDialog rendering', () => {
     // The diff button should be pressed
     const diffButton = screen.getByRole('button', { name: /Toggle diff view/i });
     expect(diffButton.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('renders a wholesale summary rewrite with Diff/Old/New tabs', () => {
+    // An LLM scene rewrite replaces the whole summary → the dialog shows a
+    // compact Diff/Old/New tab control instead of consuming lots of space.
+    baselineScenesState.push(
+      makeScene({
+        id: 'scene-block',
+        summary: 'The original scene summary that is completely different.',
+      })
+    );
+
+    wrap(
+      <SceneEditorDialog
+        scene={makeScene({
+          id: 'scene-block',
+          summary: 'A brand new scene summary written wholesale by the AI.',
+        })}
+        isOpen={true}
+        openedViaTrigger={true}
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+      />
+    );
+
+    // Diff/Old/New tabs are present for the changed summary.
+    expect(screen.getByRole('tablist', { name: /Diff view/i })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: /Old/i })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: /New/i })).toBeTruthy();
+
+    // The Diff tab is active by default (inline diff view).
+    const diffTab = screen.getByRole('tab', { name: /^Diff$/i });
+    expect(diffTab.getAttribute('aria-selected')).toBe('true');
+
+    // Switch to the Old tab → the previous summary is shown.
+    fireEvent.click(screen.getByRole('tab', { name: /Old/i }));
+    expect(screen.getByText(/original scene summary/i)).toBeTruthy();
+
+    // Switch to the New tab → the current summary is shown.
+    fireEvent.click(screen.getByRole('tab', { name: /New/i }));
+    expect(screen.getByText(/brand new scene summary/i)).toBeTruthy();
+  });
+
+  it('keeps the inline diff for a small summary edit', () => {
+    // A small word-level summary edit stays as the CodeMirror inline diff in
+    // the default Diff tab.
+    baselineScenesState.push(
+      makeScene({
+        id: 'scene-small',
+        summary: 'The quick brown fox',
+      })
+    );
+
+    wrap(
+      <SceneEditorDialog
+        scene={makeScene({
+          id: 'scene-small',
+          summary: 'The quick red fox',
+        })}
+        isOpen={true}
+        openedViaTrigger={true}
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+      />
+    );
+
+    expect(screen.getByRole('tablist', { name: /Diff view/i })).toBeTruthy();
+    const summaryEditor = document.querySelector('.cm-content');
+    expect(summaryEditor?.innerHTML).toContain('cm-diff-inserted');
   });
 
   it('does not show diff after user accepts all diffs and reopens dialog normally', () => {
@@ -1007,6 +1080,55 @@ describe('SceneEditorDialog save flow', () => {
     }
   });
 
+  it('renders prose live from the onProse stream callback during write-scene', async () => {
+    vi.useFakeTimers();
+    try {
+      const proseLink: SceneProseLink = {
+        scope_type: 'story',
+        start_offset: 0,
+        end_offset: 5,
+        content_hash: 'abc',
+        chapter_id: null,
+        book_id: null,
+        is_stale: false,
+      };
+
+      const getLinkedProseText = vi.fn(() => 'initial prose');
+      const onWriteScene = vi.fn(
+        async (onProse?: (text: string) => void): Promise<string> => {
+          onProse?.('chunk 1');
+          onProse?.('chunk 1 chunk 2');
+          return 'chunk 1 chunk 2 final';
+        }
+      );
+
+      wrap(
+        <SceneEditorDialog
+          scene={makeScene({ prose_link: proseLink })}
+          isOpen
+          onClose={NOOP_CLOSE}
+          onSave={NOOP_SAVE}
+          onDelete={NOOP_DELETE}
+          getLinkedProseText={getLinkedProseText}
+          onWriteScene={onWriteScene}
+        />
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: /Write Scene/i }));
+
+      await act(async () => {
+        await Promise.resolve();
+        vi.advanceTimersByTime(40);
+      });
+
+      // The streamed chunks appear live and are not clobbered by the stale
+      // linked-prose polling (which still returns 'initial prose').
+      expect(readLinkedProseEditorText()).toContain('chunk 1 chunk 2');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('enables diff view after write-scene without rendering a separate prose preview block', async () => {
     const proseLink: SceneProseLink = {
       scope_type: 'story',
@@ -1253,6 +1375,130 @@ describe('SceneEditorDialog save flow', () => {
         .getByRole('button', { name: /Toggle diff view/i })
         .getAttribute('aria-pressed')
     ).toBe('true');
+  });
+
+  it('displays the COMPLETE generated prose in the Linked Prose editor after write in a marker-bearing chapter', async () => {
+    // Faithful model of the real container + editor:
+    //  - The editor document (hideSceneMarkers=true) is marker-free.
+    //  - prose_link offsets are marker-inclusive (backend coordinate space).
+    //  - During a write the container syncs the marker-free editor doc into
+    //    the store (updateCurrentChapterContent), so getLinkedProseText is
+    //    called with a marker-free unit while the link offsets are still
+    //    marker-inclusive.  The dialog's Linked Prose editor must show the
+    //    FULL generated text, not a version missing its first characters.
+    vi.useFakeTimers();
+    try {
+      const markerStart = '<!--scene:1:start-->';
+      const markerEnd = '<!--scene:1:end-->';
+      const oldProse = 'Old scene prose here.';
+      const fullContent = `${markerStart}${oldProse}${markerEnd}`;
+      const proseStart = fullContent.indexOf(oldProse);
+      const proseEnd = fullContent.indexOf(markerEnd);
+      // Short enough to skip the progressive chunk loop (chunkSize = 48) so the
+      // full text is set directly; long enough that the marker-inclusive start
+      // offset (> 0) would drop leading characters if mis-applied.
+      const generated = 'Brand new prose replaces the old text';
+
+      let editorDoc = oldProse; // marker-free visible editor document
+      let chapterContent = fullContent; // store content (marker-inclusive before write)
+
+      const scene = makeScene({
+        id: '1',
+        prose_link: {
+          scope_type: 'chapter',
+          chapter_id: 'ch-1',
+          start_offset: proseStart,
+          end_offset: proseEnd,
+          content_hash: 'abc',
+          book_id: null,
+          is_stale: false,
+        } as SceneProseLink,
+      });
+      const scenes = [scene];
+
+      const getLinkedProseText = vi.fn((link: SceneProseLink): string | null =>
+        getLinkedProseFromTextSource(
+          editorDoc,
+          link,
+          {
+            id: 'ch-1',
+            scope: 'chapter',
+            title: 'Chapter 1',
+            summary: '',
+            content: chapterContent,
+          } as WritingUnit,
+          scenes
+        )
+      );
+
+      const onWriteScene = vi.fn(async (): Promise<string> => {
+        // Container: streamEditorReplace replaces the visible scene range.
+        editorDoc = generated;
+        // Container: updateCurrentChapterContent stores the marker-free doc.
+        chapterContent = editorDoc;
+        // Container: patchScene updates the scene with marker-inclusive offsets.
+        scene.prose_link = {
+          scope_type: 'chapter',
+          chapter_id: 'ch-1',
+          start_offset: proseStart,
+          end_offset: proseStart + generated.length,
+          content_hash: 'abc',
+          book_id: null,
+          is_stale: false,
+        };
+        return generated;
+      });
+
+      const { rerender } = wrap(
+        <SceneEditorDialog
+          scene={scene}
+          isOpen
+          onClose={NOOP_CLOSE}
+          onSave={NOOP_SAVE}
+          onDelete={NOOP_DELETE}
+          getLinkedProseText={getLinkedProseText}
+          onWriteScene={onWriteScene}
+        />
+      );
+      // patchScene re-renders the dialog with the new (marker-inclusive) link.
+      rerender(
+        <I18nextProvider i18n={i18n}>
+          <SceneEditorDialog
+            scene={scene}
+            isOpen
+            onClose={NOOP_CLOSE}
+            onSave={NOOP_SAVE}
+            onDelete={NOOP_DELETE}
+            getLinkedProseText={getLinkedProseText}
+            onWriteScene={onWriteScene}
+          />
+        </I18nextProvider>
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: /Write Scene/i }));
+
+      await act(async () => {
+        vi.advanceTimersByTime(5000);
+        await Promise.resolve();
+      });
+
+      // The in-flight sync polls getLinkedProseText while writing.  It must
+      // return the COMPLETE generated prose — this is what the Linked Prose
+      // editor shows while the write streams in.
+      expect(getLinkedProseText(scene.prose_link as SceneProseLink)).toBe(generated);
+
+      // Write Scene switches the dialog into diff view; the diff decorations
+      // mix the deleted baseline with the current text in the DOM, so toggle
+      // the diff off to read the plain current value the user sees.
+      fireEvent.click(screen.getByRole('button', { name: /Toggle diff view/i }));
+
+      // The dialog must show the complete generated prose — nothing dropped
+      // from the front of the text.
+      expect(readLinkedProseEditorText()).toBe(generated);
+    } finally {
+      vi.unstubAllGlobals();
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -2443,5 +2689,110 @@ describe('Spec: SceneEditorDialog diff rules', () => {
       const diffSection = document.body.querySelector('[data-diff="changed"]');
       expect(diffSection).toBeTruthy();
     });
+  });
+});
+
+// ─── Diff accept ends the diff view ─────────────────────────────────────────
+// Accepting a linked-prose diff must end the Diff/Old/New diff view so only
+// the new content remains.
+
+describe('SceneEditorDialog diff accept', () => {
+  let pointStore: Map<string, Element | null>;
+
+  beforeAll(() => {
+    if (!('elementFromPoint' in document)) {
+      Object.defineProperty(document, 'elementFromPoint', {
+        value: (x: number, y: number): Element | null => {
+          const key = `${Math.round(x)},${Math.round(y)}`;
+          return pointStore?.get(key) ?? null;
+        },
+        writable: true,
+        configurable: true,
+      });
+    }
+  });
+
+  beforeEach(() => {
+    pointStore = new Map();
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: Element
+    ): DOMRect {
+      return {
+        top: 200,
+        bottom: 240,
+        left: 100,
+        right: 500,
+        width: 400,
+        height: 40,
+        x: 100,
+        y: 200,
+        toJSON: (): object => ({}),
+      };
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const makeProseLink = (): SceneProseLink => ({
+    scope_type: 'story',
+    start_offset: 0,
+    end_offset: 5,
+    content_hash: 'abc',
+    chapter_id: null,
+    book_id: null,
+    is_stale: false,
+  });
+
+  it('ends the diff view when the user accepts the linked prose diff', async () => {
+    const proseLink = makeProseLink();
+    baselineScenesState.push(makeScene({ id: 'scene-accept', prose_link: proseLink }));
+
+    wrap(
+      <SceneEditorDialog
+        scene={makeScene({ id: 'scene-accept', prose_link: proseLink })}
+        isOpen
+        openedViaTrigger
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+        getLinkedProseText={() => 'New LLM prose'}
+      />
+    );
+
+    // Diff/Old/New tabs are visible for the changed linked prose.
+    await waitFor(() => {
+      expect(screen.getByRole('tablist', { name: /Diff view/i })).toBeTruthy();
+    });
+
+    // Hover the linked-prose section to reveal the floating accept toolbar.
+    const dialog = document.querySelector(
+      '[role="dialog"][aria-label="Edit Scene"]'
+    ) as HTMLElement;
+    const scroller = dialog.querySelector('.overflow-y-auto') as HTMLElement;
+    const section = Array.from(dialog.querySelectorAll('[data-diff="changed"]')).find(
+      (s: Element): boolean =>
+        s.querySelector('label')?.textContent?.includes('Linked Prose') ?? false
+    ) as HTMLElement;
+    expect(section).toBeTruthy();
+    const rect = section.getBoundingClientRect();
+    const cx = Math.round(rect.left + rect.width / 2);
+    const cy = Math.round(rect.top + rect.height / 2);
+    pointStore.set(`${cx},${cy}`, section);
+    fireEvent.mouseMove(scroller, { clientX: cx, clientY: cy });
+
+    const acceptBtn = await screen.findByLabelText('Accept change');
+    fireEvent.click(acceptBtn);
+
+    // The diff view ends: no tabs and no inline diff marks remain.
+    await waitFor(() => {
+      expect(screen.queryByRole('tablist', { name: /Diff view/i })).toBeNull();
+    });
+    const linkedProseEditor = screen.getByRole('textbox', {
+      name: /Linked Prose/i,
+    });
+    expect(linkedProseEditor.innerHTML).not.toContain('cm-diff-inserted');
+    expect(linkedProseEditor.innerHTML).not.toContain('cm-diff-deleted');
   });
 });

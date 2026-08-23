@@ -210,6 +210,37 @@ mark.search-highlight {
   border-left: 3px solid var(--aq-diff-insert-border);
 }
 
+/* Block-level diff inside the CodeMirror editor (large paragraph or whole-field
+   replacements).  Mirrors the app's `diff-block-old` / `diff-block-new` cards:
+   a soft red block for the removed text and a soft green block for the new
+   text, each with a coloured left rule, so a whole rewritten paragraph or a
+   rewritten summary reads as clearly separated blocks instead of a harsh wall
+   of inline strikethrough + green marks. */
+.cm-diff-block.cm-diff-block-old {
+  display: block;
+  white-space: pre-wrap;
+  background-color: color-mix(in srgb, var(--aq-diff-delete-bg) 50%, transparent);
+  border-left: 3px solid var(--aq-diff-delete-border);
+  border-radius: 4px;
+  padding: 0.75rem 1rem;
+  margin: 0.5rem 0;
+}
+
+/* Full-width green block for lines fully covered by a block insertion. */
+.cm-diff-block-inserted-line {
+  background-color: color-mix(in srgb, var(--aq-diff-insert-bg) 50%, transparent);
+  box-shadow: inset 3px 0 0 var(--aq-diff-insert-border);
+}
+
+/* Inline marker for the inserted range inside a block (marks partial lines and
+   gives the floating diff toolbar a precise hover target). */
+.cm-diff-block-inserted {
+  border-left: 2px solid var(--aq-diff-insert-border);
+  padding: 0.05rem 0.1rem;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
 .prose-editor:focus,
 .prose-editor:focus-visible {
   outline: none !important;

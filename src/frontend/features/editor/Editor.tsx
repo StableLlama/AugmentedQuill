@@ -44,8 +44,9 @@ import {
   setProseHighlightEffect,
   type ProseHighlightRange,
   type ProseBoundaryCallback,
-  type EditorHighlightColors,
 } from './CodeMirrorEditor';
+import { getEditorHighlightColors } from './highlightColors';
+import { getPaperColors } from './paperColors';
 import { setAnnotationRangesEffect, type AnnotationRange } from './annotationPlugin';
 import {
   setAnnotationClickCallback,
@@ -824,28 +825,26 @@ export const Editor = React.memo(
         },
       }));
 
-      // Styles & Theme Logic
-      let pageBackgroundColor: string;
-      let textColor: string;
-      let editorContainerBg: string;
-      let selectionBg: string;
-
-      if (settings.theme === 'dark') {
-        const b = settings.brightness * 20; // range 10-20% lightness
-        pageBackgroundColor = `hsl(24, 10%, ${b}%)`;
-        textColor = `rgba(231, 229, 228, ${settings.contrast})`;
-        editorContainerBg = 'bg-brand-gray-950';
-        // Dark background: stronger selection to remain visible
-        selectionBg = 'rgba(99,102,241,0.40)';
-      } else {
-        pageBackgroundColor = `hsl(38, 25%, ${settings.brightness * 100}%)`;
-        textColor = `rgba(20, 15, 10, ${settings.contrast})`;
-        editorContainerBg =
-          settings.theme === 'light' ? 'bg-brand-gray-100' : 'bg-brand-gray-950';
-        // Light/Mixed mode: warm editor background — use a soft semi-transparent
-        // highlight so selected text stays readable without being too vivid
-        selectionBg = 'rgba(99,102,241,0.22)';
-      }
+      // Styles & Theme Logic — paper colours come from the shared helper so
+      // every paper-like surface (writing editor, dialog content fields) is
+      // driven by the same brightness/contrast settings.
+      const pageColors = getPaperColors(
+        settings.theme,
+        settings.brightness,
+        settings.contrast
+      );
+      const pageBackgroundColor = pageColors.backgroundColor;
+      const textColor = pageColors.textColor;
+      const editorContainerBg =
+        settings.theme === 'dark'
+          ? 'bg-brand-gray-950'
+          : settings.theme === 'light'
+            ? 'bg-brand-gray-100'
+            : 'bg-brand-gray-950';
+      // Selection colour depends on the paper brightness: stronger on the dark
+      // paper, softer on the cream paper.
+      const selectionBg =
+        settings.theme === 'dark' ? 'rgba(99,102,241,0.40)' : 'rgba(99,102,241,0.22)';
 
       // Per-paper highlight colour tokens.  Every highlight layer (scene
       // prose-link tint, search, annotation, and diff insert/delete) is tuned
@@ -855,31 +854,7 @@ export const Editor = React.memo(
       // The scene tint is deliberately subtle (and has no per-line bottom rule)
       // so the user can keep reading through a long scene without distraction;
       // the scene is identified by its boundary handles and the pinboard card.
-      const highlightColors: EditorHighlightColors = (() => {
-        if (settings.theme === 'dark') {
-          return {
-            proseHighlightBg: 'rgba(245, 158, 11, 0.10)',
-            searchHighlightBg: 'rgba(245, 158, 11, 0.30)',
-            annotationUnderline: 'rgba(167, 139, 250, 0.85)',
-            annotationBg: 'rgba(139, 92, 246, 0.16)',
-            diffInsertBg: 'rgba(34, 197, 94, 0.22)',
-            diffInsertBorder: 'rgba(74, 222, 128, 0.55)',
-            diffDeleteBg: 'rgba(239, 68, 68, 0.22)',
-            diffDeleteBorder: 'rgba(248, 113, 113, 0.55)',
-          };
-        }
-        // Cream/white paper (light + mixed themes)
-        return {
-          proseHighlightBg: 'rgba(180, 110, 0, 0.06)',
-          searchHighlightBg: 'rgba(245, 158, 11, 0.22)',
-          annotationUnderline: 'rgba(124, 58, 237, 0.65)',
-          annotationBg: 'rgba(124, 58, 237, 0.08)',
-          diffInsertBg: 'rgba(34, 197, 94, 0.14)',
-          diffInsertBorder: 'rgba(34, 197, 94, 0.45)',
-          diffDeleteBg: 'rgba(239, 68, 68, 0.14)',
-          diffDeleteBorder: 'rgba(239, 68, 68, 0.45)',
-        };
-      })();
+      const highlightColors = getEditorHighlightColors(settings.theme === 'dark');
 
       const isMonospace = viewMode === 'raw';
       const fontFamily = isMonospace

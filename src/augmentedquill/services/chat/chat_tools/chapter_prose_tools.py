@@ -31,6 +31,7 @@ from augmentedquill.services.projects.projects import (
 from augmentedquill.services.projects.projects import (
     write_chapter_content as _write_chapter_content,
 )
+from augmentedquill.services.scenes.scene_markers import strip_internal_markers
 from augmentedquill.utils.json_repair import apply_typographic_quotes
 
 _BRACKET_TOKEN_RE = re.compile(r"\[[^\]]+\]")
@@ -373,7 +374,13 @@ async def call_writing_llm(
 
     preceding_content = params.preceding_content
     if params.write_mode == "append" and not preceding_content:
-        preceding_content = _extract_tail_paragraphs(existing_for_append)
+        # The anchor is built from the raw (marker-inclusive) file, but the
+        # WRITING LLM must only ever see clean prose — never internal
+        # scene/annotation marker tokens.  The marker-inclusive text is still
+        # used for the on-disk append below.
+        preceding_content = _extract_tail_paragraphs(
+            strip_internal_markers(existing_for_append)
+        )
 
     user_content = get_user_prompt(
         "call_writing_llm_request",

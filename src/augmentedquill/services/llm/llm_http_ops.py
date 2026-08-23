@@ -188,6 +188,10 @@ async def logged_request(
                 ):
                     last_exc = None
                     continue
+                # A prior attempt may have failed with a transient error (e.g.
+                # ReadTimeout). The current attempt succeeded, so the stale
+                # exception must not be re-raised — the response is the result.
+                last_exc = None
                 break
             except Exception as exc:
                 last_exc = exc

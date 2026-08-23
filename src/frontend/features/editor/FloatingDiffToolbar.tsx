@@ -48,7 +48,7 @@ export interface FloatingDiffToolbarProps {
 // ─── Constants ──────────────────────────────────────────────────────────────
 
 const DEFAULT_DIFF_SELECTOR =
-  '.cm-diff-inserted, .cm-diff-deleted, [data-diff="changed"]';
+  '.cm-diff-inserted, .cm-diff-deleted, .cm-diff-block-inserted, .cm-diff-block-inserted-line, .cm-diff-block-old, [data-diff="changed"]';
 
 const TOOLBAR_HEIGHT = 36;
 const TOOLBAR_WIDTH = 112;

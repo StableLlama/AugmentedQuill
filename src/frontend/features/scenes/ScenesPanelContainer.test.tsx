@@ -107,11 +107,17 @@ const {
       refreshHash: vi.fn(),
       updateProseContent: vi.fn(),
       writeScene: vi.fn(),
+      streamWriteScene: vi.fn(),
     },
     story: {
       getContent: vi.fn(),
     },
   };
+  // streamWriteScene delegates to writeScene so the write-scene mocks below
+  // keep working unchanged (the container now streams via streamWriteScene).
+  apiMock.scenes.streamWriteScene.mockImplementation((...args: unknown[]) =>
+    apiMock.scenes.writeScene(...args)
+  );
   // Mutable holder — spy stubs close over this object; tests read from it.
   const captured: {
     pinboard: unknown;
@@ -398,6 +404,11 @@ function makeMutableEditorRef(initialText: string = ''): {
       return currentText.length;
     },
     sliceString: (from: number, to: number): string => currentText.slice(from, to),
+    // CodeMirror's Doc.toString() returns the full document text.  Without
+    // this, the container's updateCurrentChapterContent(view.state.doc.toString())
+    // receives '[object Object]' instead of the real text, silently exercising
+    // a different code path than the real editor.
+    toString: (): string => currentText,
   };
   const view = {
     state: { doc },
@@ -1551,7 +1562,10 @@ describe('handleWriteScene', () => {
     const sceneId = '1';
     const generatedText = 'Gamma';
     const markerStartLen = `<!--scene:${sceneId}:start-->`.length;
-    const separatorLen = 1;
+    // New write into an EMPTY chapter: the frontend appends without a "\n"
+    // separator (empty content), so the backend's marker-inclusive
+    // start_offset is exactly the start-marker length.
+    const separatorLen = 0;
 
     let scenesState: Scene[] = [makeScene({ id: sceneId, prose_link: null })];
     useScenesMock.mockImplementation(() => scenesState);
@@ -1605,6 +1619,116 @@ describe('handleWriteScene', () => {
 
     const reopenedLink = scenesState[0].prose_link as SceneProseLink;
     expect(dlg().getLinkedProseText!(reopenedLink)).toBe(generatedText);
+  });
+
+  it('returns the COMPLETE generated prose from getLinkedProseText after write when the store content is marker-free', async () => {
+    // Regression: after Write Scene in a marker-bearing chapter, the container
+    // syncs the marker-free editor document back into the store
+    // (updateCurrentChapterContent), so currentChapter.content is marker-free
+    // while the scene's prose_link offsets remain marker-inclusive (backend
+    // coordinates).  getLinkedProseText is what the Edit Scene dialog polls and
+    // displays in the Linked Prose editor, so it must return the FULL generated
+    // text — not a slice that drops the first characters.
+    const markerStart = '<!--scene:1:start-->';
+    const markerEnd = '<!--scene:1:end-->';
+    const oldProse = 'Old scene prose';
+    const fullContent = `${markerStart}${oldProse}${markerEnd}`;
+    const proseStart = fullContent.indexOf(oldProse);
+    const generated = 'Refreshed scene prose with a longer replacement text.';
+
+    const updatedScene = makeScene({
+      id: '1',
+      prose_link: makeProseLink({
+        scope_type: 'chapter',
+        chapter_id: 'ch-1',
+        start_offset: proseStart,
+        end_offset: proseStart + generated.length,
+      }),
+    });
+    // Post-write state: the editor document AND the store chapter content are
+    // both marker-free (visible), while the prose_link offsets are marker-inclusive.
+    const { ref } = makeEditorRef(generated);
+
+    await renderAndOpenDialog([updatedScene], {
+      currentChapter: { ...CHAPTER, content: generated } as WritingUnit,
+      editorRef: ref,
+    });
+
+    expect(dlg().getLinkedProseText!(updatedScene.prose_link as SceneProseLink)).toBe(
+      generated
+    );
+  });
+
+  it('keeps the store chapter content marker-inclusive after write-scene (no marker-free window)', async () => {
+    // Regression: updateCurrentChapterContent must never leave the store with a
+    // marker-free chapter body.  The editor document is marker-free
+    // (hideSceneMarkers=true), but the store/backend content must stay
+    // marker-inclusive — otherwise every visible↔original conversion
+    // (getLinkedProseText, prose-drop, boundary-drag, save-prose) reads
+    // marker-inclusive offsets against marker-free text.  After a write the
+    // store must contain the COMPLETE generated prose inside its scene markers.
+    const markerStart = '<!--scene:1:start-->';
+    const markerEnd = '<!--scene:1:end-->';
+    const oldProse = 'Old scene prose';
+    const fullContent = `${markerStart}${oldProse}${markerEnd}`;
+    const proseStart = fullContent.indexOf(oldProse);
+    const proseEnd = proseStart + oldProse.length;
+    const generated = 'Brand new complete prose replaces the old text.';
+
+    const scene = makeScene({
+      id: '1',
+      prose_link: makeProseLink({
+        scope_type: 'chapter',
+        chapter_id: 'ch-1',
+        start_offset: proseStart,
+        end_offset: proseEnd,
+      }),
+    });
+    const updatedScene = makeScene({
+      id: '1',
+      prose_link: makeProseLink({
+        scope_type: 'chapter',
+        chapter_id: 'ch-1',
+        start_offset: proseStart,
+        end_offset: proseStart + generated.length,
+      }),
+    });
+    apiMock.scenes.writeScene.mockResolvedValueOnce({
+      scene: updatedScene,
+      generated_text: generated,
+      assignments: [],
+      scenes: [],
+    });
+
+    // Marker-bearing chapter: the editor document is marker-free (visible),
+    // the store content is marker-inclusive (full).
+    const { ref, getText } = makeMutableEditorRef(oldProse);
+    storyState.chapters = [
+      { id: 'ch-1', scope: 'chapter', title: 'Ch1', summary: '', content: fullContent },
+    ];
+    setStoryMock.mockImplementation((updater: (prev: unknown) => unknown) => {
+      const next = updater(storyState);
+      Object.assign(storyState, next as object);
+    });
+
+    await renderAndOpenDialog([scene], {
+      currentChapter: { ...CHAPTER, content: fullContent } as WritingUnit,
+      editorRef: ref,
+    });
+
+    await act(async () => {
+      await dlg().onWriteScene!();
+    });
+
+    // The editor document holds the complete marker-free generated prose.
+    expect(getText()).toBe(generated);
+
+    // The STORE content must be marker-inclusive and contain the COMPLETE
+    // generated prose (nothing truncated, markers preserved) — this is what
+    // downstream conversions and any subsequent save read.
+    expect(storyState.chapters[0].content).toBe(
+      `${markerStart}${generated}${markerEnd}`
+    );
   });
 
   it('preserves marker boundaries for first/middle/last writes with same vs different selected chapter', async () => {

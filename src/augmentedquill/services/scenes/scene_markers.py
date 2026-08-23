@@ -417,6 +417,17 @@ def remove_annotation_markers(
     return _remove_layer_markers(content, ANNOTATION_LAYER, annotation_ids)  # type: ignore[arg-type]
 
 
+def strip_internal_markers(content: str) -> str:
+    """Strip all internal inline markers (scene + annotation) from *content*.
+
+    This is the backend equivalent of the frontend's
+    ``stripInlineInternalMarkers``.  Use it whenever prose is prepared for an
+    LLM-facing surface (prompt tails, anchors, tool-read content) so internal
+    marker tokens never leak into prompts or model output.
+    """
+    return remove_annotation_markers(remove_markers(content))
+
+
 def inject_markers(
     content: str,
     assignments: list[tuple[int, int, int]],

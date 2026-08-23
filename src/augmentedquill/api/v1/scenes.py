@@ -11,7 +11,13 @@ All routes are scoped under ``/projects/{project_name}/scenes`` and require a
 valid, existing project directory resolved via the ``ProjectDep`` dependency.
 """
 
+from __future__ import annotations
+
+import json
+from collections.abc import AsyncIterator
+
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 
 from augmentedquill.api.v1.dependencies import ProjectDep
 from augmentedquill.models.scene import (
@@ -32,6 +38,7 @@ from augmentedquill.models.scene import (
 from augmentedquill.services.scenes.scene_generation_service import (
     auto_link_scope_text,
     detect_scene_boundaries_and_link,
+    stream_write_scene_and_link,
     write_scene_and_link,
 )
 from augmentedquill.services.scenes.scene_service import (
@@ -247,6 +254,43 @@ async def write_scene_prose(
         assignments=result["assignments"],
         scenes=[Scene(**scene) for scene in result["scenes"]],
     )
+
+
+@router.post("/scenes/{scene_id}/write/stream")
+async def write_scene_prose_stream(
+    project_dir: ProjectDep,
+    scene_id: SceneId,
+    payload: SceneWriteRequest,
+) -> StreamingResponse:
+    """Stream generated prose for one scene and auto-link generated boundaries.
+
+    Emits SSE events:
+    - ``{"type": "prose_chunk", "accumulated": str}`` as tokens are generated
+    - ``{"type": "result", "scene": ..., "generated_text": ..., "assignments": ..., "scenes": ...}``
+      once generation and linking complete
+    - ``{"type": "error", "error": str}`` on failure
+    """
+
+    async def _gen() -> AsyncIterator[str]:
+        """Yield SSE events for the streaming write-scene request."""
+        try:
+            async for event in stream_write_scene_and_link(
+                project_dir=project_dir,
+                scene_id=scene_id,
+                request=payload,
+                payload={},
+            ):
+                yield f"data: {json.dumps(event)}\n\n"
+        except LookupError as exc:
+            yield f"data: {json.dumps({'type': 'error', 'error': str(exc)})}\n\n"
+        except ValueError as exc:
+            yield f"data: {json.dumps({'type': 'error', 'error': str(exc)})}\n\n"
+        except Exception as exc:
+            yield f"data: {json.dumps({'type': 'error', 'error': f'Write scene failed: {exc}'})}\n\n"
+        finally:
+            yield "data: [DONE]\n\n"
+
+    return StreamingResponse(_gen(), media_type="text/event-stream")
 
 
 @router.post("/scenes/auto-link-scope", response_model=AutoLinkScopeResponse)
