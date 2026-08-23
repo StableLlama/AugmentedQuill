@@ -1,6 +1,6 @@
 # AugmentedQuill
 
-[![Build Status](https://img.shields.io/github/actions/workflow/status/StableLlamaAI/AugmentedQuill/ci.yml?branch=develop)](https://github.com/StableLlamaAI/AugmentedQuill/actions)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/StableLlamaAI/AugmentedQuill/code-quality.yml?branch=develop)](https://github.com/StableLlamaAI/AugmentedQuill/actions)
 [![License: GPLv3](https://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
 
 ![AugmentedQuill logo](static/images/logo_2048.png)
@@ -16,24 +16,18 @@
 
 ## 🚀 Quick start (for users)
 
-1.  Clone repository and create Python environment
-    - `git clone https://github.com/StableLlamaAI/AugmentedQuill.git`
-    - `cd AugmentedQuill`
-    - `python -m venv venv && source venv/bin/activate`
-2.  Install dependencies
-    - `python -m pip install -e ".[dev]"`
-3.  Build frontend
-    - `cd src/frontend && npm install && npm run build`
-4.  Run backend
-    - Default: `augmentedquill --reload --host 127.0.0.1 --port 8000`
-5.  Run frontend dev server
-    - `cd src/frontend && npm run dev`
-    - Default proxy target: backend on 8000
-    - Override with environment variable (if you use a different backend port):
-      - `VITE_BACKEND_URL=http://127.0.0.1:<your-port> npm run dev`
-6.  Open
-    - `http://127.0.0.1:5173` (vite dev)
-    - `http://127.0.0.1:8000/` (production mode)
+The fastest way to get started is to download a ready-to-run build from the [Releases](https://github.com/StableLlamaAI/AugmentedQuill/releases) page, choosing the option that suits you:
+
+| Method                                  | Best for                                          | How                                                                                                                                                  |
+| --------------------------------------- | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Portable executable**                 | Authors & artists who want to double-click and go | Download the executable for your OS and run it. It starts a local server and opens AugmentedQuill in your browser automatically.                     |
+| **Docker**                              | Self-hosters & home servers                       | Run `docker compose up -d` and open `http://localhost:8000/`. See the [Installation Guide](INSTALL.md#3-docker-best-for-self-hosters--home-servers). |
+| **Electron desktop app** (experimental) | A native-feeling windowed application             | Work in progress. See the [Installation Guide](INSTALL.md#2-standalone-desktop-app-electron).                                                        |
+| **From source**                         | Tinkerers & contributors                          | See the [Developer Guide](DEVELOPMENT.md).                                                                                                           |
+
+The full [Installation Guide](INSTALL.md) walks through every method in detail.
+
+> **Tip:** For the simplest setup, use the published releases. Building from source is intended for development and contribution.
 
 ### ✅ First actions in the app
 
@@ -91,55 +85,17 @@ The complete user guide is in `docs/user_manual/`:
 
 ---
 
-## 🛠️ Developer section (find all dev info here)
+## 🛠️ For developers
 
-### Repo layout
+Want to modify the code, contribute a feature, or run a local instance from source? See the **[Developer Guide](DEVELOPMENT.md)** for:
 
-- Backend: `src/augmentedquill/`
-- Frontend: `src/frontend/`
-- Integration artifacts: `static/` and `data/`
-- Tests: `tests/unit/`
-- Config schemas: `resources/schemas/`
+- Repository layout
+- Development setup and commands (backend + frontend)
+- The optional dev container
+- Configuration paths and model endpoint variables
+- QA requirements and branching conventions
 
-### Development commands
-
-- Backend lint/test
-  - `ruff check .`
-  - `black --check .`
-  - `python -m pytest`
-- Frontend: `cd src/frontend && npm run lint && npm run test && npm run build`
-- Accessibility validation: `cd src/frontend && npm run test:accessibility` (new)
-- Quick run: `augmentedquill --reload --host 127.0.0.1 --port 28000`
-
-### Configuration paths
-
-Runtime config:
-
-- `data/config/machine.json`
-- `data/config/story.json`
-- `data/config/projects.json`
-
-Model endpoint variables:
-
-- `OPENAI_API_KEY`
-- `OPENAI_BASE_URL`
-- `OPENAI_MODEL`
-- `OPENAI_TIMEOUT_S`
-
-### QA requirements
-
-- Run `tools/enforce_code_hygiene.py .` after code changes.
-- Run `tools/check_copyright.py .`.
-- Keep `data/projects/` and `data/logs/` names safe by setting `AUGQ_USER_DATA_DIR` in test runs.
-
----
-
-## 📄 Links
-
-- `docs/ARCHITECTURE.md`
-- `docs/ORGANIZATION.md`
-- `CONTRIBUTING.md`
-- `LICENSE` (GPLv3)
+Contributors should also read [CONTRIBUTING.md](CONTRIBUTING.md). Technical deep dives live in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/ORGANIZATION.md](docs/ORGANIZATION.md).
 
 ---
 
