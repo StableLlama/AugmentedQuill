@@ -13,9 +13,25 @@
 import './features/app/i18n';
 import * as axeMatchers from 'vitest-axe/matchers';
 import 'vitest-axe/extend-expect';
-import { expect } from 'vitest';
+import { expect, vi } from 'vitest';
 
 expect.extend(axeMatchers);
+
+const useFakeTimers = vi.useFakeTimers.bind(vi);
+vi.useFakeTimers = (
+  ...args: Parameters<typeof useFakeTimers>
+): ReturnType<typeof useFakeTimers> => {
+  const temporalDescriptor: PropertyDescriptor | undefined =
+    Object.getOwnPropertyDescriptor(globalThis, 'Temporal');
+  if (!temporalDescriptor?.configurable) return useFakeTimers(...args);
+
+  Reflect.deleteProperty(globalThis, 'Temporal');
+  try {
+    return useFakeTimers(...args);
+  } finally {
+    Object.defineProperty(globalThis, 'Temporal', temporalDescriptor);
+  }
+};
 
 // Mock getClientRects for CodeMirror tests in jsdom
 Object.defineProperty(Range.prototype, 'getClientRects', {
