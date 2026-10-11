@@ -17,9 +17,9 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-echo "==> [1/7] Installing ripgrep"
+echo "==> [1/7] Installing ripgrep and GitHub CLI"
 sudo apt-get update
-sudo apt-get install -y --no-install-recommends ripgrep
+sudo apt-get install -y --no-install-recommends gh ripgrep
 
 echo "==> [2/7] Fixing ownership of named-volume mount points"
 # Fresh named volumes and the parent ~/.cache dir are root-owned; give the
