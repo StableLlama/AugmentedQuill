@@ -27,6 +27,12 @@ import {
 } from './temporal';
 
 describe('temporal utils', () => {
+  it('exposes the selected implementation on the Temporal global', () => {
+    expect((globalThis as { Temporal?: typeof TemporalApi }).Temporal).toBe(
+      TemporalApi
+    );
+  });
+
   it('returns empty display for null or invalid values', () => {
     expect(toDisplayString(null)).toBe('');
     expect(toDisplayString('not-a-temporal-string')).toBe('');
