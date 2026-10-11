@@ -4,7 +4,7 @@ A fully sandboxed development environment for this repository:
 
 - **Backend**: Python 3.12 (`mcr.microsoft.com/devcontainers/python:3.12`)
 - **Frontend**: Node.js 24 (via the dev container Node feature)
-- **Pre-installed**: backend editable install `.[dev]`, frontend deps, Playwright Chromium + system deps
+- **Pre-installed**: GitHub CLI (`gh`), backend editable install `.[dev]`, frontend deps, Playwright Chromium + system deps
 - **VS Code extensions**: Python + Pylance, Ruff, Black, ESLint, Prettier, Tailwind, Playwright
 
 ## Prerequisites
