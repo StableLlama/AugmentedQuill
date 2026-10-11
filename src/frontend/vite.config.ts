@@ -15,7 +15,7 @@ import child_process from 'child_process';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 
-const frontendPackagePath = path.resolve(__dirname, 'package.json');
+const frontendPackagePath = path.resolve(import.meta.dirname, 'package.json');
 let appVersion = 'unknown';
 try {
   const pkgJson = JSON.parse(fs.readFileSync(frontendPackagePath, 'utf-8'));
@@ -100,7 +100,7 @@ export default defineConfig(({ mode }: import('vite').ConfigEnv) => {
     },
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': path.resolve(import.meta.dirname, '.'),
       },
     },
   };
