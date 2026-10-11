@@ -13,11 +13,63 @@ import os
 import tempfile
 from pathlib import Path
 from unittest import TestCase
+from unittest.mock import patch
 
+import augmentedquill.core.config as app_config
 from augmentedquill.core.config import load_machine_config, load_story_config
 
 
 class ConfigLoaderTest(TestCase):
+    def test_frozen_app_stores_data_next_to_executable(self):
+        executable = Path("/portable/AugmentedQuill.exe")
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            patch.object(app_config.sys, "frozen", True, create=True),
+            patch.object(app_config.sys, "executable", str(executable)),
+        ):
+            self.assertEqual(app_config._resolve_data_dir(), executable.parent / "data")
+
+    def test_user_data_environment_override_takes_precedence(self):
+        user_data = Path("/custom/augmentedquill-data")
+        with (
+            patch.dict(os.environ, {"AUGQ_USER_DATA_DIR": str(user_data)}),
+            patch.object(app_config.sys, "frozen", True, create=True),
+            patch.object(app_config.sys, "executable", "/portable/AugmentedQuill.exe"),
+        ):
+            self.assertEqual(app_config._resolve_data_dir(), user_data)
+
+    def test_empty_openai_environment_values_do_not_override_file(self):
+        with tempfile.TemporaryDirectory() as td:
+            cfg_path = Path(td) / "machine.json"
+            cfg_path.write_text(
+                json.dumps(
+                    {
+                        "openai": {
+                            "api_key": "saved-key",
+                            "base_url": "https://saved.example.com/v1",
+                            "model": "saved-model",
+                            "timeout_s": 30,
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with patch.dict(
+                os.environ,
+                {
+                    "OPENAI_API_KEY": "",
+                    "OPENAI_BASE_URL": "",
+                    "OPENAI_MODEL": "",
+                    "OPENAI_TIMEOUT_S": "",
+                },
+            ):
+                config = load_machine_config(cfg_path)
+
+        self.assertEqual(config["openai"]["api_key"], "saved-key")
+        self.assertEqual(config["openai"]["base_url"], "https://saved.example.com/v1")
+        self.assertEqual(config["openai"]["model"], "saved-model")
+        self.assertEqual(config["openai"]["timeout_s"], 30)
+
     def test_machine_config_env_overrides_file_and_defaults(self):
         with tempfile.TemporaryDirectory() as td:
             cfg_path = Path(td) / "machine.json"

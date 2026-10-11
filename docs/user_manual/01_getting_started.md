@@ -8,14 +8,15 @@ AugmentedQuill is designed to be a seamless extension of your creative process. 
 
 AugmentedQuill **never runs in the cloud**. It is free and open source (GPLv3), and you install it on your own machine (or a server you control) — there is no subscription, no account, and no usage fee. The only thing you may connect, entirely at your own discretion, is an AI model provider. Choose the method that fits you best:
 
-| Method                                  | Best for                                          | Where to look                                                                                                                                                                                            |
-| --------------------------------------- | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Portable executable**                 | Authors & artists who want to double-click and go | Download the executable for your OS from the [Releases](https://github.com/StableLlamaAI/AugmentedQuill/releases) page. It starts a local server and opens AugmentedQuill in your browser automatically. |
-| **Docker**                              | Self-hosters & home servers                       | `docker compose up -d`, then open `http://localhost:8000/`.                                                                                                                                              |
-| **Electron desktop app** (experimental) | A native-feeling windowed application             | Work in progress; see the installation guide.                                                                                                                                                            |
-| **From source**                         | Tinkerers & contributors                          | See the [Developer Guide](../../DEVELOPMENT.md).                                                                                                                                                         |
+| Method                         | Best for                                    | Where to look                                                                                                                                                                |
+| ------------------------------ | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Desktop app (experimental)** | Authors and artists who want a windowed app | Download the Windows installer or Linux AppImage from the [Releases](https://github.com/StableLlamaAI/AugmentedQuill/releases) page. AugmentedQuill opens in its own window. |
+| **Docker**                     | Self-hosters and home servers               | Run `docker compose up -d`, then open `http://localhost:8000/` in a browser.                                                                                                 |
+| **From source**                | Developers and contributors                 | See the [Developer Guide](../../DEVELOPMENT.md).                                                                                                                             |
 
-The complete, step-by-step [Installation Guide](../../INSTALL.md) covers every method in detail. You can come back to install later — everything below assumes the app is already running in your browser.
+The complete, step-by-step [Installation Guide](../../INSTALL.md) covers every method in detail. The desktop release opens in its own window; Docker and source installations open in a browser. The rest of this manual assumes AugmentedQuill is running.
+
+For where your projects and settings are saved, and what to back up, see [Where Your Data Is Stored](../../INSTALL.md#where-your-data-is-stored).
 
 > **Tip:** For the simplest setup, use the published releases. Building from source is intended for development and contribution.
 

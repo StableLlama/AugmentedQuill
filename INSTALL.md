@@ -1,39 +1,27 @@
-# Installation Guide
+# Installation and First Run
 
-AugmentedQuill offers multiple ways to install and run the application, depending on your technical background and how you prefer to use it.
+Choose the option that matches how you want to use AugmentedQuill:
 
-## 1. Portable Executable (Easiest for Artists & Authors)
+- **Desktop app (experimental)**: simplest for one person using one computer.
+- **Docker**: useful for a home server or NAS; requires Docker.
+- **From source**: for developers and contributors.
 
-If you just want to double-click an app and start writing in your own web browser without installing any dependencies, this is the option for you.
+You do not need an AI provider to open the app or write manually. To use AI features, add a provider in **Settings → Machine Settings** after starting the app. You do not need to enter API keys in a terminal.
 
-**How it works:** We bundle the entire Python backend and the pre-built frontend into a single executable file using PyInstaller. When you run it, it starts a local server and automatically opens AugmentedQuill in your default web browser.
+## 1. Desktop App (Electron, Experimental)
 
-**Installation:**
+The desktop app is experimental, but Windows and Linux installers are currently published. It opens AugmentedQuill in its own application window, not your system web browser.
 
-1. Go to the [Releases](../../releases) page on GitHub.
-2. Download the executable for your operating system (`.exe` for Windows, `.app` or binary for macOS, binary for Linux).
-3. Place the file in a folder where you want your stories to be saved (it will create `data/` and `resources/` folders next to it).
-4. Double-click the executable. Your browser will open automatically!
+**Install and start:**
 
----
-
-## 2. Standalone Desktop App (Electron)
-
-> **Note:** The Electron desktop wrapper is currently **experimental / work in progress**. No official installer is published yet. See `docs/ARCHITECTURE.md` § 8 for development notes.
-
-If you prefer a complete, isolated desktop application experience rather than using your web browser, you can use the Electron version.
-
-**How it works:** This bundles the PyInstaller backend with an Electron frontend, giving you a native-feeling windowed application.
-
-**Installation (once an official release is available):**
-
-1. Go to the [Releases](../../releases) page on GitHub.
-2. Download the installer for your operating system (e.g., `AugmentedQuill-Setup.exe` for Windows, `.dmg` for macOS, `.AppImage` for Linux).
-3. Run the installer and launch AugmentedQuill from your applications menu.
+1. Open the [Releases](https://github.com/StableLlamaAI/AugmentedQuill/releases) page.
+2. Download the installer for your system. Current releases provide a Windows `.exe` installer and a Linux `.AppImage`; a macOS installer is not currently published.
+3. On Windows, run the installer and open **AugmentedQuill** from the Start menu. On Linux, open the downloaded AppImage; if your computer asks, allow it to run as an application.
+4. AugmentedQuill opens in its own window. Your projects and settings are saved in the app's folder under your operating system's application-data location, not beside the installer. See [Where Your Data Is Stored](#where-your-data-is-stored) for how to find and back it up.
 
 ---
 
-## 3. Docker (Best for Self-Hosters & Home Servers)
+## 2. Docker (Home Server or NAS)
 
 If you run a home server, NAS, or just prefer keeping your applications containerized, you can use Docker. This avoids installing Python or Node.js on your host machine.
 
@@ -41,30 +29,34 @@ If you run a home server, NAS, or just prefer keeping your applications containe
 
 - [Docker](https://docs.docker.com/get-docker/) and Docker Compose installed.
 
-**Installation:**
+**Install and start:**
 
-1. Download the `docker-compose.yml` file from this repository (or create your own using the example below).
-2. Open a terminal in the directory containing the file and run:
+1. Install Docker Engine with the Docker Compose plugin, or install Docker Desktop.
+2. Create a folder for AugmentedQuill on the server. Download `docker-compose.yml` from this repository into that folder.
+3. Open a terminal in that folder and run:
 
    ```bash
    docker compose up -d
    ```
 
-   This uses image `ghcr.io/stablellamaai/augmentedquill:latest` and maps host port `8000` to container port `8000`.
+   Docker downloads the published image and starts the app. The first start creates a `data/` folder beside `docker-compose.yml`; the app saves its projects and settings there. The Compose file does not require the source code or a Dockerfile.
 
-   If you don’t want to use Docker Compose, you can run directly with Docker:
+4. On the same computer, open [http://localhost:8000](http://localhost:8000). From another device on your private network, use `http://<server-ip>:8000`.
 
-   ```bash
-   docker run -d --name augmentedquill \
-     -p 8000:8000 \
-     -v "$PWD/data:/app/data" \
-     -v "$PWD/resources/config:/app/resources/config" \
-     ghcr.io/stablellamaai/augmentedquill:latest
-   ```
+AugmentedQuill has no built-in login or access control. Do not expose port `8000` to the public internet; use it only on a trusted computer or private network unless you add your own authentication and access controls.
 
-3. Open your browser and point to `http://localhost:8000/` (or `http://<server-ip>:8000/` when running on a remote machine).
+To stop the app without deleting your work, run `docker compose down` in the same folder. Start it again with `docker compose up -d`. Your work remains in `data/`.
 
-_Note: Your stories and configuration will be saved in the `./data` and `./resources/config` directories next to your `docker-compose.yml` file._
+If you prefer not to use Compose, run this from the folder where you want the `data/` directory created:
+
+```bash
+docker run -d --name augmentedquill \
+  -p 8000:8000 \
+  -v "$PWD/data:/app/data" \
+  ghcr.io/stablellamaai/augmentedquill:latest
+```
+
+Do not remove the host `data/` folder when updating or removing the container. Back it up separately. The app’s bundled resources stay inside the image; they are not user settings and are not mounted over by default.
 
 **Docker networking notes for AI providers:**
 
@@ -75,7 +67,7 @@ _Note: Your stories and configuration will be saved in the `./data` and `./resou
 
 ---
 
-## 4. Developer Setup (From Source)
+## 3. Developer Setup (From Source)
 
 If you want to modify the code, contribute to the project, or just prefer running things from source, follow these steps.
 
@@ -117,7 +109,40 @@ If you want to modify the code, contribute to the project, or just prefer runnin
    ```
    Then open `http://127.0.0.1:8000` in your browser.
 
+By default, a source install stores runtime data in the repository's `data/` folder. Do not use this development folder as the only copy of important writing; back it up separately.
+
 For hot-reloading during development, see the Development Workflow section in the [Developer Guide](DEVELOPMENT.md).
+
+## Where Your Data Is Stored
+
+The `data/` folder is the important folder to keep and back up. Its location depends on how you installed the app:
+
+| Install type               | Host folder containing your data                                                                             |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Desktop app (Electron)     | The AugmentedQuill folder under your OS application-data location (Windows: `%APPDATA%`; Linux: `~/.config`) |
+| Docker Compose             | `data/` beside `docker-compose.yml`                                                                          |
+| `docker run` command above | `data/` in the folder where you ran the command                                                              |
+| From source                | `data/` in the repository by default                                                                         |
+
+Inside `data/`:
+
+- `config/machine.json` stores machine-wide settings, including model providers.
+- `config/projects.json` remembers the current and recently used projects.
+- `config/story.json` is a default/legacy story configuration used when no project-specific file is available. For normal writing, the active project's own `story.json` is the one that matters.
+- `projects/<project-name>/` contains each project. Its `story.json` stores project metadata and project-specific settings; chapters, books, Sourcebook entries, images, and other project content are stored in that same project folder.
+- `logs/` contains runtime logs.
+
+For the desktop app, open the application-data location above and look for the `AugmentedQuill` folder. On Windows, press **Windows key + R**, enter `%APPDATA%`, and press **Enter**. On Linux, open your Home folder, show hidden files, and open `.config`.
+
+For normal use, change settings in the app rather than editing these files: use **Settings → Machine Settings** for model providers and the **Projects** tab to create, import, export, or delete projects. Edit files directly only if you understand JSON and have made a backup first. The app may validate, normalize, or migrate project files when it opens them.
+
+Some display and layout preferences are stored in the browser's local storage for the address you use to open AugmentedQuill. They are not part of the server's `data/` backup.
+
+`resources/config/` is different: it contains bundled application resources such as model presets and AI instruction text. It is not where the app saves Machine Settings or projects. The default Docker setup keeps these bundled resources inside the image.
+
+### Optional advanced path overrides
+
+Most users should leave these unchanged. `AUGQ_USER_DATA_DIR` moves the runtime data root; by default, the projects folder is inside it. `AUGQ_PROJECTS_ROOT` moves only the projects folder. `AUGQ_PROJECTS_REGISTRY`, `AUGQ_MACHINE_CONFIG_PATH`, and `AUGQ_STORY_CONFIG_PATH` can override individual file paths. If you change paths in Docker, bind-mount those host folders into the container too, or the data may not survive container replacement.
 
 ### Branching notes for contributors
 

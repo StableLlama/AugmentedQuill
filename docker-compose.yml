@@ -1,27 +1,25 @@
-version: '3.8'
-
 services:
   augmentedquill:
-    build: .
     image: ghcr.io/stablellamaai/augmentedquill:latest
     container_name: augmentedquill
     ports:
       - '8000:8000'
     volumes:
       - ./data:/app/data
-      - ./resources/config:/app/resources/config
     # Lets the container reach LLM providers running on the Docker host
     # (e.g. Ollama/llama.cpp) via http://host.docker.internal:<port>.
     # Requires Docker >= 20.10 (host-gateway). Cloud providers need no extra settings.
     extra_hosts:
       - 'host.docker.internal:host-gateway'
     environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
-      - OPENAI_MODEL=${OPENAI_MODEL:-}
+      # Pass through only variables set on the host; absent values must not
+      # override provider settings saved through the application UI.
+      - OPENAI_API_KEY
+      - OPENAI_BASE_URL
+      - OPENAI_MODEL
       # Pass through egress proxy config so cloud LLM calls can use the host's proxy.
-      - HTTP_PROXY=${HTTP_PROXY:-}
-      - HTTPS_PROXY=${HTTPS_PROXY:-}
-      - NO_PROXY=${NO_PROXY:-}
-      - ALL_PROXY=${ALL_PROXY:-}
+      - HTTP_PROXY
+      - HTTPS_PROXY
+      - NO_PROXY
+      - ALL_PROXY
     restart: unless-stopped
