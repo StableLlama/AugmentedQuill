@@ -86,6 +86,12 @@ repository.
 
 ## Troubleshooting
 
+- **Build fails with `The 'moby' option is not supported on debian 'trixie'`**:
+  the `python:3.12` base image is Debian trixie based, and the
+  `docker-outside-of-docker` feature defaults to installing the OSS Moby
+  packages, which are not published for trixie. The feature is therefore
+  configured with `"moby": false` (Docker CE CLI) in `devcontainer.json`. Keep
+  that option when editing the feature block.
 - **`Permission denied` while installing dependencies**: a stale root-owned
   named volume. Run **Dev Containers: Rebuild Container** (or
   `docker volume rm augmentedquill-venv augmentedquill-node_modules

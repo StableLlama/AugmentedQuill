@@ -10,6 +10,14 @@
   "features": {
     "ghcr.io/devcontainers/features/node:1": {
       "version": "24"
+    },
+    // "moby": false installs the Docker CE CLI instead of the OSS Moby
+    // packages. The tag-less python:3.12 image is Debian trixie based, and
+    // moby-cli/moby-buildx are not published for trixie, which makes the
+    // feature fail with "The 'moby' option is not supported on debian
+    // 'trixie'". Docker CE is published for trixie, so use that.
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
+      "moby": false
     }
   },
 
