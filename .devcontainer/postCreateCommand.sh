@@ -17,7 +17,11 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-echo "==> [1/6] Fixing ownership of named-volume mount points"
+echo "==> [1/7] Installing ripgrep"
+sudo apt-get update
+sudo apt-get install -y --no-install-recommends ripgrep
+
+echo "==> [2/7] Fixing ownership of named-volume mount points"
 # Fresh named volumes and the parent ~/.cache dir are root-owned; give the
 # vscode user write access. ~/.cache must be writable so pre-commit (and other
 # tools) can create their caches; the Playwright volume is chowned recursively.
@@ -29,23 +33,23 @@ for dir in \
   sudo chown -R "$(id -u):$(id -g)" "$dir" 2>/dev/null || true
 done
 
-echo "==> [2/6] Creating Python virtual environment (venv/)"
+echo "==> [3/7] Creating Python virtual environment (venv/)"
 if [[ ! -x "$REPO_ROOT/venv/bin/python" ]]; then
   python3 -m venv "$REPO_ROOT/venv"
 fi
 "$REPO_ROOT/venv/bin/python" -m pip install --upgrade pip
 
-echo "==> [3/6] Installing backend + dev dependencies (editable)"
+echo "==> [4/7] Installing backend + dev dependencies (editable)"
 "$REPO_ROOT/venv/bin/pip" install -e ".[dev]"
 
-echo "==> [4/6] Installing frontend dependencies"
+echo "==> [5/7] Installing frontend dependencies"
 cd "$REPO_ROOT/src/frontend"
 npm install --legacy-peer-deps
 
-echo "==> [5/6] Installing Playwright Chromium (browser + system deps)"
+echo "==> [6/7] Installing Playwright Chromium (browser + system deps)"
 npx playwright install --with-deps chromium
 
-echo "==> [6/6] Configuring tooling (PATH + pre-commit hooks)"
+echo "==> [7/7] Configuring tooling (PATH + aliases + pre-commit hooks)"
 # Put the repo venv's tools on PATH so ruff/black/pytest/pre-commit work from a
 # fresh shell without manually activating the venv (the container disables the
 # Python auto-activation in the terminal).
@@ -54,6 +58,15 @@ if ! grep -q "AUGMENTEDQUILL_VENV_PATH" "$HOME/.bashrc" 2>/dev/null; then
     echo ""
     echo "# AugmentedQuill: expose repo venv tools (ruff, black, pytest, pre-commit)"
     echo "export PATH=\"$REPO_ROOT/venv/bin:\$PATH\"  # AUGMENTEDQUILL_VENV_PATH"
+  } >> "$HOME/.bashrc"
+fi
+
+if ! grep -q "AUGMENTEDQUILL_BASH_ALIASES" "$HOME/.bashrc" 2>/dev/null; then
+  {
+    echo ""
+    echo "# AugmentedQuill: common directory listing shortcuts"
+    echo "alias ll='ls -alF'  # AUGMENTEDQUILL_BASH_ALIASES"
+    echo "alias l='ls -CF'"
   } >> "$HOME/.bashrc"
 fi
 
