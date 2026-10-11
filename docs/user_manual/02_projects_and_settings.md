@@ -2,6 +2,19 @@
 
 To access your projects and configure the application, click the <img src="assets/settings.svg" alt="Settings icon" width="20" height="20" style="vertical-align:text-bottom;" /> **Settings** icon (or the logo/title area) in the top navigation bar. This opens the Settings Dialog, which has four main tabs: **Projects**, **Machine Settings**, **General**, and **About**.
 
+## Which Settings Belong Where?
+
+You do not need to edit files by hand for normal use. Use the app so it can validate and save changes safely:
+
+| What you want to change                                               | Where to change it                                      | Where it is saved                                                                                        |
+| --------------------------------------------------------------------- | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Add or change AI model providers and their roles                      | **Settings → Machine Settings**                         | `data/config/machine.json`                                                                               |
+| Create, rename, import, export, or delete a project                   | **Settings → Projects**                                 | The project folder under `data/projects/` by default; the project list is in `data/config/projects.json` |
+| Edit story metadata, chapters, books, Sourcebook, and project options | The active project's writing and editing screens        | The active project folder; `story.json` stores its metadata and project settings                         |
+| Change display, editor, and layout preferences                        | **Settings → General** or the relevant display controls | Some preferences are saved in this browser, not in the project folder                                    |
+
+The exact `data/` location depends on your installation. See the [Installation Guide's storage map](../../INSTALL.md#where-your-data-is-stored). For manual backups, copy the complete `data/` folder after stopping the app. Direct file edits are an advanced option: make a backup first, close the app, and avoid changing JSON unless you know its format. `resources/config/` contains application resources, not your personal Machine Settings or projects.
+
 ## The About Tab
 
 The About tab provides version and runtime information about AugmentedQuill and the environment it is running in:

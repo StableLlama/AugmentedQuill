@@ -48,8 +48,19 @@ SCHEMAS_DIR = BASE_DIR / "resources" / "schemas"
 
 _logger = logging.getLogger(__name__)
 RESOURCES_DIR = BASE_DIR / "resources"
-_ENV_USER_DATA_DIR = os.getenv("AUGQ_USER_DATA_DIR")
-DATA_DIR = Path(_ENV_USER_DATA_DIR) if _ENV_USER_DATA_DIR else BASE_DIR / "data"
+
+
+def _resolve_data_dir() -> Path:
+    """Resolve writable runtime data separately from bundled application files."""
+    user_data_dir = os.getenv("AUGQ_USER_DATA_DIR")
+    if user_data_dir:
+        return Path(user_data_dir)
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent / "data"
+    return BASE_DIR / "data"
+
+
+DATA_DIR = _resolve_data_dir()
 PROJECTS_ROOT = DATA_DIR / "projects"
 LOGS_DIR = DATA_DIR / "logs"
 STATIC_DIR = BASE_DIR / "static"
@@ -197,13 +208,13 @@ def _env_overrides_for_openai() -> dict[str, Any]:
     timeout_s = os.getenv("OPENAI_TIMEOUT_S")
 
     openai: dict[str, Any] = {}
-    if api_key is not None:
+    if api_key:
         openai["api_key"] = api_key
-    if base_url is not None:
+    if base_url:
         openai["base_url"] = base_url
-    if model is not None:
+    if model:
         openai["model"] = model
-    if timeout_s is not None:
+    if timeout_s:
         try:
             openai["timeout_s"] = int(timeout_s)
         except ValueError:

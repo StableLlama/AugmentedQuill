@@ -9,9 +9,11 @@ AugmentedQuill is designed for local desktop or local server usage. It has no bu
 - Do not expose the app to the public internet without adding your own reverse proxy with authentication (nginx + OAuth/OpenID/HTTP basic, etc.).
 - Project data is stored locally:
   - `data/projects/` for story projects
-  - `data/config/` for local config
+  - `data/config/` for machine settings and the project registry
   - `data/logs/` for runtime logs
-- No “sync with external editor” integration exists yet. If you want versioned backups, use your own source control (Git) on `data/projects` or manual export via the UI.
+- The path is install-dependent: the desktop app uses its folder under the operating system's application-data location; Docker stores data in the `data/` folder beside the Compose file; source installs use the repository's `data/` folder by default. In Docker, the host `data/` folder is mounted at `/app/data`; do not delete it when replacing the container.
+- For a complete backup, close the desktop app and copy its AugmentedQuill application-data folder, or stop a Docker/source server and copy its entire `data/` folder. A project ZIP export is useful for moving or backing up one project. No “sync with external editor” integration exists yet.
+- `resources/config/` contains application resources such as presets and instruction text. It is not the normal location for user settings or project files.
 - Accessibility support is implemented for core flows (screen-reader semantics, visible keyboard focus, keyboard shortcuts, focus-trapped dialogs, reduced-motion support) and is checked automatically as part of development, but the app is not WCAG-certified. See [Keyboard Shortcuts & Accessibility](14_keyboard_shortcuts_and_accessibility.md) for what is covered and the known gaps.
 
 ## 2. Common user-reported issues
@@ -89,9 +91,9 @@ services:
 
 4. For full request/response details, enable the raw request log (see the [Developer Guide](../../DEVELOPMENT.md#debug-diagnostics)).
 
-### 2.6 “Desktop / portable executable can’t reach a local model” (system proxy)
+### 2.6 “Desktop app can’t reach a local model” (system proxy)
 
-The **portable desktop app** and the experimental **desktop app (Electron)** both run the same application code, so connection behavior is identical. A very common cause of “local model unreachable” in these builds is an **HTTP(S) proxy**:
+The desktop app's backend uses the same HTTP client as the server version. A common cause of “local model unreachable” is an **HTTP(S) proxy**:
 
 - The HTTP client honors `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY`
   environment variables — and on Windows it also picks up the system proxy

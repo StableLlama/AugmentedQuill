@@ -32,7 +32,7 @@ AugmentedQuill is a project-based writing environment for short stories, novels,
 
 ## Quick start
 
-1. **Install** — download a ready-to-run build from the [Releases](https://github.com/StableLlamaAI/AugmentedQuill/releases) page, use [Docker](INSTALL.md#3-docker-best-for-self-hosters--home-servers), or [build from source](DEVELOPMENT.md). The full [Installation Guide](INSTALL.md) walks through every method.
+1. **Install** — download the desktop app from the [Releases](https://github.com/StableLlamaAI/AugmentedQuill/releases) page, use [Docker](INSTALL.md#2-docker-home-server-or-nas), or [build from source](DEVELOPMENT.md). The full [Installation Guide](INSTALL.md) walks through every method.
 2. **Connect an LLM provider** — AugmentedQuill does not bundle an AI server. Point it at a local `llama.cpp`/Ollama endpoint (free and private) or, if you choose, a cloud OpenAI-compatible API (OpenAI, Claude, Google Gemini, DeepSeek, OpenRouter) under **Settings → Machine Settings**.
 3. **Start writing** — create a project (or let the Writing Partner do it for you) and talk to the AI chat.
 
