@@ -15,7 +15,13 @@ import { useTranslation } from 'react-i18next';
 import { Plus } from 'lucide-react';
 import type { EditorView } from '@codemirror/view';
 import type { EditorHandle } from '../editor/Editor';
-import type { Scene, SceneProseLink, StoryState, SceneId } from '../../types';
+import type {
+  Scene,
+  SceneBeat,
+  SceneProseLink,
+  StoryState,
+  SceneId,
+} from '../../types';
 import type { EditorSettings } from '../../types/ui';
 import type { WritingUnit, Chapter, Book } from '../../types/domain';
 import { useScenes } from '../../stores/storyStore';
@@ -34,6 +40,10 @@ import { NarrativeView } from './NarrativeView';
 import { ConvergenceMapView } from './ConvergenceMapView';
 import { SceneEditorDialog } from './SceneEditorDialog';
 import type {
+  SceneFieldGenerateRequest,
+  SceneFieldGenerateResult,
+} from './SceneEditorDialog';
+import type {
   SceneBoundaryAssignment,
   SceneUpdatePayload,
 } from '../../services/apiClients/scenes';
@@ -45,6 +55,7 @@ import type { UIStoreState } from '../../stores/uiStore';
 import { externalValueSyncAnnotation } from '../editor/codeMirrorDiffPlugin';
 import {
   getSceneMarkerSpanRange,
+  getSceneMarkerTokenRanges,
   hasInlineInternalMarkers,
   hasInlineSceneMarkers,
   sceneMarkerTokenLength,
@@ -55,6 +66,7 @@ import {
 } from '../editor/internalTags';
 import {
   getLinkedProseFromTextSource,
+  isLinkedProseLink,
   toOriginalOffset,
   toVisibleLinkedOffset,
 } from './proseLinkCoordinates';
@@ -94,7 +106,7 @@ function collectBoundaryAdjustments(
   const toAdjust: BoundaryAdjustment[] = [];
   const toUnlink: SceneId[] = [];
   for (const other of scenes) {
-    if (other.id === sceneId || !other.prose_link) continue;
+    if (other.id === sceneId || !isLinkedProseLink(other.prose_link)) continue;
     const ol = other.prose_link;
     if (ol.scope_type !== link.scope_type) continue;
     if (link.scope_type === 'chapter' && ol.chapter_id !== link.chapter_id) continue;
@@ -137,22 +149,15 @@ function snapRangeOutsideMarkers(
   from: number,
   to: number
 ): { from: number; to: number } {
-  const markerRe = /<!--scene:[^:>]+:(?:start|end)-->/g;
   let safeFrom = from;
   let safeTo = to;
-  let match: RegExpExecArray | null = markerRe.exec(docText);
-  while (match) {
-    const markerStart = match.index;
-    const markerEnd = markerStart + match[0].length;
-
-    if (safeFrom > markerStart && safeFrom < markerEnd) {
-      safeFrom = markerEnd;
+  for (const marker of getSceneMarkerTokenRanges(docText)) {
+    if (safeFrom > marker.from && safeFrom < marker.to) {
+      safeFrom = marker.to;
     }
-    if (safeTo > markerStart && safeTo < markerEnd) {
-      safeTo = markerStart;
+    if (safeTo > marker.from && safeTo < marker.to) {
+      safeTo = marker.from;
     }
-
-    match = markerRe.exec(docText);
   }
 
   if (safeTo < safeFrom) {
@@ -321,14 +326,7 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
           currentChapter.scope
         );
         console.log('  new content length:', content.length);
-        console.log(
-          '  new content has scene:13:end?',
-          content.includes('<!--scene:13:end-->')
-        );
-        console.log(
-          '  new content has scene:14:start?',
-          content.includes('<!--scene:14:start-->')
-        );
+        console.log('  new content has scene markers?', hasInlineSceneMarkers(content));
       }
       setStory((prev: StoryState) => {
         const currentContent =
@@ -942,7 +940,11 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
       const targetScene = scenes.find((s: Scene) => s.id === targetSceneId);
       if (!sourceScene || !targetScene) return;
 
-      if (!sourceScene.prose_link || !targetScene.prose_link) return;
+      if (
+        !isLinkedProseLink(sourceScene.prose_link) ||
+        !isLinkedProseLink(targetScene.prose_link)
+      )
+        return;
       await handleLinkedProseNarrativeReorder(
         sourceSceneId,
         targetSceneId,
@@ -1197,7 +1199,7 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
       const latestChapter = currentChapterRef.current;
 
       const scene = latestScenes.find((s: Scene): boolean => s.id === sceneId);
-      if (!scene?.prose_link) return;
+      if (!isLinkedProseLink(scene?.prose_link)) return;
       const link = scene.prose_link;
 
       // The drag offset is in VISIBLE (marker-stripped) coordinates because
@@ -1844,6 +1846,48 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
     ]
   );
 
+  /**
+   * Regenerate a derived scene field (summary or beats) from another field,
+   * streaming the accumulated text back to the dialog.
+   */
+  const handleGenerateSceneField = useCallback(
+    async (
+      request: SceneFieldGenerateRequest
+    ): Promise<SceneFieldGenerateResult | null> => {
+      if (!editingSceneId) return null;
+      const result = await api.scenes.streamGenerateField(
+        editingSceneId,
+        {
+          target: request.target,
+          source: request.source,
+          summary: request.summary,
+          beats: request.beats.map((beat: SceneBeat): { id: string; text: string } => ({
+            id: beat.id,
+            text: beat.text,
+          })),
+          prose: request.prose,
+        },
+        (accumulated: string): void => request.onChunk?.(accumulated)
+      );
+      return {
+        target: result.target,
+        text: result.text,
+        beats: result.beats.map(
+          (beat: {
+            id: string;
+            text: string;
+            prose_link?: SceneProseLink | null;
+          }): SceneBeat => ({
+            id: beat.id,
+            text: beat.text,
+            prose_link: beat.prose_link ?? null,
+          })
+        ),
+      };
+    },
+    [editingSceneId]
+  );
+
   return (
     <div className="flex flex-col w-full h-full">
       {/* Toolbar */}
@@ -1998,6 +2042,7 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
           getLinkedProseText={editorRef ? getLinkedProseText : undefined}
           onSaveProseContent={editorRef ? handleSaveProseContent : undefined}
           onWriteScene={handleWriteScene}
+          onGenerateSceneField={handleGenerateSceneField}
           onUnlinkProse={async (sceneId: SceneId): Promise<void> => {
             try {
               const updated = await api.scenes.unlinkProse(sceneId);

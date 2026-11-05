@@ -11,12 +11,16 @@ import calendar
 import json
 import re
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from pydantic import AliasChoices, Field
 
 from augmentedquill.core.config import load_story_config
 from augmentedquill.core.prompts import get_user_prompt
+from augmentedquill.models.scene import (
+    SceneUpdateProseContentRequest,
+)
 from augmentedquill.services.chapters.chapter_helpers import _chapter_by_id_or_404
 from augmentedquill.services.chat.chat_tool_decorator import (
     CHAT_ROLE,
@@ -25,13 +29,27 @@ from augmentedquill.services.chat.chat_tool_decorator import (
     chat_tool,
 )
 from augmentedquill.services.chat.chat_tools.chapter_tools import MARKER
+from augmentedquill.services.exceptions import BadRequestError
 from augmentedquill.services.projects.projects import (
     get_active_project_dir,
 )
 from augmentedquill.services.projects.projects import (
     write_chapter_content as _write_chapter_content,
 )
-from augmentedquill.services.scenes.scene_markers import strip_internal_markers
+from augmentedquill.services.scenes.scene_markers import (
+    find_scene_marker_span,
+    strip_internal_markers,
+)
+from augmentedquill.services.scenes.scene_service import (
+    _scene_content_path,
+    append_text_to_scope,
+    get_scene,
+    link_range_to_scene,
+    list_scenes,
+    scene_prose_is_linked,
+    scope_link_for_content_path,
+    update_prose_content,
+)
 from augmentedquill.utils.json_repair import apply_typographic_quotes
 
 _BRACKET_TOKEN_RE = re.compile(r"\[[^\]]+\]")
@@ -177,6 +195,124 @@ def _extract_tail_paragraphs(text: str, max_paragraphs: int = 3) -> str:
     return "\n\n".join(paragraphs[-max_paragraphs:])
 
 
+def _resolve_write_scope_link(active: Path, chapter_path: Path) -> dict[str, Any]:
+    """Resolve the prose scope link for a chapter/draft file."""
+    scope_link = scope_link_for_content_path(active, chapter_path)
+    if scope_link is None:
+        raise BadRequestError(
+            f"Cannot resolve the prose scope for '{chapter_path.name}'. "
+            "Verify the project structure before writing prose."
+        )
+    return scope_link
+
+
+def _project_scene_ids(active: Path | None) -> list[int]:
+    """Return the IDs of all scenes in the active project (sorted)."""
+    if active is None:
+        return []
+    try:
+        scenes = list_scenes(active)
+    except OSError:
+        return []
+    scene_ids: list[int] = []
+    for scene in scenes:
+        scene_id = scene.get("id")
+        if isinstance(scene_id, int):
+            scene_ids.append(scene_id)
+    return sorted(set(scene_ids))
+
+
+def _assert_append_is_scene_aware(
+    active: Path | None,
+    *,
+    params: "CallWritingLlmParams",
+) -> None:
+    """Reject ambiguous chapter-level appends in projects that use scenes.
+
+    ``write_mode='append'`` without ``scene_id`` writes the text after the last
+    scene marker, so the prose belongs to no scene and the scene editor stays
+    empty — which looks like a data-loss bug to the user.  The model must either
+    pass ``scene_id`` (preferred) or explicitly opt into chapter-level prose
+    with ``chapter_wide=True``.
+    """
+    if params.chapter_wide:
+        return
+    scene_ids = _project_scene_ids(active)
+    if not scene_ids:
+        return
+    available = ", ".join(str(scene_id) for scene_id in scene_ids)
+    raise BadRequestError(
+        "write_mode='append' without scene_id is ambiguous: this project uses "
+        "scenes, and the prose would be appended outside every scene, leaving "
+        "the scene editor of the target scene empty. Pass scene_id to write "
+        f"this prose as a scene's prose (available scene IDs: {available}; use "
+        "manage_scenes(action='list') for details). Set chapter_wide=true only "
+        "if the prose is intentionally not part of any scene."
+    )
+
+
+def _append_prose_to_scene(
+    *,
+    active: Path,
+    scene_id: int,
+    chap_id: int,
+    chapter_path: Path,
+    generated_text: str,
+) -> dict[str, Any]:
+    """Append prose to *scene_id* and keep its scene markers accurate.
+
+    The marker/link work is delegated to the same scene-service helpers used by
+    the scene editor and the main generation button, so all prose-generation
+    entry points behave identically.
+    """
+    scene = get_scene(active, scene_id)
+    if not isinstance(scene, dict):
+        raise BadRequestError(
+            f"Scene '{scene_id}' not found. "
+            "Use manage_scenes(action='list') to look up valid scene IDs."
+        )
+
+    if scene_prose_is_linked(scene):
+        content_path = _scene_content_path(active, scene["prose_link"])
+        if content_path is None or not content_path.exists():
+            raise BadRequestError(
+                f"Scene '{scene_id}' is linked to a prose file that no longer exists."
+            )
+        content = content_path.read_text(encoding="utf-8")
+        span = find_scene_marker_span(content, scene_id)
+        if span is not None:
+            combined = _join_appended_prose(
+                content[span.start : span.end], generated_text
+            )
+            update_prose_content(
+                active,
+                scene_id,
+                SceneUpdateProseContentRequest(text=combined),
+            )
+            return {
+                "written": True,
+                "write_mode": "append",
+                "chap_id": chap_id,
+                "scene_id": scene_id,
+                "scene_linked": True,
+            }
+
+    scope_link = _resolve_write_scope_link(active, chapter_path)
+    _content_path, new_content, start_offset, end_offset = append_text_to_scope(
+        active, scope_link, generated_text
+    )
+    link_result = link_range_to_scene(
+        active, scene_id, scope_link, new_content, start_offset, end_offset
+    )
+    return {
+        "written": True,
+        "write_mode": "append",
+        "chap_id": chap_id,
+        "scene_id": scene_id,
+        **link_result,
+    }
+
+
 def _format_sourcebook_entry_prompt(entry: dict, language: str) -> str:
     """Format a sourcebook entry compactly for the WRITING LLM prompt."""
     name = entry.get("name", "")
@@ -283,13 +419,37 @@ class CallWritingLlmParams(ToolModel):
         None,
         description="Optional list of sourcebook entry names or synonyms to include in the WRITING LLM prompt. Matching entries are resolved by name or synonym and added compactly with category, description, and relations.",
     )
+    scene_id: int | None = Field(
+        None,
+        description=(
+            "Optional scene ID. When provided together with write_mode, the "
+            "generated prose is written as that scene's prose and linked to the "
+            "scene with scene markers, so the scene's Linked Prose is populated. "
+            "Always pass scene_id when writing prose for a specific scene. "
+            "Supported with write_mode='append' (extends the scene prose, or "
+            "appends and links it when the scene is still unlinked), 'replace', "
+            "and 'insert_at_marker'. Not supported with 'replace_all' because "
+            "that mode removes all scene markers."
+        ),
+    )
     write_mode: str | None = Field(
         None,
-        description="How to persist output: 'append' (add to end of chapter), 'replace' (replace the single occurrence of replace_target in the chapter with the generated text — replace_target is required), 'replace_all' (REPLACES THE COMPLETE EXISTING CONTENT of the chapter/draft with the newly generated text — all prior content is lost), 'insert_at_marker' (insert at ~~~ marker), or None (return text without writing).",
+        description="How to persist output: 'append' (add to end of chapter — requires scene_id when the project has scenes, otherwise use chapter_wide=true), 'replace' (replace the single occurrence of replace_target in the chapter with the generated text — replace_target is required), 'replace_all' (REPLACES THE COMPLETE EXISTING CONTENT of the chapter/draft with the newly generated text — all prior content is lost), 'insert_at_marker' (insert at ~~~ marker), or None (return text without writing).",
     )
     replace_target: str | None = Field(
         None,
         description="Required when write_mode='replace': the exact text passage to search for in the chapter. The first occurrence is replaced with the generated text. Must match the existing text exactly.",
+    )
+    chapter_wide: bool = Field(
+        False,
+        description=(
+            "Set to true ONLY when the prose is intentionally chapter-level and "
+            "does not belong to any scene (for example a prologue, an epilogue, "
+            "or a chapter without scenes). Projects that have scenes reject "
+            "write_mode='append' without scene_id unless this flag is true, "
+            "because such prose would be written outside every scene and the "
+            "scene editor would show nothing."
+        ),
     )
     chap_id: int | None = Field(
         None,
@@ -298,7 +458,7 @@ class CallWritingLlmParams(ToolModel):
 
 
 @chat_tool(
-    description="Delegate a creative writing or rewriting task to the WRITING LLM. Stateless behavior: it only sees instruction/context provided in this call, so include all required chapter context and exact IDs explicitly. Can optionally write the output directly to a chapter with write_mode: 'append' adds to end, 'replace' substitutes a specific passage (set replace_target to the exact text to swap out — only the first occurrence is replaced), 'replace_all' REPLACES THE COMPLETE EXISTING CONTENT of the chapter/draft (all prior text is permanently overwritten — use only for full rewrites), 'insert_at_marker' inserts at ~~~ marker. Without write_mode, just returns generated text.",
+    description="Delegate a creative writing or rewriting task to the WRITING LLM. Stateless behavior: it only sees instruction/context provided in this call, so include all required chapter context and exact IDs explicitly. Can optionally write the output directly to a chapter with write_mode: 'append' adds to end, 'replace' substitutes a specific passage (set replace_target to the exact text to swap out — only the first occurrence is replaced), 'replace_all' REPLACES THE COMPLETE EXISTING CONTENT of the chapter/draft (all prior text is permanently overwritten — use only for full rewrites), 'insert_at_marker' inserts at ~~~ marker. IMPORTANT: when writing prose for a specific scene, pass scene_id together with write_mode so the generated text is written as that scene's prose and linked to the scene with scene markers; prose written without scene_id is not attached to any scene. Without write_mode, just returns generated text.",
     allowed_roles=(CHAT_ROLE, EDITING_ROLE),
     capability="delegation",
     project_types=("short-story", "novel", "series"),
@@ -322,8 +482,6 @@ async def call_writing_llm(
     active = get_active_project_dir()
     story = load_story_config((active / "story.json") if active else None) or {}
     project_lang = str(story.get("language", "en") or "en")
-
-    from augmentedquill.services.exceptions import BadRequestError
 
     # Enforce conflict-first workflow: writing requires at least one defined conflict.
     story_conflicts = story.get("conflicts") or []
@@ -488,6 +646,11 @@ async def call_writing_llm(
 
     # If write_mode is specified, persist the generated text
     if params.write_mode:
+        if params.scene_id is not None and active is None:
+            raise BadRequestError(
+                "scene_id requires an active project to write and link scene prose."
+            )
+
         # Auto-detect chapter ID for short-story projects if not provided
         chap_id = resolved_chap_id if resolved_chap_id is not None else params.chap_id
         if chap_id is None:
@@ -506,6 +669,24 @@ async def call_writing_llm(
             path = resolved_path
 
         if params.write_mode == "append":
+            if params.scene_id is not None:
+                assert active is not None  # guarded above
+                scene_result = _append_prose_to_scene(
+                    active=active,
+                    scene_id=params.scene_id,
+                    chap_id=chap_id,
+                    chapter_path=path,
+                    generated_text=generated_text,
+                )
+                mutations["story_changed"] = True
+                return {"generated_text": generated_text, **scene_result}
+
+            # Appending chapter-level prose in a project that has scenes is
+            # almost always a mistake: the text lands after every scene marker
+            # and the scene editor shows nothing for the scene the user asked
+            # about.  Require an explicit scene_id (or chapter_wide=true).
+            _assert_append_is_scene_aware(active, params=params)
+
             # Append to end of chapter (like continue_chapter)
             existing = existing_for_append or path.read_text(encoding="utf-8")
             new_content = _join_appended_prose(existing, generated_text)
@@ -526,22 +707,49 @@ async def call_writing_llm(
                     "Provide the exact text passage to search for and replace."
                 )
             existing = path.read_text(encoding="utf-8")
-            if params.replace_target not in existing:
+            target_index = existing.find(params.replace_target)
+            if target_index < 0:
                 raise BadRequestError(
                     f"replace_target not found in chapter {chap_id}. "
                     "Ensure the text matches the chapter content exactly."
                 )
-            new_content = existing.replace(params.replace_target, generated_text, 1)
+            new_content = (
+                existing[:target_index]
+                + generated_text
+                + existing[target_index + len(params.replace_target) :]
+            )
             _write_chapter_content(chap_id, new_content)
             mutations["story_changed"] = True
-            return {
+            result: dict[str, Any] = {
                 "generated_text": generated_text,
                 "written": True,
                 "write_mode": "replace",
                 "chap_id": chap_id,
             }
+            if params.scene_id is not None:
+                assert active is not None  # guarded above
+                scope_link = _resolve_write_scope_link(active, path)
+                result.update(
+                    link_range_to_scene(
+                        active,
+                        params.scene_id,
+                        scope_link,
+                        new_content,
+                        target_index,
+                        target_index + len(generated_text),
+                    )
+                )
+                result["scene_id"] = params.scene_id
+            return result
 
         elif params.write_mode == "replace_all":
+            if params.scene_id is not None:
+                raise BadRequestError(
+                    "write_mode='replace_all' cannot be combined with scene_id "
+                    "because it removes all scene markers. Use write_mode='append' "
+                    "or 'replace' to write a scene, or omit scene_id for a full "
+                    "draft rewrite."
+                )
             # Replace entire chapter content — ALL prior content is overwritten.
             _write_chapter_content(chap_id, generated_text)
             mutations["story_changed"] = True
@@ -570,18 +778,46 @@ async def call_writing_llm(
             )
             _write_chapter_content(chap_id, new_content)
             mutations["story_changed"] = True
-            return {
+            result = {
                 "generated_text": generated_text,
                 "written": True,
                 "write_mode": "insert_at_marker",
                 "chap_id": chap_id,
             }
+            if params.scene_id is not None:
+                assert active is not None  # guarded above
+                scope_link = _resolve_write_scope_link(active, path)
+                result.update(
+                    link_range_to_scene(
+                        active,
+                        params.scene_id,
+                        scope_link,
+                        new_content,
+                        marker_pos,
+                        marker_pos + len(generated_text),
+                    )
+                )
+                result["scene_id"] = params.scene_id
+            return result
 
         else:
             raise BadRequestError(
                 f"Invalid write_mode: {params.write_mode}. "
                 "Use 'append', 'replace', 'replace_all', 'insert_at_marker', or omit for return-only."
             )
+
+    if params.scene_id is not None:
+        # Nothing was written, so make the mismatch explicit instead of
+        # silently returning unlinked prose.
+        return {
+            "generated_text": generated_text,
+            "scene_id": params.scene_id,
+            "scene_linked": False,
+            "warning": (
+                "scene_id was provided without write_mode, so the prose was "
+                "not written or linked. Add write_mode to persist scene prose."
+            ),
+        }
 
     # Default: just return the generated text without writing
     return {"generated_text": generated_text}

@@ -14,6 +14,7 @@ This file is intentionally concise to reduce token overhead.
 - Project/story file format changes must be backward compatible or include explicit schema/version bumps with automatic chainable migrations.
 - Prioritize maintainable, compact code with strict separation of concerns and minimal duplication.
 - Code must be professional and production-quality; avoid shortcuts and temporary hacks.
+- Scene marker / scene-prose linking logic has exactly one implementation: backend `services/scenes/scene_markers.py` + `services/scenes/scene_service.py`, frontend `features/editor/internalTags.ts` + `features/scenes/proseLinkCoordinates.ts`. Never re-implement marker parsing/injection/offset math or link prose ad hoc — call the shared helpers (see `AGENTS.md` §6).
 
 ## Type discipline (Python + TypeScript)
 

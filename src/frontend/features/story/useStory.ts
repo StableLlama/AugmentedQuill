@@ -199,6 +199,10 @@ export const useStory = (dialogs: StoryDialogs = defaultDialogs) => {
         currentIndex: bounded.length - 1,
         baselineState: newBaseline,
       });
+      if (isUserEdit) {
+        // A user edit advances the baseline, so the AI diff is resolved.
+        useStoryStore.getState().setPendingAiChangedUnitIds([]);
+      }
       // pushHistoryState now preserves currentChapterId in a single set() call,
       // avoiding a render flash between story update and chapter-id update.
       latestStoryRef.current = updatedState;
@@ -238,6 +242,10 @@ export const useStory = (dialogs: StoryDialogs = defaultDialogs) => {
        *  view highlights changes in those chapters when the user navigates
        *  to them for the first time after an AI edit. */
       baselineChapterOverrides?: { id: string; content: string }[];
+      /** Writing units whose prose the AI tool turn changed.  Used so an
+       *  empty pre-AI baseline (AI wrote into an empty chapter) is diffed as
+       *  "everything inserted" instead of being mistaken for "not loaded". */
+      changedChapterIds?: Array<string | number>;
     }): void => {
       const history = historyRef.current;
       const currentIndex = currentIndexRef.current;
@@ -257,6 +265,7 @@ export const useStory = (dialogs: StoryDialogs = defaultDialogs) => {
       };
 
       const currentEntry = history[currentIndex];
+      const changedUnitIds = (params.changedChapterIds ?? []).map(String);
       if (
         !params.forceNewHistory &&
         currentEntry &&
@@ -283,6 +292,7 @@ export const useStory = (dialogs: StoryDialogs = defaultDialogs) => {
         // full-app re-render when nothing meaningful changed.  The ref is
         // already current so subsequent pushes will build on correct state.
         latestStoryRef.current = updatedState;
+        useStoryStore.getState().setPendingAiChangedUnitIds(changedUnitIds);
         return;
       }
 
@@ -318,6 +328,7 @@ export const useStory = (dialogs: StoryDialogs = defaultDialogs) => {
         currentIndex: bounded.length - 1,
         baselineState: patchedBaseline,
       });
+      useStoryStore.getState().setPendingAiChangedUnitIds(changedUnitIds);
       latestStoryRef.current = updatedState;
       useStoryStore
         .getState()
@@ -935,6 +946,7 @@ export const useStory = (dialogs: StoryDialogs = defaultDialogs) => {
         isChapterLoading: false,
         currentChapterId: loadedChapterId,
       });
+      useStoryStore.getState().setPendingAiChangedUnitIds([]);
       latestStoryRef.current = newStory;
       lastLoadedChapterId.current = null;
       useStoryStore.getState().incrementLoadChapterSignal();
@@ -1053,6 +1065,7 @@ export const useStory = (dialogs: StoryDialogs = defaultDialogs) => {
   // rather than the original load state.
   const advanceBaselineToCurrentStory = useCallback((): void => {
     useStoryStore.setState({ baselineState: latestStoryRef.current });
+    useStoryStore.getState().setPendingAiChangedUnitIds([]);
   }, []);
 
   /**

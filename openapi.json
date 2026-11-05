@@ -4329,6 +4329,128 @@
         }
       }
     },
+    "/api/v1/projects/{project_name}/scenes/{scene_id}/generate": {
+      "post": {
+        "tags": ["Scenes"],
+        "summary": "Generate Scene Field Route",
+        "description": "Regenerate a derived scene field (summary or beats) from another field.",
+        "operationId": "generate_scene_field_route_api_v1_projects__project_name__scenes__scene_id__generate_post",
+        "parameters": [
+          {
+            "name": "scene_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Scene Id"
+            }
+          },
+          {
+            "name": "project_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Directory name of the project",
+              "title": "Project Name"
+            },
+            "description": "Directory name of the project"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SceneFieldGenerateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneFieldGenerateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_name}/scenes/{scene_id}/generate/stream": {
+      "post": {
+        "tags": ["Scenes"],
+        "summary": "Generate Scene Field Stream Route",
+        "description": "Stream a derived scene-field regeneration (summary or beats).\n\nEmits SSE events:\n- ``{\"type\": \"chunk\", \"accumulated\": str}`` as text is generated\n- ``{\"type\": \"result\", \"target\": ..., \"text\": ..., \"beats\": [...]}``\n  once generation completes\n- ``{\"type\": \"error\", \"error\": str}`` on failure",
+        "operationId": "generate_scene_field_stream_route_api_v1_projects__project_name__scenes__scene_id__generate_stream_post",
+        "parameters": [
+          {
+            "name": "scene_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Scene Id"
+            }
+          },
+          {
+            "name": "project_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Directory name of the project",
+              "title": "Project Name"
+            },
+            "description": "Directory name of the project"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SceneFieldGenerateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_name}/scenes/auto-link-scope": {
       "post": {
         "tags": ["Scenes"],
@@ -8033,6 +8155,86 @@
         "type": "object",
         "title": "SceneDetectBoundariesResponse",
         "description": "Result of boundary detection + link updates."
+      },
+      "SceneFieldGenerateRequest": {
+        "properties": {
+          "target": {
+            "type": "string",
+            "enum": ["summary", "beats"],
+            "title": "Target"
+          },
+          "source": {
+            "type": "string",
+            "enum": ["beats", "summary", "prose"],
+            "title": "Source"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "beats": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SceneBeat"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Beats"
+          },
+          "prose": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prose"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": ["target", "source"],
+        "title": "SceneFieldGenerateRequest",
+        "description": "Payload for regenerating a derived scene field (summary or beats).\n\n``source`` names which scene field the target should be derived from, while\nthe optional ``summary`` / ``beats`` / ``prose`` values let the client send\nits in-editor (unsaved) content instead of the persisted scene."
+      },
+      "SceneFieldGenerateResponse": {
+        "properties": {
+          "target": {
+            "type": "string",
+            "enum": ["summary", "beats"],
+            "title": "Target"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text",
+            "default": ""
+          },
+          "beats": {
+            "items": {
+              "$ref": "#/components/schemas/SceneBeat"
+            },
+            "type": "array",
+            "title": "Beats"
+          }
+        },
+        "type": "object",
+        "required": ["target"],
+        "title": "SceneFieldGenerateResponse",
+        "description": "Result of regenerating a derived scene field.\n\n``text`` carries the raw generated text (always populated) while ``beats``\ncarries the parsed beat list when the target is ``beats``."
       },
       "SceneLinkProseRequest": {
         "properties": {

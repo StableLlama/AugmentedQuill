@@ -1041,6 +1041,19 @@ class ChatToolContractsTest(TestCase):
             "Novel schema should indicate chap_id is required when write_mode is set",
         )
 
+    def test_call_writing_llm_exposes_scene_id_for_scene_linking(self):
+        tools = get_registered_tool_schemas(model_type="CHAT", project_type="novel")
+        tool = next(
+            (t for t in tools if t["function"]["name"] == "call_writing_llm"),
+            None,
+        )
+        self.assertIsNotNone(tool, "call_writing_llm schema should exist")
+        properties = tool["function"]["parameters"]["properties"]
+        self.assertIn("scene_id", properties)
+        description = properties["scene_id"].get("description", "")
+        self.assertIn("linked to the scene", description)
+        self.assertIn("Linked Prose", description)
+
     def _call_tool_with_payload(self, name: str, args, model_type: str = "CHAT"):
         if isinstance(args, str):
             arguments = args

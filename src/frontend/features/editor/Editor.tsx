@@ -224,10 +224,21 @@ export const Editor = React.memo(
       // Track the diff baseline locally so we can clear it immediately when the
       // user types — preventing newly typed text from appearing as diff insertions.
       // Re-adopt the prop whenever a new non-undefined baseline arrives (AI write).
-      // Normalize empty string to undefined: an empty baseline means "no baseline
-      // to diff against", not "diff against the empty string".
-      const normalizeBaseline = (raw: string | undefined): string | undefined =>
-        raw && raw.length > 0 ? raw : undefined;
+      // An empty-string baseline is normally "no baseline to diff against"
+      // (e.g. the initial load before lazy chapter content arrives).  When the
+      // AI changed this unit, though, an empty baseline is meaningful: the AI
+      // wrote into an empty chapter, so every new character is an insertion.
+      const pendingAiChangedUnitIds = useStoryStore(
+        (s: StoryStoreState): string[] => s.pendingAiChangedUnitIds
+      );
+      const hasAuthoritativeEmptyBaseline = pendingAiChangedUnitIds.includes(
+        String(chapter.id)
+      );
+      const normalizeBaseline = (raw: string | undefined): string | undefined => {
+        if (raw === undefined) return undefined;
+        if (raw.length > 0) return raw;
+        return hasAuthoritativeEmptyBaseline ? raw : undefined;
+      };
       const [localBaseline, setLocalBaseline] = useState<string | undefined>(
         normalizeBaseline(baselineContent)
       );
@@ -272,7 +283,7 @@ export const Editor = React.memo(
             savedBaselineRef.current = undefined;
           }
         }
-      }, [chapter.id, baselineContent, chapter.content]);
+      }, [chapter.id, baselineContent, chapter.content, hasAuthoritativeEmptyBaseline]);
 
       const isChatStreaming = useChatStore(
         (s: ChatStoreState): boolean => s.isProseStreamingFromChat
@@ -311,8 +322,17 @@ export const Editor = React.memo(
 
         if (isChapterSwitch) {
           deferredStreamingContentRef.current = null;
-          lastSavedFullContentRef.current = chapter.content;
         }
+
+        // The store content is the single source of truth for the
+        // marker-bearing baseline.  Adopt every external write (chat/generation,
+        // undo/redo, another tab) IMMEDIATELY — even while the editor is
+        // focused or streaming — because the next debounced save re-injects
+        // markers from this baseline.  A stale baseline makes
+        // `transferInternalMarkers` map the old marker boundaries onto a
+        // document they do not describe, which pushes emptied scene markers to
+        // the end of the text and silently unlinks freshly written prose.
+        lastSavedFullContentRef.current = chapter.content;
 
         // During active streaming the streaming-slot effect below owns
         // localContent; skip the chapter.content sync to avoid flashing the
@@ -332,10 +352,6 @@ export const Editor = React.memo(
         if (isChapterSwitch || (!editorFocused && !shouldDeferStreamingSync)) {
           localContentRef.current = chapter.content;
           setLocalContent(chapter.content);
-          if (!isChapterSwitch) {
-            // AI/undo/redo updated the content externally — update our marker baseline
-            lastSavedFullContentRef.current = chapter.content;
-          }
         }
       }, [chapter.id, chapter.content, proseStreamingActive]);
 

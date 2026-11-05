@@ -197,6 +197,17 @@ Each scene can contain **Beats** — smaller sub-units of action within the scen
 - View and edit **causal relationships** (which scenes this one follows or precedes).
 - Set a **date/time** value by clicking the clock button to open the date/time picker.
 
+### Regenerating Derived Fields
+
+The dialog can also regenerate a scene's derived fields with the AI. The result streams into the field and is highlighted in the **diff view** so you can compare it against the previous value:
+
+- **Create / Recreate Summary from Beats** — next to **Scene Summary**; writes the summary from the scene's beats.
+- **Create / Recreate Beats from Summary** — next to **Beats**; rebuilds the beat list from the summary.
+- **Create / Recreate Beats from Prose** — next to **Beats**; derives beats from the scene's linked prose.
+- **Create / Recreate Prose from Beats** — next to **Linked Prose**; writes the scene prose from its beats (this replaces the previous **Write Scene** action).
+
+Each button reads **Create …** while the field it produces is still empty, and **Recreate …** once it already has content. A button is disabled while its source field is empty (for example, the prose button needs at least one beat; the summary button needs at least one beat too). Regeneration is a normal, unsaved edit — review the diff and click **Save** to keep the result.
+
 ---
 
 ## Inline Annotations

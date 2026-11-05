@@ -1371,7 +1371,10 @@ describe('multi-scene boundary drag (real-world two-digit IDs)', () => {
 // getLinkedProseFromTextSource — marker-stripped source text handling
 // ═══════════════════════════════════════════════════════════════════════
 
-import { getLinkedProseFromTextSource } from './proseLinkCoordinates';
+import {
+  getLinkedProseFromTextSource,
+  getSceneProseFromContent,
+} from './proseLinkCoordinates';
 import type { SceneProseLink, Scene } from '../../types';
 
 function makeLink(overrides: Partial<SceneProseLink> = {}): SceneProseLink {
@@ -1534,5 +1537,51 @@ describe('getLinkedProseFromTextSource', () => {
     // first characters because the marker-inclusive offsets were applied to a
     // marker-free representation.
     expect(result).toBe('Hello World');
+  });
+});
+
+describe('getSceneProseFromContent (baseline slicing)', () => {
+  const linkFor = (
+    startOffset: number,
+    endOffset: number
+  ): {
+    scope_type: 'story';
+    chapter_id: null;
+    book_id: null;
+    start_offset: number;
+    end_offset: number;
+  } => ({
+    scope_type: 'story',
+    chapter_id: null,
+    book_id: null,
+    start_offset: startOffset,
+    end_offset: endOffset,
+  });
+
+  it('prefers the live scene markers over stale stored offsets', () => {
+    const content = '<!--scene:1:start-->Alpha<!--scene:1:end-->';
+    // Stale offsets from a previous document length; the markers must win.
+    expect(getSceneProseFromContent(content, '1', linkFor(20, 999))).toBe('Alpha');
+  });
+
+  it('returns an empty string for an emptied scene span', () => {
+    const content =
+      '<!--scene:1:start--><!--scene:1:end--><!--scene:2:start--><!--scene:2:end-->';
+    expect(getSceneProseFromContent(content, '1', linkFor(20, 20))).toBe('');
+  });
+
+  it('strips internal markers from the sliced baseline prose', () => {
+    const content =
+      '<!--scene:1:start-->Alpha <!--annotation:a:start-->note<!--annotation:a:end-->' +
+      '<!--scene:1:end-->';
+    expect(getSceneProseFromContent(content, '1', null)).toBe('Alpha note');
+  });
+
+  it('falls back to the stored offsets when the content has no markers', () => {
+    expect(getSceneProseFromContent('Alpha Bravo', '1', linkFor(0, 5))).toBe('Alpha');
+  });
+
+  it('returns null when the scene is unknown and no usable link exists', () => {
+    expect(getSceneProseFromContent('Alpha Bravo', '7', null)).toBeNull();
   });
 });

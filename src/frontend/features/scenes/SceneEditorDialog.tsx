@@ -35,6 +35,7 @@ import {
 import { getEditorHighlightColors } from '../editor/highlightColors';
 import { getPaperColors } from '../editor/paperColors';
 import { DiffViewTabs, type DiffViewTab } from './DiffViewTabs';
+import { Button } from '../../components/ui/Button';
 import type { EditorView } from '@codemirror/view';
 import {
   useScenes,
@@ -59,6 +60,7 @@ import {
   normalizeChapterId,
 } from './sceneSortUtils';
 import { buildSceneTimelineOptions } from './timelineOptions';
+import { getSceneProseFromContent, isLinkedProseLink } from './proseLinkCoordinates';
 import {
   parseZonedDateTime,
   toDisplayString,
@@ -145,14 +147,44 @@ function getScopedBaselineContent(
 }
 
 /**
- * A scene is only "linked to prose" when its link points at a real content
- * scope (story/chapter).  Brand-new scenes are created by the backend with a
- * zero-width internal `unlinked` scope link; those must be treated as NOT
- * linked so the dialog shows the drag-to-link hint instead of an editable
- * "Linked Prose" field and an "Unlink prose" button.
+ * Baseline prose shown in the scene editor's diff view for a scene.
+ *
+ * Returns ``undefined`` when there is nothing to diff against (content not
+ * loaded / unknown scope), ``''`` when the scene had no prose at baseline time,
+ * otherwise the visible prose the scene owned in the baseline snapshot.
+ *
+ * The slice is derived from the scene's **markers inside the baseline content**
+ * (via ``getSceneProseFromContent``), not from the stored ``prose_link``
+ * offsets: those go stale as soon as the document shrinks (for example after
+ * the user deletes all text), and slicing with them leaked marker tokens into
+ * the diff — which silently disabled the "freshly generated" highlight.
  */
-function isLinkedProseLink(link: SceneProseLink | null | undefined): boolean {
-  return link != null && link.scope_type !== 'unlinked';
+function resolveSceneProseBaseline(params: {
+  baselineScene: Scene | null;
+  baselineStoryState: StoryState;
+  sceneId: SceneId;
+  openedViaTrigger: boolean;
+  atOpenText: string;
+}): string | undefined {
+  const { baselineScene, baselineStoryState, sceneId, openedViaTrigger, atOpenText } =
+    params;
+  if (!baselineScene) {
+    // The scene did not exist in the baseline snapshot.  When opened from an
+    // AI mutation every character of the current prose is new; on a normal open
+    // keep the text captured when the dialog opened (in-dialog writes).
+    return openedViaTrigger ? '' : atOpenText;
+  }
+  const baselineLink = baselineScene.prose_link ?? null;
+  if (!isLinkedProseLink(baselineLink)) {
+    // The baseline scene existed but had no linked prose yet (planning-only
+    // `unlinked` scope or no link), so the current prose is entirely added.
+    return '';
+  }
+  const scoped = getScopedBaselineContent(baselineStoryState, baselineLink);
+  if (scoped === null) {
+    return openedViaTrigger ? '' : undefined;
+  }
+  return getSceneProseFromContent(scoped, sceneId, baselineLink) ?? '';
 }
 
 type AgeInfo = {
@@ -349,6 +381,13 @@ interface SceneEditorDialogProps {
   onSaveProseContent?: (text: string) => Promise<void>;
   /** Generates prose for this scene and links the result. Pass an onProse callback to receive streamed prose live. */
   onWriteScene?: (onProse?: (text: string) => void) => Promise<string | null | void>;
+  /**
+   * Streams regeneration of a derived scene field (summary or beats) from
+   * another field. ``onChunk`` receives the accumulated text live.
+   */
+  onGenerateSceneField?: (
+    request: SceneFieldGenerateRequest
+  ) => Promise<SceneFieldGenerateResult | null>;
   /** Unlinks the scene from its current prose range. */
   onUnlinkProse?: (sceneId: SceneId) => Promise<void>;
   /** Open sourcebook dialog for an entry id. */
@@ -362,6 +401,30 @@ interface SceneEditorDialogProps {
   /** Editor appearance settings (theme / brightness / contrast) used to render
    * the dialog's paper-like content fields exactly like the main paper. */
   editorSettings?: EditorSettings;
+}
+
+/** Derived scene field that can be regenerated from another field. */
+export type SceneFieldGenerateTarget = 'summary' | 'beats';
+/** Scene field used as the source material for a regeneration. */
+export type SceneFieldGenerateSource = 'beats' | 'summary' | 'prose';
+
+export interface SceneFieldGenerateRequest {
+  target: SceneFieldGenerateTarget;
+  source: SceneFieldGenerateSource;
+  /** The scene's current (possibly unsaved) summary. */
+  summary: string;
+  /** The scene's current (possibly unsaved) beats. */
+  beats: SceneBeat[];
+  /** The scene's current (possibly unsaved) linked prose. */
+  prose: string;
+  /** Receives the accumulated generated text while streaming. */
+  onChunk?: (accumulated: string) => void;
+}
+
+export interface SceneFieldGenerateResult {
+  target: SceneFieldGenerateTarget;
+  text: string;
+  beats: SceneBeat[];
 }
 
 const normalizeToken = (value: string): string => value.trim().toLowerCase();
@@ -400,6 +463,7 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
   getLinkedProseText,
   onSaveProseContent,
   onWriteScene,
+  onGenerateSceneField,
   onUnlinkProse,
   onOpenSourcebookEntry,
   openedViaTrigger = false,
@@ -484,10 +548,40 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
   const baselineStoryState = useStoryStore(
     (s: StoryStoreState): StoryState => s.baselineState
   );
+  // Prose the scene had when the dialog opened.  Only used to seed the diff
+  // decision below; the live value lives in `linkedProseBaselineAtOpen`.
+  const openTimeLinkedProse = useMemo((): string => {
+    const link = scene.prose_link ?? null;
+    if (!isLinkedProseLink(link) || !getLinkedProseText) return '';
+    return getLinkedProseText(link) ?? '';
+  }, [scene.prose_link, getLinkedProseText]);
+  // A pending AI diff (baseline prose differs from the current prose) must open
+  // the dialog in diff mode even when it was opened normally.  Previously the
+  // dialog only defaulted to diff mode for AI-triggered opens, so chat-written
+  // prose was shown without the "freshly generated" highlight.
+  const hasPendingLinkedProseDiff = useMemo((): boolean => {
+    if (!isLinkedProseLink(scene.prose_link)) return false;
+    const baseline = resolveSceneProseBaseline({
+      baselineScene,
+      baselineStoryState,
+      sceneId: scene.id,
+      openedViaTrigger,
+      atOpenText: openTimeLinkedProse,
+    });
+    if (baseline === undefined) return false;
+    return baseline !== openTimeLinkedProse;
+  }, [
+    baselineScene,
+    baselineStoryState,
+    openTimeLinkedProse,
+    openedViaTrigger,
+    scene.id,
+    scene.prose_link,
+  ]);
   const [summary, setSummary] = useState(scene.summary);
   const [beats, setBeats] = useState<SceneBeat[]>(scene.beats);
   const [showDiff, setShowDiff] = useState(
-    Boolean(openedViaTrigger || defaultShowDiff)
+    Boolean(openedViaTrigger || defaultShowDiff || hasPendingLinkedProseDiff)
   );
   // Local baseline overrides: when the user accepts a diff section, we store
   // the accepted value here so the diff for that section clears locally without
@@ -869,6 +963,11 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isWritingScene, setIsWritingScene] = useState(false);
+  // Which derived field regeneration is running, if any, as ``target:source``.
+  const [generatingKey, setGeneratingKey] = useState<string | null>(null);
+  // Live streaming text for beat generation (beats cannot be streamed into the
+  // list of textareas, so a preview is shown until generation completes).
+  const [streamingBeatsText, setStreamingBeatsText] = useState('');
   const [linkedProseBaselineAtOpen, setLinkedProseBaselineAtOpen] = useState<
     string | undefined
   >(undefined);
@@ -882,6 +981,10 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
   // True while write-scene prose is being streamed live into the dialog, so the
   // linked-prose polling effect does not clobber the in-flight text.
   const streamedProseRef = useRef(false);
+  // Last text observed from the linked prose source.  Used to react only to
+  // genuinely external prose changes (e.g. the chat writing this scene) and
+  // never to a stale poll that would undo in-dialog generation.
+  const lastExternalProseRef = useRef<string | null>(null);
 
   const initialSnapshotRef = useRef<DirtySnapshot | null>(null);
 
@@ -951,14 +1054,30 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
     setProseLink(scene.prose_link ?? null);
     setLocalProseText(initialLinkedProseText);
     setLinkedProseBaselineAtOpen(initialLinkedProseText);
+    lastExternalProseRef.current = initialLinkedProseText;
     setProseDirty(false);
     setConfirmDelete(false);
     setPendingSourcebookEntryId(null);
     setHoveredEntry(null);
-    setShowDiff(Boolean(openedViaTrigger || defaultShowDiff));
+    setShowDiff(
+      Boolean(
+        openedViaTrigger ||
+        defaultShowDiff ||
+        (isLinkedProseLink(scene.prose_link) &&
+          resolveSceneProseBaseline({
+            baselineScene,
+            baselineStoryState,
+            sceneId: scene.id,
+            openedViaTrigger,
+            atOpenText: initialLinkedProseText,
+          }) !== initialLinkedProseText)
+      )
+    );
     setAcceptedBaseline({});
     setSummaryTab('diff');
     setLinkedProseTab('diff');
+    setGeneratingKey(null);
+    setStreamingBeatsText('');
 
     initialSnapshotRef.current = {
       summary: scene.summary,
@@ -1027,6 +1146,19 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
       return nextLink;
     });
   }, [isOpen, scene.prose_link]);
+
+  // Keep the linked-prose field in sync with external writes (e.g. the chat
+  // writing scene prose while this dialog is open).  User edits win: once the
+  // field is dirty we never overwrite it, and live write-scene streaming is
+  // handled by the polling effect below.
+  useEffect((): void => {
+    if (!isOpen || !proseLink || !getLinkedProseText) return;
+    if (isWritingScene || proseDirty || streamedProseRef.current) return;
+    const nextText = getLinkedProseText(proseLink) ?? '';
+    if (nextText === lastExternalProseRef.current) return;
+    lastExternalProseRef.current = nextText;
+    setLocalProseText((prev: string): string => (prev === nextText ? prev : nextText));
+  }, [isOpen, scene.id, proseLink, getLinkedProseText, isWritingScene, proseDirty]);
 
   useEffect((): void => {
     if (hoveredEntry && availableImages.length === 0) {
@@ -1179,30 +1311,23 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
       hasFieldHint('summary', 'summary_patch'));
   const baselineProseLink = baselineScene?.prose_link ?? null;
   const linkedProseBaseline = useMemo((): string | undefined => {
-    if (!showDiff) return undefined;
-    if (!baselineProseLink) {
-      return linkedProseBaselineAtOpen ?? (openedViaTrigger ? '' : undefined);
-    }
-    const scoped = getScopedBaselineContent(baselineStoryState, baselineProseLink);
-    if (scoped === null) {
-      return openedViaTrigger ? '' : undefined;
-    }
-    const docLen = scoped.length;
-    const from = Math.min(
-      Math.max(Number(baselineProseLink.start_offset ?? 0), 0),
-      docLen
-    );
-    const to = Math.min(
-      Math.max(Number(baselineProseLink.end_offset ?? from), from),
-      docLen
-    );
-    return scoped.slice(from, to);
+    // Computed regardless of `showDiff`: `linkedProseChanged` and the Old tab
+    // need the baseline even while diff decorations are toggled off, and
+    // `showDiff` itself is now seeded from this comparison.
+    return resolveSceneProseBaseline({
+      baselineScene,
+      baselineStoryState,
+      sceneId: scene.id,
+      openedViaTrigger,
+      atOpenText: linkedProseBaselineAtOpen ?? '',
+    });
   }, [
     baselineProseLink,
+    baselineScene,
     baselineStoryState,
     linkedProseBaselineAtOpen,
     openedViaTrigger,
-    showDiff,
+    scene.id,
   ]);
   const baselineOutgoingCauseIds = baselineScene?.causes ?? [];
 
@@ -1632,6 +1757,79 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
     onClose();
   };
 
+  // ─── Derived scene-field regeneration ─────────────────────────────────
+  // True when at least one beat carries text; used for both the
+  // summary-from-beats and prose-from-beats buttons.
+  const hasBeatText = beats.some(
+    (beat: SceneBeat): boolean => beat.text.trim().length > 0
+  );
+  const isGeneratingField = generatingKey !== null;
+  const buttonTheme = tc.isLight ? 'light' : 'dark';
+  const summaryHasContent = summary.trim().length > 0;
+  const proseHasContent = localProseText.trim().length > 0;
+
+  /**
+   * Resolve the label for a "create / recreate a derived field" control.
+   * ``targetHasContent`` selects between the Create and Recreate wording.
+   */
+  const fieldActionLabel = (
+    target: SceneFieldGenerateTarget | 'prose',
+    source: SceneFieldGenerateSource,
+    targetHasContent: boolean
+  ): string => {
+    const labels: Record<string, [string, string]> = {
+      'summary:beats': ['Create Summary from Beats', 'Recreate Summary from Beats'],
+      'beats:summary': ['Create Beats from Summary', 'Recreate Beats from Summary'],
+      'beats:prose': ['Create Beats from Prose', 'Recreate Beats from Prose'],
+      'prose:beats': ['Create Prose from Beats', 'Recreate Prose from Beats'],
+    };
+    const entry = labels[`${target}:${source}`];
+    if (!entry) return '';
+    return t(targetHasContent ? entry[1] : entry[0]);
+  };
+
+  const targetHasContent = (target: SceneFieldGenerateTarget): boolean =>
+    target === 'summary' ? summaryHasContent : hasBeatText;
+
+  /** Regenerate a derived field from a source field, streaming into the UI. */
+  const runFieldGeneration = async (
+    target: SceneFieldGenerateTarget,
+    source: SceneFieldGenerateSource
+  ): Promise<void> => {
+    if (!onGenerateSceneField) return;
+    const errorLabel = fieldActionLabel(target, source, targetHasContent(target));
+    setShowDiff(true);
+    setGeneratingKey(`${target}:${source}`);
+    if (target === 'beats') setStreamingBeatsText('');
+    try {
+      const result = await onGenerateSceneField({
+        target,
+        source,
+        summary,
+        beats,
+        prose: localProseText,
+        onChunk: (text: string): void => {
+          if (target === 'summary') {
+            setSummary(text);
+          } else {
+            setStreamingBeatsText(text);
+          }
+        },
+      });
+      if (!result) return;
+      if (result.target === 'summary') {
+        setSummary(result.text);
+      } else if (result.beats.length > 0) {
+        setBeats(result.beats);
+      }
+    } catch (err) {
+      notifyError(errorLabel, err);
+    } finally {
+      setGeneratingKey(null);
+      setStreamingBeatsText('');
+    }
+  };
+
   const addBeat = (): void => {
     setBeats((prev: SceneBeat[]) => [
       ...prev,
@@ -1884,11 +2082,27 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
             className={`${sectionCls} ${diffSectionCls(summaryChanged)}`}
             data-diff={summaryChanged ? 'changed' : undefined}
           >
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2">
               <label className={labelCls}>{t('Scene Summary')}</label>
-              {showDiff && summaryChanged && (
-                <DiffViewTabs tab={summaryTab} onChange={setSummaryTab} />
-              )}
+              <div className="flex items-center gap-3">
+                {onGenerateSceneField && (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    theme={buttonTheme}
+                    onClick={(): void => void runFieldGeneration('summary', 'beats')}
+                    disabled={!hasBeatText || isGeneratingField || isSaving}
+                  >
+                    {generatingKey === 'summary:beats'
+                      ? t('Generating summary...')
+                      : fieldActionLabel('summary', 'beats', summaryHasContent)}
+                  </Button>
+                )}
+                {showDiff && summaryChanged && (
+                  <DiffViewTabs tab={summaryTab} onChange={setSummaryTab} />
+                )}
+              </div>
             </div>
             {summaryTab === 'old' ? (
               <div
@@ -1940,16 +2154,57 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
             className={`${sectionCls} ${diffSectionCls(beatsChanged)}`}
             data-diff={beatsChanged ? 'changed' : undefined}
           >
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2">
               <label className={labelCls}>{t('Beats')}</label>
-              <button
-                type="button"
-                onClick={addBeat}
-                className="text-xs text-brand-500 hover:text-brand-600 font-medium"
-              >
-                + {t('Add Beat')}
-              </button>
+              <div className="flex items-center gap-3">
+                {onGenerateSceneField && (
+                  <>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      theme={buttonTheme}
+                      onClick={(): void => void runFieldGeneration('beats', 'summary')}
+                      disabled={!summaryHasContent || isGeneratingField || isSaving}
+                    >
+                      {generatingKey === 'beats:summary'
+                        ? t('Generating beats...')
+                        : fieldActionLabel('beats', 'summary', hasBeatText)}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      theme={buttonTheme}
+                      onClick={(): void => void runFieldGeneration('beats', 'prose')}
+                      disabled={!proseHasContent || isGeneratingField || isSaving}
+                    >
+                      {generatingKey === 'beats:prose'
+                        ? t('Generating beats...')
+                        : fieldActionLabel('beats', 'prose', hasBeatText)}
+                    </Button>
+                  </>
+                )}
+                <button
+                  type="button"
+                  onClick={addBeat}
+                  className="text-xs text-brand-500 hover:text-brand-600 font-medium"
+                >
+                  + {t('Add Beat')}
+                </button>
+              </div>
             </div>
+            {generatingKey === 'beats:summary' || generatingKey === 'beats:prose' ? (
+              <div
+                className={`rounded-md border ${tc.border} px-3 py-2 text-sm whitespace-pre-wrap overflow-hidden`}
+                style={contentSurface}
+                aria-label={t('Generating beats...')}
+              >
+                {streamingBeatsText || (
+                  <span className="italic opacity-60">{t('Generating beats...')}</span>
+                )}
+              </div>
+            ) : null}
             {beats.map((beat: SceneBeat, idx: number) => {
               const beatChanged =
                 showDiff && beat.text !== (baselineBeats[idx]?.text ?? '');
@@ -2512,22 +2767,28 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
             className={`${sectionCls} ${diffSectionCls(linkedProseChanged)}`}
             data-diff={linkedProseChanged ? 'changed' : undefined}
           >
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2">
               <label className={labelCls}>{t('Linked Prose')}</label>
-              {showDiff && linkedProseChanged && (
-                <DiffViewTabs tab={linkedProseTab} onChange={setLinkedProseTab} />
-              )}
+              <div className="flex items-center gap-3">
+                {onWriteScene && (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    theme={buttonTheme}
+                    onClick={(): void => void handleWriteScene()}
+                    disabled={isWritingScene || isSaving || !hasBeatText}
+                  >
+                    {isWritingScene
+                      ? t('Writing Scene...')
+                      : fieldActionLabel('prose', 'beats', proseHasContent)}
+                  </Button>
+                )}
+                {showDiff && linkedProseChanged && (
+                  <DiffViewTabs tab={linkedProseTab} onChange={setLinkedProseTab} />
+                )}
+              </div>
             </div>
-            {onWriteScene && (
-              <button
-                type="button"
-                className="mb-2 px-3 py-1.5 rounded-md bg-brand-500 text-white text-xs font-medium hover:bg-brand-600 disabled:opacity-50"
-                onClick={(): void => void handleWriteScene()}
-                disabled={isWritingScene || isSaving}
-              >
-                {isWritingScene ? t('Writing Scene...') : t('Write Scene')}
-              </button>
-            )}
             {isLinkedProseLink(proseLink) ? (
               <>
                 {linkedProseTab === 'old' ? (

@@ -1818,6 +1818,52 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/projects/{project_name}/scenes/{scene_id}/generate': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Generate Scene Field Route
+     * @description Regenerate a derived scene field (summary or beats) from another field.
+     */
+    post: operations['generate_scene_field_route_api_v1_projects__project_name__scenes__scene_id__generate_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/projects/{project_name}/scenes/{scene_id}/generate/stream': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Generate Scene Field Stream Route
+     * @description Stream a derived scene-field regeneration (summary or beats).
+     *
+     *     Emits SSE events:
+     *     - ``{"type": "chunk", "accumulated": str}`` as text is generated
+     *     - ``{"type": "result", "target": ..., "text": ..., "beats": [...]}``
+     *       once generation completes
+     *     - ``{"type": "error", "error": str}`` on failure
+     */
+    post: operations['generate_scene_field_stream_route_api_v1_projects__project_name__scenes__scene_id__generate_stream_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/projects/{project_name}/scenes/auto-link-scope': {
     parameters: {
       query?: never;
@@ -3352,6 +3398,53 @@ export interface components {
       assignments?: components['schemas']['SceneBoundaryAssignment'][];
       /** Scenes */
       scenes?: components['schemas']['Scene'][];
+    };
+    /**
+     * SceneFieldGenerateRequest
+     * @description Payload for regenerating a derived scene field (summary or beats).
+     *
+     *     ``source`` names which scene field the target should be derived from, while
+     *     the optional ``summary`` / ``beats`` / ``prose`` values let the client send
+     *     its in-editor (unsaved) content instead of the persisted scene.
+     */
+    SceneFieldGenerateRequest: {
+      /**
+       * Target
+       * @enum {string}
+       */
+      target: 'summary' | 'beats';
+      /**
+       * Source
+       * @enum {string}
+       */
+      source: 'beats' | 'summary' | 'prose';
+      /** Summary */
+      summary?: string | null;
+      /** Beats */
+      beats?: components['schemas']['SceneBeat'][] | null;
+      /** Prose */
+      prose?: string | null;
+    };
+    /**
+     * SceneFieldGenerateResponse
+     * @description Result of regenerating a derived scene field.
+     *
+     *     ``text`` carries the raw generated text (always populated) while ``beats``
+     *     carries the parsed beat list when the target is ``beats``.
+     */
+    SceneFieldGenerateResponse: {
+      /**
+       * Target
+       * @enum {string}
+       */
+      target: 'summary' | 'beats';
+      /**
+       * Text
+       * @default
+       */
+      text: string;
+      /** Beats */
+      beats?: components['schemas']['SceneBeat'][];
     };
     /**
      * SceneLinkProseRequest
@@ -7211,6 +7304,80 @@ export interface operations {
     requestBody: {
       content: {
         'application/json': components['schemas']['SceneWriteRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  generate_scene_field_route_api_v1_projects__project_name__scenes__scene_id__generate_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        scene_id: number;
+        /** @description Directory name of the project */
+        project_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SceneFieldGenerateRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SceneFieldGenerateResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  generate_scene_field_stream_route_api_v1_projects__project_name__scenes__scene_id__generate_stream_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        scene_id: number;
+        /** @description Directory name of the project */
+        project_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SceneFieldGenerateRequest'];
       };
     };
     responses: {

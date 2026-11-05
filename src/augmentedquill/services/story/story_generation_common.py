@@ -21,7 +21,10 @@ from augmentedquill.services.exceptions import BadRequestError
 from augmentedquill.services.projects.project_chapter_ops import (
     update_chapter_metadata_in_project,
 )
-from augmentedquill.services.scenes.scene_markers import remove_markers
+from augmentedquill.services.scenes.scene_markers import (
+    remove_markers,
+    scene_marker_token_ranges,
+)
 from augmentedquill.services.story.story_api_prompt_ops import (
     _get_read_only_tool_schemas,
     build_ai_action_messages,
@@ -306,7 +309,6 @@ def _scene_reference_ids(scene: dict[str, Any]) -> list[str]:
 
 
 _TEMPORAL_BRACKET_TOKEN_RE = re.compile(r"\[[^\]]+\]")
-_INLINE_SCENE_MARKER_RE = re.compile(r"<!--\s*scene:\d+:(?:start|end)\s*-->")
 
 
 def _visible_offset_to_raw_offset(raw_text: str, visible_offset: int) -> int:
@@ -315,12 +317,12 @@ def _visible_offset_to_raw_offset(raw_text: str, visible_offset: int) -> int:
     cursor_raw = 0
     cursor_visible = 0
 
-    for match in _INLINE_SCENE_MARKER_RE.finditer(raw_text):
-        segment_len = match.start() - cursor_raw
+    for token_start, token_end in scene_marker_token_ranges(raw_text):
+        segment_len = token_start - cursor_raw
         if cursor_visible + segment_len >= target:
             return cursor_raw + (target - cursor_visible)
         cursor_visible += segment_len
-        cursor_raw = match.end()
+        cursor_raw = token_end
 
     remaining = len(raw_text) - cursor_raw
     if cursor_visible + remaining >= target:
@@ -330,8 +332,8 @@ def _visible_offset_to_raw_offset(raw_text: str, visible_offset: int) -> int:
 
 def _cursor_for_scene_selection(current_text: str, scope_text: str | None) -> int:
     """Resolve a stable cursor offset for scene-range selection."""
-    visible_cursor = len(_INLINE_SCENE_MARKER_RE.sub("", current_text or ""))
-    if not scope_text or not _INLINE_SCENE_MARKER_RE.search(scope_text):
+    visible_cursor = len(remove_markers(current_text or ""))
+    if not scope_text or not scene_marker_token_ranges(scope_text):
         return max(0, visible_cursor)
     return _visible_offset_to_raw_offset(scope_text, visible_cursor)
 

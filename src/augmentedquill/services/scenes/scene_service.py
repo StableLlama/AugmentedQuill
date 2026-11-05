@@ -34,6 +34,7 @@ from augmentedquill.models.scene import (
 )
 from augmentedquill.services.scenes.scene_markers import (
     SceneSpan,
+    find_scene_marker_span,
     inject_annotation_markers,
     inject_markers,
     parse_annotation_spans,
@@ -42,9 +43,11 @@ from augmentedquill.services.scenes.scene_markers import (
     remove_annotation_markers,
     remove_markers,
     scene_block_bounds,
+    scene_marker_token,
     snap_offset_outside_markers,
     snap_range_outside_markers,
     validate_internal_marker_tokens,
+    validate_marker_integrity,
     validate_scene_marker_tokens,
 )
 from augmentedquill.updates.migrate_story_v3 import migrate_project_v3
@@ -466,6 +469,27 @@ def _scene_content_path(
     return None
 
 
+def scope_link_for_content_path(
+    project_dir: Path,
+    content_path: Path,
+) -> dict[str, Any] | None:
+    """Return the prose scope link whose file is *content_path*.
+
+    Callers that already resolved a chapter/draft file (for example the chat
+    prose-writing tools) use this to translate the path back into the
+    ``(scope_type, chapter_id, book_id)`` tuple expected by the marker and link
+    APIs, without duplicating scope-resolution rules.
+    """
+    target = content_path.resolve()
+    for link, path in _scope_candidates(project_dir):
+        if path.resolve() != target:
+            continue
+        scope_type = str(link.get("scope_type") or "").strip().lower()
+        if scope_type in {"story", "chapter"}:
+            return dict(link)
+    return None
+
+
 def _same_prose_scope(a: dict[str, Any], b: dict[str, Any]) -> bool:
     """Return True when two prose-link dicts point at the same scope."""
     return (
@@ -499,6 +523,37 @@ def _read_validated_marker_content(path: Path) -> str:
     validate_scene_marker_tokens(content)
     validate_internal_marker_tokens(content)
     return content
+
+
+def _normalize_scope_assignments(
+    assignments: list[tuple[SceneId, int, int]],
+) -> list[tuple[SceneId, int, int]]:
+    """Return scene-span assignments that are safe for :func:`inject_markers`.
+
+    The scene layer is exclusive, so spans may not overlap.  One collision is
+    legitimate and must not unlink anything: a *zero-width* span (an emptied
+    scene) that sits inside, or exactly at the start of, another span.  Those
+    are pushed to the end of the span they collide with instead of being
+    dropped.  Real overlaps between non-empty spans are passed through
+    unchanged so ``inject_markers`` still rejects them.
+    """
+    ordered = sorted(assignments, key=lambda item: (item[1], item[2]))
+    normalized: list[tuple[SceneId, int, int]] = []
+    cursor = 0
+    for scene_id, raw_start, raw_end in ordered:
+        start = max(0, raw_start)
+        end = max(start, raw_end)
+        if start < cursor:
+            if start != end:
+                # Non-empty overlap: leave it to inject_markers to reject.
+                normalized.append((scene_id, start, end))
+                cursor = max(cursor, end)
+                continue
+            # Keep the emptied scene linked, just relocatably adjacent.
+            start = end = cursor
+        normalized.append((scene_id, start, end))
+        cursor = max(cursor, end)
+    return normalized
 
 
 def _coerce_scene_id(raw_id: object) -> SceneId | None:
@@ -752,7 +807,10 @@ def create_scene(project_dir: Path, payload: SceneCreateRequest) -> dict[str, An
     unlinked_content = _read_validated_marker_content(unlinked_path)
     if unlinked_content and not unlinked_content.endswith("\n"):
         unlinked_content += "\n"
-    unlinked_content += f"<!--scene:{scene_id}:start--><!--scene:{scene_id}:end-->\n"
+    insertion_point = len(unlinked_content)
+    unlinked_content = inject_markers(
+        unlinked_content, [(scene_id, insertion_point, insertion_point)]
+    )
     _write_text_atomic(unlinked_path, unlinked_content)
 
     story["scenes"] = _drop_prose_links_for_persistence(scenes_dict)
@@ -930,6 +988,129 @@ def link_prose(
     return result
 
 
+def scene_prose_is_linked(scene: dict[str, Any] | None) -> bool:
+    """Return whether a scene payload currently points at real project prose.
+
+    Scenes created for planning still carry a runtime ``prose_link`` dict with
+    ``scope_type == "unlinked"`` (zero-width markers in the unlinked scope), so
+    a plain truthiness check is not enough.
+    """
+    if not isinstance(scene, dict):
+        return False
+    link = scene.get("prose_link")
+    if not isinstance(link, dict):
+        return False
+    scope_type = str(link.get("scope_type") or "").strip().lower()
+    return scope_type in {"story", "chapter"}
+
+
+def append_text_to_scope(
+    project_dir: Path,
+    scope_link: dict[str, Any],
+    generated_text: str,
+) -> tuple[Path, str, int, int]:
+    """Append *generated_text* to a prose scope file.
+
+    Returns ``(content_path, new_content, start_offset, end_offset)`` where the
+    offsets describe the appended text inside *new_content*.  Shared by every
+    scene-prose generation path (chat tool, scene editor, main generation
+    button) so append semantics never diverge.
+    """
+    content_path = _scene_content_path(project_dir, scope_link)
+    if content_path is None:
+        raise ValueError(
+            f"Cannot resolve content path for scope {scope_link.get('scope_type')}"
+        )
+    if not content_path.exists():
+        content_path.parent.mkdir(parents=True, exist_ok=True)
+        content_path.write_text("", encoding="utf-8")
+
+    existing_text = content_path.read_text(encoding="utf-8")
+    separator = "\n" if existing_text and not existing_text.endswith("\n") else ""
+    insertion_start = len(existing_text) + len(separator)
+    new_content = f"{existing_text}{separator}{generated_text}"
+    _write_text_atomic(content_path, new_content)
+    _invalidate_marker_cache(project_dir)
+    return (
+        content_path,
+        new_content,
+        insertion_start,
+        insertion_start + len(generated_text),
+    )
+
+
+def link_range_to_scene(
+    project_dir: Path,
+    scene_id: SceneId,
+    scope_link: dict[str, Any],
+    content: str,
+    start_offset: int,
+    end_offset: int,
+) -> dict[str, Any]:
+    """Link ``[start_offset, end_offset)`` of *content* to *scene_id*.
+
+    Deliberately conservative: it never shrinks an existing scene span and
+    never steals text that belongs to another scene, so a wrong range can not
+    silently unlink other scenes.
+
+    Returns a small status dict with ``scene_linked`` and an optional
+    ``warning``.
+    """
+    existing = find_scene_marker_span(content, scene_id)
+    if existing is not None:
+        has_prose = existing.end > existing.start
+        covers_range = existing.start <= start_offset and existing.end >= end_offset
+        if has_prose and covers_range:
+            return {"scene_linked": True}
+        if has_prose:
+            # The scene already owns different prose; do not claim success and
+            # do not silently relocate the existing link.
+            return {
+                "scene_linked": False,
+                "warning": (
+                    f"Prose was written but not linked to scene {scene_id}: the "
+                    "scene already has prose at a different position. Use "
+                    "manage_scenes or the scene editor to link the new text "
+                    "explicitly."
+                ),
+            }
+        # The scene exists as a zero-width (emptied) span - fall through and
+        # bind the freshly written range to it.  Returning success here (the
+        # old behaviour) left the prose outside the markers while reporting the
+        # scene as linked.
+
+    overlapping = sorted(
+        span.scene_id
+        for span in parse_scene_spans(content)
+        if span.scene_id != scene_id
+        and span.start < end_offset
+        and span.end > start_offset
+    )
+    if overlapping:
+        overlap_text = ", ".join(str(sid) for sid in overlapping)
+        return {
+            "scene_linked": False,
+            "warning": (
+                f"Prose was written but not linked to scene {scene_id}: the "
+                f"target range overlaps prose owned by scene(s) {overlap_text}. "
+                "Link the scene explicitly if that is intended."
+            ),
+        }
+
+    link_prose(
+        project_dir,
+        scene_id,
+        SceneLinkProseRequest(
+            scope_type=scope_link.get("scope_type") or "chapter",
+            chapter_id=scope_link.get("chapter_id"),
+            book_id=scope_link.get("book_id"),
+            start_offset=start_offset,
+            end_offset=end_offset,
+        ),
+    )
+    return {"scene_linked": True}
+
+
 def relink_scope_prose(
     project_dir: Path,
     scope_type: str,
@@ -1034,10 +1215,13 @@ def relink_scope_prose(
             continue
         remapped_start = _to_fully_stripped(span.start)
         remapped_end = _to_fully_stripped(span.end)
-        if remapped_start >= remapped_end:
+        if remapped_start > remapped_end:
             continue
+        # Empty (zero-width) preserved spans are kept too: dropping them would
+        # silently unlink every scene the user had emptied but not deleted.
         all_assignments.append((scene_id, remapped_start, remapped_end))
 
+    all_assignments = _normalize_scope_assignments(all_assignments)
     linked = inject_markers(stripped, all_assignments)
 
     # Re-inject annotation markers.  Positions are computed from the
@@ -1262,6 +1446,10 @@ def update_prose_content(
         return None
 
     new_content = content[: span.start] + payload.text + content[span.end :]
+    # Fail closed: a text replacement must never make two scene spans overlap
+    # (e.g. inserting prose into a scene whose markers are nested inside
+    # another scene's markers would make both scenes claim the same prose).
+    validate_marker_integrity(new_content)
     _write_text_atomic(content_path, new_content)
 
     scene = _normalise_scene({"id": scene_id, **scene_data})
@@ -1450,16 +1638,16 @@ def reorder_scene_prose(
     src_block_start, src_block_end = src_block
     tgt_block_start, tgt_block_end = tgt_block
     new_src_content = src_content[:src_block_start] + src_content[src_block_end:]
-    _write_text_atomic(src_path, new_src_content)
-
     insert_pos = tgt_block_start if request.place_before else tgt_block_end
-    new_tgt_content = (
-        tgt_content[:insert_pos]
-        + f"<!--scene:{src_id}:start-->"
+    moved_block = (
+        scene_marker_token(src_id, "start")
         + src_prose
-        + f"<!--scene:{src_id}:end-->"
-        + tgt_content[insert_pos:]
+        + scene_marker_token(src_id, "end")
     )
+    new_tgt_content = tgt_content[:insert_pos] + moved_block + tgt_content[insert_pos:]
+    validate_marker_integrity(new_src_content)
+    validate_marker_integrity(new_tgt_content)
+    _write_text_atomic(src_path, new_src_content)
     _write_text_atomic(tgt_path, new_tgt_content)
 
     scenes_dict[src_id] = {
@@ -1564,10 +1752,12 @@ def reorder_scope_scenes(
     block_end_by_id: dict[SceneId, int] = {}
 
     for span in spans:
-        start_marker = f"<!--scene:{span.scene_id}:start-->"
-        end_marker = f"<!--scene:{span.scene_id}:end-->"
-        block_start_by_id[span.scene_id] = span.start - len(start_marker)
-        block_end_by_id[span.scene_id] = span.end + len(end_marker)
+        bounds = scene_block_bounds(content, span.scene_id)
+        if bounds is None:
+            raise ValueError(
+                f"Unable to derive marker block bounds for scene {span.scene_id}"
+            )
+        block_start_by_id[span.scene_id], block_end_by_id[span.scene_id] = bounds
 
     first_scene_id = linked_in_scope[0]
     last_scene_id = linked_in_scope[-1]

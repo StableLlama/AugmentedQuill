@@ -19,6 +19,7 @@ import { setupMountedRefLifecycle } from '../../utils/mountedRef';
 import { joinSuggestionToContent } from '../../utils/textUtils';
 import { useStoryStore } from '../../stores/storyStore';
 import { useChatStore } from '../../stores/chatStore';
+import { getSceneMarkerSpans } from '../editor/internalTags';
 
 type PromptsState = {
   system_messages: Record<string, string>;
@@ -96,27 +97,12 @@ const fillLastEmptySceneSpanForExtend = (
     return baseContent;
   }
 
-  const markerRe = /<!--scene:([^:>]+):start-->([\s\S]*?)<!--scene:\1:end-->/g;
-  let match: RegExpExecArray | null = markerRe.exec(baseContent);
-  let lastEmpty: {
-    innerStart: number;
-    innerEnd: number;
-  } | null = null;
-
-  while (match) {
-    const sceneId = String(match[1]);
-    const innerText = String(match[2] ?? '');
-    if (innerText.trim().length === 0) {
-      const fullStart = match.index;
-      const fullEnd = markerRe.lastIndex;
-      const startToken = `<!--scene:${sceneId}:start-->`;
-      const endToken = `<!--scene:${sceneId}:end-->`;
-      lastEmpty = {
-        innerStart: fullStart + startToken.length,
-        innerEnd: fullEnd - endToken.length,
-      };
+  const spans = getSceneMarkerSpans(baseContent);
+  let lastEmpty: { from: number; to: number } | null = null;
+  for (const span of spans) {
+    if (baseContent.slice(span.from, span.to).trim().length === 0) {
+      lastEmpty = { from: span.from, to: span.to };
     }
-    match = markerRe.exec(baseContent);
   }
 
   if (!lastEmpty) {
@@ -125,9 +111,7 @@ const fillLastEmptySceneSpanForExtend = (
 
   const inserted = joinSuggestionToContent('', generatedText);
   return (
-    baseContent.slice(0, lastEmpty.innerStart) +
-    inserted +
-    baseContent.slice(lastEmpty.innerEnd)
+    baseContent.slice(0, lastEmpty.from) + inserted + baseContent.slice(lastEmpty.to)
   );
 };
 

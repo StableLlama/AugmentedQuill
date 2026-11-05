@@ -857,6 +857,26 @@ describe('buildInitialStoryState', () => {
     expect(result.current.baselineState.chapters[0]?.content).toBe('Original content');
   });
 
+  it('records AI-changed units and clears them when the baseline advances', async () => {
+    const ch = buildChapter('1', '');
+    const { result } = await hookWithStory('initial', [ch]);
+
+    act(() => {
+      result.current.pushExternalHistoryEntry({
+        label: 'AI prose update',
+        changedChapterIds: [1],
+      });
+    });
+
+    expect(useStoryStore.getState().pendingAiChangedUnitIds).toEqual(['1']);
+
+    act(() => {
+      result.current.advanceBaselineToCurrentStory();
+    });
+
+    expect(useStoryStore.getState().pendingAiChangedUnitIds).toEqual([]);
+  });
+
   it('syncs baselineState when the current chapter content is loaded lazily', async () => {
     const chapter = buildChapter('1', 'Loaded content');
     const { result } = await hookWithStory('initial', [chapter]);

@@ -26,6 +26,8 @@ from augmentedquill.models.scene import (
     SceneCreateRequest,
     SceneDetectBoundariesRequest,
     SceneDetectBoundariesResponse,
+    SceneFieldGenerateRequest,
+    SceneFieldGenerateResponse,
     SceneId,
     SceneLinkProseRequest,
     SceneReorderProseRequest,
@@ -34,6 +36,10 @@ from augmentedquill.models.scene import (
     SceneUpdateRequest,
     SceneWriteRequest,
     SceneWriteResponse,
+)
+from augmentedquill.services.scenes.scene_field_generation import (
+    generate_scene_field,
+    stream_scene_field_generation,
 )
 from augmentedquill.services.scenes.scene_generation_service import (
     auto_link_scope_text,
@@ -287,6 +293,69 @@ async def write_scene_prose_stream(
             yield f"data: {json.dumps({'type': 'error', 'error': str(exc)})}\n\n"
         except Exception as exc:
             yield f"data: {json.dumps({'type': 'error', 'error': f'Write scene failed: {exc}'})}\n\n"
+        finally:
+            yield "data: [DONE]\n\n"
+
+    return StreamingResponse(_gen(), media_type="text/event-stream")
+
+
+@router.post("/scenes/{scene_id}/generate", response_model=SceneFieldGenerateResponse)
+async def generate_scene_field_route(
+    project_dir: ProjectDep,
+    scene_id: SceneId,
+    payload: SceneFieldGenerateRequest,
+) -> SceneFieldGenerateResponse:
+    """Regenerate a derived scene field (summary or beats) from another field."""
+    try:
+        result = await generate_scene_field(
+            project_dir=project_dir,
+            scene_id=scene_id,
+            request=payload,
+            payload={},
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return SceneFieldGenerateResponse(
+        target=result["target"],
+        text=result["text"],
+        beats=result.get("beats") or [],
+    )
+
+
+@router.post("/scenes/{scene_id}/generate/stream")
+async def generate_scene_field_stream_route(
+    project_dir: ProjectDep,
+    scene_id: SceneId,
+    payload: SceneFieldGenerateRequest,
+) -> StreamingResponse:
+    """Stream a derived scene-field regeneration (summary or beats).
+
+    Emits SSE events:
+    - ``{"type": "chunk", "accumulated": str}`` as text is generated
+    - ``{"type": "result", "target": ..., "text": ..., "beats": [...]}``
+      once generation completes
+    - ``{"type": "error", "error": str}`` on failure
+    """
+
+    async def _gen() -> AsyncIterator[str]:
+        """Yield SSE events for the streaming field-generation request."""
+        try:
+            async for event in stream_scene_field_generation(
+                project_dir=project_dir,
+                scene_id=scene_id,
+                request=payload,
+                payload={},
+            ):
+                yield f"data: {json.dumps(event)}\n\n"
+        except LookupError as exc:
+            yield f"data: {json.dumps({'type': 'error', 'error': str(exc)})}\n\n"
+        except ValueError as exc:
+            yield f"data: {json.dumps({'type': 'error', 'error': str(exc)})}\n\n"
+        except Exception as exc:
+            yield f"data: {json.dumps({'type': 'error', 'error': f'Field generation failed: {exc}'})}\n\n"
         finally:
             yield "data: [DONE]\n\n"
 

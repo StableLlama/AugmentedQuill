@@ -25,7 +25,6 @@ annotation that becomes malformed (end before start).
 from __future__ import annotations
 
 import os
-import re
 import tempfile
 import uuid
 from pathlib import Path
@@ -38,12 +37,12 @@ from augmentedquill.services.scenes.scene_markers import (
     inject_annotation_markers,
     parse_annotation_spans,
     remove_annotation_markers,
+    scene_marker_token_ranges,
+    snap_offset_outside_internal_markers,
     validate_internal_marker_tokens,
 )
 
-# ─── Private helpers ─────────────────────────────────────────────────────────
-
-_ANN_RE = re.compile(r"<!--annotation:([^:>]+):(start|end)-->")
+# ─── Private helpers ────────────────────────────────────────────────────────
 
 _SCOPE_LITERAL = Literal["story", "chapter", "unlinked"]
 
@@ -208,13 +207,8 @@ def create_annotation(
     safe_end = max(safe_start, min(end_offset, clen))
 
     # Snap boundaries outside any internal marker tokens.
-    from augmentedquill.services.scenes.scene_markers import _INTERNAL_MARKER_RE
-
-    for m in _INTERNAL_MARKER_RE.finditer(content):
-        if m.start() < safe_start < m.end():
-            safe_start = m.end()
-        if m.start() < safe_end < m.end():
-            safe_end = m.end()
+    safe_start = snap_offset_outside_internal_markers(content, safe_start)
+    safe_end = snap_offset_outside_internal_markers(content, safe_end)
     if safe_start >= safe_end:
         raise ValueError("Annotation range is entirely within internal marker tokens.")
 
@@ -358,8 +352,14 @@ def split_straddling_annotations(
     new_content = content
     new_meta = list(annotation_meta)
 
-    # Regex to find scene markers at boundary positions.
-    _SCENE_MARKER_AT = re.compile(r"<!--scene:\d+:(start|end)-->")
+    scene_token_ranges = scene_marker_token_ranges(new_content)
+
+    def _scene_marker_len_in_window(window_start: int, window_end: int) -> int:
+        """Return the length of the first scene marker starting in the window."""
+        for token_start, token_end in scene_token_ranges:
+            if window_start <= token_start < window_end:
+                return token_end - token_start
+        return 0
 
     # Process straddlers right-to-left to preserve offsets.
     # For each straddler collect the char-level replacement ops and apply them
@@ -390,14 +390,10 @@ def split_straddling_annotations(
         # the block).  This is critical: -in markers must stay INSIDE the
         # scene block so they move with the block during a reorder; -out
         # markers must stay OUTSIDE.
-        scene_end_match = _SCENE_MARKER_AT.search(
-            new_content, max(0, block_end - 60), block_end
-        )
-        scene_start_match = _SCENE_MARKER_AT.search(
-            new_content, block_start, block_start + 60
-        )
-        end_marker_len = len(scene_end_match.group(0)) if scene_end_match else 0
-        start_marker_len = len(scene_start_match.group(0)) if scene_start_match else 0
+        scene_end_len = _scene_marker_len_in_window(max(0, block_end - 60), block_end)
+        scene_start_len = _scene_marker_len_in_window(block_start, block_start + 60)
+        end_marker_len = scene_end_len
+        start_marker_len = scene_start_len
 
         if start_inside:
             # start inside block → end is outside.

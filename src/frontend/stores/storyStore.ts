@@ -94,6 +94,18 @@ export interface StoryStoreState {
   setStreamingContent: (
     data: { chapterId: string; content: string; writeMode?: string } | null
   ) => void;
+
+  /**
+   * Writing units (chapter ids, or "story" for short-story drafts) whose
+   * prose was changed by the pending AI tool turn.
+   *
+   * Used by the diff view to distinguish two very different empty baselines:
+   * - "content not loaded yet" (initial load) → no diff should be shown;
+   * - "chapter was empty before the AI wrote into it" → every new character
+   *   is an insertion and must be highlighted.
+   */
+  pendingAiChangedUnitIds: string[];
+  setPendingAiChangedUnitIds: (ids: string[]) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -122,6 +134,7 @@ function buildInitialState(): Omit<
   | 'pushHistoryState'
   | 'jumpHistory'
   | 'setStreamingContent'
+  | 'setPendingAiChangedUnitIds'
 > {
   return {
     story: INITIAL_STORY,
@@ -132,6 +145,7 @@ function buildInitialState(): Omit<
     loadChapterSignal: 0,
     isChapterLoading: false,
     streamingContent: null,
+    pendingAiChangedUnitIds: [],
   };
 }
 
@@ -170,6 +184,22 @@ export const useStoryStore = create<StoryStoreState>()(
     setCurrentIndex: (index: number) => set({ currentIndex: index }),
 
     setBaselineState: (baselineState: StoryState) => set({ baselineState }),
+
+    setPendingAiChangedUnitIds: (ids: string[]) =>
+      set(
+        (
+          state: StoryStoreState
+        ): { pendingAiChangedUnitIds: string[] } | StoryStoreState => {
+          const current = state.pendingAiChangedUnitIds;
+          if (
+            current.length === ids.length &&
+            current.every((id: string, index: number): boolean => id === ids[index])
+          ) {
+            return state;
+          }
+          return { pendingAiChangedUnitIds: [...ids] };
+        }
+      ),
 
     incrementLoadChapterSignal: () =>
       set((state: StoryStoreState): { loadChapterSignal: number } => ({

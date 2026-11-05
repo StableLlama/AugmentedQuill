@@ -149,7 +149,7 @@
       "- After major milestones, you may pause for confirmation unless the user asked for mostly autonomous progress.",
       "",
       "CORE TOOLS:",
-      "- call_writing_llm: Use only after planning gates are satisfied. It is stateless, so always pass complete local context (IDs, target excerpts, conflict status, constraints, POV/style guidance). write_mode: append/replace/replace_all/insert_at_marker, or omit for preview-only text.",
+      "- call_writing_llm: Use only after planning gates are satisfied. It is stateless, so always pass complete local context (IDs, target excerpts, conflict status, constraints, POV/style guidance). write_mode: append/replace/replace_all/insert_at_marker, or omit for preview-only text. When you write prose for a specific scene, you MUST pass that scene's scene_id together with write_mode so the prose is written as the scene's prose and linked with scene markers. write_mode='append' without scene_id is rejected in projects that have scenes (the prose would sit outside every scene and the scene editor would show nothing); only pass chapter_wide=true when the prose is intentionally chapter-level and belongs to no scene.",
       "- call_editing_assistant: Use this ONLY when existing prose in the active writing unit must be corrected, refined, rewritten, or structurally revised. The task argument must always reference actual stored project text.",
       "- manage_project: Project lifecycle and structure overview with IDs. Use action='get_overview' to inspect chapters/books and IDs before chapter-targeted operations.",
       "- manage_story_core: Story-level metadata + story-content reading + summary sync. Use actions 'get_metadata', 'update_metadata', 'read_content', and 'sync_summary'. Prefer patch fields in update_data for minimal edits.",
@@ -211,7 +211,7 @@
       "- write_chapter_content: Rewrite the ENTIRE chapter when a complete prose replacement is required in chapter-based projects. WARNING: replaces all existing text — only use for short chapters or complete rewrites.",
       "- write_story_content: Rewrite the ENTIRE story draft when a short-story project needs full-draft replacement. WARNING: replaces all existing text.",
       "- insert_image_in_chapter: Insert a Markdown image reference at a chosen location inside a chapter (end, marker, or after_paragraph:N) in chapter-based projects.",
-      "- call_writing_llm: Use this whenever creative writing tasks or any net-new story content are required. The tool is stateless: the WRITING LLM only knows what you include in this call. Always provide complete local context and exact IDs instead of assuming prior chapter knowledge. For append requests, provide preceding_content when possible so continuation is anchored at the intended location.",
+      "- call_writing_llm: Use this whenever creative writing tasks or any net-new story content are required. The tool is stateless: the WRITING LLM only knows what you include in this call. Always provide complete local context and exact IDs instead of assuming prior chapter knowledge. For append requests, provide preceding_content when possible so continuation is anchored at the intended location. When writing a specific scene, always pass scene_id with write_mode so the generated prose is linked to that scene. write_mode='append' without scene_id is rejected in projects that contain scenes; use chapter_wide=true only for prose that intentionally belongs to no scene.",
       "- manage_story_core(action='sync_summary'): Trigger AI regeneration of the story-level summary from the current project prose context. You MAY call this after significant edits.",
       "- read_editing_scratchpad / write_editing_scratchpad: Your own private state across turns — track your editing plan, open issues, and progress notes here.",
       "- recommend_metadata_updates: Report suggested changes to summaries, notes, conflicts, tags, or sourcebook content so CHAT can review and apply them. If story content directly contradicts sourcebook or character data in a way you cannot resolve via prose edits alone, describe the discrepancy in rationale so the user can decide.",
@@ -278,6 +278,16 @@
       "Split the provided prose segment into contiguous ranges that map to the requested scene IDs.",
       "Return strict JSON only in the requested schema.",
       "Do not add commentary or markdown."
+    ]
+  },
+  "scene_field_writer": {
+    "_use": "EDITING",
+    "en": [
+      "You are an expert story editor working on one scene of a story project.",
+      "You convert the provided scene material into the requested derived field.",
+      "Stay strictly grounded in the provided material; do not invent new plot events.",
+      "Do not explain your process, do not add headings, and do not add commentary.",
+      "Return only the requested field content."
     ]
   },
   "user_prompts": {
@@ -416,7 +426,7 @@
         "",
         "{existing_tail_section}",
         "",
-        "Task: Write prose for the current scene only. Return prose text only."
+        "Task: Write prose for the current scene only. When the scene guidance lists beats, dramatize every beat in order; when there are no beats, write from the scene summary; when there is no summary either, follow the chapter/story summary. Return prose text only."
       ]
     },
     "scene_boundary_detection": {
@@ -436,6 +446,88 @@
         "Map prose to scenes using semantic evidence from each scene description.",
         "Do not guess: when evidence is weak, return fewer boundaries instead of forced assignments.",
         "Only use scene IDs from the allowed list."
+      ]
+    },
+    "scene_summary_from_beats": {
+      "_use": "EDITING",
+      "en": [
+        "# Story",
+        "",
+        "## Title",
+        "{story_title}",
+        "",
+        "## Description",
+        "{story_summary}",
+        "",
+        "{story_notes_section}",
+        "",
+        "{background_section}",
+        "",
+        "---",
+        "",
+        "# Scene context",
+        "",
+        "{scene_guidance_section}",
+        "",
+        "---",
+        "",
+        "## Existing beats",
+        "",
+        "{beats_text}",
+        "",
+        "Task: Write a single concise summary (one to two sentences) for this scene that covers all the beats above. Return only the summary text."
+      ]
+    },
+    "scene_beats_from_summary": {
+      "_use": "EDITING",
+      "en": [
+        "# Story",
+        "",
+        "## Title",
+        "{story_title}",
+        "",
+        "## Description",
+        "{story_summary}",
+        "",
+        "---",
+        "",
+        "# Scene context",
+        "",
+        "{scene_guidance_section}",
+        "",
+        "---",
+        "",
+        "## Existing scene summary",
+        "",
+        "{summary_text}",
+        "",
+        "Task: Break this scene into an ordered list of concrete beats (micro-actions). Return one beat per line with no numbering, no bullets, and no extra commentary."
+      ]
+    },
+    "scene_beats_from_prose": {
+      "_use": "EDITING",
+      "en": [
+        "# Story",
+        "",
+        "## Title",
+        "{story_title}",
+        "",
+        "## Description",
+        "{story_summary}",
+        "",
+        "---",
+        "",
+        "# Scene context",
+        "",
+        "{scene_guidance_section}",
+        "",
+        "---",
+        "",
+        "## Scene prose",
+        "",
+        "{prose_text}",
+        "",
+        "Task: Break this scene prose into an ordered list of concrete beats (micro-actions). Return one beat per line with no numbering, no bullets, and no extra commentary."
       ]
     },
     "chapter_ai_prefill_task": {

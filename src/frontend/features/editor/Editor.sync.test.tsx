@@ -15,7 +15,9 @@
 import React from 'react';
 import { render, act, cleanup } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { EditorView } from '@codemirror/view';
 import { Editor } from './Editor';
+import { transferInternalMarkers } from './internalTags';
 import { WritingUnit } from '../../types';
 import { useStoryStore, resetStoryStore } from '../../stores/storyStore';
 
@@ -523,5 +525,159 @@ describe('Spec: initial load with empty-string baseline shows no diff', () => {
     // This must NOT happen — baseline '' should be treated as "no diff".
     expect(cmContent?.innerHTML).not.toContain('diff-inserted');
     expect(cmContent?.innerHTML).not.toContain('diff-deleted');
+  });
+
+  it('shows the AI insertion when the chapter was empty before the AI write', async () => {
+    // When the AI writes into an empty chapter, the pre-AI baseline is the
+    // empty string.  That is a real baseline for the changed unit, so the new
+    // prose must be highlighted as inserted.
+    useStoryStore.getState().setPendingAiChangedUnitIds(['1']);
+
+    const { container, rerender } = render(
+      <Editor
+        {...defaultProps}
+        chapter={{ ...mockChapter, content: '' }}
+        baselineContent=""
+      />
+    );
+
+    await act(async () => {});
+
+    rerender(
+      <Editor
+        {...defaultProps}
+        chapter={{ ...mockChapter, content: 'AI wrote this scene.' }}
+        baselineContent=""
+      />
+    );
+
+    await act(async () => {});
+
+    expect(hasDiffMark(container)).toBe(true);
+  });
+});
+
+// ─── Scene marker baseline race ─────────────────────────────────────────────
+// Regression spec: delete-all → chat/generation writes scene prose while the
+// editor is still focused/streaming → user types one character.
+//
+// The debounced save re-injects scene markers from `lastSavedFullContentRef`.
+// If that baseline is stale (markers-only content from the delete-all save),
+// `transferInternalMarkers` maps the emptied markers onto the freshly written
+// prose, appending `<!--scene:1:start--><!--scene:1:end-->` at the END of the
+// text and silently unlinking the scene.  The baseline must always follow the
+// authoritative store content.
+
+describe('Editor scene marker baseline sync', () => {
+  const SCENE_MARKERS_ONLY =
+    '<!--scene:1:start--><!--scene:1:end-->' + '<!--scene:2:start--><!--scene:2:end-->';
+  const INITIAL_CONTENT =
+    '<!--scene:1:start-->Old prose.<!--scene:1:end-->' +
+    '<!--scene:2:start--><!--scene:2:end-->';
+  const AI_VISIBLE = 'Brand new scene one prose.';
+  const AI_CONTENT =
+    `<!--scene:1:start-->${AI_VISIBLE}<!--scene:1:end-->` +
+    '<!--scene:2:start--><!--scene:2:end-->';
+
+  const getView = (): EditorView => {
+    const dom = document.querySelector('.cm-editor');
+    if (!(dom instanceof HTMLElement)) throw new Error('editor not mounted');
+    const view = EditorView.findFromDOM(dom);
+    if (!view) throw new Error('editor view not found');
+    return view;
+  };
+
+  it('keeps AI-written scene prose inside its markers after a later edit', async () => {
+    vi.useFakeTimers();
+    const onChange = vi.fn();
+    // The editor keeps focus while the AI write lands; this is what used to
+    // leave `lastSavedFullContentRef` pointing at the stale markers-only text.
+    const focusSpy = vi
+      .spyOn(EditorView.prototype, 'hasFocus', 'get')
+      .mockReturnValue(true);
+
+    const { rerender } = render(
+      <Editor
+        {...defaultProps}
+        chapter={{ ...mockChapter, content: INITIAL_CONTENT }}
+        baselineContent={undefined}
+        onChange={onChange}
+      />
+    );
+
+    // 1) User selects everything and deletes it → markers-only content saved.
+    act(() => {
+      const view = getView();
+      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: '' } });
+    });
+    act(() => {
+      vi.advanceTimersByTime(400);
+    });
+    expect(onChange).toHaveBeenLastCalledWith(
+      mockChapter.id,
+      { content: SCENE_MARKERS_ONLY },
+      false
+    );
+
+    // 2) Chat/generation streams scene 1 prose, then commits it to the store.
+    act(() => {
+      useStoryStore.getState().setStreamingContent({
+        chapterId: mockChapter.id,
+        content: AI_VISIBLE,
+      });
+      rerender(
+        <Editor
+          {...defaultProps}
+          chapter={{ ...mockChapter, content: AI_CONTENT }}
+          baselineContent={undefined}
+          onChange={onChange}
+          aiControls={{ ...defaultProps.aiControls, isProseStreaming: true }}
+        />
+      );
+    });
+    act(() => {
+      useStoryStore.getState().setStreamingContent(null);
+      rerender(
+        <Editor
+          {...defaultProps}
+          chapter={{ ...mockChapter, content: AI_CONTENT }}
+          baselineContent={undefined}
+          onChange={onChange}
+        />
+      );
+    });
+
+    // 3) User types one character after the AI prose.
+    act(() => {
+      const view = getView();
+      const end = view.state.doc.length;
+      view.dispatch({ changes: { from: end, to: end, insert: 'X' } });
+    });
+    act(() => {
+      vi.advanceTimersByTime(400);
+    });
+
+    const saved = onChange.mock.calls.at(-1)?.[1] as { content: string };
+    expect(saved.content).toBe(
+      `<!--scene:1:start-->${AI_VISIBLE}X<!--scene:1:end-->` +
+        '<!--scene:2:start--><!--scene:2:end-->'
+    );
+    // The second scene must stay untouched and empty (adjacent marker pair).
+    const scene2Start = saved.content.indexOf('<!--scene:2:start-->');
+    const scene2End = saved.content.indexOf('<!--scene:2:end-->');
+    expect(scene2Start).toBeGreaterThan(-1);
+    expect(scene2Start + '<!--scene:2:start-->'.length).toBe(scene2End);
+
+    focusSpy.mockRestore();
+    vi.useRealTimers();
+  });
+
+  it('does not move emptied markers behind text written outside the editor', () => {
+    // Guard for the coordinate mapping itself: transferring markers from
+    // markers-only content onto new prose must never place them at the end
+    // (which detaches the prose from every scene).
+    const transferred = transferInternalMarkers(SCENE_MARKERS_ONLY, AI_VISIBLE);
+    expect(transferred.startsWith('<!--scene:1:start-->')).toBe(true);
+    expect(transferred).not.toContain(`${AI_VISIBLE}<!--scene:1:start-->`);
   });
 });

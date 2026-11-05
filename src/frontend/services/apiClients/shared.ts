@@ -144,3 +144,98 @@ export async function patchJson<T>(
     fallbackError
   );
 }
+
+export type SseEvent = Record<string, unknown>;
+
+interface SseHandlers<TResult> {
+  /** Called for every non-terminal event (e.g. streaming progress). */
+  onEvent?: (event: SseEvent) => void;
+  /** Return a value to treat the event as the successful terminal result. */
+  selectResult?: (event: SseEvent) => TResult | undefined;
+  /** Return an Error to treat the event as a terminal failure. */
+  selectError?: (event: SseEvent) => Error | undefined;
+}
+
+/**
+ * POST a JSON body and consume a ``text/event-stream`` response.
+ *
+ * Shared by every scene streaming endpoint so they all parse SSE frames and
+ * surface errors identically.  Resolves with the value returned by
+ * ``selectResult`` for the terminal event and rejects with the error returned
+ * by ``selectError`` (or ``fallbackError`` when the stream ends without one).
+ */
+export async function postSse<TResult>(
+  path: string,
+  body: unknown,
+  handlers: SseHandlers<TResult>,
+  fallbackError: string
+): Promise<TResult> {
+  const response = await fetch(endpoint(path), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const detail = await response.text().catch((): string => fallbackError);
+    throw new Error(detail || fallbackError);
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error(`${fallbackError}: no response body`);
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let result: TResult | undefined;
+  let failed: Error | null = null;
+
+  const handleEvent = (event: SseEvent): void => {
+    const error = handlers.selectError?.(event);
+    if (error) {
+      failed = error;
+      return;
+    }
+    const selected = handlers.selectResult?.(event);
+    if (selected !== undefined) {
+      result = selected;
+      return;
+    }
+    handlers.onEvent?.(event);
+  };
+
+  const processChunk = (chunk: string): void => {
+    buffer += chunk;
+    const frames = buffer.split('\n\n');
+    buffer = frames.pop() ?? '';
+    for (const frame of frames) {
+      const trimmed = frame.trim();
+      if (!trimmed.startsWith('data: ')) continue;
+      const dataStr = trimmed.slice(6);
+      if (dataStr === '[DONE]') continue;
+      try {
+        handleEvent(JSON.parse(dataStr) as SseEvent);
+      } catch {
+        // Skip malformed frames; the next chunk usually repairs the buffer.
+      }
+    }
+  };
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      processChunk(decoder.decode(value, { stream: true }));
+    }
+    processChunk(decoder.decode());
+  } finally {
+    try {
+      await reader.cancel();
+    } catch {
+      // Ignore cancel failures; the stream is already closed.
+    }
+  }
+
+  if (failed) throw failed;
+  if (result !== undefined) return result;
+  throw new Error(`${fallbackError}: stream ended without a result`);
+}

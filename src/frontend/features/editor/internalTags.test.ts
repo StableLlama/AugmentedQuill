@@ -23,12 +23,15 @@
 import { describe, expect, it } from 'vitest';
 import {
   MarkerIntegrityError,
+  getSceneMarkerSpans,
+  getSceneMarkerTokenRanges,
   stripInlineInternalMarkers,
   toOriginalOffset,
   toVisibleOffset,
   transferInternalMarkers,
   validateMarkerIntegrity,
 } from './internalTags';
+import type { SceneMarkerSpanRange } from './internalTags';
 
 describe('toOriginalOffset', () => {
   it('returns same offset when content has no markers', () => {
@@ -274,6 +277,16 @@ describe('transferInternalMarkers', () => {
     expect(result).toBe(`${scene1}${scene1e} Bravo`);
   });
 
+  it('keeps multiple fully-deleted spans adjacent instead of nesting them', () => {
+    // Deleting the whole document must not produce `start1 start2 end1 end2`:
+    // those two empty spans are nested and, once prose is inserted into the
+    // first one, BOTH scenes end up claiming the same text.
+    const oldContent = `${scene1}Alpha${scene1e}<!--scene:2:start-->Bravo<!--scene:2:end-->`;
+    const result = transferInternalMarkers(oldContent, '');
+    expect(result).toBe(`${scene1}${scene1e}<!--scene:2:start--><!--scene:2:end-->`);
+    expect(() => validateMarkerIntegrity(result)).not.toThrow();
+  });
+
   it('preserves multiple adjacent scene spans after an edit', () => {
     const oldContent = `${scene1}Alpha${scene1e} ${'<!--scene:2:start-->'}Bravo${'<!--scene:2:end-->'}`;
     // Insert "X" INSIDE scene 1 (mid-word, unambiguous; the space between
@@ -293,11 +306,88 @@ describe('transferInternalMarkers', () => {
     expect(result).toBe(`${scene1}${anno}AlphaX${annoe} Bravo${scene1e}`);
   });
 
+  it('keeps markers at the start (never at the end) when the old text was markers-only', () => {
+    // Regression: a stale markers-only baseline (e.g. after the user deleted
+    // all text) transferred onto freshly written prose used to map every
+    // boundary to the END of the new text, so the prose ended up OUTSIDE all
+    // scene spans and the scene link was silently lost.
+    const oldContent = `${scene1}${scene1e}<!--scene:2:start--><!--scene:2:end-->`;
+    const result = transferInternalMarkers(oldContent, 'Fresh prose.');
+    expect(result).toBe(
+      `${scene1}${scene1e}<!--scene:2:start--><!--scene:2:end-->Fresh prose.`
+    );
+    expect(() => validateMarkerIntegrity(result)).not.toThrow();
+  });
+
   it('re-injected content is valid per validateMarkerIntegrity', () => {
     const oldContent = `${scene1}${anno}Alpha${annoe} Bravo${scene1e}${'<!--scene:2:start-->'}Delta${'<!--scene:2:end-->'}`;
     const newStripped = 'Alpha! Bravo! Delta!';
     const result = transferInternalMarkers(oldContent, newStripped);
     expect(() => validateMarkerIntegrity(result)).not.toThrow();
     expect(stripInlineInternalMarkers(result)).toBe(newStripped);
+  });
+});
+
+describe('getSceneMarkerTokenRanges', () => {
+  it('returns one range per scene marker token, in document order', () => {
+    const content = 'AA<!--scene:1:start-->BB<!--scene:1:end-->CC';
+    const ranges = getSceneMarkerTokenRanges(content);
+    expect(ranges).toHaveLength(2);
+    expect(content.slice(ranges[0].from, ranges[0].to)).toBe('<!--scene:1:start-->');
+    expect(content.slice(ranges[1].from, ranges[1].to)).toBe('<!--scene:1:end-->');
+  });
+
+  it('ignores annotation markers', () => {
+    const content =
+      '<!--annotation:a:start-->Hi<!--annotation:a:end-->' +
+      '<!--scene:2:start-->X<!--scene:2:end-->';
+    const ranges = getSceneMarkerTokenRanges(content);
+    expect(ranges).toHaveLength(2);
+  });
+
+  it('returns an empty list when no scene markers exist', () => {
+    expect(getSceneMarkerTokenRanges('plain prose')).toEqual([]);
+  });
+});
+
+describe('getSceneMarkerSpans', () => {
+  it('returns inner and full ranges for each well-formed span', () => {
+    const content =
+      '<!--scene:1:start-->Alpha<!--scene:1:end--> ' +
+      '<!--scene:2:start-->Beta<!--scene:2:end-->';
+    const spans = getSceneMarkerSpans(content);
+    expect(spans.map((span: SceneMarkerSpanRange): string => span.sceneId)).toEqual([
+      '1',
+      '2',
+    ]);
+    expect(content.slice(spans[0].from, spans[0].to)).toBe('Alpha');
+    expect(content.slice(spans[0].fullFrom, spans[0].fullTo)).toBe(
+      '<!--scene:1:start-->Alpha<!--scene:1:end-->'
+    );
+    expect(content.slice(spans[1].from, spans[1].to)).toBe('Beta');
+  });
+
+  it('exposes zero-width spans', () => {
+    const content = '<!--scene:3:start--><!--scene:3:end-->';
+    const [span] = getSceneMarkerSpans(content);
+    expect(span.from).toBe(span.to);
+    expect(span.fullFrom).toBe(0);
+    expect(span.fullTo).toBe(content.length);
+  });
+
+  it('ignores unclosed and orphaned markers', () => {
+    const content =
+      '<!--scene:1:start-->Unclosed ' +
+      '<!--scene:2:end-->Orphan ' +
+      '<!--scene:3:start-->Ok<!--scene:3:end-->';
+    const spans = getSceneMarkerSpans(content);
+    expect(spans.map((span: SceneMarkerSpanRange): string => span.sceneId)).toEqual([
+      '3',
+    ]);
+  });
+
+  it('does not include annotation-only spans', () => {
+    const content = '<!--annotation:a:start-->Note<!--annotation:a:end-->';
+    expect(getSceneMarkerSpans(content)).toEqual([]);
   });
 });

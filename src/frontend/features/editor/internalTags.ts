@@ -102,6 +102,70 @@ export function getSceneMarkerSpanRange(
   return getMarkerSpanRange(sourceText, 'scene', sceneId);
 }
 
+export interface InlineMarkerTokenRange {
+  from: number;
+  to: number;
+}
+
+/** Raw offset ranges for every scene marker token in *sourceText*. */
+export function getSceneMarkerTokenRanges(
+  sourceText: string
+): InlineMarkerTokenRange[] {
+  const ranges: InlineMarkerTokenRange[] = [];
+  const regex = new RegExp(INLINE_SCENE_MARKER_REGEX.source, 'g');
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(sourceText)) !== null) {
+    ranges.push({ from: match.index, to: match.index + match[0].length });
+  }
+  return ranges;
+}
+
+export interface SceneMarkerSpanRange {
+  sceneId: string;
+  /** Offset of the first character of the `:start` token. */
+  fullFrom: number;
+  /** Offset just past the last character of the `:end` token. */
+  fullTo: number;
+  /** Offset of the first prose character after the `:start` token. */
+  from: number;
+  /** Offset of the `:end` token (one past the last prose character). */
+  to: number;
+}
+
+/** Parse every well-formed scene marker span in *sourceText*, in order. */
+export function getSceneMarkerSpans(sourceText: string): SceneMarkerSpanRange[] {
+  const spans: SceneMarkerSpanRange[] = [];
+  const open = new Map<string, { tokenStart: number; innerStart: number }>();
+  const regex = new RegExp(INTERNAL_MARKER_CAPTURE_REGEX.source, 'g');
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(sourceText)) !== null) {
+    const [token, layer, markerId, edge] = match;
+    if (layer !== 'scene') continue;
+    const tokenStart = match.index;
+    if (edge === 'start') {
+      if (!open.has(markerId)) {
+        open.set(markerId, {
+          tokenStart,
+          innerStart: tokenStart + token.length,
+        });
+      }
+      continue;
+    }
+    const opened = open.get(markerId);
+    if (!opened) continue;
+    open.delete(markerId);
+    if (tokenStart < opened.innerStart) continue;
+    spans.push({
+      sceneId: markerId,
+      fullFrom: opened.tokenStart,
+      fullTo: tokenStart + token.length,
+      from: opened.innerStart,
+      to: tokenStart,
+    });
+  }
+  return spans;
+}
+
 export function stripInlineInternalMarkers(text: string): string {
   return text.replaceAll(INLINE_INTERNAL_MARKER_REGEX, '');
 }
@@ -201,6 +265,13 @@ function buildVisibleEditMapping(
   oldText: string,
   newText: string
 ): (oldPos: number) => number {
+  // No visible text to align: every boundary belongs at the start of the new
+  // text.  Mapping to the END (diff default) would push emptied markers past
+  // freshly written prose and silently unlink scenes.
+  if (oldText.length === 0) {
+    return (): number => 0;
+  }
+
   const dmp = new diff_match_patch();
   dmp.Diff_Timeout = 0.5;
   const diffs = dmp.diff_main(oldText, newText);
@@ -272,7 +343,7 @@ export function transferInternalMarkers(
   interface MarkerToken {
     pos: number;
     token: string;
-    /** 'end' of a non-empty span, empty-span start, empty-span end, non-empty start. */
+    /** 'end' of a non-empty span, empty-span pair, non-empty start. */
     order: number;
     /** secondary sort key (span extent at this position). */
     extent: number;
@@ -285,9 +356,17 @@ export function transferInternalMarkers(
     const newStart = mapVisible(oldVisibleStart);
     const newEnd = Math.max(newStart, mapVisible(oldVisibleEnd));
     if (newStart === newEnd) {
-      // Fully-deleted span — keep an empty adjacent marker pair.
-      tokens.push({ pos: newStart, token: span.startToken, order: 1, extent: 0 });
-      tokens.push({ pos: newEnd, token: span.endToken, order: 2, extent: 0 });
+      // Fully-deleted span — keep an empty adjacent marker pair.  Emit start
+      // and end as ONE token so multiple emptied spans at the same position
+      // stay adjacent (`start1 end1 start2 end2`) instead of nesting
+      // (`start1 start2 end1 end2`), which would make both scenes claim the
+      // same prose once text is inserted into one of them.
+      tokens.push({
+        pos: newStart,
+        token: `${span.startToken}${span.endToken}`,
+        order: 1,
+        extent: 0,
+      });
     } else {
       tokens.push({
         pos: newStart,
@@ -317,7 +396,7 @@ export function transferInternalMarkers(
 
   // Within a position group, the order encodes nesting:
   //   1. non-empty END tokens first, inner spans first (larger start first);
-  //   2. empty-span START, then empty-span END;
+  //   2. empty-span pairs (start+end emitted together);
   //   3. non-empty START tokens last, outer spans first (larger end first).
   // This yields `scene1:end scene2:start` for adjacent spans, `start end`
   // for empty spans, and `outerStart innerStart ... innerEnd outerEnd` for

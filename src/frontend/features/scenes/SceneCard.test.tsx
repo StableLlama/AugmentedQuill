@@ -820,3 +820,39 @@ describe('SceneCard — scene number display', () => {
     expect(card!.textContent).toContain('The hero arrives at the castle');
   });
 });
+
+// ---------------------------------------------------------------------------
+// "Not yet linked to prose" indicator
+// ---------------------------------------------------------------------------
+
+describe('SceneCard prose-link indicator', () => {
+  it('shows the indicator for an unlinked-scope (new) scene', () => {
+    // Brand-new scenes carry a zero-width `unlinked` scope link. Truthiness
+    // checks treated that as "linked" and never showed the indicator.
+    const scene = makeScene({
+      prose_link: {
+        scope_type: 'unlinked',
+        chapter_id: null,
+        book_id: null,
+        start_offset: 0,
+        end_offset: 0,
+      },
+    });
+    const { container } = renderCard(scene);
+    expect(container.querySelector('[data-no-prose-indicator]')).toBeTruthy();
+  });
+
+  it('hides the indicator for a scene linked to chapter prose', () => {
+    const scene = makeScene({
+      prose_link: {
+        scope_type: 'chapter',
+        chapter_id: '1',
+        book_id: null,
+        start_offset: 20,
+        end_offset: 42,
+      },
+    });
+    const { container } = renderCard(scene);
+    expect(container.querySelector('[data-no-prose-indicator]')).toBeNull();
+  });
+});

@@ -16,8 +16,10 @@ import {
   putJson,
   patchJson,
   deleteJson,
+  postSse,
   projectEndpoint,
 } from './shared';
+import type { SseEvent } from './shared';
 
 // ---------------------------------------------------------------------------
 // Payload types
@@ -124,6 +126,36 @@ export interface SceneWriteResponse {
   scenes: Scene[];
 }
 
+/** Derived scene field that can be regenerated from another field. */
+export type SceneFieldTarget = 'summary' | 'beats';
+/** Scene field used as the source material for a regeneration. */
+export type SceneFieldSource = 'beats' | 'summary' | 'prose';
+
+export interface SceneFieldGeneratePayload {
+  target: SceneFieldTarget;
+  source: SceneFieldSource;
+  /** In-editor (unsaved) summary, when the source is the summary. */
+  summary?: string;
+  /** In-editor (unsaved) beats, when the source is the beats. */
+  beats?: Array<{
+    id: string;
+    text: string;
+    prose_link?: SceneProseLink | null;
+  }>;
+  /** In-editor (unsaved) prose, when the source is the prose. */
+  prose?: string;
+}
+
+export interface SceneFieldGenerateResponse {
+  target: SceneFieldTarget;
+  text: string;
+  beats: Array<{
+    id: string;
+    text: string;
+    prose_link?: SceneProseLink | null;
+  }>;
+}
+
 // ---------------------------------------------------------------------------
 // API interface
 // ---------------------------------------------------------------------------
@@ -153,6 +185,15 @@ export interface ScenesApi {
     payload: SceneWritePayload,
     onProse?: (accumulated: string) => void
   ) => Promise<SceneWriteResponse>;
+  /**
+   * Stream regeneration of a derived scene field (summary or beats) from
+   * another field; onChunk receives the accumulated text live.
+   */
+  streamGenerateField: (
+    sceneId: SceneId,
+    payload: SceneFieldGeneratePayload,
+    onChunk?: (accumulated: string) => void
+  ) => Promise<SceneFieldGenerateResponse>;
 }
 
 type WriteSceneStreamEvent =
@@ -166,6 +207,16 @@ type WriteSceneStreamEvent =
     }
   | { type: 'error'; error?: string };
 
+type FieldGenerateStreamEvent =
+  | { type: 'chunk'; accumulated?: string }
+  | {
+      type: 'result';
+      target: SceneFieldTarget;
+      text: string;
+      beats: SceneFieldGenerateResponse['beats'];
+    }
+  | { type: 'error'; error?: string };
+
 /**
  * Read the write-scene SSE stream, forwarding accumulated prose to *onProse*
  * and resolving once the final ``result`` event arrives.
@@ -176,82 +227,71 @@ async function streamWriteSceneProse(
   payload: SceneWritePayload,
   onProse?: (accumulated: string) => void
 ): Promise<SceneWriteResponse> {
-  const response = await fetch(
-    `/api/v1${projectEndpoint(projectName, `/scenes/${sceneId}/write/stream`)}`,
+  return postSse<SceneWriteResponse>(
+    projectEndpoint(projectName, `/scenes/${sceneId}/write/stream`),
+    payload,
     {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    }
+      onEvent: (event: SseEvent): void => {
+        const typed = event as WriteSceneStreamEvent;
+        if (typed.type === 'prose_chunk') {
+          onProse?.(typed.accumulated ?? '');
+        }
+      },
+      selectResult: (event: SseEvent): SceneWriteResponse | undefined => {
+        const typed = event as WriteSceneStreamEvent;
+        if (typed.type !== 'result') return undefined;
+        return {
+          scene: typed.scene,
+          generated_text: typed.generated_text,
+          assignments: typed.assignments,
+          scenes: typed.scenes,
+        };
+      },
+      selectError: (event: SseEvent): Error | undefined => {
+        const typed = event as WriteSceneStreamEvent;
+        return typed.type === 'error'
+          ? new Error(typed.error || 'Write scene failed')
+          : undefined;
+      },
+    },
+    'Write scene stream failed'
   );
+}
 
-  if (!response.ok) {
-    const detail = await response
-      .text()
-      .catch((): string => 'Write scene stream failed');
-    throw new Error(detail || 'Write scene stream failed');
-  }
-
-  const reader = response.body?.getReader();
-  if (!reader) {
-    throw new Error('Write scene stream produced no response body');
-  }
-
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let result: SceneWriteResponse | null = null;
-  let failed: Error | null = null;
-
-  const handleEvent = (event: WriteSceneStreamEvent): void => {
-    if (event.type === 'prose_chunk') {
-      onProse?.(event.accumulated ?? '');
-    } else if (event.type === 'result') {
-      result = {
-        scene: event.scene,
-        generated_text: event.generated_text,
-        assignments: event.assignments,
-        scenes: event.scenes,
-      };
-    } else if (event.type === 'error') {
-      failed = new Error(event.error || 'Write scene failed');
-    }
-  };
-
-  const processChunk = (chunk: string): void => {
-    buffer += chunk;
-    const lines = buffer.split('\n\n');
-    buffer = lines.pop() ?? '';
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith('data: ')) continue;
-      const dataStr = trimmed.slice(6);
-      if (dataStr === '[DONE]') continue;
-      try {
-        handleEvent(JSON.parse(dataStr) as WriteSceneStreamEvent);
-      } catch {
-        // Skip malformed SSE frames; the next chunk usually repairs the buffer.
-      }
-    }
-  };
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      processChunk(decoder.decode(value, { stream: true }));
-    }
-    processChunk(decoder.decode());
-  } finally {
-    try {
-      await reader.cancel();
-    } catch {
-      // Ignore cancel failures; the stream is already closed.
-    }
-  }
-
-  if (failed) throw failed;
-  if (result) return result;
-  throw new Error('Write scene stream ended without a result');
+/**
+ * Read the derived-field SSE stream, forwarding accumulated text to *onChunk*
+ * and resolving once the final ``result`` event arrives.
+ */
+async function streamGenerateFieldRequest(
+  projectName: string,
+  sceneId: SceneId,
+  payload: SceneFieldGeneratePayload,
+  onChunk?: (accumulated: string) => void
+): Promise<SceneFieldGenerateResponse> {
+  return postSse<SceneFieldGenerateResponse>(
+    projectEndpoint(projectName, `/scenes/${sceneId}/generate/stream`),
+    payload,
+    {
+      onEvent: (event: SseEvent): void => {
+        const typed = event as FieldGenerateStreamEvent;
+        if (typed.type === 'chunk') {
+          onChunk?.(typed.accumulated ?? '');
+        }
+      },
+      selectResult: (event: SseEvent): SceneFieldGenerateResponse | undefined => {
+        const typed = event as FieldGenerateStreamEvent;
+        if (typed.type !== 'result') return undefined;
+        return { target: typed.target, text: typed.text, beats: typed.beats };
+      },
+      selectError: (event: SseEvent): Error | undefined => {
+        const typed = event as FieldGenerateStreamEvent;
+        return typed.type === 'error'
+          ? new Error(typed.error || 'Field generation failed')
+          : undefined;
+      },
+    },
+    'Field generation stream failed'
+  );
 }
 
 export const createScenesApi = (projectName: string): ScenesApi => {
@@ -340,5 +380,12 @@ export const createScenesApi = (projectName: string): ScenesApi => {
       onProse?: (accumulated: string) => void
     ): Promise<SceneWriteResponse> =>
       streamWriteSceneProse(projectName, sceneId, payload, onProse),
+
+    streamGenerateField: (
+      sceneId: SceneId,
+      payload: SceneFieldGeneratePayload,
+      onChunk?: (accumulated: string) => void
+    ): Promise<SceneFieldGenerateResponse> =>
+      streamGenerateFieldRequest(projectName, sceneId, payload, onChunk),
   };
 };

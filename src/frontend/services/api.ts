@@ -285,6 +285,9 @@ export const api = {
     streamWriteScene: (
       ...args: Parameters<ProjectApiClients['scenes']['streamWriteScene']>
     ) => currentProjectApi().scenes.streamWriteScene(...args),
+    streamGenerateField: (
+      ...args: Parameters<ProjectApiClients['scenes']['streamGenerateField']>
+    ) => currentProjectApi().scenes.streamGenerateField(...args),
   },
   annotations: {
     list: (...args: Parameters<ProjectApiClients['annotations']['list']>) =>

@@ -372,6 +372,18 @@ def find_scene_marker_span(content: str, scene_id: int) -> SceneSpan | None:
     return None
 
 
+def scene_marker_token_ranges(content: str) -> list[tuple[int, int]]:
+    """Return raw ``(start, end)`` offsets for every scene marker token.
+
+    Use this instead of writing a local ``<!--scene:...`` regex when code needs
+    to locate, count, measure, or strip individual marker tokens.
+    """
+    return [
+        (match.start(), match.end())
+        for match in _layer_marker_re(SCENE_LAYER).finditer(content)
+    ]
+
+
 def scene_block_bounds(content: str, scene_id: int) -> tuple[int, int] | None:
     """Return marker-inclusive block bounds for *scene_id*.
 
@@ -581,6 +593,20 @@ def snap_offset_outside_markers(content: str, offset: int) -> int:
     return clamped
 
 
+def snap_offset_outside_internal_markers(content: str, offset: int) -> int:
+    """Return *offset* clamped so it never points inside ANY internal marker.
+
+    Unlike :func:`snap_offset_outside_markers` (scene layer only), this covers
+    both scene and annotation tokens.  Use it before injecting annotations so a
+    new annotation can never split an existing marker.
+    """
+    clamped = max(0, min(offset, len(content)))
+    for match in _INTERNAL_MARKER_RE.finditer(content):
+        if match.start() < clamped < match.end():
+            return match.end()
+    return clamped
+
+
 def snap_range_outside_markers(
     content: str,
     start: int,
@@ -664,10 +690,19 @@ def transfer_scene_markers(existing_content: str, rewritten_content: str) -> str
     existing_plain = remove_markers(existing_content)
     old_len = len(existing_plain)
     new_len = len(rewritten_plain)
-    if old_len <= 0 or new_len <= 0:
+    if new_len <= 0:
         return rewritten_plain
 
     assignments: list[tuple[int, int, int]] = []
+    if old_len <= 0:
+        # The previous content carried markers only (every scene had been
+        # emptied).  Relative projection is undefined there, so keep every
+        # existing scene link as a zero-width span at the start instead of
+        # dropping the markers - dropping them silently unlinks all scenes.
+        for span in existing_spans:
+            assignments.append((span.scene_id, 0, 0))
+        return inject_markers(rewritten_plain, assignments)
+
     prev_end = 0
     for span in existing_spans:
         old_start = remap_offset_after_marker_removal(

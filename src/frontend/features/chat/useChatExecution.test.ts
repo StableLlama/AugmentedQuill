@@ -24,6 +24,7 @@ vi.mock('../../services/api', () => ({
       executeTools: vi.fn(),
       undoToolBatch: vi.fn(),
       redoToolBatch: vi.fn(),
+      getChapterBeforeContent: vi.fn().mockResolvedValue(''),
     },
     projects: {
       list: vi.fn(),
@@ -82,6 +83,7 @@ describe('useChatExecution', () => {
             batch_id: 'batch1',
             label: 'AI tool: update_chapter_metadata',
             operation_count: 1,
+            changed_chapter_ids: [1],
           },
         },
       })
@@ -96,6 +98,7 @@ describe('useChatExecution', () => {
             batch_id: 'batch2',
             label: 'AI tool: update_chapter_metadata',
             operation_count: 1,
+            changed_chapter_ids: [1, 2],
           },
         },
       });
@@ -127,6 +130,7 @@ describe('useChatExecution', () => {
 
     const entry = pushExternalHistoryEntry.mock.calls[0][0];
     expect(entry.label).toContain('AI tools');
+    expect(entry.changedChapterIds).toEqual(['1', '2']);
 
     await act(async () => {
       await entry.onUndo?.();

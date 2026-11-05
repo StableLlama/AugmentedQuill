@@ -24,6 +24,7 @@ import {
   hasInlineInternalMarkers,
   hasInlineSceneMarkers,
   sceneMarkerTokenLength,
+  stripInlineInternalMarkers,
   toOriginalOffset as toOriginalOffsetCore,
   toVisibleOffset,
 } from '../editor/internalTags';
@@ -34,6 +35,21 @@ function linkMatchesUnit(link: SceneProseLink, unit: WritingUnit): boolean {
     ? unit.scope === 'story'
     : link.scope_type === 'chapter' &&
         normalizeChapterId(link.chapter_id) === normalizeChapterId(unit.id);
+}
+
+/**
+ * Canonical predicate: does this link point at real project prose?
+ *
+ * Brand-new scenes are created by the backend with a zero-width internal
+ * `unlinked` scope link (in `unlinked.txt`), so a plain truthiness check
+ * (`scene.prose_link != null`) reports them as linked.  Every "is this scene
+ * linked?" decision in the frontend must use this predicate — mirroring the
+ * backend's `scene_prose_is_linked()`.
+ */
+export function isLinkedProseLink(
+  link: SceneProseLink | null | undefined
+): link is SceneProseLink {
+  return link != null && link.scope_type !== 'unlinked';
 }
 
 function shouldAdjustOffsets(unit: WritingUnit, scenes: readonly Scene[]): boolean {
@@ -278,4 +294,49 @@ export function getLinkedProseFromTextSource(
     toVisibleLinkedOffset(rawFrom, unit, scenes, true, undefined),
     toVisibleLinkedOffset(rawEnd, unit, scenes, true, undefined)
   );
+}
+
+/**
+ * Return the *visible* prose a scene owned in a full content snapshot.
+ *
+ * This is the baseline counterpart of `getLinkedProseFromTextSource`: the
+ * scene editor diffs its linked prose against the value this function returns
+ * for the baseline snapshot.  Two properties matter and both were violated
+ * before:
+ *
+ * 1. The scene's own markers in *fullContent* are authoritative.  Stored
+ *    `prose_link` offsets go stale as soon as the document is edited (or after
+ *    a delete-all), and slicing with them returned marker tokens or text from
+ *    a different scene.
+ * 2. The returned value is marker-free, matching the editor document.  Leaking
+ *    `<!--scene:…-->` tokens into the diff baseline turned an "everything is
+ *    new" comparison into a bogus whole-block rewrite.
+ *
+ * Returns ``null`` when the scene has no prose in that snapshot *and* the
+ * offsets cannot be resolved, so callers can distinguish "no baseline" from
+ * "empty baseline".
+ */
+export function getSceneProseFromContent(
+  fullContent: string,
+  sceneId: SceneId,
+  link: SceneProseLink | null | undefined
+): string | null {
+  if (hasInlineSceneMarkers(fullContent)) {
+    const span = getSceneMarkerSpanRange(fullContent, sceneId);
+    if (span) {
+      return stripInlineInternalMarkers(fullContent.slice(span.from, span.to));
+    }
+    // The content is marker-managed but this scene has no span in it: the
+    // scene owned no prose in this snapshot.
+    if (link == null) return null;
+  }
+
+  if (link == null) return null;
+
+  const rawFrom = Math.max(Number(link.start_offset ?? 0), 0);
+  const rawEnd = Math.max(Number(link.end_offset ?? rawFrom), rawFrom);
+  const boundedFrom = Math.min(rawFrom, fullContent.length);
+  const boundedEnd = Math.min(rawEnd, fullContent.length);
+  if (boundedFrom >= boundedEnd) return '';
+  return stripInlineInternalMarkers(fullContent.slice(boundedFrom, boundedEnd));
 }

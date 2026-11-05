@@ -30,10 +30,12 @@ from augmentedquill.services.scenes.scene_service import (
     create_scene,
     get_scene,
     link_prose,
+    link_range_to_scene,
     list_scenes,
     relink_scope_prose,
     reorder_scene_prose,
     reorder_scope_scenes,
+    scope_link_for_content_path,
     unlink_prose,
     update_prose_content,
     update_scene,
@@ -64,6 +66,30 @@ def test_create_scene_and_list(project_dir: Path) -> None:
     assert scenes[1]["id"] == 2
     assert scenes[0]["timeline_id"] == "main"
     assert scenes[1]["timeline_id"] == "main"
+
+
+def test_scope_link_for_content_path_resolves_story_and_chapter(
+    project_dir: Path,
+) -> None:
+    story_link = scope_link_for_content_path(project_dir, project_dir / "content.md")
+    assert story_link == {"scope_type": "story", "chapter_id": None, "book_id": None}
+
+    chapters_dir = project_dir / "chapters"
+    chapters_dir.mkdir()
+    chapter_path = chapters_dir / "0001.txt"
+    chapter_path.write_text("Chapter prose", encoding="utf-8")
+    story = json.loads((project_dir / "story.json").read_text(encoding="utf-8"))
+    story["project_type"] = "novel"
+    story["chapters"] = [{"title": "One", "summary": ""}]
+    (project_dir / "story.json").write_text(json.dumps(story), encoding="utf-8")
+
+    chapter_link = scope_link_for_content_path(project_dir, chapter_path)
+    assert chapter_link is not None
+    assert chapter_link["scope_type"] == "chapter"
+    assert str(chapter_link["chapter_id"]) == "1"
+    assert chapter_link["book_id"] is None
+
+    assert scope_link_for_content_path(project_dir, project_dir / "missing.txt") is None
 
 
 def test_list_scenes_orders_by_marker_scope_and_offsets(project_dir: Path) -> None:
@@ -586,6 +612,166 @@ def test_update_prose_content_preserves_other_scene_markers_and_neighboring_text
     # Surrounding prose is untouched.
     assert final.startswith("Alpha ")
     assert final.endswith(" Omega")
+
+
+def test_update_prose_content_refuses_to_create_overlapping_scene_spans(
+    project_dir: Path,
+) -> None:
+    """Nested empty markers must never be turned into two scenes sharing prose.
+
+    A fully-deleted document used to be saved as
+    ``start1 start2 end1 end2``.  Filling scene 1 then produced overlapping
+    spans, so scene 2's Linked Prose showed scene 1's text.  The mutation must
+    fail before writing instead of corrupting the file.
+    """
+    create_scene(project_dir, SceneCreateRequest(summary="One"))
+    create_scene(project_dir, SceneCreateRequest(summary="Two"))
+    content_path = project_dir / "content.md"
+    corrupt = (
+        "<!--scene:1:start--><!--scene:2:start-->"
+        "<!--scene:1:end--><!--scene:2:end-->"
+    )
+    content_path.write_text(corrupt, encoding="utf-8")
+
+    with pytest.raises(ValueError):
+        update_prose_content(
+            project_dir, 1, SceneUpdateProseContentRequest(text="Scene one.")
+        )
+
+    assert content_path.read_text(encoding="utf-8") == corrupt
+
+
+def test_update_prose_content_fills_adjacent_empty_span_without_touching_neighbor(
+    project_dir: Path,
+) -> None:
+    """Emptied scenes are stored as adjacent pairs and can be filled safely."""
+    create_scene(project_dir, SceneCreateRequest(summary="One"))
+    create_scene(project_dir, SceneCreateRequest(summary="Two"))
+    content_path = project_dir / "content.md"
+    content_path.write_text(
+        "<!--scene:1:start--><!--scene:1:end-->"
+        "<!--scene:2:start--><!--scene:2:end-->",
+        encoding="utf-8",
+    )
+
+    updated = update_prose_content(
+        project_dir, 1, SceneUpdateProseContentRequest(text="Scene one.")
+    )
+
+    assert updated is not None
+    final = content_path.read_text(encoding="utf-8")
+    assert final == (
+        "<!--scene:1:start-->Scene one.<!--scene:1:end-->"
+        "<!--scene:2:start--><!--scene:2:end-->"
+    )
+    spans = {span.scene_id: span for span in parse_scene_spans(final)}
+    assert final[spans[1].start : spans[1].end] == "Scene one."
+    assert final[spans[2].start : spans[2].end] == ""
+
+
+def test_relink_keeps_zero_width_scenes_linked(project_dir: Path) -> None:
+    """A scope-wide relink must not silently unlink emptied scenes.
+
+    Emptied scenes are stored as zero-width marker pairs.  The relink used to
+    drop those markers (it skipped every span with ``start >= end``), so a
+    user's cleared scene lost its prose link just because another scene in the
+    same scope was re-linked.
+    """
+    content_path = project_dir / "content.md"
+    content_path.write_text(
+        "<!--scene:1:start-->Alpha Bravo<!--scene:1:end-->"
+        "<!--scene:2:start--><!--scene:2:end-->",
+        encoding="utf-8",
+    )
+    create_scene(project_dir, SceneCreateRequest(summary="One"))
+    create_scene(project_dir, SceneCreateRequest(summary="Two"))
+
+    relink_scope_prose(
+        project_dir,
+        scope_type="story",
+        chapter_id=None,
+        book_id=None,
+        assignments=[(1, 0, len("Alpha Bravo"))],
+    )
+
+    final = content_path.read_text(encoding="utf-8")
+    spans = {span.scene_id: span for span in parse_scene_spans(final)}
+    assert 1 in spans and 2 in spans, final
+    assert final[spans[1].start : spans[1].end] == "Alpha Bravo"
+    assert final[spans[2].start : spans[2].end] == ""
+    # The emptied scene must still report a real (non-unlinked) prose link.
+    scene_two = get_scene(project_dir, 2)
+    assert scene_two is not None
+    assert scene_two["prose_link"] is not None
+    assert scene_two["prose_link"]["scope_type"] == "story"
+
+
+def test_link_range_to_scene_binds_emptied_scene_span(project_dir: Path) -> None:
+    """Writing into an emptied scene must actually bind the new prose.
+
+    ``link_range_to_scene`` used to return ``scene_linked: True`` as soon as a
+    span existed, so a zero-width (emptied) span made the helper report success
+    while leaving the freshly written prose outside every scene.
+    """
+    content_path = project_dir / "content.md"
+    content_path.write_text(
+        "<!--scene:1:start--><!--scene:1:end-->"
+        "<!--scene:2:start--><!--scene:2:end-->",
+        encoding="utf-8",
+    )
+    create_scene(project_dir, SceneCreateRequest(summary="One"))
+    create_scene(project_dir, SceneCreateRequest(summary="Two"))
+
+    new_content = content_path.read_text(encoding="utf-8") + "\nFresh scene prose."
+    content_path.write_text(new_content, encoding="utf-8")
+    start = new_content.index("Fresh scene prose.")
+    end = len(new_content)
+
+    result = link_range_to_scene(
+        project_dir,
+        1,
+        {"scope_type": "story", "chapter_id": None, "book_id": None},
+        new_content,
+        start,
+        end,
+    )
+
+    assert result.get("scene_linked") is True, result
+    final = content_path.read_text(encoding="utf-8")
+    spans = {span.scene_id: span for span in parse_scene_spans(final)}
+    assert final[spans[1].start : spans[1].end] == "Fresh scene prose."
+    assert final[spans[2].start : spans[2].end] == ""
+
+
+def test_link_range_to_scene_warns_when_scene_owns_other_prose(
+    project_dir: Path,
+) -> None:
+    """A scene that already owns different prose must not report success."""
+    content_path = project_dir / "content.md"
+    content_path.write_text(
+        "<!--scene:1:start-->Alpha<!--scene:1:end--> Bravo",
+        encoding="utf-8",
+    )
+    create_scene(project_dir, SceneCreateRequest(summary="One"))
+
+    new_content = content_path.read_text(encoding="utf-8") + " Charlie"
+    content_path.write_text(new_content, encoding="utf-8")
+    start = new_content.index("Charlie")
+    result = link_range_to_scene(
+        project_dir,
+        1,
+        {"scope_type": "story", "chapter_id": None, "book_id": None},
+        new_content,
+        start,
+        len(new_content),
+    )
+
+    assert result.get("scene_linked") is False, result
+    assert "warning" in result
+    # Markers must be untouched: the scene keeps its original prose and the new
+    # text stays unowned instead of being claimed silently.
+    final = content_path.read_text(encoding="utf-8")
+    assert final == "<!--scene:1:start-->Alpha<!--scene:1:end--> Bravo Charlie"
 
 
 def test_update_prose_content_on_unlinked_scene_does_not_touch_chapter(

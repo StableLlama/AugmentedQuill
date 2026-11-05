@@ -22,6 +22,7 @@ import { AlertTriangle, Clock3, FileX } from 'lucide-react';
 import type { Scene, SceneId } from '../../types';
 import type { ProseDropData } from './types';
 import { useTheme } from '../layout/ThemeContext';
+import { isLinkedProseLink } from './proseLinkCoordinates';
 import { toDisplayString, toInternationalDisplayString } from '../../utils/temporal';
 
 // Color tag palette — matches tailwind classes so purge doesn't strip them.
@@ -427,7 +428,7 @@ export const SceneCard: React.FC<SceneCardProps> = ({
         </span>
       )}
 
-      {!scene.prose_link && (
+      {!isLinkedProseLink(scene.prose_link) && (
         <span
           data-no-prose-indicator="true"
           className={`absolute top-2 ${hasSceneTime ? 'right-8' : 'right-2'} ${isLight ? 'text-brand-gray-400' : 'text-brand-gray-500'}`}

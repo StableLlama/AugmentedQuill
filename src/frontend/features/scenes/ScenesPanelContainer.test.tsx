@@ -108,6 +108,7 @@ const {
       updateProseContent: vi.fn(),
       writeScene: vi.fn(),
       streamWriteScene: vi.fn(),
+      streamGenerateField: vi.fn(),
     },
     story: {
       getContent: vi.fn(),

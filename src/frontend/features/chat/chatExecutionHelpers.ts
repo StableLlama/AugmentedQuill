@@ -344,6 +344,7 @@ export type ExecuteChatRequestContext = {
     onRedo?: () => Promise<void>;
     forceNewHistory?: boolean;
     baselineChapterOverrides?: { id: string; content: string }[];
+    changedChapterIds?: Array<string | number>;
   }) => void;
   setChatMessages: (
     v: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])
@@ -1099,17 +1100,23 @@ const executeChatRequestImpl = async (
 
     const baselineChapterOverrides =
       await fetchBaselineChapterOverrides(accumulatedToolBatches);
+    const changedUnitIds = collectChangedWritingUnitIds(
+      accumulatedToolBatches,
+      storyChangedState.value
+    );
 
     if (accumulatedToolBatches.length > 0) {
       await pushExternalHistoryEntryForToolBatches(
         context,
         accumulatedToolBatches,
-        baselineChapterOverrides
+        baselineChapterOverrides,
+        changedUnitIds
       );
     } else if (storyChangedState.value) {
       await context.pushExternalHistoryEntry?.({
         label: 'AI tool changes',
         forceNewHistory: true,
+        changedChapterIds: changedUnitIds,
       });
     }
 
@@ -1190,15 +1197,49 @@ const buildToolBatchLabel = (batches: ToolBatchSummary[]): string =>
     ? batches[0].label
     : `AI tools: ${batches.map((batch: ToolBatchSummary) => batch.label).join(', ')}`;
 
+/**
+ * Writing units whose prose the AI tool turn changed.
+ *
+ * Chapter-based projects report changed chapter ids in the tool batch.
+ * Short-story projects keep the prose in a single draft unit, so the draft id
+ * is used whenever the turn changed the story.
+ */
+const collectChangedWritingUnitIds = (
+  accumulatedToolBatches: ToolBatchSummary[],
+  storyChanged: boolean
+): string[] => {
+  const ids: string[] = [];
+  for (const batch of accumulatedToolBatches) {
+    for (const chapterId of batch.changed_chapter_ids ?? []) {
+      const id = String(chapterId);
+      if (!ids.includes(id)) {
+        ids.push(id);
+      }
+    }
+  }
+  if (storyChanged) {
+    const story = useStoryStore.getState().story;
+    if (story.projectType === 'short-story') {
+      const draftId = story.draft?.id ?? 'story';
+      if (!ids.includes(draftId)) {
+        ids.push(draftId);
+      }
+    }
+  }
+  return ids;
+};
+
 const pushExternalHistoryEntryForToolBatches = async (
   context: ExecuteChatRequestContext,
   accumulatedToolBatches: ToolBatchSummary[],
-  baselineChapterOverrides: Array<{ id: string; content: string }>
+  baselineChapterOverrides: Array<{ id: string; content: string }>,
+  changedUnitIds: string[]
 ): Promise<void> => {
   await context.pushExternalHistoryEntry?.({
     label: buildToolBatchLabel(accumulatedToolBatches),
     forceNewHistory: true,
     baselineChapterOverrides,
+    changedChapterIds: changedUnitIds,
     onUndo: async (): Promise<void> => {
       for (const batch of [...accumulatedToolBatches].reverse()) {
         await api.chat.undoToolBatch(batch.batch_id);

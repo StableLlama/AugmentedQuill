@@ -13,6 +13,7 @@
 import { useMemo } from 'react';
 
 import type { Chapter, StoryState, WritingUnit } from '../../types';
+import { hasInlineSceneMarkers } from '../editor/internalTags';
 
 type UseCurrentWritingUnitParams = {
   story: StoryState;
@@ -57,8 +58,8 @@ export function useCurrentWritingUnit({
         console.log('[AQ:useCurrentWritingUnit] RECOMPUTING currentChapter');
         console.log('  chapter id:', ch.id, 'content length:', ch.content?.length ?? 0);
         console.log(
-          '  has scene:13:end?',
-          ch.content?.includes('<!--scene:13:end-->') ?? false
+          '  has scene markers?',
+          ch.content ? hasInlineSceneMarkers(ch.content) : false
         );
       }
     }

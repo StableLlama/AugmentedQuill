@@ -24,17 +24,16 @@ from augmentedquill.models.scene import (
 )
 from augmentedquill.services.chat.chat_tool_decorator import WRITING_ROLE
 from augmentedquill.services.llm import llm
-from augmentedquill.services.scenes.scene_markers import (
-    remove_markers,
-    strip_internal_markers,
-)
+from augmentedquill.services.scenes.scene_markers import strip_internal_markers
 from augmentedquill.services.scenes.scene_service import (
     _scene_content_path,
-    _write_text_atomic,
+    append_text_to_scope,
     get_scene,
     link_prose,
+    link_range_to_scene,
     list_scenes,
     relink_scope_prose,
+    scene_prose_is_linked,
     update_prose_content,
 )
 from augmentedquill.services.story.story_api_prompt_ops import resolve_model_runtime
@@ -57,14 +56,14 @@ def _safe_int(raw: object) -> int | None:
 def _resolve_scope(
     *,
     scene: dict[str, Any],
-    request: SceneWriteRequest,
     story: dict[str, Any],
+    request: SceneWriteRequest | None,
 ) -> tuple[str, str | None, str | None]:
     link = scene.get("prose_link") if isinstance(scene.get("prose_link"), dict) else {}
 
-    scope_type = request.scope_type or link.get("scope_type")
-    chapter_id = request.chapter_id or link.get("chapter_id")
-    book_id = request.book_id or link.get("book_id")
+    scope_type = (request.scope_type if request else None) or link.get("scope_type")
+    chapter_id = (request.chapter_id if request else None) or link.get("chapter_id")
+    book_id = (request.book_id if request else None) or link.get("book_id")
 
     if scope_type not in {"story", "chapter", "unlinked"}:
         project_type = str(story.get("project_type") or "").strip().lower()
@@ -99,14 +98,7 @@ def _extract_scene_ids(scene_list: list[dict[str, Any]]) -> list[int]:
 
 def _has_persisted_runtime_link(project_dir: Path, scene_id: int) -> bool:
     """Return whether *scene_id* currently has a non-unlinked prose marker span."""
-    scene = get_scene(project_dir, scene_id)
-    if not isinstance(scene, dict):
-        return False
-    link = scene.get("prose_link")
-    if not isinstance(link, dict):
-        return False
-    scope_type = str(link.get("scope_type") or "").strip().lower()
-    return scope_type not in {"", "unlinked"}
+    return scene_prose_is_linked(get_scene(project_dir, scene_id))
 
 
 def _is_same_write_scope(
@@ -368,35 +360,40 @@ async def detect_scene_boundaries_and_link(
     return {"assignments": assignments, "scenes": modified}
 
 
-def _prepare_write_scene_generation(
+def resolve_scene_scope(
+    *,
+    scene: dict[str, Any],
+    story: dict[str, Any],
+    request: SceneWriteRequest | None = None,
+) -> tuple[str, str | None, str | None]:
+    """Resolve the (scope_type, chapter_id, book_id) for a scene.
+
+    Explicit request values win over the scene's persisted ``prose_link``; the
+    project type decides the default when neither is available.  Shared by every
+    scene generation flow so scope handling never diverges.
+    """
+    return _resolve_scope(scene=scene, request=request, story=story)
+
+
+def build_scene_generation_context(
     *,
     project_dir: Path,
     scene_id: int,
-    request: SceneWriteRequest,
+    scope_type: str,
+    chapter_id: str | None,
+    book_id: str | None,
+    include_following_scenes: int,
     payload: dict[str, Any] | None = None,
+    model_type: str = WRITING_ROLE,
 ) -> dict[str, Any]:
-    """Build the full context needed to generate prose for one scene.
+    """Assemble the shared story/scene context for every scene generation flow.
 
-    Returns every value required by ``_finalize_write_scene_and_link`` so the
-    streaming and non-streaming write paths share identical prompt building
-    and linking behaviour.
+    Returns the story/config values plus the rendered prompt *sections* so that
+    each caller (scene prose, scene summary, scene beats, …) can compose its own
+    request without duplicating context assembly or model resolution.
     """
     payload = payload or {}
-    scene = get_scene(project_dir, scene_id)
-    if scene is None:
-        raise LookupError(f"Scene '{scene_id}' not found")
-
     story = load_story_config(project_dir / "story.json") or {}
-    scope_type, chapter_id, book_id = _resolve_scope(
-        scene=scene, request=request, story=story
-    )
-
-    scope_link = {
-        "scope_type": scope_type,
-        "chapter_id": chapter_id,
-        "book_id": book_id,
-    }
-    content_path, existing_text = _read_scope_text(project_dir, scope_link)
 
     chapter_index = _safe_int(chapter_id)
     title = str(story.get("project_title") or "").strip()
@@ -409,7 +406,7 @@ def _prepare_write_scene_generation(
         chap_id=chapter_index,
         chap_book_id=book_id,
         target_scene_id=scene_id,
-        include_following_scenes=max(0, request.include_following_scenes),
+        include_following_scenes=max(0, include_following_scenes),
     )
 
     checked_sourcebook_ids = scoped_context.get("sourcebook_ids") or []
@@ -449,27 +446,89 @@ def _prepare_write_scene_generation(
         model_name,
         resolved_model_overrides,
         _,
-    ) = resolve_model_runtime(payload, WRITING_ROLE, BASE_DIR)
+    ) = resolve_model_runtime(payload, model_type, BASE_DIR)
     if not model_overrides:
         model_overrides = resolved_model_overrides
 
-    system_msg = get_system_message("story_writer", model_overrides, language=language)
-    # The prompt tail must never leak internal scene/annotation marker tokens.
-    existing_tail_text = strip_internal_markers(existing_text)
     story_notes = context.get("story_notes") or ""
-    story_notes_section = f"## Story notes\n{story_notes}" if story_notes else ""
-
     background = context["background"] or ""
-    background_section = f"## Background\n{background}" if background else ""
-
     chapter_notes = context.get("chapter_notes") or ""
-    chapter_notes_section = f"## Draft notes\n{chapter_notes}" if chapter_notes else ""
-
     scene_guidance = scoped_context.get("scene_block") or ""
-    scene_guidance_section = (
-        f"# Scene guidance\n\n{scene_guidance}" if scene_guidance else ""
+
+    return {
+        "story": story,
+        "story_title": title,
+        "story_summary": summary,
+        "story_tags": context.get("story_tags") or "(none)",
+        "language": language,
+        "model_overrides": model_overrides,
+        "selected_scenes": selected_scenes,
+        "chapter_title": chapter_title,
+        "chapter_summary": chapter_summary,
+        "story_notes_section": (
+            f"## Story notes\n{story_notes}" if story_notes else ""
+        ),
+        "background_section": f"## Background\n{background}" if background else "",
+        "chapter_notes_section": (
+            f"## Draft notes\n{chapter_notes}" if chapter_notes else ""
+        ),
+        "scene_guidance_section": (
+            f"# Scene guidance\n\n{scene_guidance}" if scene_guidance else ""
+        ),
+        "base_url": base_url,
+        "api_key": api_key,
+        "model_id": model_id,
+        "timeout_s": timeout_s,
+        "model_name": model_name,
+    }
+
+
+def _prepare_write_scene_generation(
+    *,
+    project_dir: Path,
+    scene_id: int,
+    request: SceneWriteRequest,
+    payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build the full context needed to generate prose for one scene.
+
+    Returns every value required by ``_finalize_write_scene_and_link`` so the
+    streaming and non-streaming write paths share identical prompt building
+    and linking behaviour.
+    """
+    payload = payload or {}
+    scene = get_scene(project_dir, scene_id)
+    if scene is None:
+        raise LookupError(f"Scene '{scene_id}' not found")
+
+    story = load_story_config(project_dir / "story.json") or {}
+    scope_type, chapter_id, book_id = resolve_scene_scope(
+        scene=scene, story=story, request=request
     )
 
+    scope_link = {
+        "scope_type": scope_type,
+        "chapter_id": chapter_id,
+        "book_id": book_id,
+    }
+    content_path, existing_text = _read_scope_text(project_dir, scope_link)
+
+    context = build_scene_generation_context(
+        project_dir=project_dir,
+        scene_id=scene_id,
+        scope_type=scope_type,
+        chapter_id=chapter_id,
+        book_id=book_id,
+        include_following_scenes=request.include_following_scenes,
+        payload=payload,
+        model_type=WRITING_ROLE,
+    )
+
+    system_msg = get_system_message(
+        "story_writer", context["model_overrides"], language=context["language"]
+    )
+    # The prompt tail must never leak internal scene/annotation marker tokens.
+    existing_tail_text = strip_internal_markers(existing_text)
     existing_tail = existing_tail_text[-2000:] if existing_tail_text else ""
     existing_tail_section = (
         f"## Recent prose tail (style continuity only, do not repeat):\n{existing_tail}"
@@ -479,16 +538,16 @@ def _prepare_write_scene_generation(
 
     user_msg = get_user_prompt(
         "write_scene_prose",
-        language=language,
-        story_title=title,
-        story_summary=summary,
-        story_notes_section=story_notes_section,
-        story_tags=context.get("story_tags") or "(none)",
-        background_section=background_section,
-        chapter_title=chapter_title,
-        chapter_summary=chapter_summary,
-        chapter_notes_section=chapter_notes_section,
-        scene_guidance_section=scene_guidance_section,
+        language=context["language"],
+        story_title=context["story_title"],
+        story_summary=context["story_summary"],
+        story_notes_section=context["story_notes_section"],
+        story_tags=context["story_tags"],
+        background_section=context["background_section"],
+        chapter_title=context["chapter_title"],
+        chapter_summary=context["chapter_summary"],
+        chapter_notes_section=context["chapter_notes_section"],
+        scene_guidance_section=context["scene_guidance_section"],
         existing_tail_section=existing_tail_section,
     )
     user_msg = sanitize_prompt(user_msg)
@@ -504,12 +563,12 @@ def _prepare_write_scene_generation(
         "book_id": book_id,
         "content_path": content_path,
         "existing_text": existing_text,
-        "selected_scenes": selected_scenes,
-        "base_url": base_url,
-        "api_key": api_key,
-        "model_id": model_id,
-        "timeout_s": timeout_s,
-        "model_name": model_name,
+        "selected_scenes": context["selected_scenes"],
+        "base_url": context["base_url"],
+        "api_key": context["api_key"],
+        "model_id": context["model_id"],
+        "timeout_s": context["timeout_s"],
+        "model_name": context["model_name"],
         "messages": [
             {"role": "system", "content": system_msg},
             {"role": "user", "content": user_msg},
@@ -527,19 +586,14 @@ async def _finalize_write_scene_and_link(
     scope_type = prepared["scope_type"]
     chapter_id = prepared["chapter_id"]
     book_id = prepared["book_id"]
-    content_path = prepared["content_path"]
-    existing_text = prepared["existing_text"]
     request = prepared["request"]
     payload = prepared["payload"]
     selected_scenes = prepared["selected_scenes"]
 
-    existing_link = (
-        scene.get("prose_link") if isinstance(scene.get("prose_link"), dict) else None
-    )
     assignments: list[SceneBoundaryAssignment] = []
     updated_scenes: list[dict[str, Any]] = []
 
-    if existing_link:
+    if scene_prose_is_linked(scene):
         updated_scene = update_prose_content(
             project_dir,
             scene_id,
@@ -568,10 +622,20 @@ async def _finalize_write_scene_and_link(
             )
         ]
     else:
-        separator = "\n" if existing_text and not existing_text.endswith("\n") else ""
-        insertion_start = len(existing_text) + len(separator)
-        new_content = f"{existing_text}{separator}{generated_text}"
-        _write_text_atomic(content_path, new_content)
+        # The scene is still unlinked (planning-only zero-width markers).
+        # Append the prose to the resolved scope and link the written range so
+        # every generation entry point produces identical marker behaviour.
+        scope_link = {
+            "scope_type": scope_type,
+            "chapter_id": chapter_id,
+            "book_id": book_id,
+        }
+        (
+            _content_path,
+            new_content,
+            insertion_start,
+            insertion_end,
+        ) = append_text_to_scope(project_dir, scope_link, generated_text)
 
         scene_ids = [scene_id]
         for candidate_scene_id in _extract_scene_ids(selected_scenes):
@@ -593,7 +657,7 @@ async def _finalize_write_scene_and_link(
                     book_id=book_id,
                     scene_ids=scene_ids,
                     start_offset=insertion_start,
-                    end_offset=insertion_start + len(generated_text),
+                    end_offset=insertion_end,
                     prose_text=generated_text,
                 ),
                 payload=payload,
@@ -601,23 +665,29 @@ async def _finalize_write_scene_and_link(
             assignments = detect_result["assignments"]
             updated_scenes = detect_result["scenes"]
         else:
-            fallback_updates = link_prose(
+            link_range_to_scene(
                 project_dir,
                 scene_id,
-                SceneLinkProseRequest(
-                    scope_type=scope_type,
-                    chapter_id=chapter_id,
-                    book_id=book_id,
-                    start_offset=insertion_start,
-                    end_offset=insertion_start + len(generated_text),
-                ),
+                scope_link,
+                new_content,
+                insertion_start,
+                insertion_end,
             )
-            updated_scenes = fallback_updates
+            updated_scenes = _list_other_scenes_in_scope(
+                project_dir,
+                scene_id=scene_id,
+                scope_type=scope_type,
+                chapter_id=chapter_id,
+                book_id=book_id,
+            )
+            latest = get_scene(project_dir, scene_id)
+            if latest is not None:
+                updated_scenes = [latest, *updated_scenes]
             assignments = [
                 SceneBoundaryAssignment(
                     scene_id=scene_id,
                     start_offset=insertion_start,
-                    end_offset=insertion_start + len(generated_text),
+                    end_offset=insertion_end,
                 )
             ]
 
@@ -798,7 +868,13 @@ async def auto_link_scope_text(
         },
     )
     _ = content_path
-    saved_plain = remove_markers(saved_text)
+    # Offsets must be computed in the FULLY stripped space (scene AND
+    # annotation markers removed): `relink_scope_prose` re-injects scene
+    # markers into that same space and restores annotations afterwards.
+    # Using `remove_markers` here left annotation tokens in the measured text,
+    # which shifted every computed scene boundary by the annotation marker
+    # length and mis-assigned prose to the wrong scenes.
+    saved_plain = strip_internal_markers(saved_text)
     assignments = _build_assignments(scene_ids, 0, len(saved_plain), saved_plain)
     modified = relink_scope_prose(
         project_dir,

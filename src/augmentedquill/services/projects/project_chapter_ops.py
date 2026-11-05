@@ -23,6 +23,7 @@ from augmentedquill.services.scenes.scene_markers import (
     parse_scene_spans,
     remove_markers,
     transfer_scene_markers,
+    validate_marker_integrity,
     validate_scene_marker_tokens,
 )
 from augmentedquill.utils.json_repair import apply_typographic_quotes
@@ -32,6 +33,13 @@ def write_chapter_content_in_project(
     chap_id: int, content: str, active: Path | None = None
 ) -> None:
     """Write content to a chapter by its ID."""
+    # Fail closed on client-supplied marker corruption *before* anything is
+    # written.  An editor bug used to persist prose whose scene markers had
+    # been detached (prose first, empty marker pairs last), which silently
+    # unlinked every scene.  Rejecting the payload keeps the broken state in
+    # the browser instead of on disk, where it could never be recovered.
+    validate_marker_integrity(content)
+
     _, path, _ = _chapter_by_id_or_404(chap_id, active=active)
     existing_content = path.read_text(encoding="utf-8") if path.exists() else ""
     validate_scene_marker_tokens(existing_content)

@@ -86,6 +86,109 @@ def test_write_story_content_preserves_scene_markers_in_short_story(
     assert "<!--scene:3:end-->" in rewritten
 
 
+def _novel_chapter_project(tmp_path: Path, chapter_text: str) -> Path:
+    """Create a minimal one-chapter novel project and return the chapter file."""
+    story = {
+        "metadata": {"version": 3},
+        "project_type": "novel",
+        "language": "en",
+        "chapters": [{"title": "Chapter 1", "summary": "", "filename": "0001.txt"}],
+    }
+    (tmp_path / "story.json").write_text(json.dumps(story), encoding="utf-8")
+    chapters_dir = tmp_path / "chapters"
+    chapters_dir.mkdir(parents=True, exist_ok=True)
+    chapter_path = chapters_dir / "0001.txt"
+    chapter_path.write_text(chapter_text, encoding="utf-8")
+    return chapter_path
+
+
+def test_write_chapter_content_keeps_links_when_previous_content_was_markers_only(
+    tmp_path: Path,
+) -> None:
+    """Rewriting a chapter whose prose was fully deleted must keep the links.
+
+    With markers-only existing content the relative projection has no text to
+    measure; the old code returned the new prose with NO markers at all, which
+    silently unlinked every scene in the chapter.
+    """
+    chapter_path = _novel_chapter_project(
+        tmp_path,
+        "<!--scene:1:start--><!--scene:1:end-->"
+        "<!--scene:2:start--><!--scene:2:end-->",
+    )
+
+    write_chapter_content_in_project(1, "Freshly written prose.", active=tmp_path)
+
+    rewritten = chapter_path.read_text(encoding="utf-8")
+    assert "<!--scene:1:start-->" in rewritten
+    assert "<!--scene:1:end-->" in rewritten
+    assert "<!--scene:2:start-->" in rewritten
+    assert "<!--scene:2:end-->" in rewritten
+    assert "Freshly written prose." in rewritten
+
+
+def test_write_chapter_content_rejects_unbalanced_scene_markers(
+    tmp_path: Path,
+) -> None:
+    """A client payload with unbalanced markers must never reach disk.
+
+    Persisting it would silently unlink scenes, so the write path fails closed
+    and leaves the previous content untouched.
+    """
+    original = "<!--scene:1:start-->Original<!--scene:1:end-->"
+    chapter_path = _novel_chapter_project(tmp_path, original)
+
+    with pytest.raises(ValueError, match="unclosed start marker"):
+        write_chapter_content_in_project(
+            1,
+            "Prose<!--scene:1:start--> without an end marker.",
+            active=tmp_path,
+        )
+
+    assert chapter_path.read_text(encoding="utf-8") == original
+
+
+def test_write_chapter_content_rejects_overlapping_scene_spans(
+    tmp_path: Path,
+) -> None:
+    """Two scenes may never claim the same prose (nested-marker corruption)."""
+    original = "<!--scene:1:start-->Original<!--scene:1:end-->"
+    chapter_path = _novel_chapter_project(tmp_path, original)
+
+    with pytest.raises(ValueError, match="Overlapping scene spans"):
+        write_chapter_content_in_project(
+            1,
+            "<!--scene:1:start-->A<!--scene:2:start-->B"
+            "<!--scene:1:end-->C<!--scene:2:end-->",
+            active=tmp_path,
+        )
+
+    assert chapter_path.read_text(encoding="utf-8") == original
+
+
+def test_write_story_content_rejects_unbalanced_scene_markers(
+    tmp_path: Path,
+) -> None:
+    """The story-scope write path has the same fail-closed guard."""
+    story = {
+        "metadata": {"version": 3},
+        "project_type": "short-story",
+        "content_file": "content.md",
+        "language": "en",
+    }
+    (tmp_path / "story.json").write_text(json.dumps(story), encoding="utf-8")
+    content_path = tmp_path / "content.md"
+    original = "<!--scene:3:start-->Opening<!--scene:3:end-->"
+    content_path.write_text(original, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="unclosed start marker"):
+        write_story_content_in_project(
+            tmp_path, "<!--scene:3:start-->No end marker here."
+        )
+
+    assert content_path.read_text(encoding="utf-8") == original
+
+
 def test_write_chapter_content_rejects_malformed_marker_tokens(
     tmp_path: Path,
 ) -> None:
