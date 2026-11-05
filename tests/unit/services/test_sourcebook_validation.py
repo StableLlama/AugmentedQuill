@@ -598,6 +598,169 @@ class SourcebookValidationTest(TestCase):
         self.assertEqual(updated.get("destination_relative"), "100 years forward")
         self.assertFalse(updated.get("creates_new_timeline"))
 
+    # -------------------------------------------------------------------------
+    # manage_sourcebook partial-update ergonomics and safety
+    # -------------------------------------------------------------------------
+
+    def _call_manage_sourcebook(self, args: dict) -> dict:
+        ensure_tool_registry_loaded()
+        tool = get_tool_function("manage_sourcebook")
+        self.assertIsNotNone(tool)
+        response = self._run_async(
+            tool(args, "call_sourcebook", payload={}, mutations={})
+        )
+        content = response.get("content")
+        self.assertIsInstance(content, str)
+        return json.loads(content)
+
+    def _create_scientist(self) -> None:
+        created = self._call_manage_sourcebook(
+            {
+                "action": "create",
+                "entry_data": {
+                    "name": "Scientist",
+                    "description": "An elderly researcher.",
+                    "category": "Character",
+                    "synonyms": ["Doc"],
+                    "images": ["img-1"],
+                    "origin_date": "1985-11-05",
+                },
+            }
+        )
+        self.assertNotIn("error", created, created)
+
+    def test_update_tool_needs_only_changed_fields(self):
+        """A partial update must not force callers to resend name or category."""
+        self._create_scientist()
+
+        updated = self._call_manage_sourcebook(
+            {
+                "action": "update",
+                "name_or_id": "Scientist",
+                "update_data": {"description": "A retired researcher."},
+            }
+        )
+
+        self.assertNotIn("error", updated, updated)
+        self.assertEqual(updated.get("description"), "A retired researcher.")
+        self.assertEqual(updated.get("category"), "Character")
+        self.assertEqual(updated.get("synonyms"), ["Doc"])
+        self.assertEqual(updated.get("images"), ["img-1"])
+
+    def test_update_tool_preserves_origin_date_when_omitted(self):
+        """Updating unrelated fields must not silently clear origin_date."""
+        self._create_scientist()
+
+        self._call_manage_sourcebook(
+            {
+                "action": "update",
+                "name_or_id": "Scientist",
+                "update_data": {"description": "Still a researcher."},
+            }
+        )
+
+        fetched = self._call_manage_sourcebook(
+            {"action": "get", "name_or_id": "Scientist"}
+        )
+        self.assertEqual(fetched.get("origin_date"), "1985-11-05")
+
+    def test_update_tool_clears_origin_date_when_explicitly_null(self):
+        self._create_scientist()
+
+        self._call_manage_sourcebook(
+            {
+                "action": "update",
+                "name_or_id": "Scientist",
+                "update_data": {"origin_date": None},
+            }
+        )
+
+        fetched = self._call_manage_sourcebook(
+            {"action": "get", "name_or_id": "Scientist"}
+        )
+        self.assertIsNone(fetched.get("origin_date"))
+
+    def test_update_tool_rejects_blank_description(self):
+        self._create_scientist()
+
+        rejected = self._call_manage_sourcebook(
+            {
+                "action": "update",
+                "name_or_id": "Scientist",
+                "update_data": {"description": "   "},
+            }
+        )
+
+        self.assertIn("error", rejected)
+        self.assertIn("must not be blank", rejected["error"])
+
+        fetched = self._call_manage_sourcebook(
+            {"action": "get", "name_or_id": "Scientist"}
+        )
+        self.assertEqual(fetched.get("description"), "An elderly researcher.")
+
+    def test_update_tool_rejects_replacement_and_patch_together(self):
+        self._create_scientist()
+
+        rejected = self._call_manage_sourcebook(
+            {
+                "action": "update",
+                "name_or_id": "Scientist",
+                "update_data": {
+                    "description": "Replacement text.",
+                    "description_patch": {"operation": "append", "value": " More."},
+                },
+            }
+        )
+
+        self.assertIn("error", rejected)
+        self.assertIn("not both", rejected["error"])
+
+    def test_update_tool_tolerates_explicit_nulls_next_to_patch(self):
+        """Models that echo every key as null must still be able to patch."""
+        self._create_scientist()
+
+        updated = self._call_manage_sourcebook(
+            {
+                "action": "update",
+                "name_or_id": "Scientist",
+                "update_data": {
+                    "name": None,
+                    "description": None,
+                    "category": None,
+                    "description_patch": {
+                        "operation": "append",
+                        "value": " Known for experiments.",
+                    },
+                },
+            }
+        )
+
+        self.assertNotIn("error", updated, updated)
+        self.assertEqual(
+            updated.get("description"),
+            "An elderly researcher. Known for experiments.",
+        )
+
+    def test_update_tool_schema_marks_update_fields_optional(self):
+        from augmentedquill.services.chat.chat_tool_decorator import (
+            get_registered_tool_schemas,
+        )
+
+        tools = get_registered_tool_schemas(model_type="CHAT", project_type="novel")
+        tool = next(
+            (t for t in tools if t["function"]["name"] == "manage_sourcebook"),
+            None,
+        )
+        self.assertIsNotNone(tool)
+        properties = tool["function"]["parameters"]["properties"]
+        update_schema = properties["update_data"]
+        self.assertEqual(update_schema.get("required", []), [])
+        self.assertIn("Omitted fields", update_schema.get("description", ""))
+
+        category_schema = properties["entry_data"]["properties"]["category"]
+        self.assertIn("Character", category_schema.get("enum", []))
+
     def _get_entries(self):
         story_path = self.pdir / "story.json"
         story = json.loads(story_path.read_text())

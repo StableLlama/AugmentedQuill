@@ -25,6 +25,7 @@ from augmentedquill.services.chat.chat_tools.metadata_patching import (
     apply_text_patch,
 )
 from augmentedquill.services.sourcebook.sourcebook_helpers import (
+    KNOWN_SOURCEBOOK_CATEGORIES,
     _get_entry_relations,
     _get_story_data,
     sourcebook_add_relation,
@@ -36,6 +37,67 @@ from augmentedquill.services.sourcebook.sourcebook_helpers import (
     sourcebook_remove_relation,
     sourcebook_update_entry,
 )
+
+_CATEGORY_CHOICES: list[str] = list(KNOWN_SOURCEBOOK_CATEGORIES)
+
+# Fields that must not be combined with their patch counterpart, because the
+# two carry contradictory intent (full replacement vs. partial edit).
+_UPDATE_EXCLUSIVE_PAIRS: tuple[tuple[str, str], ...] = (
+    ("description", "description_patch"),
+    ("synonyms", "synonyms_patch"),
+    ("images", "images_patch"),
+)
+
+# Fields where an explicit null means "clear the stored value" rather than
+# "leave it unchanged".
+_CLEARABLE_UPDATE_FIELDS: tuple[str, ...] = ("origin_date",)
+
+_UPDATE_BLANK_FIELD_HINTS: dict[str, str] = {
+    "name": "Omit 'name' to keep the current name.",
+    "category": "Omit 'category' to keep the current category.",
+    "description": (
+        "Omit 'description' to keep the current text, or use "
+        "description_patch(operation='replace', value='') to clear it."
+    ),
+}
+
+
+def _has_effective_update(update: "ManageSourcebookUpdateData") -> bool:
+    """Return whether the payload contains at least one effective change."""
+    for field_name in update.model_fields_set:
+        if field_name in _CLEARABLE_UPDATE_FIELDS:
+            return True
+        if getattr(update, field_name) is not None:
+            return True
+    return False
+
+
+def _validate_update_payload(
+    update: "ManageSourcebookUpdateData",
+) -> dict[str, str] | None:
+    """Reject ambiguous or accidental field combinations in an update payload."""
+    for value_field, patch_field in _UPDATE_EXCLUSIVE_PAIRS:
+        if (
+            getattr(update, value_field) is not None
+            and getattr(update, patch_field) is not None
+        ):
+            return {
+                "error": (
+                    f"Provide either '{value_field}' or '{patch_field}', not both."
+                )
+            }
+
+    for field_name, hint in _UPDATE_BLANK_FIELD_HINTS.items():
+        if field_name not in update.model_fields_set:
+            continue
+        value = getattr(update, field_name)
+        if isinstance(value, str) and not value.strip():
+            return {
+                "error": (
+                    f"'{field_name}' must not be blank when action='update'. {hint}"
+                )
+            }
+    return None
 
 
 def _strip_internal_sourcebook_fields(entry: dict | None) -> dict | None:
@@ -111,7 +173,11 @@ class ManageSourcebookEntryData(ToolModel):
     description: str = Field(..., description="The description/content of the entry")
     category: str = Field(
         ...,
-        description="Required category for the entry (for example: character, location, item, concept)",
+        description=(
+            "Required category for the entry. Must be one of the supported "
+            "categories listed in enum."
+        ),
+        json_schema_extra={"enum": _CATEGORY_CHOICES},
     )
     synonyms: list[str] = Field(
         default_factory=list,
@@ -142,45 +208,86 @@ class ManageSourcebookEntryData(ToolModel):
 
 
 class ManageSourcebookUpdateData(ToolModel):
-    """Payload for updating sourcebook entries."""
+    """Payload for partially updating sourcebook entries.
 
-    name: str | None = Field(None, description="New name for the entry")
-    description: str | None = Field(None, description="New description for the entry")
+    Every field is optional. Fields that are omitted keep their currently
+    stored value; there is no need to resend unchanged fields such as the
+    entry name or category.
+    """
+
+    name: str | None = Field(
+        None,
+        description=(
+            "New name for the entry (renames it). Omit to keep the current "
+            "name; only send this when the entry should actually be renamed."
+        ),
+    )
+    description: str | None = Field(
+        None,
+        description=(
+            "Full replacement description. Omit to keep the current text. "
+            "Prefer description_patch for small edits."
+        ),
+    )
     description_patch: TextPatch | None = Field(
         None,
-        description="Optional patch operation for partially editing description.",
+        description=(
+            "Partial edit of the description (append/prepend/replace_text). "
+            "Cannot be combined with 'description'."
+        ),
     )
-    category: str | None = Field(None, description="New category for the entry")
+    category: str | None = Field(
+        None,
+        description=("New category for the entry. Omit to keep the current category."),
+        json_schema_extra={"enum": _CATEGORY_CHOICES},
+    )
     synonyms: list[str] | None = Field(
-        None, description="New list of synonyms for the entry"
+        None,
+        description=(
+            "Full replacement list of synonyms. Omit to keep the current "
+            "synonyms; prefer synonyms_patch for additive changes."
+        ),
     )
     synonyms_patch: StringListPatch | None = Field(
         None,
-        description="Optional patch operation for synonyms (add/remove/set/clear).",
+        description=(
+            "Partial edit of synonyms (add/remove/set/clear). Cannot be "
+            "combined with 'synonyms'."
+        ),
     )
     images: list[str] | None = Field(
-        None, description="New list of image IDs for the entry"
+        None,
+        description=(
+            "Full replacement list of image IDs. Omit to keep the current "
+            "images; prefer images_patch for additive changes."
+        ),
     )
     images_patch: StringListPatch | None = Field(
         None,
-        description="Optional patch operation for images (add/remove/set/clear).",
+        description=(
+            "Partial edit of images (add/remove/set/clear). Cannot be "
+            "combined with 'images'."
+        ),
     )
     relations: list[dict] | None = Field(
         None,
         description=(
-            "Optional list of relation objects to replace the entry's existing relations. "
-            "Each relation may include target_id, relation_type, direction ('forward' or 'reverse'), "
-            "and optional chapter/book bounds. Tuple-style relations of the form "
-            "['Source', 'relation', 'Target'] are also accepted and normalized."
+            "Optional list of relation objects that REPLACES all existing "
+            "relations of this entry. Omit to keep existing relations, and "
+            "prefer action='add_relation'/'remove_relation' when changing a "
+            "single relation. Each relation may include target_id, "
+            "relation_type, direction ('forward' or 'reverse'), and optional "
+            "chapter/book bounds. Tuple-style relations of the form "
+            "['Source', 'relation', 'Target'] are also accepted."
         ),
     )
     origin_date: str | None = Field(
         None,
         description=(
-            "Optional ISO 8601 birth or creation date. "
+            "Optional ISO 8601 birth or creation date. Omit to keep the "
+            "current value; send an explicit null to clear it. "
             "RECOMMENDED FORMAT: ISO 8601 date (e.g. '1985-11-05') or full datetime (e.g. '1985-11-05T12:00:00Z'). "
             "ALSO ACCEPTED: time-only ('14:30' or '14:30:45' → uses today's date), or date with time and timezone. "
-            "Set to clear the existing value or provide a new one. "
             "All forms are normalized and stored as complete ISO 8601 format."
         ),
     )
@@ -238,7 +345,10 @@ class ManageSourcebookParams(ToolModel):
     )
     name_or_id: str | list[str] | None = Field(
         None,
-        description="Required for actions 'get', 'update', and 'delete'.",
+        description=(
+            "Entry name or ID. Required for actions 'get', 'update', and "
+            "'delete'; 'get' also accepts a list of names/IDs."
+        ),
     )
     category: str | None = Field(
         None,
@@ -246,11 +356,18 @@ class ManageSourcebookParams(ToolModel):
     )
     entry_data: ManageSourcebookEntryData | None = Field(
         None,
-        description="Required when action='create'.",
+        description=(
+            "Required when action='create'. Full new entry payload. Do not "
+            "use this for action='update'."
+        ),
     )
     update_data: ManageSourcebookUpdateData | None = Field(
         None,
-        description="Required when action='update'.",
+        description=(
+            "Required when action='update'. Partial update payload: include "
+            "only the fields that should change. Omitted fields keep their "
+            "current values, so there is no need to resend name or category."
+        ),
     )
     relation_data: ManageSourcebookRelationData | None = Field(
         None,
@@ -268,7 +385,12 @@ class ManageSourcebookParams(ToolModel):
         "(name_or_id + update_data), action='delete' (name_or_id), "
         "action='add_relation' (relation_data), or action='remove_relation' "
         "(relation_data). For action='create', entry_data may include relations to attach the new sourcebook entry into the existing world model. "
-        "For action='update', update_data may include relations to replace an entry's existing relations."
+        "action='update' is a PARTIAL update: send only the fields that change "
+        "inside update_data and omit everything else (including name and "
+        "category) so stored values are preserved. Use description_patch / "
+        "synonyms_patch / images_patch for additive edits instead of resending "
+        "full replacement values, and prefer add_relation/remove_relation over "
+        "replacing the whole relations list."
     ),
     allowed_roles=(CHAT_ROLE, EDITING_ROLE),
     capability="sourcebook-read",
@@ -345,64 +467,77 @@ async def manage_sourcebook(
 
     if params.action == "update":
         if params.name_or_id is None or not isinstance(params.name_or_id, str):
-            return {"error": "name_or_id (string) is required when action='update'."}
-        if params.update_data is None:
-            return {"error": "update_data is required when action='update'."}
-
-        if (
-            params.update_data.name is None
-            and params.update_data.description is None
-            and params.update_data.description_patch is None
-            and params.update_data.category is None
-            and params.update_data.synonyms is None
-            and params.update_data.synonyms_patch is None
-            and params.update_data.images is None
-            and params.update_data.images_patch is None
-            and params.update_data.relations is None
-            and params.update_data.origin_date is None
-        ):
             return {
-                "error": "No update fields provided. Provide at least one update field in update_data."
+                "error": (
+                    "name_or_id (a single string) is required when "
+                    "action='update'. Use action='get' or action='list' first "
+                    "to resolve the entry."
+                )
             }
+        update = params.update_data
+        if update is None:
+            return {
+                "error": (
+                    "update_data is required when action='update'. Use "
+                    "update_data (not entry_data) and include only the fields "
+                    "that should change."
+                )
+            }
+
+        if not _has_effective_update(update):
+            return {
+                "error": (
+                    "No update fields provided. Do not resend unchanged "
+                    "fields; provide at least one field in update_data."
+                )
+            }
+
+        invalid_update = _validate_update_payload(update)
+        if invalid_update is not None:
+            return invalid_update
 
         current = sourcebook_get_entry(params.name_or_id)
         if not isinstance(current, dict):
             return {"error": "Entry not found."}
 
-        description_value = params.update_data.description
-        if params.update_data.description_patch is not None:
+        description_value = update.description
+        if update.description_patch is not None:
             description_value = apply_text_patch(
                 str(current.get("description") or ""),
-                params.update_data.description_patch,
+                update.description_patch,
             )
 
-        synonyms_value = params.update_data.synonyms
-        if params.update_data.synonyms_patch is not None:
+        synonyms_value = update.synonyms
+        if update.synonyms_patch is not None:
             current_synonyms = current.get("synonyms")
             if not isinstance(current_synonyms, list):
                 current_synonyms = []
             synonyms_value = apply_string_list_patch(
-                current_synonyms, params.update_data.synonyms_patch
+                current_synonyms, update.synonyms_patch
             )
 
-        images_value = params.update_data.images
-        if params.update_data.images_patch is not None:
+        images_value = update.images
+        if update.images_patch is not None:
             current_images = current.get("images")
             if not isinstance(current_images, list):
                 current_images = []
-            images_value = apply_string_list_patch(
-                current_images, params.update_data.images_patch
-            )
+            images_value = apply_string_list_patch(current_images, update.images_patch)
+
+        # Only forward origin_date when the caller actually supplied it, so a
+        # partial update cannot silently clear a stored birth/creation date.
+        optional_kwargs: dict[str, Any] = {}
+        if "origin_date" in update.model_fields_set:
+            optional_kwargs["origin_date"] = update.origin_date
 
         result = sourcebook_update_entry(
             name_or_id=params.name_or_id,
-            name=params.update_data.name,
+            name=update.name,
             description=description_value,
-            category=params.update_data.category,
+            category=update.category,
             synonyms=synonyms_value,
             images=images_value,
-            relations=params.update_data.relations,
-            origin_date=params.update_data.origin_date,
+            relations=update.relations,
+            **optional_kwargs,
         )
         if "error" not in result:
             mutations["story_changed"] = True
