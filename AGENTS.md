@@ -183,6 +183,10 @@ Hard-won invariants (each one already caused real data loss — keep them covere
   comes from the scene's markers inside the baseline content
   (`getSceneProseFromContent`) — never from stored `prose_link` offsets, which go stale —
   and must be marker-free (the editor document is marker-free).
+- The same rule applies to _all_ scene fields: `sceneFieldsDiffer()` (summary, beats,
+  characters, sourcebook tags, temporal state, linked prose) decides the diff mode, so a
+  `manage_scenes(action='update')` beat change is visible no matter how the dialog was
+  opened. Only an unchanged scene keeps the diff view off.
 - Save endpoints fail closed: `write_chapter_content_in_project` and
   `write_story_content_in_project` run `validate_marker_integrity` on the incoming
   payload, so a corrupting client is rejected instead of persisting broken markers.

@@ -219,6 +219,135 @@ describe('SceneEditorDialog rendering', () => {
     expect(beatRow).toBeTruthy();
   });
 
+  it('marks a beat added by manage_scenes as changed when opened by a trigger', async () => {
+    baselineScenesState.push(
+      makeScene({
+        id: 'scene-1',
+        summary: 'Planned scene',
+        beats: [{ id: 'beat-1', text: 'Existing beat' }],
+      })
+    );
+
+    wrap(
+      <SceneEditorDialog
+        scene={makeScene({
+          id: 'scene-1',
+          summary: 'Planned scene',
+          beats: [
+            { id: 'beat-1', text: 'Existing beat' },
+            { id: 'beat-2', text: 'Beat added by the chat' },
+          ],
+        })}
+        isOpen={true}
+        openedViaTrigger={true}
+        sceneChangeHint={{ changedFields: ['beats'] }}
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+      />
+    );
+
+    await act(async () => {});
+
+    const newBeat = screen.getByDisplayValue('Beat added by the chat');
+    expect(newBeat.closest('div[data-diff="changed"]')).toBeTruthy();
+  });
+
+  it('marks a beat added by manage_scenes as changed when opened normally', async () => {
+    // The chat added a beat via manage_scenes(action='update'). Opening the
+    // scene editor normally must still show that change in the diff view —
+    // previously diffs only appeared for AI-triggered opens.
+    baselineScenesState.push(
+      makeScene({
+        id: 'scene-1',
+        summary: 'Planned scene',
+        beats: [{ id: 'beat-1', text: 'Existing beat' }],
+      })
+    );
+
+    wrap(
+      <SceneEditorDialog
+        scene={makeScene({
+          id: 'scene-1',
+          summary: 'Planned scene',
+          beats: [
+            { id: 'beat-1', text: 'Existing beat' },
+            { id: 'beat-2', text: 'Beat added by the chat' },
+          ],
+        })}
+        isOpen={true}
+        openedViaTrigger={false}
+        defaultShowDiff={false}
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+      />
+    );
+
+    await act(async () => {});
+
+    const diffButton = screen.getByRole('button', { name: /Toggle diff view/i });
+    expect(diffButton.getAttribute('aria-pressed')).toBe('true');
+    const newBeat = screen.getByDisplayValue('Beat added by the chat');
+    expect(newBeat.closest('div[data-diff="changed"]')).toBeTruthy();
+  });
+
+  it('marks a beat rewritten by manage_scenes as changed when opened normally', async () => {
+    baselineScenesState.push(
+      makeScene({
+        id: 'scene-1',
+        summary: 'Planned scene',
+        beats: [{ id: 'beat-1', text: 'Original beat text' }],
+      })
+    );
+
+    wrap(
+      <SceneEditorDialog
+        scene={makeScene({
+          id: 'scene-1',
+          summary: 'Planned scene',
+          beats: [{ id: 'beat-1', text: 'Rewritten beat text' }],
+        })}
+        isOpen={true}
+        openedViaTrigger={false}
+        defaultShowDiff={false}
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+      />
+    );
+
+    await act(async () => {});
+
+    const changedBeat = screen.getByDisplayValue('Rewritten beat text');
+    expect(changedBeat.closest('div[data-diff="changed"]')).toBeTruthy();
+  });
+
+  it('does not open the diff view when no scene field changed', async () => {
+    const beats = [{ id: 'beat-1', text: 'Unchanged beat' }];
+    baselineScenesState.push(
+      makeScene({ id: 'scene-1', summary: 'Planned scene', beats })
+    );
+
+    wrap(
+      <SceneEditorDialog
+        scene={makeScene({ id: 'scene-1', summary: 'Planned scene', beats })}
+        isOpen={true}
+        openedViaTrigger={false}
+        defaultShowDiff={false}
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+      />
+    );
+
+    await act(async () => {});
+
+    const diffButton = screen.getByRole('button', { name: /Toggle diff view/i });
+    expect(diffButton.getAttribute('aria-pressed')).toBe('false');
+    expect(document.body.querySelector('[data-diff="changed"]')).toBeNull();
+  });
+
   it('highlights removed causes when opened from a scene mutation', () => {
     baselineScenesState.push(
       makeScene({ id: 'scene-1', summary: 'Current scene', causes: ['scene-2'] }),
@@ -339,7 +468,9 @@ describe('SceneEditorDialog rendering', () => {
     expect(screen.queryByTestId('scene-time-diff-new')).toBeNull();
   });
 
-  it('keeps diff view disabled on normal open even when a baseline scene exists', () => {
+  it('enables the diff view on normal open when the baseline differs', () => {
+    // A pending change must be visible regardless of how the dialog was opened;
+    // only an unchanged scene keeps the diff view off.
     baselineScenesState.push(
       makeScene({
         id: 'scene-baseline',
@@ -352,6 +483,32 @@ describe('SceneEditorDialog rendering', () => {
         scene={makeScene({
           id: 'scene-baseline',
           summary: 'Current summary',
+        })}
+        isOpen={true}
+        openedViaTrigger={false}
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+      />
+    );
+
+    const diffButton = screen.getByRole('button', { name: /Toggle diff view/i });
+    expect(diffButton.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('keeps the diff view disabled on normal open when nothing changed', () => {
+    baselineScenesState.push(
+      makeScene({
+        id: 'scene-baseline',
+        summary: 'Same summary',
+      })
+    );
+
+    wrap(
+      <SceneEditorDialog
+        scene={makeScene({
+          id: 'scene-baseline',
+          summary: 'Same summary',
         })}
         isOpen={true}
         openedViaTrigger={false}
@@ -3014,8 +3171,10 @@ describe('SceneEditorDialog diff accept / reject', () => {
 // ─── Spec: diff only for automatic changes ──────────────────────────────────
 
 describe('Spec: SceneEditorDialog diff rules', () => {
-  it('shows NO data-diff when opened normally (not via AI trigger)', async () => {
-    // SPEC: User opens scene editor normally → NO diff.
+  it('shows data-diff when opened normally with a pending change', async () => {
+    // SPEC: any pending change (chat tool or otherwise) is shown as a diff no
+    // matter how the dialog was opened.  Restricting diffs to AI-triggered
+    // opens hid `manage_scenes` beat edits completely.
     baselineScenesState.push(
       makeScene({
         id: 'scene-1',
@@ -3038,8 +3197,7 @@ describe('Spec: SceneEditorDialog diff rules', () => {
     );
 
     await waitFor(() => {
-      // Even though baseline and current differ, normal open means no diff.
-      expect(document.body.querySelector('[data-diff="changed"]')).toBeNull();
+      expect(document.body.querySelector('[data-diff="changed"]')).not.toBeNull();
     });
   });
 

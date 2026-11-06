@@ -451,6 +451,97 @@ const idArraysEqualAsSet = (a: SceneId[], b: SceneId[]): boolean => {
   );
 };
 
+/** Beats (text, order, count) differ between the scene and its baseline. */
+function sceneBeatsDiffer(scene: Scene, baselineScene: Scene): boolean {
+  return !arraysEqual(
+    (scene.beats ?? []).map((beat: SceneBeat) => beat.text),
+    (baselineScene.beats ?? []).map((beat: SceneBeat) => beat.text)
+  );
+}
+
+/** Character / sourcebook tag lists differ between the scene and its baseline. */
+function sceneTagListsDiffer(scene: Scene, baselineScene: Scene): boolean {
+  return (
+    !arraysEqual(
+      scene.active_characters ?? [],
+      baselineScene.active_characters ?? []
+    ) ||
+    !arraysEqual(
+      scene.passive_characters ?? [],
+      baselineScene.passive_characters ?? []
+    ) ||
+    !arraysEqual(
+      scene.sourcebook_entry_ids ?? [],
+      baselineScene.sourcebook_entry_ids ?? []
+    )
+  );
+}
+
+/** Temporal / styling / status fields differ between the scene and its baseline. */
+function sceneTemporalStateDiffers(scene: Scene, baselineScene: Scene): boolean {
+  if (
+    (scene.scene_time?.temporal_zoned_datetime ?? null) !==
+    (baselineScene.scene_time?.temporal_zoned_datetime ?? null)
+  ) {
+    return true;
+  }
+  if (
+    normalizeTimelineId(scene.timeline_id) !==
+    normalizeTimelineId(baselineScene.timeline_id)
+  ) {
+    return true;
+  }
+  if ((scene.color_tag ?? null) !== (baselineScene.color_tag ?? null)) return true;
+  // Older baseline payloads may omit `status`; only compare when present so a
+  // missing field never reads as "changed".
+  return baselineScene.status !== undefined && scene.status !== baselineScene.status;
+}
+
+/** Scalar / list metadata differs between the scene and its baseline. */
+function sceneMetadataDiffers(scene: Scene, baselineScene: Scene): boolean {
+  return (
+    (scene.summary ?? '') !== (baselineScene.summary ?? '') ||
+    sceneTagListsDiffer(scene, baselineScene) ||
+    sceneTemporalStateDiffers(scene, baselineScene)
+  );
+}
+
+/**
+ * True when any scene field differs from the baseline snapshot.
+ *
+ * The scene editor shows diff markers for every section (summary, beats,
+ * characters, temporal data, linked prose, …).  That view must switch on
+ * whenever there *is* a pending change — not only for AI-triggered opens.
+ * A chat tool like ``manage_scenes(action='update')`` changes beats while the
+ * user later opens the dialog themselves, and those edits were invisible
+ * because the diff mode was keyed on the trigger only.
+ */
+function sceneFieldsDiffer(params: {
+  scene: Scene;
+  baselineScene: Scene | null;
+  baselineStoryState: StoryState;
+  openedViaTrigger: boolean;
+  atOpenProse: string;
+}): boolean {
+  const { scene, baselineScene, baselineStoryState, openedViaTrigger, atOpenProse } =
+    params;
+  if (!baselineScene) {
+    // The scene did not exist at baseline time: everything is new, which is
+    // only a meaningful diff when the dialog was opened from an AI mutation.
+    return openedViaTrigger;
+  }
+  if (sceneBeatsDiffer(scene, baselineScene)) return true;
+  if (sceneMetadataDiffers(scene, baselineScene)) return true;
+  const proseBaseline = resolveSceneProseBaseline({
+    baselineScene,
+    baselineStoryState,
+    sceneId: scene.id,
+    openedViaTrigger,
+    atOpenText: atOpenProse,
+  });
+  return proseBaseline !== undefined && proseBaseline !== atOpenProse;
+}
+
 /* eslint-disable complexity, max-lines-per-function */
 export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
   scene,
@@ -555,34 +646,31 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
     if (!isLinkedProseLink(link) || !getLinkedProseText) return '';
     return getLinkedProseText(link) ?? '';
   }, [scene.prose_link, getLinkedProseText]);
-  // A pending AI diff (baseline prose differs from the current prose) must open
-  // the dialog in diff mode even when it was opened normally.  Previously the
-  // dialog only defaulted to diff mode for AI-triggered opens, so chat-written
-  // prose was shown without the "freshly generated" highlight.
-  const hasPendingLinkedProseDiff = useMemo((): boolean => {
-    if (!isLinkedProseLink(scene.prose_link)) return false;
-    const baseline = resolveSceneProseBaseline({
+  // A pending AI diff (any scene field differs from the baseline) must open the
+  // dialog in diff mode even when it was opened normally.  Previously the
+  // dialog only defaulted to diff mode for AI-triggered opens, so changes made
+  // by chat tools (e.g. `manage_scenes(action='update')` adding a beat) were
+  // shown without any highlight.
+  const hasPendingSceneDiff = useMemo((): boolean => {
+    return sceneFieldsDiffer({
+      scene,
       baselineScene,
       baselineStoryState,
-      sceneId: scene.id,
       openedViaTrigger,
-      atOpenText: openTimeLinkedProse,
+      atOpenProse: openTimeLinkedProse,
     });
-    if (baseline === undefined) return false;
-    return baseline !== openTimeLinkedProse;
-  }, [
-    baselineScene,
-    baselineStoryState,
-    openTimeLinkedProse,
-    openedViaTrigger,
-    scene.id,
-    scene.prose_link,
-  ]);
+  }, [baselineScene, baselineStoryState, openTimeLinkedProse, openedViaTrigger, scene]);
   const [summary, setSummary] = useState(scene.summary);
   const [beats, setBeats] = useState<SceneBeat[]>(scene.beats);
   const [showDiff, setShowDiff] = useState(
-    Boolean(openedViaTrigger || defaultShowDiff || hasPendingLinkedProseDiff)
+    Boolean(openedViaTrigger || defaultShowDiff || hasPendingSceneDiff)
   );
+  // Turn the diff view on as soon as a pending change appears while the dialog
+  // is already open (the chat writes scene fields in the background).
+  useEffect((): void => {
+    if (!isOpen || !hasPendingSceneDiff) return;
+    setShowDiff((prev: boolean): boolean => (prev ? prev : true));
+  }, [isOpen, hasPendingSceneDiff]);
   // Local baseline overrides: when the user accepts a diff section, we store
   // the accepted value here so the diff for that section clears locally without
   // needing a round-trip through the store.  On reject we revert the field.
@@ -1063,14 +1151,13 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
       Boolean(
         openedViaTrigger ||
         defaultShowDiff ||
-        (isLinkedProseLink(scene.prose_link) &&
-          resolveSceneProseBaseline({
-            baselineScene,
-            baselineStoryState,
-            sceneId: scene.id,
-            openedViaTrigger,
-            atOpenText: initialLinkedProseText,
-          }) !== initialLinkedProseText)
+        sceneFieldsDiffer({
+          scene,
+          baselineScene,
+          baselineStoryState,
+          openedViaTrigger,
+          atOpenProse: initialLinkedProseText,
+        })
       )
     );
     setAcceptedBaseline({});
