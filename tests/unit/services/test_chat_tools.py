@@ -670,6 +670,39 @@ class ChatToolsTest(TestCase):
             chapter_file.read_text(encoding="utf-8"), "Batch updated content"
         )
 
+    def test_failed_tool_call_is_not_counted_as_an_operation(self):
+        """Rejected calls changed nothing, so batch metadata must ignore them."""
+        self._bootstrap_project()
+
+        data = self._post_tool_calls(
+            [
+                (
+                    "manage_scenes",
+                    {"action": "create", "create_data": {"summary": "Kept"}},
+                ),
+                # Missing scene_id: rejected before anything is written.
+                (
+                    "manage_scenes",
+                    {"action": "update", "update_data": {"summary": "Rejected"}},
+                ),
+            ]
+        )
+
+        appended = data.get("appended_messages") or []
+        payloads = [json.loads(message["content"]) for message in appended]
+        self.assertTrue(
+            any(
+                isinstance(payload, dict) and payload.get("error")
+                for payload in payloads
+            ),
+            payloads,
+        )
+
+        batch = (data.get("mutations") or {}).get("tool_batch") or {}
+        self.assertEqual(batch.get("tool_names"), ["manage_scenes"])
+        self.assertEqual(batch.get("operation_count"), 1)
+        self.assertEqual(batch.get("label"), "AI tool: manage_scenes")
+
     def test_call_editing_assistant_propagates_prose_mutations_and_ui_refreshes(self):
         self._bootstrap_project()
         chapter_file = self.projects_root / "demo" / "chapters" / "0001.txt"
@@ -2628,6 +2661,108 @@ class ChatToolsTest(TestCase):
             if entry.get("chapter_number") == 1
         ]
         self.assertEqual(chapter_one_order[:2], [2, 1])
+
+    def test_manage_scenes_update_is_atomic_when_the_placement_fails(self):
+        """A rejected placement must not leave the content write behind."""
+        self._bootstrap_project()
+        self._set_project_type("novel")
+        self._post_single_tool(
+            "manage_scenes",
+            {"action": "create", "create_data": {"summary": "First"}},
+        )
+        self._post_single_tool(
+            "manage_scenes",
+            {"action": "create", "create_data": {"summary": "Second"}},
+        )
+        self._post_single_tool(
+            "manage_scenes",
+            {
+                "action": "update",
+                "scene_id": 1,
+                "update_data": {"chapter_number": 1},
+            },
+        )
+
+        # -1 passes schema validation but is an invalid move position, so the
+        # placement step fails after the content fields were already written.
+        result = self._post_single_tool(
+            "manage_scenes",
+            {
+                "action": "update",
+                "scene_id": 1,
+                "update_data": {
+                    "summary": "Should not survive",
+                    "beats": [{"text": "Should not survive either"}],
+                    "chapter_position": -1,
+                },
+            },
+        )
+
+        appended = result.get("appended_messages") or []
+        self.assertEqual(len(appended), 1)
+        payload = json.loads(appended[0]["content"])
+        self.assertEqual(payload.get("error"), "Invalid scene move")
+        self.assertFalse((result.get("mutations") or {}).get("story_changed"))
+
+        reloaded = json.loads(
+            (
+                self._post_single_tool(
+                    "manage_scenes", {"action": "get", "scene_id": 1}
+                ).get("appended_messages")
+                or []
+            )[0]["content"]
+        )
+        self.assertEqual(reloaded.get("summary"), "First")
+        self.assertEqual(reloaded.get("beats"), [])
+
+    def test_manage_scenes_update_does_not_move_the_scene_when_content_is_rejected(
+        self,
+    ):
+        """A rejected content payload must not leave the placement behind."""
+        self._bootstrap_project()
+        self._set_project_type("novel")
+        self._post_single_tool(
+            "manage_scenes",
+            {"action": "create", "create_data": {"summary": "First"}},
+        )
+        self._post_single_tool(
+            "manage_scenes",
+            {"action": "create", "create_data": {"summary": "Second"}},
+        )
+
+        # causes=[1] on scene 1 is rejected by the scene service.  The call must
+        # fail before the placement is applied, not after.
+        result = self._post_single_tool(
+            "manage_scenes",
+            {
+                "action": "update",
+                "scene_id": 1,
+                "update_data": {
+                    "chapter_number": 1,
+                    "chapter_position": 0,
+                    "causes": [1],
+                },
+            },
+        )
+
+        appended = result.get("appended_messages") or []
+        self.assertEqual(len(appended), 1)
+        payload = json.loads(appended[0]["content"])
+        self.assertEqual(payload.get("error"), "Invalid scene ordering")
+        self.assertFalse((result.get("mutations") or {}).get("story_changed"))
+
+        reloaded = json.loads(
+            (
+                self._post_single_tool(
+                    "manage_scenes", {"action": "get", "scene_id": 1}
+                ).get("appended_messages")
+                or []
+            )[0]["content"]
+        )
+        self.assertEqual(
+            (reloaded.get("prose_link") or {}).get("scope_type"),
+            "unlinked",
+        )
 
     def test_manage_scenes_update_rejects_placement_fields_in_short_story(self):
         self._bootstrap_project()

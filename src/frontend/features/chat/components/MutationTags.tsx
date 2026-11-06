@@ -26,6 +26,11 @@ export type SessionMutation = {
   label: string;
   targetId?: string; // chapter ID, entry ID, etc.
   subType?: string; // further field detail if applicable (e.g. metadata tab)
+  /**
+   * The tool call reported an error and changed nothing.  Failed badges are
+   * red, carry no change hint and never navigate (there is nothing to review).
+   */
+  failed?: boolean;
   sceneChangeHint?: {
     changedFields?: string[];
     previousValues?: Record<string, unknown>;
@@ -110,6 +115,11 @@ export const MutationTags: React.FC<MutationTagsProps> = ({
     : 'bg-amber-900/20 border-amber-800/50';
   const textClass = isLight ? 'text-amber-800' : 'text-amber-200';
   const hoverClass = isLight ? 'hover:bg-amber-100' : 'hover:bg-amber-800/40';
+  const failedBgClass = isLight
+    ? 'bg-red-50 border-red-300'
+    : 'bg-red-900/30 border-red-800/60';
+  const failedTextClass = isLight ? 'text-red-700' : 'text-red-300';
+  const failedHoverClass = isLight ? 'hover:bg-red-100' : 'hover:bg-red-900/50';
 
   const getIcon = (type: SessionMutation['type']): React.ReactElement => {
     switch (type) {
@@ -130,29 +140,38 @@ export const MutationTags: React.FC<MutationTagsProps> = ({
 
   return (
     <div className="flex flex-wrap gap-2 mb-3">
-      {mutations.map((m: SessionMutation) => (
-        <button
-          type="button"
-          key={m.id}
-          title={
-            m.type === 'scene' && m.targetId
-              ? t('Scene ID: {{id}}', { id: m.targetId })
-              : undefined
-          }
-          onClick={(event: React.MouseEvent<HTMLButtonElement, MouseEvent>): void => {
-            event.preventDefault();
-            onMutationClick(m);
-          }}
-          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[10px] font-medium transition-colors ${bgClass} ${textClass} ${hoverClass}`}
-        >
-          {getIcon(m.type)}
-          <span>
-            {m.type === 'scene'
-              ? buildSceneMutationLabel(m, scenes, chapters, books)
-              : t(m.label)}
-          </span>
-        </button>
-      ))}
+      {mutations.map((m: SessionMutation) => {
+        const badgeLabel =
+          m.type === 'scene'
+            ? buildSceneMutationLabel(m, scenes, chapters, books)
+            : t(m.label);
+        const badgeClasses = m.failed
+          ? `${failedBgClass} ${failedTextClass} ${failedHoverClass}`
+          : `${bgClass} ${textClass} ${hoverClass}`;
+        return (
+          <button
+            type="button"
+            key={m.id}
+            data-mutation-failed={m.failed ? 'true' : undefined}
+            title={
+              m.failed
+                ? t('This tool call failed and changed nothing')
+                : m.type === 'scene' && m.targetId
+                  ? t('Scene ID: {{id}}', { id: m.targetId })
+                  : undefined
+            }
+            onClick={(event: React.MouseEvent<HTMLButtonElement, MouseEvent>): void => {
+              event.preventDefault();
+              onMutationClick(m);
+            }}
+            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[10px] font-medium transition-colors ${badgeClasses}`}
+          >
+            {getIcon(m.type)}
+            <span>{badgeLabel}</span>
+            {m.failed && <span className="font-semibold">· {t('Failed')}</span>}
+          </button>
+        );
+      })}
     </div>
   );
 };

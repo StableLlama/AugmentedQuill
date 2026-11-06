@@ -107,6 +107,7 @@ npm run check:generated-types
 - Use shared response helpers in `src/augmentedquill/api/v1/http_responses.py` where applicable.
 - Use project dependency resolution (`ProjectDep`) from `src/augmentedquill/api/v1/dependencies.py` for project-scoped routes.
 - Keep all application LLM instructions separated from code and stored in `resources/config/instructions.json` so instruction sets can be project-language specific.
+- Chat tools are **atomic and independent**: one tool call either applies completely or changes nothing, and each call in a batch fails on its own without rolling back the others (never add cross-call transactions). Validate every payload and every placement target _before_ the first write; if a later step of the same call fails, restore what the earlier step wrote (see `scene_tools._restore_scene_field_values`). Validation failures must return before any write — regression tests: `tests/unit/services/test_chat_tools.py` → `test_manage_scenes_update_is_atomic_*`, `test_manage_scenes_update_does_not_move_the_scene_when_content_is_rejected`.
 
 ### Frontend
 
@@ -114,6 +115,7 @@ npm run check:generated-types
 - Keep reusable UI primitives in `src/frontend/components/ui`.
 - Use API facade/client modules in `src/frontend/services`.
 - Do not introduce ad-hoc fetch calls in features when an API client exists.
+- Failed tool calls must stay visible and must never look like changes: a mutation-producing call whose result carries `error` yields a red `failed` badge with no change hint (`mutationToolRegistry.buildFailedMutation`), failed calls are excluded from `tool_batch.operation_count` (backend `_tool_message_reports_error`), and the chat loop sends a corrective retry hint instead of accepting the model's summary (`chatExecutionHelpers.summarizeFailedToolCalls`).
 
 ### Scene markers and prose linking (STRICT — single implementation only)
 
@@ -187,6 +189,13 @@ Hard-won invariants (each one already caused real data loss — keep them covere
   characters, sourcebook tags, temporal state, linked prose) decides the diff mode, so a
   `manage_scenes(action='update')` beat change is visible no matter how the dialog was
   opened. Only an unchanged scene keeps the diff view off.
+- Beat diff rows are aligned by text, not by array position
+  (`features/scenes/sceneBeatDiff.ts` → `diffSceneBeats`): position-based comparison
+  flagged every beat after an insertion and could not show deletions. Added beats are
+  tinted with the paper-based insert tokens (`highlightColors.diffInsertBg/Border`,
+  layered over `contentSurface`), removed baseline beats render as read-only delete rows.
+  Do not reintroduce theme classes (`bg-brand-50` / `bg-brand-gray-800/40`) for beat
+  highlights — they are invisible against the dark dialog chrome.
 - Save endpoints fail closed: `write_chapter_content_in_project` and
   `write_story_content_in_project` run `validate_marker_integrity` on the incoming
   payload, so a corrupting client is rejected instead of persisting broken markers.

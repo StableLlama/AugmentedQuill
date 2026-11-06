@@ -34,6 +34,25 @@ function createCallbacks(): CallbackSet {
 }
 
 describe('handleSessionMutationClick', () => {
+  it('ignores failed mutation badges instead of opening the target', () => {
+    const callbacks = createCallbacks();
+
+    handleSessionMutationClick(
+      {
+        id: 'm-failed',
+        type: 'scene',
+        label: 'Scene',
+        targetId: '7',
+        failed: true,
+      },
+      callbacks
+    );
+
+    expect(callbacks.openSceneEditorDialog).not.toHaveBeenCalled();
+    expect(callbacks.openAndExpandStory).not.toHaveBeenCalled();
+    expect(callbacks.handleChapterSelect).not.toHaveBeenCalled();
+  });
+
   it('routes chapter mutations to chapter selection', () => {
     const callbacks = createCallbacks();
 

@@ -11,7 +11,12 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { buildMetadataFields, MUTATION_TOOL_REGISTRY } from './mutationToolRegistry';
+import {
+  buildFailedMutation,
+  buildMetadataFields,
+  isToolErrorResult,
+  MUTATION_TOOL_REGISTRY,
+} from './mutationToolRegistry';
 import type { SessionMutation } from './components/MutationTags';
 
 describe('mutationToolRegistry', () => {
@@ -381,5 +386,57 @@ describe('buildMetadataFields', () => {
 
     expect(Array.isArray(noOp)).toBe(true);
     expect(noOp).toHaveLength(0);
+  });
+
+  describe('failed tool calls', () => {
+    const errorResult = {
+      error: 'Invalid parameters',
+      details: [
+        {
+          type: 'string_type',
+          loc: ['update_data', 'beats', 4, 'text'],
+          msg: 'Input should be a valid string',
+        },
+      ],
+    };
+
+    it('recognises error payloads', () => {
+      expect(isToolErrorResult(errorResult)).toBe(true);
+      expect(isToolErrorResult({ error: '   ' })).toBe(false);
+      expect(isToolErrorResult({ id: 7 })).toBe(false);
+      expect(isToolErrorResult(null)).toBe(false);
+      expect(isToolErrorResult([{ error: 'x' }])).toBe(false);
+    });
+
+    it('builds a failed badge that keeps the scene target but no change hint', () => {
+      const mutation = buildFailedMutation('manage_scenes', {
+        args: { action: 'update', scene_id: 7, update_data: { beats: [] } },
+        result: errorResult,
+      });
+
+      expect(mutation).toMatchObject({
+        type: 'scene',
+        label: 'Scene',
+        targetId: '7',
+        failed: true,
+      });
+      // A failed call changed nothing: it must never advertise changed fields.
+      expect(mutation?.sceneChangeHint).toBeUndefined();
+    });
+
+    it('ignores failed read-only calls that are not mutation attempts', () => {
+      const mutation = buildFailedMutation('manage_scenes', {
+        args: { action: 'get', scene_id: 7 },
+        result: { error: 'Not found' },
+      });
+
+      expect(mutation).toBeNull();
+    });
+
+    it('produces no mutation badge for unknown tools', () => {
+      expect(
+        buildFailedMutation('not_a_tool', { args: {}, result: errorResult })
+      ).toBeNull();
+    });
   });
 });

@@ -32,7 +32,8 @@
       "You have access to the following tools:",
       "{tools_list}",
       "",
-      "To use a tool, return a tool_call. Do NOT write prose if you are updating metadata via a tool."
+      "To use a tool, return a tool_call. Do NOT write prose if you are updating metadata via a tool.",
+      "A tool result containing an `error` field means that call changed nothing: retry it with corrected arguments instead of reporting it as done."
     ]
   },
   "story_context_block": {
@@ -188,7 +189,14 @@
       "- If context is missing or unclear, inspect the project with tools before deciding.",
       "- Tools are NOT executed automatically. When you want to read or update project metadata, sourcebook content, or scene assignments, return an explicit tool_call for the appropriate tool instead of only describing the change in prose.",
       "- Metadata such as sourcebook relations and scene sourcebook links are high priority. Keep these links coherent and up to date: update scene.sourcebook_entry_ids for scene-relevant entries, and use sourcebook relations to express entity connections explicitly.",
-      "- Simply make normal conversational responses when you are not invoking tools, and return explicit tool_calls when you need the system to perform an action."
+      "- Simply make normal conversational responses when you are not invoking tools, and return explicit tool_calls when you need the system to perform an action.",
+      "",
+      "TOOL FAILURES:",
+      "- Every tool call is atomic: it either applies completely or changes nothing at all.",
+      "- Tool calls in one turn are independent: a failing call never rolls back the calls that already succeeded, so retry only the calls that failed.",
+      "- A tool result containing an `error` field means that call did NOT change anything. Read every tool result before you reply.",
+      "- If any tool call returns an error, you MUST retry that call in the same turn with corrected arguments, fixing exactly the path named in the error `details` (for example a non-string `text` field).",
+      "- Never claim or imply that a failed call succeeded. If a retry is not possible, tell the user precisely which change could not be made."
     ]
   },
   "editing_llm": {

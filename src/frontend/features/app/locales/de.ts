@@ -610,6 +610,9 @@ export const de = {
     'Scene {{index}} of {{total}}': 'Szene {{index}} von {{total}}',
     'Scene ID: {{id}}': 'ID: {{id}}',
     'AI changed fields: {{fields}}': 'KI hat geändert: {{fields}}',
+    Failed: 'Fehlgeschlagen',
+    'This tool call failed and changed nothing':
+      'Dieser Tool-Aufruf ist fehlgeschlagen und hat nichts geändert',
     'Previous value: {{value}}': 'Vorher: {{value}}',
     'Previous value unavailable': 'Vorheriger Wert nicht verfügbar',
     'Chapter position {{index}} of {{total}}':

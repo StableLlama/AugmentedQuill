@@ -482,6 +482,32 @@ def _scene_matches_chapter_scope(
     return True
 
 
+def _restore_scene_field_values(
+    project_dir: Path,
+    scene_id: int,
+    previous_values: dict[str, Any],
+) -> None:
+    """Roll a partially applied scene update back to its previous values.
+
+    `manage_scenes(action='update')` first writes the content fields and then
+    applies the requested placement.  When the placement fails the content must
+    not stay behind, so the earlier values are written back.  A rollback failure
+    is swallowed on purpose: the caller reports the original placement error,
+    which is the actionable one.
+    """
+    if not previous_values:
+        return
+    try:
+        update_scene(
+            project_dir,
+            scene_id,
+            SceneUpdateRequest(**previous_values),
+        )
+    except Exception:
+        # Best effort only - never mask the original placement failure.
+        return
+
+
 def _execute_scene_move(
     *,
     active: Path,
@@ -1078,7 +1104,10 @@ async def manage_scenes(
                 ),
             }
 
-        placement_result: dict[str, Any] | None = None
+        # Placement is resolved here but executed only after the content update
+        # succeeded: resolving is pure, so an invalid target still fails before
+        # anything is written, and a failed move can roll the content back.
+        move_kwargs: dict[str, Any] | None = None
         source_scope_key = _scene_scope_key(current, project_type)
         target_scope_key = source_scope_key
         if placement_requested:
@@ -1128,26 +1157,16 @@ async def manage_scenes(
                 else "end"
             )
 
-            placement_result = _execute_scene_move(
-                active=active,
-                project_type=project_type,
-                scene_id=params.scene_id,
-                source_chapter_id=None,
-                source_book_id=None,
-                target_chapter_id=target_chapter_id,
-                target_book_id=target_book_id,
-                move_position=requested_position,
-            )
-            if placement_result.get("error"):
-                return placement_result
-
-            current = get_scene(active, params.scene_id) or current
-            target_scope_key = _scene_scope_key(current, project_type)
-
-        placement_scope_keys: set[tuple[str | None, str | None]] = {
-            source_scope_key,
-            target_scope_key,
-        }
+            move_kwargs = {
+                "active": active,
+                "project_type": project_type,
+                "scene_id": params.scene_id,
+                "source_chapter_id": None,
+                "source_book_id": None,
+                "target_chapter_id": target_chapter_id,
+                "target_book_id": target_book_id,
+                "move_position": requested_position,
+            }
 
         update_kwargs: dict[str, Any] = {}
 
@@ -1241,7 +1260,10 @@ async def manage_scenes(
                     update_kwargs[field_name] = value
 
         if not update_kwargs:
-            if placement_result is not None:
+            if move_kwargs is not None:
+                placement_result = _execute_scene_move(**move_kwargs)
+                if placement_result.get("error"):
+                    return placement_result
                 updated_after_move = get_scene(active, params.scene_id)
                 if updated_after_move is None:
                     return {"error": f"Scene '{params.scene_id}' not found"}
@@ -1249,7 +1271,10 @@ async def manage_scenes(
                 return _scoped_compact_scene_order_for_llm(
                     active,
                     project_type,
-                    placement_scope_keys,
+                    {
+                        source_scope_key,
+                        _scene_scope_key(updated_after_move, project_type),
+                    },
                 )
             return {
                 "error": "No scene fields to update",
@@ -1265,7 +1290,10 @@ async def manage_scenes(
             for field_name, value in update_kwargs.items()
         )
         if not has_effective_change:
-            if placement_result is not None:
+            if move_kwargs is not None:
+                placement_result = _execute_scene_move(**move_kwargs)
+                if placement_result.get("error"):
+                    return placement_result
                 updated_after_move = get_scene(active, params.scene_id)
                 if updated_after_move is None:
                     return {"error": f"Scene '{params.scene_id}' not found"}
@@ -1273,7 +1301,10 @@ async def manage_scenes(
                 return _scoped_compact_scene_order_for_llm(
                     active,
                     project_type,
-                    placement_scope_keys,
+                    {
+                        source_scope_key,
+                        _scene_scope_key(updated_after_move, project_type),
+                    },
                 )
             return {
                 "ok": True,
@@ -1281,7 +1312,37 @@ async def manage_scenes(
                 "message": ("No effective scene content changes were detected."),
             }
 
-        update_payload = SceneUpdateRequest(**update_kwargs)
+        # Validate the complete content payload before the first write so a
+        # rejected call leaves the project untouched.
+        try:
+            update_payload = SceneUpdateRequest(**update_kwargs)
+        except ValueError as exc:
+            return {
+                "error": "Invalid scene update",
+                "message": str(exc),
+            }
+
+        causes_value = update_kwargs.get("causes")
+        if isinstance(causes_value, list) and params.scene_id in causes_value:
+            return {
+                "error": "Invalid scene ordering",
+                "message": (
+                    "A scene cannot reference itself in causes. "
+                    "Use IDs of other scenes only."
+                ),
+                "details": {
+                    "scene_id": params.scene_id,
+                    "reason": (
+                        f"Scene {params.scene_id} cannot reference itself in causes"
+                    ),
+                },
+            }
+
+        # Remember the pre-update values so a failing placement step can undo
+        # the content write (the call must be all-or-nothing).
+        previous_values = {
+            field_name: current.get(field_name) for field_name in update_kwargs
+        }
 
         try:
             updated = update_scene(active, params.scene_id, update_payload)
@@ -1317,6 +1378,20 @@ async def manage_scenes(
             }
         if updated is None:
             return {"error": f"Scene '{params.scene_id}' not found"}
+
+        placement_result: dict[str, Any] | None = None
+        if move_kwargs is not None:
+            placement_result = _execute_scene_move(**move_kwargs)
+            if placement_result.get("error"):
+                # The content write already happened; restore the previous
+                # values so the whole call stays all-or-nothing.
+                _restore_scene_field_values(active, params.scene_id, previous_values)
+                return placement_result
+            moved_scene = get_scene(active, params.scene_id)
+            if moved_scene is not None:
+                updated = moved_scene
+                target_scope_key = _scene_scope_key(moved_scene, project_type)
+
         mutations["story_changed"] = True
         all_scenes = list_scenes(active)
         chronological_violations = _scene_temporal_order_violations(all_scenes)
@@ -1337,7 +1412,7 @@ async def manage_scenes(
             "scene_list": _scoped_compact_scene_order_for_llm(
                 active,
                 project_type,
-                placement_scope_keys,
+                {source_scope_key, target_scope_key},
             ),
         }
 

@@ -15,7 +15,11 @@ import { useChatExecution } from '../chat/useChatExecution';
 import { useChatMessageActions } from '../chat/useChatMessageActions';
 import { useChatSessionManagement } from '../chat/useChatSessionManagement';
 import type { ChatToolCall, Scene } from '../../types';
-import { MUTATION_TOOL_REGISTRY } from '../chat/mutationToolRegistry';
+import {
+  MUTATION_TOOL_REGISTRY,
+  buildFailedMutation,
+  isToolErrorResult,
+} from '../chat/mutationToolRegistry';
 import type { SessionMutation } from '../chat';
 import { applySmartQuotes } from '../../utils/textUtils';
 import type { ChatAttachment, LLMConfig, MetadataTab, StoryState } from '../../types';
@@ -117,6 +121,10 @@ export function handleSessionMutationClick(
     openChapterMetadataDialog,
   }: MutationNavigationCallbacks
 ): void {
+  // A failed call changed nothing, so there is no target to navigate to.
+  if (mutation.failed) {
+    return;
+  }
   if (mutation.type === 'chapter') {
     openAndExpandStory();
     handleChapterSelect(mutation.targetId ?? null);
@@ -288,7 +296,20 @@ export function useAppChatRuntime({
           return;
         }
         const normalizedArgs = parseRawArgs(res.args || {});
-        const produced = factory({ args: normalizedArgs, result: res.result || {} });
+        const resultPayload = res.result || {};
+        // A failed call changed nothing: emit a failed badge instead of a
+        // "this was changed" badge with a diff hint that points at no change.
+        if (isToolErrorResult(resultPayload)) {
+          const failed = buildFailedMutation(res.name, {
+            args: normalizedArgs,
+            result: resultPayload,
+          });
+          if (failed) {
+            newMuts.push(failed);
+          }
+          return;
+        }
+        const produced = factory({ args: normalizedArgs, result: resultPayload });
 
         const producedItems = (Array.isArray(produced) ? produced : [produced]).map(
           (item: SessionMutation | null): SessionMutation | null => {
@@ -328,7 +349,8 @@ export function useAppChatRuntime({
           (entry: SessionMutation): boolean =>
             entry.type === mutation.type &&
             entry.label === mutation.label &&
-            entry.targetId === mutation.targetId
+            entry.targetId === mutation.targetId &&
+            Boolean(entry.failed) === Boolean(mutation.failed)
         );
         if (existingIndex < 0) {
           combined.push(mutation);

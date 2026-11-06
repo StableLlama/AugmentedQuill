@@ -620,6 +620,9 @@ export const fr = {
     'Scene {{index}} (ID {{id}})': '#{{index}} · ID {{id}}',
     'Scene {{index}} of {{total}}': 'Scène {{index}} sur {{total}}',
     'Scene ID: {{id}}': 'ID: {{id}}',
+    Failed: 'Échec',
+    'This tool call failed and changed nothing':
+      "Cet appel d'outil a échoué et n'a rien modifié",
     'AI changed fields: {{fields}}': 'IA a modifié : {{fields}}',
     'Previous value: {{value}}': 'Avant : {{value}}',
     'Previous value unavailable': 'Valeur précédente indisponible',

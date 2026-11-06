@@ -323,6 +323,132 @@ describe('SceneEditorDialog rendering', () => {
     expect(changedBeat.closest('div[data-diff="changed"]')).toBeTruthy();
   });
 
+  it('tints a beat added by the chat with the insert diff colours', async () => {
+    // The previous theme-class highlight (bg-brand-gray-800/40 on dark chrome)
+    // was invisible against the dialog, so added beats looked untouched.  The
+    // row must carry the editor's translucent insert tint on the paper surface.
+    baselineScenesState.push(
+      makeScene({
+        id: 'scene-1',
+        summary: 'Planned scene',
+        beats: [{ id: 'beat-1', text: 'Existing beat' }],
+      })
+    );
+
+    wrap(
+      <SceneEditorDialog
+        scene={makeScene({
+          id: 'scene-1',
+          summary: 'Planned scene',
+          beats: [
+            { id: 'beat-1', text: 'Existing beat' },
+            { id: 'beat-2', text: 'Beat added by the chat' },
+          ],
+        })}
+        isOpen={true}
+        openedViaTrigger={false}
+        defaultShowDiff={false}
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+      />
+    );
+
+    await act(async () => {});
+
+    const addedRow = document.body.querySelector('[data-diff-kind="added"]');
+    expect(addedRow).toBeTruthy();
+    const addedTextarea = screen.getByDisplayValue('Beat added by the chat');
+    expect(addedRow?.contains(addedTextarea)).toBe(true);
+    // Insert tint (rgba green) blended over the paper plus a 3px insert border.
+    expect(addedTextarea.style.backgroundImage).toContain('34, 197, 94');
+    expect(addedTextarea.style.borderLeft).toContain('3px solid rgba(');
+    // Unchanged beats must stay untinted.
+    expect(screen.getByDisplayValue('Existing beat').style.backgroundImage).toBe('');
+  });
+
+  it('shows a beat removed by the chat as a struck-through delete row', async () => {
+    baselineScenesState.push(
+      makeScene({
+        id: 'scene-1',
+        summary: 'Planned scene',
+        beats: [
+          { id: 'beat-1', text: 'Kept beat' },
+          { id: 'beat-2', text: 'Dropped beat' },
+        ],
+      })
+    );
+
+    wrap(
+      <SceneEditorDialog
+        scene={makeScene({
+          id: 'scene-1',
+          summary: 'Planned scene',
+          beats: [{ id: 'beat-1', text: 'Kept beat' }],
+        })}
+        isOpen={true}
+        openedViaTrigger={false}
+        defaultShowDiff={false}
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+      />
+    );
+
+    await act(async () => {});
+
+    const removedRow = document.body.querySelector('[data-diff-kind="removed"]');
+    expect(removedRow).toBeTruthy();
+    expect(removedRow?.textContent).toContain('Dropped beat');
+    // Removed beats are read-only: they are not in the editable beat list.
+    expect(removedRow?.querySelector('textarea')).toBeNull();
+    expect(screen.queryByDisplayValue('Dropped beat')).toBeNull();
+    expect(screen.getByDisplayValue('Kept beat').style.backgroundImage).toBe('');
+  });
+
+  it('does not mark beats that follow an inserted beat as changed', async () => {
+    // Positional comparison used to flag every beat after an insertion.
+    baselineScenesState.push(
+      makeScene({
+        id: 'scene-1',
+        summary: 'Planned scene',
+        beats: [
+          { id: 'beat-1', text: 'First beat' },
+          { id: 'beat-2', text: 'Second beat' },
+        ],
+      })
+    );
+
+    wrap(
+      <SceneEditorDialog
+        scene={makeScene({
+          id: 'scene-1',
+          summary: 'Planned scene',
+          beats: [
+            { id: 'beat-1', text: 'First beat' },
+            { id: 'beat-new', text: 'Inserted beat' },
+            { id: 'beat-2', text: 'Second beat' },
+          ],
+        })}
+        isOpen={true}
+        openedViaTrigger={false}
+        defaultShowDiff={false}
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+      />
+    );
+
+    await act(async () => {});
+
+    expect(document.body.querySelectorAll('[data-diff-kind="added"]')).toHaveLength(1);
+    expect(screen.getByDisplayValue('Inserted beat')).toBeTruthy();
+    expect(screen.getByDisplayValue('Second beat')).toBeTruthy();
+    expect(
+      screen.getByDisplayValue('Second beat').closest('[data-diff-kind]')
+    ).toBeNull();
+  });
+
   it('does not open the diff view when no scene field changed', async () => {
     const beats = [{ id: 'beat-1', text: 'Unchanged beat' }];
     baselineScenesState.push(
@@ -3396,5 +3522,60 @@ describe('SceneEditorDialog diff accept', () => {
     });
     expect(linkedProseEditor.innerHTML).not.toContain('cm-diff-inserted');
     expect(linkedProseEditor.innerHTML).not.toContain('cm-diff-deleted');
+  });
+
+  it('accepts the beats diff from a removed beat row', async () => {
+    // Removed beat rows have no textarea, so the section resolution must not
+    // rely on finding one — hovering the row and accepting must clear the
+    // beats diff instead of silently doing nothing.
+    baselineScenesState.push(
+      makeScene({
+        id: 'scene-1',
+        beats: [
+          { id: 'beat-1', text: 'Kept beat' },
+          { id: 'beat-2', text: 'Dropped beat' },
+        ],
+      })
+    );
+
+    wrap(
+      <SceneEditorDialog
+        scene={makeScene({
+          id: 'scene-1',
+          beats: [{ id: 'beat-1', text: 'Kept beat' }],
+        })}
+        isOpen
+        openedViaTrigger={false}
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+      />
+    );
+
+    const removedRow = await waitFor(() => {
+      const row = document.body.querySelector<HTMLElement>(
+        '[data-diff-kind="removed"]'
+      );
+      expect(row).toBeTruthy();
+      return row as HTMLElement;
+    });
+
+    const dialog = document.querySelector(
+      '[role="dialog"][aria-label="Edit Scene"]'
+    ) as HTMLElement;
+    const scroller = dialog.querySelector('.overflow-y-auto') as HTMLElement;
+    const rect = removedRow.getBoundingClientRect();
+    const cx = Math.round(rect.left + rect.width / 2);
+    const cy = Math.round(rect.top + rect.height / 2);
+    pointStore.set(`${cx},${cy}`, removedRow);
+    fireEvent.mouseMove(scroller, { clientX: cx, clientY: cy });
+
+    const acceptBtn = await screen.findByLabelText('Accept change');
+    fireEvent.click(acceptBtn);
+
+    await waitFor(() => {
+      expect(document.body.querySelector('[data-diff-kind="removed"]')).toBeNull();
+    });
+    expect(screen.getByDisplayValue('Kept beat')).toBeTruthy();
   });
 });

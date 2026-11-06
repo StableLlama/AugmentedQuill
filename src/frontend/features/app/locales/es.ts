@@ -614,6 +614,9 @@ export const es = {
     'Scene {{index}} (ID {{id}})': '#{{index}} · ID {{id}}',
     'Scene {{index}} of {{total}}': 'Escena {{index}} de {{total}}',
     'Scene ID: {{id}}': 'ID: {{id}}',
+    Failed: 'Falló',
+    'This tool call failed and changed nothing':
+      'Esta llamada de herramienta falló y no cambió nada',
     'AI changed fields: {{fields}}': 'IA cambió: {{fields}}',
     'Previous value: {{value}}': 'Antes: {{value}}',
     'Previous value unavailable': 'Valor anterior no disponible',

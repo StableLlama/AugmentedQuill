@@ -430,4 +430,127 @@ describe('useChatExecution', () => {
       )
     ).toBe(false);
   });
+
+  it('asks the model to fix a failed tool call instead of accepting its summary', async () => {
+    const refreshProjects = vi.fn().mockResolvedValue(undefined);
+    const refreshStory = vi.fn().mockResolvedValue(undefined);
+
+    const sendMessageMock = vi.fn();
+    vi.mocked(createChatSession).mockReturnValue({
+      sendMessage: sendMessageMock,
+    } as UnifiedChat);
+
+    sendMessageMock
+      .mockResolvedValueOnce({
+        text: '',
+        functionCalls: [
+          {
+            id: 'c7',
+            name: 'manage_scenes',
+            args: { action: 'update', scene_id: 7, update_data: { beats: [] } },
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        text: 'I have updated every scene.',
+        functionCalls: [],
+      });
+
+    vi.mocked(api.chat.executeTools).mockResolvedValueOnce({
+      ok: true,
+      appended_messages: [
+        {
+          content: JSON.stringify({
+            error: 'Invalid parameters',
+            details: [
+              {
+                type: 'string_type',
+                loc: ['update_data', 'beats', 4, 'text'],
+                msg: 'Input should be a valid string',
+              },
+            ],
+          }),
+          name: 'manage_scenes',
+          tool_call_id: 'c7',
+        },
+      ],
+      mutations: { story_changed: false },
+    });
+
+    const { result } = renderHook(() =>
+      useChatExecution({
+        getSystemPrompt: () => 'system',
+        activeChatConfig: { model: 'test', temperature: 0.5 },
+        isChatAvailable: true,
+        getAllowWebSearch: () => false,
+        currentChapterId: '1',
+        getCurrentChatId: () => 'chat-1',
+        currentChapter: { id: '1', title: 'Intro' },
+        refreshProjects,
+        refreshStory,
+        requestToolCallLoopAccess: vi.fn().mockResolvedValue('unlimited'),
+        confirmDangerousToolCalls: allowAllToolCalls,
+      })
+    );
+
+    await act(async () => {
+      await result.current.handleSendMessage('Add the beats');
+    });
+
+    expect(sendMessageMock).toHaveBeenCalledTimes(2);
+    const retryPayload = sendMessageMock.mock.calls[1][0] as { message: string };
+    // The retry hint names the failed tool, the exact field and the atomicity
+    // guarantee so the model can repair the call instead of reporting success.
+    expect(retryPayload.message).toContain('manage_scenes');
+    expect(retryPayload.message).toContain('update_data.beats.4.text');
+    expect(retryPayload.message).toContain('changed nothing');
+  });
+
+  it('does not send the failure hint when every tool call succeeded', async () => {
+    const refreshProjects = vi.fn().mockResolvedValue(undefined);
+    const refreshStory = vi.fn().mockResolvedValue(undefined);
+
+    const sendMessageMock = vi.fn();
+    vi.mocked(createChatSession).mockReturnValue({
+      sendMessage: sendMessageMock,
+    } as UnifiedChat);
+
+    sendMessageMock
+      .mockResolvedValueOnce({
+        text: '',
+        functionCalls: [{ id: 'c1', name: 'manage_project', args: { action: 'list' } }],
+      })
+      .mockResolvedValueOnce({ text: 'Done.', functionCalls: [] });
+
+    vi.mocked(api.chat.executeTools).mockResolvedValueOnce({
+      ok: true,
+      appended_messages: [
+        { content: '{"projects":[]}', name: 'manage_project', tool_call_id: 'c1' },
+      ],
+      mutations: { story_changed: false },
+    });
+
+    const { result } = renderHook(() =>
+      useChatExecution({
+        getSystemPrompt: () => 'system',
+        activeChatConfig: { model: 'test', temperature: 0.5 },
+        isChatAvailable: true,
+        getAllowWebSearch: () => false,
+        currentChapterId: '1',
+        getCurrentChatId: () => 'chat-1',
+        currentChapter: { id: '1', title: 'Intro' },
+        refreshProjects,
+        refreshStory,
+        requestToolCallLoopAccess: vi.fn().mockResolvedValue('unlimited'),
+        confirmDangerousToolCalls: allowAllToolCalls,
+      })
+    );
+
+    await act(async () => {
+      await result.current.handleSendMessage('List projects');
+    });
+
+    expect(sendMessageMock).toHaveBeenCalledTimes(2);
+    expect(sendMessageMock.mock.calls[1][0]).toEqual({ message: '' });
+  });
 });

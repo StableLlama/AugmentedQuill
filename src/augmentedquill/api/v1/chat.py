@@ -410,7 +410,6 @@ async def _run_tool_calls(
             args_obj = {}
         if not name or not call_id:
             continue
-        tool_names.append(name)
 
         with use_project_context(current_active_dir):
             msg = await execute_registered_tool(
@@ -423,6 +422,11 @@ async def _run_tool_calls(
             )
         if isinstance(msg, dict) and "role" not in msg:
             msg = tool_message(name, call_id, msg)
+        # Only calls that really ran count as operations: a rejected call is
+        # atomic and changed nothing, so it must not inflate the batch label,
+        # the operation count or the undo description.
+        if not _tool_message_reports_error(msg):
+            tool_names.append(name)
         if aggregate_manage_scenes_updates:
             manage_scenes_update_buffer.append(msg)
         else:
@@ -540,6 +544,24 @@ def _build_chat_tool_batch_label(tool_names: list[str]) -> str:
     if len(tool_names) == 2:
         return f"AI tools: {tool_names[0]}, {tool_names[1]}"
     return f"AI tools: {tool_names[0]} (+{len(tool_names) - 1})"
+
+
+def _tool_message_reports_error(message: Any) -> bool:
+    """Return True when a formatted tool message carries an error payload.
+
+    Tool calls are atomic: an error payload means the call changed nothing, so
+    the batch metadata must not count it as a performed operation.
+    """
+    payload: Any = message
+    if isinstance(payload, dict) and payload.get("role") == "tool":
+        try:
+            payload = _json.loads(payload.get("content") or "{}")
+        except (TypeError, ValueError):
+            return False
+    if isinstance(payload, dict):
+        error = payload.get("error")
+        return isinstance(error, str) and bool(error.strip())
+    return False
 
 
 @router.get("/chat", response_model=ChatInitialStateResponse)

@@ -60,6 +60,7 @@ import {
   normalizeChapterId,
 } from './sceneSortUtils';
 import { buildSceneTimelineOptions } from './timelineOptions';
+import { diffSceneBeats, type SceneBeatDiffEntry } from './sceneBeatDiff';
 import { getSceneProseFromContent, isLinkedProseLink } from './proseLinkCoordinates';
 import {
   parseZonedDateTime,
@@ -594,6 +595,23 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
     (): EditorHighlightColors => getEditorHighlightColors(paperTheme === 'dark'),
     [paperTheme]
   );
+  // Beat rows are tinted with the same translucent insert/delete tokens the
+  // editor uses, layered over the paper colour.  Theme classes alone (the old
+  // `bg-brand-gray-800/40`) were invisible against the dark dialog chrome, so
+  // an AI-added beat showed no highlight at all even though the diff was active.
+  const beatDiffSurface = (kind: 'added' | 'removed'): React.CSSProperties => {
+    const tint =
+      kind === 'added' ? highlightColors.diffInsertBg : highlightColors.diffDeleteBg;
+    return {
+      ...contentSurface,
+      backgroundImage: `linear-gradient(${tint}, ${tint})`,
+      borderLeft: `3px solid ${
+        kind === 'added'
+          ? highlightColors.diffInsertBorder
+          : highlightColors.diffDeleteBorder
+      }`,
+    };
+  };
   // Diff/Old/New tabs per content field (reset when the dialog opens for a
   // different scene).
   const [summaryTab, setSummaryTab] = useState<DiffViewTab>('diff');
@@ -1425,6 +1443,25 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
       baselineBeats.map((beat: SceneBeat) => beat.text)
     ) ||
       hasFieldHint('beats'));
+  // Aligned beat rows: unchanged beats stay editable, added beats are tinted
+  // green, removed baseline beats are shown struck through in red.  Comparing
+  // by array position (the previous approach) mislabelled every beat after an
+  // insertion and could not show deletions at all.
+  const beatDiffRows = useMemo((): SceneBeatDiffEntry[] => {
+    const currentTexts = beats.map((beat: SceneBeat) => beat.text);
+    if (!showDiff) {
+      return currentTexts.map((text: string, index: number): SceneBeatDiffEntry => ({
+        kind: 'unchanged',
+        text,
+        currentIndex: index,
+        baselineIndex: null,
+      }));
+    }
+    return diffSceneBeats(
+      baselineBeats.map((beat: SceneBeat) => beat.text),
+      currentTexts
+    );
+  }, [baselineBeats, beats, showDiff]);
   const activeCharactersChanged =
     showDiff &&
     (!arraysEqual(
@@ -1519,10 +1556,6 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
   const diffSectionCls = (changed: boolean): string =>
     changed
       ? `rounded-md ring-1 ring-brand-500/25 ${tc.isLight ? 'bg-brand-50' : 'bg-brand-gray-800/50'}`
-      : '';
-  const diffItemCls = (changed: boolean): string =>
-    changed
-      ? `rounded-md ${tc.isLight ? 'bg-brand-50 p-2' : 'bg-brand-gray-800/40 p-2'}`
       : '';
   const diffAddedItemCls = (changed: boolean): string =>
     changed
@@ -1956,11 +1989,24 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
 
   // ─── Diff accept / reject (unified — dispatched by element) ────────────
 
+  /**
+   * Resolve the diff section an element belongs to.
+   *
+   * Beat rows carry their own `data-diff` marker, so the nearest marker can be
+   * the row itself — and a removed beat row has no textarea to identify it.
+   * Walk up to the enclosing `data-diff-section` first so accept/reject always
+   * target the field, not the individual row.
+   */
+  const resolveDiffSection = (el: HTMLElement): HTMLElement | null =>
+    el.closest<HTMLElement>('[data-diff-section]') ??
+    el.closest<HTMLElement>('[data-diff="changed"]');
+
   /** Determine which diff section an element belongs to and accept it. */
   const handleDiffAccept = (el: HTMLElement): void => {
-    const section = el.closest('[data-diff="changed"]');
+    const section = resolveDiffSection(el);
+    const sectionName = section?.getAttribute('data-diff-section') ?? null;
     const label = section?.querySelector('label')?.textContent ?? '';
-    if (label.includes('Linked Prose')) {
+    if (sectionName === 'linked-prose' || label.includes('Linked Prose')) {
       // Accepting the linked prose accepts the current prose state, so the
       // diff view ends and only the new content remains.
       setAcceptedBaseline((prev: AcceptedBaseline) => ({
@@ -1975,10 +2021,11 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
       return;
     }
     // Section-level diff: find which section and accept it.
-    if (section.querySelector('.cm-content')) {
+    if (sectionName === 'summary' || section.querySelector('.cm-content')) {
       // Summary section (contains CodeMirror)
       setAcceptedBaseline((prev: AcceptedBaseline) => ({ ...prev, summary }));
     } else if (
+      sectionName === 'beats' ||
       section.textContent?.includes('Beats') ||
       section.querySelector('textarea')
     ) {
@@ -1992,9 +2039,10 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
 
   /** Determine which diff section an element belongs to and reject it. */
   const handleDiffReject = (el: HTMLElement): void => {
-    const section = el.closest('[data-diff="changed"]');
+    const section = resolveDiffSection(el);
+    const sectionName = section?.getAttribute('data-diff-section') ?? null;
     const label = section?.querySelector('label')?.textContent ?? '';
-    if (label.includes('Linked Prose')) {
+    if (sectionName === 'linked-prose' || label.includes('Linked Prose')) {
       // Reject: revert the prose to the baseline and clear the acceptance.
       const fallback = linkedProseBaseline ?? '';
       setLocalProseText(fallback);
@@ -2015,7 +2063,7 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
       }));
       return;
     }
-    if (section.querySelector('.cm-content')) {
+    if (sectionName === 'summary' || section.querySelector('.cm-content')) {
       const fallback = baselineScene?.summary ?? '';
       setSummary(fallback);
       setAcceptedBaseline((prev: AcceptedBaseline) => ({
@@ -2023,6 +2071,7 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
         summary: fallback,
       }));
     } else if (
+      sectionName === 'beats' ||
       section.textContent?.includes('Beats') ||
       section.querySelector('textarea')
     ) {
@@ -2168,6 +2217,7 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
           <div
             className={`${sectionCls} ${diffSectionCls(summaryChanged)}`}
             data-diff={summaryChanged ? 'changed' : undefined}
+            data-diff-section="summary"
           >
             <div className="flex items-center justify-between gap-2">
               <label className={labelCls}>{t('Scene Summary')}</label>
@@ -2240,6 +2290,7 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
           <div
             className={`${sectionCls} ${diffSectionCls(beatsChanged)}`}
             data-diff={beatsChanged ? 'changed' : undefined}
+            data-diff-section="beats"
           >
             <div className="flex items-center justify-between gap-2">
               <label className={labelCls}>{t('Beats')}</label>
@@ -2292,18 +2343,40 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
                 )}
               </div>
             ) : null}
-            {beats.map((beat: SceneBeat, idx: number) => {
-              const beatChanged =
-                showDiff && beat.text !== (baselineBeats[idx]?.text ?? '');
+            {beatDiffRows.map((row: SceneBeatDiffEntry) => {
+              if (row.currentIndex === null) {
+                // Beat the AI removed: keep the old text visible in the delete
+                // tint instead of letting it vanish from the diff view.
+                return (
+                  <div
+                    key={`removed-beat-${row.baselineIndex}`}
+                    data-diff="changed"
+                    data-diff-kind="removed"
+                    className="flex gap-2 items-start"
+                  >
+                    <div
+                      className={`${contentEditorCls} flex-1 border ${tc.border} line-through opacity-70`}
+                      style={beatDiffSurface('removed')}
+                    >
+                      {row.text}
+                    </div>
+                    <span className="mt-1 p-1.5" aria-hidden="true" />
+                  </div>
+                );
+              }
+              const idx = row.currentIndex;
+              const beat = beats[idx];
+              const beatAdded = row.kind === 'added';
               return (
                 <div
                   key={beat.id}
-                  data-diff={beatChanged ? 'changed' : undefined}
-                  className={`${diffItemCls(beatChanged)} flex gap-2 items-start`}
+                  data-diff={beatAdded ? 'changed' : undefined}
+                  data-diff-kind={beatAdded ? 'added' : undefined}
+                  className="flex gap-2 items-start"
                 >
                   <textarea
                     className={`${contentEditorCls} flex-1 border ${tc.border}`}
-                    style={contentSurface}
+                    style={beatAdded ? beatDiffSurface('added') : contentSurface}
                     rows={2}
                     placeholder={t('Beat text...')}
                     value={beat.text}
@@ -2853,6 +2926,7 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
           <div
             className={`${sectionCls} ${diffSectionCls(linkedProseChanged)}`}
             data-diff={linkedProseChanged ? 'changed' : undefined}
+            data-diff-section="linked-prose"
           >
             <div className="flex items-center justify-between gap-2">
               <label className={labelCls}>{t('Linked Prose')}</label>

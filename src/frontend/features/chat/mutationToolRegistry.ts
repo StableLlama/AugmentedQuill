@@ -177,16 +177,7 @@ const isNoopSceneMutationResult = (result: unknown): boolean => {
     return false;
   }
   const resultObj = result as Record<string, unknown>;
-  if (resultObj.changed === false) {
-    return true;
-  }
-  // Error results should NOT be treated as noop — the LLM reported an
-  // error and the user needs to see it.  We propagate the mutation so
-  // the chat UI can surface the failure.
-  if (typeof resultObj.error === 'string' && resultObj.error.length > 0) {
-    return false;
-  }
-  return false;
+  return resultObj.changed === false;
 };
 
 /** Build metadata fields. */
@@ -624,4 +615,59 @@ export const MUTATION_TOOL_REGISTRY: Record<string, MutFactory> = {
           },
         ];
   },
+};
+
+// ---------------------------------------------------------------------------
+// Failed calls
+// ---------------------------------------------------------------------------
+
+/**
+ * True when a tool result payload reports a failure instead of an applied
+ * change.  Every tool error payload starts with an `error` string; successful
+ * payloads never do.
+ */
+export const isToolErrorResult = (result: unknown): boolean => {
+  if (!result || typeof result !== 'object' || Array.isArray(result)) {
+    return false;
+  }
+  const error = (result as Record<string, unknown>).error;
+  return typeof error === 'string' && error.trim().length > 0;
+};
+
+/**
+ * Build the badge for a failed mutation tool call.
+ *
+ * A failed call changed nothing, so the badge must never claim a change: it
+ * keeps the tool's target (e.g. "Scene 7") for context, drops every change
+ * hint and is flagged as failed so the UI can render it red and skip
+ * navigation.
+ *
+ * Returns `null` when the call is not a mutation attempt (read-only actions),
+ * so reads that legitimately report "not found" produce no badge.
+ */
+export const buildFailedMutation = (
+  name: string,
+  call: MutCallResult
+): SessionMutation | null => {
+  const factory = MUTATION_TOOL_REGISTRY[name];
+  if (!factory) {
+    return null;
+  }
+  let produced: SessionMutation | SessionMutation[] | null;
+  try {
+    produced = factory(call);
+  } catch {
+    return null;
+  }
+  const first = Array.isArray(produced) ? produced[0] : produced;
+  if (!first) {
+    return null;
+  }
+  return {
+    id: `failed-${name}-${Date.now()}-${Math.random()}`,
+    type: first.type,
+    label: first.label,
+    targetId: first.targetId,
+    failed: true,
+  };
 };

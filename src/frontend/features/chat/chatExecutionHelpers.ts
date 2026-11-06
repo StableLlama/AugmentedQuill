@@ -31,6 +31,7 @@ import type {
   ChatToolExecutionResponse,
   ChatToolFunctionCall,
 } from '../../services/apiTypes';
+import { buildFailedMutation, isToolErrorResult } from './mutationToolRegistry';
 
 export type ChatToolMutationPayload = ChatToolExecutionResponse & {
   _call_results?: Array<{
@@ -42,6 +43,71 @@ export type ChatToolMutationPayload = ChatToolExecutionResponse & {
 
 const UNEXPECTED_TOOL_LOOP_STOP_HINT =
   'Your previous response appears to have stopped unexpectedly with no visible assistant reply. If your plan is not finished, continue from where you left off and proceed with the next required actions. If your plan is finished, provide a concise summary of what you completed.';
+
+/**
+ * Sent as the next turn when one or more tool calls of the round reported an
+ * error.  Tool calls are independent and atomic, so only the failed calls need
+ * to be retried — and the model must not present them as completed.
+ */
+const TOOL_CALL_FAILURE_RETRY_HINT =
+  'These tool calls failed and changed nothing: {{failures}}. Fix the arguments (the error details name the exact field) and retry only the failed calls now. Never report a failed call as completed.';
+
+const MAX_TOOL_FAILURE_SUMMARY_LENGTH = 400;
+const MAX_TOOL_FAILURE_ITEM_LENGTH = 160;
+
+const truncateHintText = (value: string, maxLength: number): string =>
+  value.length <= maxLength ? value : `${value.slice(0, maxLength - 1)}…`;
+
+/** Compact, actionable description of a failed tool result. */
+const describeToolFailure = (name: string, result: Record<string, unknown>): string => {
+  const error = typeof result.error === 'string' ? result.error.trim() : 'failed';
+  const details = Array.isArray(result.details) ? result.details : [];
+  const detail = details.find(
+    (entry: unknown): boolean => Boolean(entry) && typeof entry === 'object'
+  ) as Record<string, unknown> | undefined;
+  const detailPath = Array.isArray(detail?.loc) ? detail.loc.join('.') : '';
+  const detailMessage = typeof detail?.msg === 'string' ? detail.msg.trim() : '';
+  const message = typeof result.message === 'string' ? result.message.trim() : '';
+  const specifics = [detailMessage || message, detailPath ? `at ${detailPath}` : '']
+    .filter(Boolean)
+    .join(' ');
+  return truncateHintText(
+    specifics ? `${name}: ${error} (${specifics})` : `${name}: ${error}`,
+    MAX_TOOL_FAILURE_ITEM_LENGTH
+  );
+};
+
+/** One `{ args, result }` pair parsed from a tool execution response. */
+type ToolCallResult = {
+  name: string;
+  args: Record<string, unknown>;
+  result: Record<string, unknown>;
+};
+
+/**
+ * Summarise the failed mutation calls of one tool round.
+ *
+ * Read-only misses (for example a `get` that reports "not found") return no
+ * mutation from the registry and are ignored: retrying them cannot help.
+ */
+const summarizeFailedToolCalls = (callResults: ToolCallResult[]): string => {
+  const failures = callResults
+    .filter(
+      (callResult: ToolCallResult): boolean =>
+        isToolErrorResult(callResult.result) &&
+        buildFailedMutation(callResult.name, {
+          args: callResult.args,
+          result: callResult.result,
+        }) !== null
+    )
+    .map((callResult: ToolCallResult): string =>
+      describeToolFailure(callResult.name, callResult.result)
+    );
+  if (failures.length === 0) {
+    return '';
+  }
+  return truncateHintText(failures.join('; '), MAX_TOOL_FAILURE_SUMMARY_LENGTH);
+};
 
 const PROJECT_CONTEXT_TOOL_NAMES = new Set<string>([
   'refresh_project_context',
@@ -757,7 +823,12 @@ const handleToolResponse = async (
   };
 
   context.setLatestServerUsage?.(null);
-  let nextResult = await requestContinuation('');
+  const failureSummary = summarizeFailedToolCalls(callResults);
+  let nextResult = await requestContinuation(
+    failureSummary
+      ? TOOL_CALL_FAILURE_RETRY_HINT.replace('{{failures}}', failureSummary)
+      : ''
+  );
 
   // Some models occasionally terminate a post-tool continuation with an empty
   // assistant turn (finish_reason=stop, no content/tool calls). Give one
