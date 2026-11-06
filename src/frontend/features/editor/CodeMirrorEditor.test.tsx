@@ -1068,3 +1068,64 @@ describe('prose-link highlight plugin', () => {
     expect(container.querySelectorAll('.cm-prose-handle')).toHaveLength(2);
   });
 });
+
+describe('prose-link highlight range mapping', () => {
+  it('shifts stored ranges when text is inserted before them', async () => {
+    const ref = React.createRef<EditorView | null>();
+    await act(async () => {
+      render(<CodeMirrorEditor ref={ref} value="Hello world" onChange={vi.fn()} />);
+    });
+    act(() => {
+      ref.current!.dispatch({
+        effects: setProseHighlightEffect.of([{ sceneId: 's1', from: 0, to: 5 }]),
+      });
+    });
+
+    act(() => {
+      ref.current!.dispatch({ changes: { from: 0, insert: 'XYZ' } });
+    });
+
+    const ranges = ref.current!.state.field(proseHighlightField);
+    expect(ranges).toEqual([{ sceneId: 's1', from: 3, to: 8 }]);
+  });
+
+  it('drops a range whose text is deleted', async () => {
+    const ref = React.createRef<EditorView | null>();
+    await act(async () => {
+      render(<CodeMirrorEditor ref={ref} value="Hello world" onChange={vi.fn()} />);
+    });
+    act(() => {
+      ref.current!.dispatch({
+        effects: setProseHighlightEffect.of([{ sceneId: 's1', from: 0, to: 5 }]),
+      });
+    });
+
+    act(() => {
+      ref.current!.dispatch({ changes: { from: 0, to: 11, insert: '' } });
+    });
+
+    expect(ref.current!.state.field(proseHighlightField)).toEqual([]);
+  });
+
+  it('does not extend a range when text is appended at its end', async () => {
+    const ref = React.createRef<EditorView | null>();
+    await act(async () => {
+      render(<CodeMirrorEditor ref={ref} value="Hello world" onChange={vi.fn()} />);
+    });
+    act(() => {
+      ref.current!.dispatch({
+        effects: setProseHighlightEffect.of([{ sceneId: 's1', from: 0, to: 5 }]),
+      });
+    });
+
+    act(() => {
+      ref.current!.dispatch({ changes: { from: 5, insert: ' NEW' } });
+    });
+
+    // Inserted text at the boundary belongs to no scene until the range is
+    // recomputed from markers, so the stored range must not silently grow.
+    expect(ref.current!.state.field(proseHighlightField)).toEqual([
+      { sceneId: 's1', from: 0, to: 5 },
+    ]);
+  });
+});

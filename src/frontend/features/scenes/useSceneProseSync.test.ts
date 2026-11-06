@@ -1130,3 +1130,115 @@ describe('useSceneProseSync', () => {
     expect(editor.handle.setOnCursorChange).toHaveBeenCalledWith(null);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Range freshness: never render a range from a different document version
+// ---------------------------------------------------------------------------
+
+describe('useSceneProseSync range freshness', () => {
+  it('recomputes highlights when scene offsets change without a chapter change', () => {
+    const editor = makeEditorHandle();
+    const ref = makeRef(editor.handle);
+    const { result, rerender } = renderHook(
+      ({ scenes }: { scenes: Scene[] }) => useSceneProseSync(scenes, chapterUnit, ref),
+      { initialProps: { scenes: [sceneWithChapterLink] } }
+    );
+
+    act(() => {
+      result.current.handleSelectScene('scene-a');
+    });
+    expect(editor.setProseHighlights).toHaveBeenLastCalledWith([
+      { sceneId: 'scene-a', from: 5, to: 10 },
+    ] as ProseHighlightRange[]);
+
+    // Same chapter object, updated scene offsets (e.g. scene metadata patched
+    // after a write). The highlight must follow the new offsets.
+    const moved: Scene = {
+      ...sceneWithChapterLink,
+      prose_link: {
+        scope_type: 'chapter',
+        chapter_id: 'ch1',
+        start_offset: 0,
+        end_offset: 5,
+        content_hash: 'moved',
+      },
+    };
+    rerender({ scenes: [moved] });
+
+    expect(editor.setProseHighlights).toHaveBeenLastCalledWith([
+      { sceneId: 'scene-a', from: 0, to: 5 },
+    ] as ProseHighlightRange[]);
+  });
+
+  it('renders the exact marker range when the live document matches the stored content', () => {
+    const editor = makeEditorHandle();
+    const fullContent = 'AAA<!--scene:3:start-->Hello<!--scene:3:end-->BBB';
+    const chapter: WritingUnit = {
+      id: 'story',
+      scope: 'story',
+      title: 'Story',
+      content: fullContent,
+    };
+    const scene: Scene = {
+      ...sceneWithStoryLink,
+      id: '3',
+      prose_link: {
+        scope_type: 'story',
+        start_offset: 23,
+        end_offset: 28,
+        content_hash: 'h',
+      },
+    };
+    vi.mocked(editor.handle.getEditorView).mockReturnValue({
+      state: { doc: { toString: (): string => 'AAAHelloBBB' } },
+    } as never);
+
+    const ref = makeRef(editor.handle);
+    const { result } = renderHook(() => useSceneProseSync([scene], chapter, ref));
+
+    act(() => {
+      result.current.handleSelectScene('3');
+    });
+
+    expect(editor.setProseHighlights).toHaveBeenCalledWith([
+      { sceneId: '3', from: 3, to: 8 },
+    ] as ProseHighlightRange[]);
+  });
+
+  it('never renders a short/stale range when the document is ahead of the store', () => {
+    const editor = makeEditorHandle();
+    const fullContent = 'AAA<!--scene:3:start-->Hello<!--scene:3:end-->BBB';
+    const chapter: WritingUnit = {
+      id: 'story',
+      scope: 'story',
+      title: 'Story',
+      content: fullContent,
+    };
+    const scene: Scene = {
+      ...sceneWithStoryLink,
+      id: '3',
+      prose_link: {
+        scope_type: 'story',
+        start_offset: 23,
+        end_offset: 28,
+        content_hash: 'h',
+      },
+    };
+    // Streaming/commit lag: the editor shows more text than the stored chapter.
+    // A stale range would highlight only "Hello" and end before the real text;
+    // the hook must refuse to render anything instead.
+    vi.mocked(editor.handle.getEditorView).mockReturnValue({
+      state: { doc: { toString: (): string => 'AAAHelloBBB trailing text' } },
+    } as never);
+
+    const ref = makeRef(editor.handle);
+    const { result } = renderHook(() => useSceneProseSync([scene], chapter, ref));
+
+    act(() => {
+      result.current.handleSelectScene('3');
+    });
+
+    expect(editor.setProseHighlights).not.toHaveBeenCalled();
+    expect(editor.clearProseHighlight).toHaveBeenCalled();
+  });
+});

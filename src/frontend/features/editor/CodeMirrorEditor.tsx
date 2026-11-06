@@ -101,7 +101,28 @@ export const proseHighlightField = StateField.define<ProseHighlightRange[]>({
     for (const e of tr.effects) {
       if (e.is(setProseHighlightEffect)) return e.value;
     }
-    return value;
+    if (!tr.docChanged) return value;
+    // Ranges are absolute character offsets, so they MUST follow the document.
+    // Without this mapping, any edit (typing, streaming commit, external sync)
+    // leaves a decoration pointing at an old version of the text — the classic
+    // "highlight ends before the real prose" off-by-N bug.  Start/end are
+    // mapped with opposite associations so inserted text at a boundary does not
+    // silently join the scene; collapsed ranges are dropped.
+    let changed = false;
+    const mapped: ProseHighlightRange[] = [];
+    for (const range of value) {
+      const from = tr.changes.mapPos(range.from, 1);
+      const to = tr.changes.mapPos(range.to, -1);
+      if (from === range.from && to === range.to) {
+        mapped.push(range);
+        continue;
+      }
+      changed = true;
+      if (from < to) {
+        mapped.push({ ...range, from, to });
+      }
+    }
+    return changed ? mapped : value;
   },
 });
 

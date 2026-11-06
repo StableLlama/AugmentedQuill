@@ -1709,11 +1709,36 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
     setPendingNavigationSceneId(sceneId);
   };
 
+  /**
+   * Prose that must be written before the scene fields are saved, or null.
+   *
+   * Two cases write prose:
+   *  1. the user edited the field (`proseDirty`), and
+   *  2. the field shows prose the scope does not hold yet — e.g. right after
+   *     "Write Scene" when the post-write content refresh did not land.
+   *
+   * Case 2 is not optional: `proseDirty` stays false for streamed prose
+   * because it was never typed, so Save used to persist scene metadata only and
+   * silently discarded the freshly written prose from the page and from the
+   * reopened dialog.  Whatever the dialog displays must reach the scope.
+   */
+  const proseToPersistOnSave = (): string | null => {
+    if (!getLinkedProseText || !onSaveProseContent) return null;
+    if (!isLinkedProseLink(proseLink)) return null;
+    if (proseDirty) return localProseText;
+    const storedProse = getLinkedProseText(proseLink) ?? '';
+    if (localProseText.trim().length > 0 && storedProse.length === 0) {
+      return localProseText;
+    }
+    return null;
+  };
+
   const performSave = async (): Promise<void> => {
     setIsSaving(true);
     try {
-      if (proseDirty && isLinkedProseLink(proseLink) && onSaveProseContent) {
-        await onSaveProseContent(localProseText);
+      const proseToPersist = proseToPersistOnSave();
+      if (proseToPersist !== null && onSaveProseContent) {
+        await onSaveProseContent(proseToPersist);
       }
       const tagPersonalDatetimes: SceneTagPersonalDatetime[] = [
         ...activeTokens.flatMap(

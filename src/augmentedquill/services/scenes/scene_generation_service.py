@@ -32,6 +32,7 @@ from augmentedquill.services.scenes.scene_service import (
     link_prose,
     link_range_to_scene,
     list_scenes,
+    pad_generated_scene_prose,
     relink_scope_prose,
     scene_prose_is_linked,
     update_prose_content,
@@ -594,10 +595,21 @@ async def _finalize_write_scene_and_link(
     updated_scenes: list[dict[str, Any]] = []
 
     if scene_prose_is_linked(scene):
+        # Writing into an emptied scene span must not continue the previous
+        # scene's paragraph or run into the next one; pad only empty spans.
+        content_path = prepared.get("content_path")
+        current_content = (
+            content_path.read_text(encoding="utf-8")
+            if isinstance(content_path, Path) and content_path.exists()
+            else ""
+        )
+        padded_text = pad_generated_scene_prose(
+            current_content, scene_id, generated_text
+        )
         updated_scene = update_prose_content(
             project_dir,
             scene_id,
-            SceneUpdateProseContentRequest(text=generated_text),
+            SceneUpdateProseContentRequest(text=padded_text),
         )
         if updated_scene is None:
             raise LookupError(f"Scene '{scene_id}' not found")

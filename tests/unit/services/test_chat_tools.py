@@ -825,6 +825,367 @@ class ChatToolsTest(TestCase):
             "Sharper story summary",
         )
 
+    # ------------------------------------------------------------------
+    # Scene-scoped prose editing
+    # ------------------------------------------------------------------
+
+    def _prepare_two_scenes_with_prose(self) -> tuple[int, int, Path]:
+        """Create two linked scenes with prose and return their IDs + chapter file."""
+        self._bootstrap_project()
+        self._allow_prose_writing()
+        scene_one = self._create_scene("Scene one")
+        scene_two = self._create_scene("Scene two")
+        self._write_scene_prose(scene_one, "Alpha text belongs to scene one.")
+        self._write_scene_prose(scene_two, "Beta text belongs to scene two.")
+        chapter_file = self.projects_root / "demo" / "chapters" / "0001.txt"
+        return scene_one, scene_two, chapter_file
+
+    def _tool_result(self, data: dict) -> dict:
+        appended = data.get("appended_messages") or []
+        self.assertEqual(len(appended), 1, appended)
+        return json.loads(appended[0].get("content") or "{}")
+
+    def test_replace_text_in_scene_edits_only_the_target_scene(self):
+        scene_one, scene_two, chapter_file = self._prepare_two_scenes_with_prose()
+
+        data = self._post_single_tool_for_role(
+            "EDITING",
+            "replace_text_in_scene",
+            {
+                "scene_id": scene_one,
+                "old_text": "Alpha text",
+                "new_text": "Gamma text",
+            },
+        )
+        result = self._tool_result(data)
+
+        self.assertNotIn("error", result, result)
+        self.assertTrue(result.get("written"))
+        self.assertEqual(result.get("scene_id"), scene_one)
+        self.assertTrue((data.get("mutations") or {}).get("story_changed"))
+
+        content = chapter_file.read_text(encoding="utf-8")
+        self.assertIn(
+            f"<!--scene:{scene_one}:start-->Gamma text belongs to scene one."
+            f"<!--scene:{scene_one}:end-->",
+            content,
+        )
+        self.assertIn(
+            f"<!--scene:{scene_two}:start-->Beta text belongs to scene two."
+            f"<!--scene:{scene_two}:end-->",
+            content,
+        )
+
+    def test_write_scene_prose_replaces_only_the_scene_span(self):
+        scene_one, scene_two, chapter_file = self._prepare_two_scenes_with_prose()
+        prefix = chapter_file.read_text(encoding="utf-8").split(
+            f"<!--scene:{scene_one}:start-->", 1
+        )[0]
+
+        data = self._post_single_tool_for_role(
+            "EDITING",
+            "write_scene_prose",
+            {"scene_id": scene_one, "text": "A completely rewritten scene one."},
+        )
+        result = self._tool_result(data)
+
+        self.assertNotIn("error", result, result)
+        self.assertTrue(result.get("written"))
+
+        content = chapter_file.read_text(encoding="utf-8")
+        self.assertTrue(content.startswith(prefix))
+        self.assertIn(
+            f"<!--scene:{scene_one}:start-->A completely rewritten scene one."
+            f"<!--scene:{scene_one}:end-->",
+            content,
+        )
+        self.assertIn(
+            f"<!--scene:{scene_two}:start-->Beta text belongs to scene two."
+            f"<!--scene:{scene_two}:end-->",
+            content,
+        )
+
+    def test_write_scene_prose_rejects_scenes_with_annotation_markers(self):
+        scene_one, _scene_two, chapter_file = self._prepare_two_scenes_with_prose()
+        content = chapter_file.read_text(encoding="utf-8")
+        chapter_file.write_text(
+            content.replace(
+                "Alpha text belongs to scene one.",
+                "<!--annotation:ann-1:start-->Alpha"
+                "<!--annotation:ann-1:end--> text belongs to scene one.",
+            ),
+            encoding="utf-8",
+        )
+        annotated = chapter_file.read_text(encoding="utf-8")
+
+        data = self._post_single_tool_for_role(
+            "EDITING",
+            "write_scene_prose",
+            {"scene_id": scene_one, "text": "Rewritten without annotations."},
+        )
+        result = self._tool_result(data)
+
+        self.assertIn("annotation markers", result.get("error", ""))
+        self.assertEqual(chapter_file.read_text(encoding="utf-8"), annotated)
+        self.assertFalse((data.get("mutations") or {}).get("story_changed"))
+
+        # A targeted replacement outside the annotation still works.
+        targeted = self._post_single_tool_for_role(
+            "EDITING",
+            "replace_text_in_scene",
+            {
+                "scene_id": scene_one,
+                "old_text": "text belongs to scene one.",
+                "new_text": "text still belongs to scene one.",
+            },
+        )
+        targeted_result = self._tool_result(targeted)
+        self.assertNotIn("error", targeted_result, targeted_result)
+        self.assertIn(
+            "<!--annotation:ann-1:start-->Alpha<!--annotation:ann-1:end--> "
+            "text still belongs to scene one.",
+            chapter_file.read_text(encoding="utf-8"),
+        )
+
+    def test_scene_scoped_editing_assistant_hides_and_blocks_whole_chapter_tools(self):
+        scene_one, _scene_two, chapter_file = self._prepare_two_scenes_with_prose()
+        before = chapter_file.read_text(encoding="utf-8")
+
+        first_llm = {
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "nested_1",
+                    "type": "function",
+                    "function": {
+                        "name": "write_chapter_content",
+                        "arguments": json.dumps(
+                            {"chap_id": 1, "content": "Whole chapter replaced"}
+                        ),
+                    },
+                }
+            ],
+        }
+        second_llm = {"content": "Done.", "tool_calls": []}
+
+        with (
+            patch(
+                "augmentedquill.services.llm.llm.resolve_openai_credentials",
+                return_value=("http://localhost:11434/v1", None, "dummy", 30, "dummy"),
+            ),
+            patch(
+                "augmentedquill.services.llm.llm.unified_chat_complete",
+                new_callable=AsyncMock,
+            ) as mock_chat,
+        ):
+            mock_chat.side_effect = [first_llm, second_llm]
+            data = self._post_single_tool(
+                "call_editing_assistant",
+                {
+                    "task": "Refine the prose of this scene.",
+                    "scene_id": scene_one,
+                    "chapter_id": 1,
+                },
+            )
+
+        self.assertEqual(chapter_file.read_text(encoding="utf-8"), before)
+        self.assertFalse((data.get("mutations") or {}).get("story_changed"))
+
+        # The scoped session must not even see whole-unit prose writers.
+        offered_tools = {
+            tool.get("function", {}).get("name")
+            for tool in mock_chat.call_args_list[0].kwargs["tools"]
+        }
+        self.assertNotIn("write_chapter_content", offered_tools)
+        self.assertNotIn("replace_text_in_chapter", offered_tools)
+        self.assertIn("replace_text_in_scene", offered_tools)
+        self.assertIn("write_scene_prose", offered_tools)
+
+        payload = self._tool_result(data)
+        self.assertEqual(payload.get("response"), "Done.")
+
+    def test_scene_scoped_editing_assistant_edits_only_the_scene_prose(self):
+        scene_one, scene_two, chapter_file = self._prepare_two_scenes_with_prose()
+
+        first_llm = {
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "nested_1",
+                    "type": "function",
+                    "function": {
+                        "name": "replace_text_in_scene",
+                        "arguments": json.dumps(
+                            {
+                                "scene_id": scene_one,
+                                "old_text": "Alpha text",
+                                "new_text": "Refined alpha text",
+                            }
+                        ),
+                    },
+                }
+            ],
+        }
+        second_llm = {"content": "Done.", "tool_calls": []}
+
+        with (
+            patch(
+                "augmentedquill.services.llm.llm.resolve_openai_credentials",
+                return_value=("http://localhost:11434/v1", None, "dummy", 30, "dummy"),
+            ),
+            patch(
+                "augmentedquill.services.llm.llm.unified_chat_complete",
+                new_callable=AsyncMock,
+            ) as mock_chat,
+        ):
+            mock_chat.side_effect = [first_llm, second_llm]
+            data = self._post_single_tool(
+                "call_editing_assistant",
+                {"task": "Refine scene one.", "scene_id": scene_one},
+            )
+
+        self.assertTrue((data.get("mutations") or {}).get("story_changed"))
+        content = chapter_file.read_text(encoding="utf-8")
+        self.assertIn(
+            f"<!--scene:{scene_one}:start-->Refined alpha text belongs to scene one."
+            f"<!--scene:{scene_one}:end-->",
+            content,
+        )
+        self.assertIn(
+            f"<!--scene:{scene_two}:start-->Beta text belongs to scene two."
+            f"<!--scene:{scene_two}:end-->",
+            content,
+        )
+
+        # The scoped editor must receive the neighbouring prose so it does not
+        # rewrite the scene as a standalone passage that repeats other scenes.
+        editing_prompt = mock_chat.call_args_list[0].kwargs["messages"][1]["content"]
+        self.assertIn("Text immediately BEFORE this scene", editing_prompt)
+        self.assertIn("Text immediately AFTER this scene", editing_prompt)
+        self.assertIn("Beta text belongs to scene two.", editing_prompt)
+        self.assertIn("never repeat", editing_prompt.lower())
+        self.assertNotIn("<!--scene:", editing_prompt)
+
+    def test_get_scene_prose_includes_neighbour_context_without_markers(self):
+        _scene_one, scene_two, _chapter_file = self._prepare_two_scenes_with_prose()
+
+        data = self._post_single_tool_for_role(
+            "EDITING", "get_scene_prose", {"scene_id": scene_two}
+        )
+        result = self._tool_result(data)
+
+        self.assertNotIn("error", result, result)
+        self.assertEqual(result.get("prose"), "Beta text belongs to scene two.")
+        self.assertIn("Alpha text belongs to scene one.", result.get("text_before"))
+        self.assertEqual(result.get("text_after"), "(none)")
+        self.assertNotIn("<!--", json.dumps(result))
+
+    def test_scene_scoped_editing_assistant_rejects_scene_metadata_writes(self):
+        scene_one, _scene_two, _chapter_file = self._prepare_two_scenes_with_prose()
+
+        first_llm = {
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "nested_1",
+                    "type": "function",
+                    "function": {
+                        "name": "manage_scenes",
+                        "arguments": json.dumps(
+                            {
+                                "action": "update",
+                                "scene_id": scene_one,
+                                "update_data": {"summary": "Hijacked summary"},
+                            }
+                        ),
+                    },
+                }
+            ],
+        }
+        second_llm = {"content": "Done.", "tool_calls": []}
+
+        with (
+            patch(
+                "augmentedquill.services.llm.llm.resolve_openai_credentials",
+                return_value=("http://localhost:11434/v1", None, "dummy", 30, "dummy"),
+            ),
+            patch(
+                "augmentedquill.services.llm.llm.unified_chat_complete",
+                new_callable=AsyncMock,
+            ) as mock_chat,
+        ):
+            mock_chat.side_effect = [first_llm, second_llm]
+            data = self._post_single_tool(
+                "call_editing_assistant",
+                {"task": "Refine scene one.", "scene_id": scene_one},
+            )
+
+        self.assertFalse((data.get("mutations") or {}).get("story_changed"))
+        scene = self._get_scene(scene_one)
+        self.assertNotEqual(scene.get("summary"), "Hijacked summary")
+
+    def test_scene_scoped_editing_assistant_rejects_edits_to_another_scene(self):
+        scene_one, scene_two, chapter_file = self._prepare_two_scenes_with_prose()
+        before = chapter_file.read_text(encoding="utf-8")
+
+        first_llm = {
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "nested_1",
+                    "type": "function",
+                    "function": {
+                        "name": "replace_text_in_scene",
+                        "arguments": json.dumps(
+                            {
+                                "scene_id": scene_two,
+                                "old_text": "Beta text",
+                                "new_text": "Leaked edit",
+                            }
+                        ),
+                    },
+                }
+            ],
+        }
+        second_llm = {"content": "Done.", "tool_calls": []}
+
+        with (
+            patch(
+                "augmentedquill.services.llm.llm.resolve_openai_credentials",
+                return_value=("http://localhost:11434/v1", None, "dummy", 30, "dummy"),
+            ),
+            patch(
+                "augmentedquill.services.llm.llm.unified_chat_complete",
+                new_callable=AsyncMock,
+            ) as mock_chat,
+        ):
+            mock_chat.side_effect = [first_llm, second_llm]
+            data = self._post_single_tool(
+                "call_editing_assistant",
+                {"task": "Refine scene one.", "scene_id": scene_one},
+            )
+
+        self.assertEqual(chapter_file.read_text(encoding="utf-8"), before)
+        self.assertFalse((data.get("mutations") or {}).get("story_changed"))
+
+    def test_call_editing_assistant_rejects_scene_without_prose(self):
+        self._bootstrap_project()
+        scene_id = self._create_scene("Planning only scene")
+
+        with patch(
+            "augmentedquill.services.llm.llm.unified_chat_complete",
+            new_callable=AsyncMock,
+        ) as mock_chat:
+            data = self._post_single_tool(
+                "call_editing_assistant",
+                {"task": "Refine the scene.", "scene_id": scene_id},
+            )
+            mock_chat.assert_not_called()
+
+        payload = self._tool_result(data)
+        self.assertIn("error", payload)
+        self.assertFalse((data.get("mutations") or {}).get("story_changed"))
+
     def test_image_mutation_tools_emit_story_changed_and_support_undo_redo(self):
         self._bootstrap_project()
         pdir = self.projects_root / "demo"

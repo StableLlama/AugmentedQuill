@@ -1585,3 +1585,98 @@ describe('getSceneProseFromContent (baseline slicing)', () => {
     expect(getSceneProseFromContent('Alpha Bravo', '7', null)).toBeNull();
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+// resolveVerifiedSceneRange — fail-closed range resolution
+// ═══════════════════════════════════════════════════════════════════════
+
+import { resolveVerifiedSceneRange } from './proseLinkCoordinates';
+
+function makeScene(sceneId: number, link: SceneProseLink | null): Scene {
+  return {
+    id: sceneId,
+    title: `Scene ${sceneId}`,
+    summary: '',
+    prose_link: link,
+    pinboard_x: 0,
+    pinboard_y: 0,
+    order_index: 0,
+    predecessor_ids: [],
+    created_at: '',
+    updated_at: '',
+  } as Scene;
+}
+
+describe('resolveVerifiedSceneRange', () => {
+  const fullContent = 'AAA<!--scene:3:start-->Hello<!--scene:3:end-->BBB';
+  const visible = 'AAAHelloBBB';
+
+  it('returns the exact marker-derived range when every layer agrees', () => {
+    const scene = makeScene(
+      3,
+      makeLink({ scope_type: 'story', start_offset: 23, end_offset: 28 })
+    );
+    const unit = makeUnit({ scope: 'story', id: 'story', content: fullContent });
+    expect(
+      resolveVerifiedSceneRange(visible, unit, [scene], fullContent, scene)
+    ).toEqual({ from: 3, to: 8 });
+  });
+
+  it('returns the range even when stored offsets are stale (markers win)', () => {
+    const scene = makeScene(
+      3,
+      makeLink({ scope_type: 'story', start_offset: 0, end_offset: 3 })
+    );
+    const unit = makeUnit({ scope: 'story', id: 'story', content: fullContent });
+    expect(
+      resolveVerifiedSceneRange(visible, unit, [scene], fullContent, scene)
+    ).toEqual({ from: 3, to: 8 });
+  });
+
+  it('returns null when the rendered document is a different version', () => {
+    const scene = makeScene(
+      3,
+      makeLink({ scope_type: 'story', start_offset: 23, end_offset: 28 })
+    );
+    const unit = makeUnit({ scope: 'story', id: 'story', content: fullContent });
+    // A streaming document that is one chunk ahead must never produce a range.
+    expect(
+      resolveVerifiedSceneRange(`${visible} extra`, unit, [scene], fullContent, scene)
+    ).toBeNull();
+    expect(
+      resolveVerifiedSceneRange(visible.slice(0, -1), unit, [scene], fullContent, scene)
+    ).toBeNull();
+  });
+
+  it('returns null when the content has no markers (never guesses from offsets)', () => {
+    const scene = makeScene(
+      3,
+      makeLink({ scope_type: 'story', start_offset: 0, end_offset: 5 })
+    );
+    const unit = makeUnit({ scope: 'story', id: 'story', content: visible });
+    expect(
+      resolveVerifiedSceneRange(visible, unit, [scene], visible, scene)
+    ).toBeNull();
+  });
+
+  it('returns null when the scene has no span in the marker content', () => {
+    const scene = makeScene(
+      9,
+      makeLink({ scope_type: 'story', start_offset: 23, end_offset: 28 })
+    );
+    const unit = makeUnit({ scope: 'story', id: 'story', content: fullContent });
+    expect(
+      resolveVerifiedSceneRange(visible, unit, [scene], fullContent, scene)
+    ).toBeNull();
+  });
+
+  it('returns null for an emptied (zero-width) span', () => {
+    const empty = '<!--scene:3:start--><!--scene:3:end-->';
+    const scene = makeScene(
+      3,
+      makeLink({ scope_type: 'story', start_offset: 20, end_offset: 20 })
+    );
+    const unit = makeUnit({ scope: 'story', id: 'story', content: empty });
+    expect(resolveVerifiedSceneRange('', unit, [scene], empty, scene)).toBeNull();
+  });
+});

@@ -59,6 +59,7 @@ class ChatToolContractsTest(TestCase):
         "get_chapter_metadata",
         "get_chapter_summaries",
         "get_current_chapter_id",
+        "get_scene_prose",
         "manage_images",
         "manage_project",
         "manage_scenes",
@@ -82,6 +83,9 @@ class ChatToolContractsTest(TestCase):
         "write_chapter_content",
         "write_story_content",
         "write_book_content",
+        "get_scene_prose",
+        "replace_text_in_scene",
+        "write_scene_prose",
     }
 
     def setUp(self):
@@ -1594,6 +1598,8 @@ class ChatToolContractsTest(TestCase):
             "update_chapter_metadata",
             "write_chapter_content",
             "replace_text_in_chapter",
+            "replace_text_in_scene",
+            "write_scene_prose",
             "apply_chapter_replacements",
             "insert_text_at_marker",
             "write_chapter_summary",

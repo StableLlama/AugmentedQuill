@@ -749,6 +749,50 @@ class ScenesApiTest(ApiTestCase):
         self.assertEqual(payload["generated_text"], "Generated scene prose.")
         self.assertEqual(payload["scene"]["id"], scene["id"])
 
+    def test_write_scene_into_empty_span_starts_a_new_paragraph(self) -> None:
+        """Generated prose for an empty scene must not continue the previous paragraph."""
+        first = self._create(summary="One")
+        second = self._create(summary="Two")
+        pdir = self.projects_root / self.pname
+        # Scene 1 owns prose, scene 2 is an empty span right after it (no
+        # paragraph break in between).  This is the state left by an earlier
+        # boundary detection / linking step.
+        (pdir / "content.md").write_text(
+            f"<!--scene:{first['id']}:start-->Scene one prose."
+            f"<!--scene:{first['id']}:end-->"
+            f"<!--scene:{second['id']}:start-->"
+            f"<!--scene:{second['id']}:end-->",
+            encoding="utf-8",
+        )
+        (pdir / "unlinked.txt").write_text("", encoding="utf-8")
+
+        with patch(
+            "augmentedquill.services.scenes.scene_generation_service.llm.unified_chat_complete",
+            new=AsyncMock(return_value={"content": "Scene two prose."}),
+        ):
+            resp = self.client.post(
+                self._url(f"/{second['id']}/write"),
+                json={
+                    "scope_type": "story",
+                    "include_following_scenes": 0,
+                    "detect_boundaries": False,
+                },
+            )
+
+        self.assertEqual(resp.status_code, 200, resp.text)
+        content = (pdir / "content.md").read_text(encoding="utf-8")
+        self.assertIn(
+            f"<!--scene:{second['id']}:start-->\n\nScene two prose."
+            f"<!--scene:{second['id']}:end-->",
+            content,
+        )
+        # Scene 1 is untouched.
+        self.assertIn(
+            f"<!--scene:{first['id']}:start-->Scene one prose."
+            f"<!--scene:{first['id']}:end-->",
+            content,
+        )
+
     def test_write_scene_streams_prose_chunks_and_final_result(self) -> None:
         """The streaming write-scene route emits prose_chunk then result events."""
         scene = self._create(summary="Write scene stream")

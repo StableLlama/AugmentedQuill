@@ -346,6 +346,112 @@ def parse_scene_spans(content: str) -> list[SceneSpan]:
     ]
 
 
+def collect_marker_violations(content: str) -> frozenset[str]:
+    """Return stable violation codes for *content* (empty when consistent).
+
+    Codes are layer-scoped and deliberately free of byte offsets, so callers
+    can compare two versions of the same document ("did this write introduce
+    new corruption?") without false positives caused by text moving around.
+
+    This is the canonical violation inventory for the write choke point; the
+    human-readable :func:`validate_marker_integrity` remains the public
+    fail-fast gate for callers that just need a ``ValueError``.
+    """
+    violations: set[str] = set()
+    try:
+        validate_internal_marker_tokens(content)
+    except ValueError:
+        violations.add("tokens:malformed")
+
+    sentinel = object()
+    for layer in MARKER_LAYERS:
+        open_starts: dict[str, int | object] = {}
+        spans: list[tuple[int, int]] = []
+        for match in _layer_marker_re(layer).finditer(content):
+            raw_id = match.group(1)
+            if match.group(2) == "start":
+                if raw_id in open_starts:
+                    violations.add(f"{layer.name}:duplicate-start:{raw_id}")
+                open_starts[raw_id] = match.end()
+                continue
+            start = open_starts.pop(raw_id, sentinel)
+            if start is sentinel:
+                violations.add(f"{layer.name}:orphan-end:{raw_id}")
+            else:
+                spans.append((int(start), match.start()))
+        for raw_id in open_starts:
+            violations.add(f"{layer.name}:unclosed:{raw_id}")
+        if layer.exclusive:
+            ordered = sorted(spans)
+            if any(cur[0] < prev[1] for prev, cur in itertools.pairwise(ordered)):
+                violations.add(f"{layer.name}:overlap")
+    return frozenset(violations)
+
+
+def assert_scene_spans_consistent(content: str) -> None:
+    """Assert every invariant a marker-bearing prose document must satisfy.
+
+    This is the shared invariant library used by tests and by the
+    scene-service write choke point.  It guarantees that the *rendered*
+    representation (prose without markers) and the *stored* representation
+    (markers + offsets) describe exactly the same text — the property whose
+    violation produces off-by-N bugs (a scene highlight/text that ends before
+    or after the real prose).
+
+    Raises ``ValueError`` when:
+
+    1. marker integrity fails (balance, exclusivity, token shape);
+    2. scene spans are not ordered / overlap each other;
+    3. a scene span slice contains another scene's marker token;
+    4. a scene marker token is orphaned (no parsed span owns it);
+    5. the marker-stripped length does not match the number of marker bytes;
+    6. the visible↔raw offset map does not round-trip character by character.
+    """
+    validate_marker_integrity(content)
+
+    spans = parse_scene_spans(content)
+    previous_end = -1
+    for span in spans:
+        if span.start > span.end:
+            raise ValueError(
+                f"Scene {span.scene_id}: invalid span [{span.start}, {span.end})."
+            )
+        if span.start < previous_end:
+            raise ValueError(
+                f"Scene {span.scene_id}: span starts before the previous scene "
+                "ended."
+            )
+        previous_end = span.end
+        if _layer_marker_re(SCENE_LAYER).search(content[span.start : span.end]):
+            raise ValueError(
+                f"Scene {span.scene_id}: prose span contains a scene marker token."
+            )
+        if find_scene_marker_span(content, span.scene_id) != span:
+            raise ValueError(
+                f"Scene {span.scene_id}: find_scene_marker_span disagrees with "
+                "the parsed spans."
+            )
+
+    marker_ranges = [m.span() for m in _INTERNAL_MARKER_RE.finditer(content)]
+    visible = strip_internal_markers(content)
+    removed_bytes = sum(end - start for start, end in marker_ranges)
+    if len(visible) != len(content) - removed_bytes:
+        raise ValueError(
+            "Marker-stripped prose length does not match the stripped bytes "
+            f"({len(visible)} != {len(content)} - {removed_bytes})."
+        )
+
+    offsets = visible_offset_map(content)
+    if len(offsets) != len(visible) + 1:
+        raise ValueError("Visible offset map has an invalid length.")
+    for index, char in enumerate(visible):
+        if content[offsets[index]] != char:
+            raise ValueError(
+                f"Visible offset map broke at index {index}: "
+                f"{content[offsets[index]]!r} != {char!r}."
+            )
+
+
 def parse_annotation_spans(content: str) -> list[AnnotationSpan]:
     """Return all annotation spans parsed from *content*, sorted by start."""
     return [
@@ -438,6 +544,41 @@ def strip_internal_markers(content: str) -> str:
     marker tokens never leak into prompts or model output.
     """
     return remove_annotation_markers(remove_markers(content))
+
+
+def internal_marker_spans(content: str) -> list[tuple[int, int]]:
+    """Return raw ``(start, end)`` offsets of every internal marker token.
+
+    Covers scene *and* annotation markers.  Callers use this to guarantee that
+    a prose rewrite never swallows marker tokens (which would drop scene links
+    or annotations).
+    """
+    return [
+        (match.start(), match.end()) for match in _INTERNAL_MARKER_RE.finditer(content)
+    ]
+
+
+def visible_offset_map(content: str) -> list[int]:
+    """Map every fully-stripped index in *content* to its raw offset.
+
+    The returned list has ``len(strip_internal_markers(content)) + 1`` entries;
+    ``result[i]`` is the raw offset of the ``i``-th visible character, and the
+    final entry is ``len(content)``.  Use it to translate a range found in
+    marker-free prose back to raw-content offsets without re-implementing the
+    marker walk.
+    """
+    offsets: list[int] = []
+    cursor = 0
+    for match in _INTERNAL_MARKER_RE.finditer(content):
+        while cursor < match.start():
+            offsets.append(cursor)
+            cursor += 1
+        cursor = match.end()
+    while cursor < len(content):
+        offsets.append(cursor)
+        cursor += 1
+    offsets.append(len(content))
+    return offsets
 
 
 def inject_markers(

@@ -1430,6 +1430,59 @@ describe('SceneEditorDialog save flow', () => {
     expect(onSaveProseContent).not.toHaveBeenCalled();
   });
 
+  it('persists freshly written prose that the store does not know about yet', async () => {
+    // Regression: "Write Scene" showed the generated prose in the dialog, but
+    // the store refresh after the write failed, so the store still resolved an
+    // empty slice for this scene.  `proseDirty` stayed false (the prose came
+    // from the write, not from typing), so Save persisted metadata only and the
+    // prose vanished from the page and from the reopened dialog.
+    const generated = 'The second scene opens on the line.';
+    const onSaveProseContent = vi.fn(async () => undefined);
+    const onSave = vi.fn(async () => undefined);
+    const proseLink: SceneProseLink = {
+      scope_type: 'story',
+      start_offset: 15,
+      end_offset: 15 + generated.length,
+      content_hash: 'abc',
+      chapter_id: null,
+      book_id: null,
+      is_stale: false,
+    };
+    // Store slice is still empty — the authoritative refresh has not landed.
+    const getLinkedProseText = vi.fn(() => '');
+    const onWriteScene = vi.fn(
+      async (onProse?: (text: string) => void): Promise<string> => {
+        onProse?.(generated);
+        return generated;
+      }
+    );
+
+    wrap(
+      <SceneEditorDialog
+        scene={makeScene({ prose_link: proseLink, beats: WRITE_BEATS })}
+        isOpen
+        onClose={NOOP_CLOSE}
+        onSave={onSave}
+        onDelete={NOOP_DELETE}
+        getLinkedProseText={getLinkedProseText}
+        onSaveProseContent={onSaveProseContent}
+        onWriteScene={onWriteScene}
+      />
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Prose from Beats/i }));
+    });
+
+    const saveBtn = screen.getByRole('button', { name: /Save/i });
+    await act(async () => {
+      fireEvent.click(saveBtn);
+    });
+
+    expect(onSaveProseContent).toHaveBeenCalledWith(generated);
+    expect(onSave).toHaveBeenCalledOnce();
+  });
+
   it('calls onSaveProseContent BEFORE onSave when prose text was edited', async () => {
     const callOrder: string[] = [];
     const linkedProseEditorRef = React.createRef<EditorView | null>();

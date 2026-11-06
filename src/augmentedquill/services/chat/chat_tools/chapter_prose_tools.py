@@ -27,8 +27,17 @@ from augmentedquill.services.chat.chat_tool_decorator import (
     EDITING_ROLE,
     ToolModel,
     chat_tool,
+    tool_message,
 )
 from augmentedquill.services.chat.chat_tools.chapter_tools import MARKER
+from augmentedquill.services.chat.chat_tools.scene_prose_tools import (
+    EDITING_SCENE_SCOPE_KEY,
+    SCENE_SCOPED_FORBIDDEN_TOOLS,
+    SceneProseTarget,
+    load_scene_prose_target,
+    scene_scope_forbidden_reason,
+    scene_scope_prompt_fields,
+)
 from augmentedquill.services.exceptions import BadRequestError
 from augmentedquill.services.projects.projects import (
     get_active_project_dir,
@@ -46,6 +55,7 @@ from augmentedquill.services.scenes.scene_service import (
     get_scene,
     link_range_to_scene,
     list_scenes,
+    pad_generated_scene_prose,
     scene_prose_is_linked,
     scope_link_for_content_path,
     update_prose_content,
@@ -287,7 +297,9 @@ def _append_prose_to_scene(
             update_prose_content(
                 active,
                 scene_id,
-                SceneUpdateProseContentRequest(text=combined),
+                SceneUpdateProseContentRequest(
+                    text=pad_generated_scene_prose(content, scene_id, combined)
+                ),
             )
             return {
                 "written": True,
@@ -843,6 +855,18 @@ class CallEditingAssistantParams(ToolModel):
         None,
         description="Optional book ID (series only). Used together with chapter_id to disambiguate the active chapter.",
     )
+    scene_id: int | None = Field(
+        None,
+        description=(
+            "Optional scene ID. When provided, the editing session is LIMITED to "
+            "that scene's prose: the editor receives the scene metadata plus its "
+            "current prose and may only change text inside the scene's markers. "
+            "Whole-chapter/whole-story rewrite tools are disabled for that call. "
+            "Pass scene_id whenever the task targets one scene (look scene IDs up "
+            "with manage_scenes(action='list'/'get')). Prose the scene does not "
+            "have yet must be created with call_writing_llm instead."
+        ),
+    )
 
 
 @chat_tool(
@@ -879,11 +903,58 @@ async def call_editing_assistant(
     project_lang = str(story.get("language", "en") or "en")
     sys_msg = get_system_message("editing_llm", model_overrides, language=project_lang)
 
+    # A scene-scoped session may only touch that scene's prose.  Resolve the
+    # target before any prompt/tool construction so an invalid scope fails
+    # before the EDITING LLM is even called.
+    scene_target: SceneProseTarget | None = None
+    if params.scene_id is not None:
+        if active is None:
+            return {
+                "error": "No active project",
+                "message": "scene_id requires an active project.",
+                "details": {"scene_id": params.scene_id},
+            }
+        resolved = load_scene_prose_target(active, params.scene_id)
+        if isinstance(resolved, dict):
+            return {
+                "error": "Scene cannot be edited as prose",
+                "message": (
+                    f"Scene {params.scene_id} cannot be edited: {resolved.get('error')} "
+                    "Create prose for a scene without prose by calling "
+                    "call_writing_llm with that scene_id."
+                ),
+                "details": {"scene_id": params.scene_id},
+            }
+        scene_target = resolved
+        scene_link = scene_target.link
+        if (
+            params.chapter_id is not None
+            and str(scene_link.get("scope_type") or "") == "chapter"
+            and str(scene_link.get("chapter_id") or "") != str(params.chapter_id)
+        ):
+            return {
+                "error": "Scene/chapter mismatch",
+                "message": (
+                    f"Scene {params.scene_id} belongs to chapter "
+                    f"{scene_link.get('chapter_id')}, not chapter {params.chapter_id}."
+                ),
+                "details": {
+                    "scene_id": params.scene_id,
+                    "scene_chapter_id": scene_link.get("chapter_id"),
+                    "chapter_id": params.chapter_id,
+                },
+            }
+
     ctx_note = ""
     if params.chapter_id is not None:
         ctx_note = f"\nActive chapter ID for this task: {params.chapter_id}"
         if params.book_id:
             ctx_note += f", book ID: {params.book_id}"
+    if scene_target is not None:
+        ctx_note += (
+            f"\nScene scope: this task may only modify the prose of scene "
+            f"{scene_target.scene.get('id')}."
+        )
 
     user_content = get_user_prompt(
         "call_editing_assistant_request",
@@ -891,6 +962,12 @@ async def call_editing_assistant(
         task=params.task,
         context_note=ctx_note,
     )
+    if scene_target is not None:
+        user_content += "\n\n" + get_user_prompt(
+            "call_editing_assistant_scene_scope",
+            language=project_lang,
+            **scene_scope_prompt_fields(scene_target),
+        )
 
     messages = [
         {"role": "system", "content": sys_msg},
@@ -903,6 +980,10 @@ async def call_editing_assistant(
         base_nested_payload["active_chapter_id"] = params.chapter_id
     if params.book_id is not None:
         base_nested_payload["active_book_id"] = params.book_id
+    scene_scope_id: int | None = None
+    if scene_target is not None:
+        scene_scope_id = int(scene_target.scene.get("id") or 0)
+        base_nested_payload[EDITING_SCENE_SCOPE_KEY] = scene_scope_id
 
     _editing_project_type: str | None = None
     try:
@@ -915,6 +996,14 @@ async def call_editing_assistant(
     tools = get_registered_tool_schemas(
         model_type=EDITING_ROLE, project_type=_editing_project_type
     )
+    if scene_scope_id is not None:
+        # Whole-unit prose writers could rewrite prose outside the scene; a
+        # scoped session must only see the scene-scoped prose tools.
+        tools = [
+            tool
+            for tool in tools
+            if tool.get("function", {}).get("name") not in SCENE_SCOPED_FORBIDDEN_TOOLS
+        ]
 
     final_output = ""
     recommended_updates: list[dict] = []
@@ -975,6 +1064,34 @@ async def call_editing_assistant(
             nested_payload = dict(base_nested_payload)
             nested_payload["_tool_role"] = EDITING_ROLE
 
+            if scene_scope_id is not None and (
+                forbidden_reason := scene_scope_forbidden_reason(f_name, args_obj)
+            ):
+                # The schema already hides these tools, but a hallucinated call
+                # must still be rejected instead of touching other prose.
+                messages.append(
+                    tool_message(
+                        f_name,
+                        tcall_id,
+                        {
+                            "error": "Tool unavailable in scene scope",
+                            "message": (
+                                f"This editing session is limited to the prose of "
+                                f"scene {scene_scope_id}: {forbidden_reason} Use "
+                                "replace_text_in_scene for targeted edits or "
+                                "write_scene_prose for a complete rewrite of that "
+                                "scene. Other scenes and all text outside the "
+                                "scene are read-only."
+                            ),
+                            "details": {
+                                "tool": f_name,
+                                "allowed_scene_id": scene_scope_id,
+                            },
+                        },
+                    )
+                )
+                continue
+
             tool_res = await execute_registered_tool(
                 f_name,
                 args_obj,
@@ -984,10 +1101,6 @@ async def call_editing_assistant(
                 tool_role=EDITING_ROLE,
             )
             if "role" not in tool_res:
-                from augmentedquill.services.chat.chat_tool_decorator import (
-                    tool_message,
-                )
-
                 tool_res = tool_message(f_name, tcall_id, tool_res)
 
             if f_name == "recommend_metadata_updates":

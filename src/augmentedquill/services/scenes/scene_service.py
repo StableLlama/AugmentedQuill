@@ -34,6 +34,7 @@ from augmentedquill.models.scene import (
 )
 from augmentedquill.services.scenes.scene_markers import (
     SceneSpan,
+    collect_marker_violations,
     find_scene_marker_span,
     inject_annotation_markers,
     inject_markers,
@@ -46,6 +47,7 @@ from augmentedquill.services.scenes.scene_markers import (
     scene_marker_token,
     snap_offset_outside_markers,
     snap_range_outside_markers,
+    strip_internal_markers,
     validate_internal_marker_tokens,
     validate_marker_integrity,
     validate_scene_marker_tokens,
@@ -500,7 +502,35 @@ def _same_prose_scope(a: dict[str, Any], b: dict[str, Any]) -> bool:
 
 
 def _write_text_atomic(path: Path, content: str) -> None:
-    """Write text atomically so a failed save never leaves partial content."""
+    """Write text atomically so a failed save never leaves partial content.
+
+    This is the single choke point for every scene-scope prose write.  Marker
+    and offset invariants are checked *before* the bytes hit disk, so a write
+    can never persist content whose prose and scene spans disagree (the
+    off-by-N class of corruption).
+
+    Repair paths (e.g. reorder cleaning a previously corrupted file) may
+    rewrite content that was already corrupt, but a write must never
+    *introduce* corruption: every violation in the new content must already
+    exist on disk.
+    """
+    new_violations = collect_marker_violations(content)
+    if new_violations:
+        existing_violations: frozenset[str] = frozenset()
+        try:
+            if path.exists():
+                existing_violations = collect_marker_violations(
+                    path.read_text(encoding="utf-8")
+                )
+        except OSError:
+            existing_violations = frozenset()
+        introduced = sorted(new_violations - existing_violations)
+        if introduced:
+            raise ValueError(
+                "Refusing to write prose that introduces marker corruption: "
+                + ", ".join(introduced)
+            )
+
     path.parent.mkdir(parents=True, exist_ok=True)
     temp_path: Path | None = None
     replaced = False
@@ -1004,6 +1034,49 @@ def scene_prose_is_linked(scene: dict[str, Any] | None) -> bool:
     return scope_type in {"story", "chapter"}
 
 
+def _missing_leading_break(before_visible: str) -> str:
+    """Return the break needed so *text* starts on a new paragraph."""
+    tail = before_visible.rstrip(" \t")
+    if not tail or tail.endswith("\n\n"):
+        return ""
+    if tail.endswith("\n"):
+        return "\n"
+    return "\n\n"
+
+
+def _missing_trailing_break(after_visible: str) -> str:
+    """Return the break needed so following prose starts on a new paragraph."""
+    head = after_visible.lstrip(" \t")
+    if not head or head.startswith("\n\n"):
+        return ""
+    if head.startswith("\n"):
+        return "\n"
+    return "\n\n"
+
+
+def pad_generated_scene_prose(content: str, scene_id: SceneId, text: str) -> str:
+    """Separate generated scene prose from neighbouring prose with blank lines.
+
+    Generation entry points write prose into a scene's marker span.  When that
+    span is empty (a fresh scene) the neighbouring scene's prose ends/starts
+    right at the markers, so the generated text would visually continue the
+    previous paragraph or run into the next one.  This adds the missing blank
+    line(s) inside the scene span — never outside it.
+
+    Existing prose is never padded: a scene that already owns prose keeps its
+    exact boundaries when it is rewritten.  Existing paragraph breaks are
+    preserved (only the missing one is added).
+    """
+    span = find_scene_marker_span(content, scene_id)
+    if span is None or content[span.start : span.end].strip():
+        return text
+    before = strip_internal_markers(content[: span.start])
+    after = strip_internal_markers(content[span.end :])
+    leading = "" if text.startswith("\n") else _missing_leading_break(before)
+    trailing = "" if text.endswith("\n") else _missing_trailing_break(after)
+    return f"{leading}{text}{trailing}"
+
+
 def append_text_to_scope(
     project_dir: Path,
     scope_link: dict[str, Any],
@@ -1026,7 +1099,10 @@ def append_text_to_scope(
         content_path.write_text("", encoding="utf-8")
 
     existing_text = content_path.read_text(encoding="utf-8")
-    separator = "\n" if existing_text and not existing_text.endswith("\n") else ""
+    # Scene prose is a paragraph block: when the scope does not already end at a
+    # paragraph boundary, start a new paragraph so the appended scene does not
+    # visually continue the previous scene's paragraph.
+    separator = _missing_leading_break(existing_text)
     insertion_start = len(existing_text) + len(separator)
     new_content = f"{existing_text}{separator}{generated_text}"
     _write_text_atomic(content_path, new_content)

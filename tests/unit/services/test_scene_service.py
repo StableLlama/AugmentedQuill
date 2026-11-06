@@ -27,11 +27,13 @@ from augmentedquill.services.scenes.scene_markers import (
     validate_scene_marker_tokens,
 )
 from augmentedquill.services.scenes.scene_service import (
+    append_text_to_scope,
     create_scene,
     get_scene,
     link_prose,
     link_range_to_scene,
     list_scenes,
+    pad_generated_scene_prose,
     relink_scope_prose,
     reorder_scene_prose,
     reorder_scope_scenes,
@@ -3083,3 +3085,107 @@ class TestRelinkScopeProse:
         ann_b_clean = remove_markers(ann_b_text)
         assert ann_a_clean == "lpha", f"Annotation A text changed: {ann_a_clean!r}"
         assert ann_b_clean == "Bra", f"Annotation B text changed: {ann_b_clean!r}"
+
+
+# ---------------------------------------------------------------------------
+# pad_generated_scene_prose — paragraph seams for freshly written scene prose
+# ---------------------------------------------------------------------------
+
+
+def test_append_text_to_scope_starts_a_new_paragraph(project_dir: Path) -> None:
+    """Appended scene prose must not continue the previous scene's paragraph."""
+    scope_link = {"scope_type": "story", "chapter_id": None, "book_id": None}
+    content_path, new_content, start, end = append_text_to_scope(
+        project_dir, scope_link, "New scene prose."
+    )
+
+    assert new_content == "Alpha Bravo Charlie Delta\n\nNew scene prose."
+    assert new_content[start:end] == "New scene prose."
+    assert content_path.read_text(encoding="utf-8") == new_content
+
+
+def test_append_text_to_scope_does_not_duplicate_existing_paragraph_break(
+    project_dir: Path,
+) -> None:
+    (project_dir / "content.md").write_text("Existing prose.\n\n", encoding="utf-8")
+    scope_link = {"scope_type": "story", "chapter_id": None, "book_id": None}
+
+    _path, new_content, start, end = append_text_to_scope(
+        project_dir, scope_link, "New scene prose."
+    )
+
+    assert new_content == "Existing prose.\n\nNew scene prose."
+    assert new_content[start:end] == "New scene prose."
+
+
+def test_pad_generated_scene_prose_adds_leading_blank_line_after_previous_prose() -> (
+    None
+):
+    # Scene 1 owns the prose; scene 2 is an empty span right after it.
+    content = (
+        "<!--scene:1:start-->Scene one prose.<!--scene:1:end-->"
+        "<!--scene:2:start--><!--scene:2:end-->"
+    )
+    assert pad_generated_scene_prose(content, 2, "Scene two prose.") == (
+        "\n\nScene two prose."
+    )
+
+
+def test_pad_generated_scene_prose_adds_trailing_blank_line_before_next_prose() -> None:
+    content = (
+        "<!--scene:1:start--><!--scene:1:end-->"
+        "<!--scene:2:start-->Scene two prose.<!--scene:2:end-->"
+    )
+    assert pad_generated_scene_prose(content, 1, "Scene one prose.") == (
+        "Scene one prose.\n\n"
+    )
+
+
+def test_pad_generated_scene_prose_completes_a_single_newline() -> None:
+    content = (
+        "<!--scene:1:start-->Scene one prose.\n<!--scene:1:end-->"
+        "<!--scene:2:start--><!--scene:2:end-->"
+    )
+    assert pad_generated_scene_prose(content, 2, "Scene two prose.") == (
+        "\nScene two prose."
+    )
+
+
+def test_pad_generated_scene_prose_keeps_existing_paragraph_breaks() -> None:
+    content = (
+        "<!--scene:1:start-->Scene one prose.\n\n<!--scene:1:end-->"
+        "<!--scene:2:start--><!--scene:2:end-->"
+    )
+    assert pad_generated_scene_prose(content, 2, "Scene two prose.") == (
+        "Scene two prose."
+    )
+
+
+def test_pad_generated_scene_prose_never_touches_non_empty_spans() -> None:
+    content = "<!--scene:1:start-->Existing prose.<!--scene:1:end-->Rest."
+    assert pad_generated_scene_prose(content, 1, "Replacement.") == "Replacement."
+
+
+def test_pad_generated_scene_prose_respects_text_that_already_starts_or_ends_with_newline() -> (
+    None
+):
+    content = (
+        "<!--scene:1:start-->Scene one prose.<!--scene:1:end-->"
+        "<!--scene:2:start--><!--scene:2:end-->"
+    )
+    assert pad_generated_scene_prose(content, 2, "\nScene two.") == "\nScene two."
+
+
+def test_pad_generated_scene_prose_ignores_annotation_markers_when_measuring() -> None:
+    content = (
+        "<!--scene:1:start-->Scene one prose."
+        "<!--annotation:a:start-->tail<!--annotation:a:end-->"
+        "<!--scene:1:end-->"
+        "<!--scene:2:start--><!--scene:2:end-->"
+    )
+    assert pad_generated_scene_prose(content, 2, "Scene two.") == "\n\nScene two."
+
+
+def test_pad_generated_scene_prose_is_noop_for_missing_scene() -> None:
+    content = "<!--scene:1:start-->Text<!--scene:1:end-->"
+    assert pad_generated_scene_prose(content, 99, "New.") == "New."

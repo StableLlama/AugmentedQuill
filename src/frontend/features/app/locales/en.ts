@@ -621,6 +621,8 @@ export const en = {
     'Next scene': 'Next scene',
     'Linked Prose': 'Linked Prose',
     'Unlink prose': 'Unlink prose',
+    'Prose saved, but the editor could not refresh. Reload the project to see the new text.':
+      'Prose saved, but the editor could not refresh. Reload the project to see the new text.',
     'Open in split mode to edit linked prose':
       'Open in split mode to edit linked prose',
     'Drag prose from the editor to link this scene':

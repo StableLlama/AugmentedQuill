@@ -100,6 +100,7 @@ const {
       create: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
+      get: vi.fn(),
       linkProse: vi.fn(),
       batchLinkProse: vi.fn(),
       unlinkProse: vi.fn(),
@@ -862,6 +863,10 @@ describe('handleSaveProseContent', () => {
       prose_link: { ...proseLink, end_offset: 30 },
     });
     apiMock.scenes.updateProseContent.mockResolvedValueOnce(updatedScene);
+    // The backend is authoritative for marker positions after a write.
+    apiMock.chapters.get.mockResolvedValueOnce({
+      content: 'Alpha <!--scene:ps:start-->Zulu<!--scene:ps:end--> Charlie',
+    });
     storyState.chapters = [
       {
         id: 'ch-1',
@@ -909,6 +914,10 @@ describe('handleSaveProseContent', () => {
       prose_link: { ...proseLink, end_offset: 9 },
     });
     apiMock.scenes.updateProseContent.mockResolvedValueOnce(updatedScene);
+    apiMock.story.getContent.mockResolvedValueOnce({
+      ok: true,
+      content: 'Hello earth!',
+    });
     storyState.chapters = [
       {
         id: 'ch-1',
@@ -934,10 +943,9 @@ describe('handleSaveProseContent', () => {
       await dlg().onSaveProseContent!('earth');
     });
 
-    // Backend prose is still updated, but the chapter store content must not
-    // be touched with offsets that belong to the story scope.
+    // Backend prose is still updated, but the CHAPTER content must never be
+    // written with offsets that belong to the story scope.
     expect(apiMock.scenes.updateProseContent).toHaveBeenCalled();
-    expect(setStoryMock).not.toHaveBeenCalled();
     expect(storyState.chapters[0].content).toBe('Hello world!');
   });
 
@@ -988,6 +996,7 @@ describe('handleSaveProseContent', () => {
       prose_link: { ...proseLink, end_offset: 3 },
     });
     apiMock.scenes.updateProseContent.mockResolvedValueOnce(updatedScene);
+    apiMock.chapters.get.mockResolvedValueOnce({ content: 'Hi world!' });
     storyState.chapters = [
       {
         id: 'ch-1',
@@ -1032,7 +1041,7 @@ describe('handleSaveProseContent', () => {
     expect(storyState.chapters[0].content).toBe('Hi world!');
   });
 
-  it('clamps the prose offsets to the current chapter content length', async () => {
+  it('adopts the backend-authoritative content after saving prose', async () => {
     const proseLink = makeProseLink({
       scope_type: 'chapter',
       chapter_id: 'ch-1',
@@ -1042,6 +1051,7 @@ describe('handleSaveProseContent', () => {
     const scene = makeScene({ id: 'ps', prose_link: proseLink });
     const updatedScene = makeScene({ id: 'ps', prose_link: proseLink });
     apiMock.scenes.updateProseContent.mockResolvedValueOnce(updatedScene);
+    apiMock.chapters.get.mockResolvedValueOnce({ content: 'replaced' });
     const shortDoc = 'Short.';
     storyState.chapters = [
       {
@@ -1072,8 +1082,8 @@ describe('handleSaveProseContent', () => {
       await dlg().onSaveProseContent!('replaced');
     });
 
-    // Offsets beyond the document end must be clamped so no index error or
-    // partial write corrupts the content.
+    // Offsets beyond the document end must never be applied locally; the
+    // backend content is adopted verbatim instead.
     expect(storyState.chapters[0].content).toBe('replaced');
   });
 
@@ -1543,6 +1553,9 @@ describe('handleWriteScene', () => {
       assignments: [],
       scenes: [],
     });
+    apiMock.chapters.get.mockResolvedValueOnce({
+      content: 'Prefix NEW suffix',
+    });
 
     const { ref, dispatch } = makeEditorRef('Current chapter text');
     await renderAndOpenDialog([scene], { currentChapter: CHAPTER, editorRef: ref });
@@ -1591,6 +1604,22 @@ describe('handleWriteScene', () => {
       assignments: [],
       scenes: [],
     });
+    apiMock.chapters.get.mockResolvedValueOnce({
+      content: `<!--scene:${sceneId}:start-->${generatedText}<!--scene:${sceneId}:end-->`,
+    });
+    storyState.chapters = [
+      {
+        id: 'ch-1',
+        scope: 'chapter',
+        title: 'Chapter 1',
+        summary: '',
+        content: '',
+      },
+    ];
+    setStoryMock.mockImplementation((updater: (prev: unknown) => unknown) => {
+      const next = updater(storyState);
+      Object.assign(storyState, next as object);
+    });
 
     const { ref, getText } = makeMutableEditorRef('');
     wrap(
@@ -1622,14 +1651,11 @@ describe('handleWriteScene', () => {
     expect(dlg().getLinkedProseText!(reopenedLink)).toBe(generatedText);
   });
 
-  it('returns the COMPLETE generated prose from getLinkedProseText after write when the store content is marker-free', async () => {
-    // Regression: after Write Scene in a marker-bearing chapter, the container
-    // syncs the marker-free editor document back into the store
-    // (updateCurrentChapterContent), so currentChapter.content is marker-free
-    // while the scene's prose_link offsets remain marker-inclusive (backend
-    // coordinates).  getLinkedProseText is what the Edit Scene dialog polls and
+  it('returns the COMPLETE generated prose from getLinkedProseText after a write', async () => {
+    // The store must hold the backend-authoritative (marker-bearing) content
+    // after a write.  getLinkedProseText is what the Edit Scene dialog polls and
     // displays in the Linked Prose editor, so it must return the FULL generated
-    // text — not a slice that drops the first characters.
+    // text — sliced from the scene's markers, never truncated by stale offsets.
     const markerStart = '<!--scene:1:start-->';
     const markerEnd = '<!--scene:1:end-->';
     const oldProse = 'Old scene prose';
@@ -1646,12 +1672,20 @@ describe('handleWriteScene', () => {
         end_offset: proseStart + generated.length,
       }),
     });
-    // Post-write state: the editor document AND the store chapter content are
-    // both marker-free (visible), while the prose_link offsets are marker-inclusive.
+    const authoritative = `${markerStart}${generated}${markerEnd}`;
+    storyState.chapters = [
+      {
+        id: 'ch-1',
+        scope: 'chapter',
+        title: 'Chapter 1',
+        summary: '',
+        content: authoritative,
+      },
+    ];
     const { ref } = makeEditorRef(generated);
 
     await renderAndOpenDialog([updatedScene], {
-      currentChapter: { ...CHAPTER, content: generated } as WritingUnit,
+      currentChapter: { ...CHAPTER, content: authoritative } as WritingUnit,
       editorRef: ref,
     });
 
@@ -1700,6 +1734,9 @@ describe('handleWriteScene', () => {
       assignments: [],
       scenes: [],
     });
+    apiMock.chapters.get.mockResolvedValueOnce({
+      content: `${markerStart}${generated}${markerEnd}`,
+    });
 
     // Marker-bearing chapter: the editor document is marker-free (visible),
     // the store content is marker-inclusive (full).
@@ -1729,6 +1766,79 @@ describe('handleWriteScene', () => {
     // downstream conversions and any subsequent save read.
     expect(storyState.chapters[0].content).toBe(
       `${markerStart}${generated}${markerEnd}`
+    );
+  });
+
+  it('never lets the previous scene absorb prose written for a new scene', async () => {
+    // Regression: writing scene 2 appends prose at the end of the visible
+    // document.  Re-deriving markers locally (diff transfer from the old
+    // content) mapped scene 1's end boundary onto the end of the inserted
+    // text, so the page showed BOTH scenes' prose linked to scene 1.
+    // The backend layout must be adopted verbatim instead.
+    const oldProse = 'Scene one prose.';
+    const oldContent =
+      `<!--scene:1:start-->${oldProse}<!--scene:1:end-->` +
+      '<!--scene:2:start--><!--scene:2:end-->';
+    const generated = 'Scene two prose.';
+    const authoritative =
+      `<!--scene:1:start-->${oldProse}<!--scene:1:end-->` +
+      `<!--scene:2:start-->${generated}<!--scene:2:end-->`;
+
+    const scene = makeScene({
+      id: '2',
+      prose_link: makeProseLink({
+        scope_type: 'unlinked',
+        chapter_id: null,
+        start_offset: 0,
+        end_offset: 0,
+      }),
+    });
+    const updatedScene = makeScene({
+      id: '2',
+      prose_link: makeProseLink({
+        scope_type: 'chapter',
+        chapter_id: 'ch-1',
+        start_offset: 55,
+        end_offset: 55 + generated.length,
+      }),
+    });
+
+    apiMock.scenes.writeScene.mockResolvedValueOnce({
+      scene: updatedScene,
+      generated_text: generated,
+      assignments: [],
+      scenes: [],
+    });
+    apiMock.chapters.get.mockResolvedValueOnce({ content: authoritative });
+    storyState.chapters = [
+      {
+        id: 'ch-1',
+        scope: 'chapter',
+        title: 'Chapter 1',
+        summary: '',
+        content: oldContent,
+      },
+    ];
+    setStoryMock.mockImplementation((updater: (prev: unknown) => unknown) => {
+      const next = updater(storyState);
+      Object.assign(storyState, next as object);
+    });
+
+    const { ref } = makeMutableEditorRef(oldProse);
+
+    await renderAndOpenDialog([scene], {
+      currentChapter: { ...CHAPTER, content: oldContent } as WritingUnit,
+      editorRef: ref,
+    });
+
+    await act(async () => {
+      await dlg().onWriteScene!();
+    });
+
+    expect(storyState.chapters[0].content).toBe(authoritative);
+    // The new prose must NOT live inside scene 1's span.
+    expect(storyState.chapters[0].content).not.toContain(
+      `<!--scene:1:start-->${oldProse}${generated}<!--scene:1:end-->`
     );
   });
 
@@ -1834,6 +1944,14 @@ describe('handleWriteScene', () => {
             ],
             scenes: [],
           });
+          // The backend writes the generated prose inside the target scene's
+          // markers; the frontend must adopt that layout verbatim.
+          apiMock.chapters.get.mockResolvedValueOnce({
+            content: `${docText.slice(
+              0,
+              offsets[targetIndex].from
+            )}${generated}${docText.slice(offsets[targetIndex].to)}`,
+          });
 
           useScenesMock.mockReturnValue(scenes);
           wrap(
@@ -1908,10 +2026,11 @@ describe('handleWriteScene', () => {
 // ---------------------------------------------------------------------------
 
 describe('getLinkedProseText', () => {
-  it('returns the editor text slice for a story-scoped link when scope matches', async () => {
+  it('returns the store text slice for a story-scoped link when scope matches', async () => {
     const docText = 'Hello world, some prose.';
     const scene = makeScene({ id: 's1' });
     const { ref } = makeEditorRef(docText);
+    storyState.draft = { content: docText };
 
     await renderAndOpenDialog([scene], { editorRef: ref, currentChapter: STORY_UNIT });
 
@@ -1928,6 +2047,15 @@ describe('getLinkedProseText', () => {
     const docText = 'Chapter text here.';
     const scene = makeScene({ id: 's1' });
     const { ref } = makeEditorRef(docText);
+    storyState.chapters = [
+      {
+        id: 'ch-1',
+        scope: 'chapter',
+        title: 'Chapter 1',
+        summary: '',
+        content: docText,
+      },
+    ];
 
     await renderAndOpenDialog([scene], { editorRef: ref, currentChapter: CHAPTER });
 
@@ -2046,37 +2174,39 @@ describe('getLinkedProseText', () => {
     expect(dlg().getLinkedProseText).toBeUndefined();
   });
 
-  it('maps marker-inclusive prose offsets to visible editor offsets when chapter text is marker-free', async () => {
-    const visibleDoc = 'Alpha Beta';
-    const { ref } = makeEditorRef(visibleDoc);
+  it('prefers the scene markers over stale stored offsets', async () => {
+    // Marker-bearing store content is authoritative.  Stored prose_link offsets
+    // go stale as soon as the text moves; slicing with them truncates the scene
+    // prose (the "Linked Prose starts mid-sentence" bug).
+    const storeContent =
+      '<!--scene:1:start-->Alpha<!--scene:1:end-->\n' +
+      '<!--scene:2:start-->Beta<!--scene:2:end-->';
 
-    const s1Start = '<!--scene:1:start-->'.length;
-    const s1End = '<!--scene:1:end-->'.length;
-    const s2Start = '<!--scene:2:start-->'.length;
-
-    const scene1 = makeScene({
-      id: '1',
-      prose_link: makeProseLink({
-        scope_type: 'chapter',
-        chapter_id: 'ch-1',
-        start_offset: s1Start,
-        end_offset: s1Start + 5,
-      }),
-    });
-    const scene2StartOffset = s1Start + 5 + s1End + 1 + s2Start;
+    const scene1 = makeScene({ id: '1' });
     const scene2 = makeScene({
       id: '2',
+      // Deliberately stale marker-inclusive offsets from an older version.
       prose_link: makeProseLink({
         scope_type: 'chapter',
         chapter_id: 'ch-1',
-        start_offset: scene2StartOffset,
-        end_offset: scene2StartOffset + 4,
+        start_offset: 0,
+        end_offset: 5,
       }),
     });
+    storyState.chapters = [
+      {
+        id: 'ch-1',
+        scope: 'chapter',
+        title: 'Chapter 1',
+        summary: '',
+        content: storeContent,
+      },
+    ];
+    const { ref } = makeEditorRef('Alpha\nBeta');
 
-    await renderAndOpenDialog([scene1, scene2], {
+    await renderAndOpenDialog([scene2, scene1], {
       editorRef: ref,
-      currentChapter: { ...CHAPTER, content: visibleDoc },
+      currentChapter: { ...CHAPTER, content: storeContent },
     });
 
     expect(dlg().getLinkedProseText!(scene2.prose_link as SceneProseLink)).toBe('Beta');
@@ -5978,5 +6108,133 @@ describe('scene mutations record history entries', () => {
     // handleSelectScene must be called so the useSceneProseSync effect
     // re-applies the highlight when currentChapter changes after async load.
     expect(proseSyncState.handleSelectScene).toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Store adoption after a scene prose write
+// ---------------------------------------------------------------------------
+//
+// Regression: a scene written from the Scene Editor persisted on the backend
+// (the content file held the new prose) while the store kept the pre-write
+// content.  The page and the reopened Scene Editor both read the store, so the
+// freshly written prose disappeared from the UI after clicking Save.
+//
+// Why the existing suite missed it: `setStory` is a bare spy here, so every
+// test could only assert that the container *called* `setStory` — never that
+// the store actually ended up with the backend content.  The explicit
+// `applyLastSetStoryUpdater()` assertions below close that hole: they apply the
+// captured updater to the store snapshot and assert the resulting content.
+
+/** Apply the most recent `setStory` updater to the store snapshot. */
+function applyLastSetStoryUpdater(): typeof storyState {
+  const calls = setStoryMock.mock.calls;
+  expect(calls.length).toBeGreaterThan(0);
+  const updater = calls[calls.length - 1]?.[0] as unknown as (
+    prev: typeof storyState
+  ) => typeof storyState;
+  expect(typeof updater).toBe('function');
+  return updater({ ...storyState, draft: storyState.draft });
+}
+
+describe('handleWriteScene store adoption', () => {
+  const GENERATED = '\n\nThe second scene opens on the line.';
+  const PERSISTED = `Lead paragraph.<!--scene:story-2:start-->${GENERATED}<!--scene:story-2:end-->`;
+
+  const makeWriteScene = (): { scene: Scene; linkedScene: Scene } => ({
+    scene: makeScene({ id: 'story-2', summary: 'Scene two', prose_link: null }),
+    linkedScene: makeScene({
+      id: 'story-2',
+      summary: 'Scene two',
+      prose_link: makeProseLink({
+        scope_type: 'story',
+        start_offset: 15,
+        end_offset: 15 + GENERATED.length,
+      }),
+    }),
+  });
+
+  it('adopts the backend content into the story draft after a successful write', async () => {
+    const { scene, linkedScene } = makeWriteScene();
+    storyState.draft = { content: 'Lead paragraph.' };
+    apiMock.scenes.streamWriteScene.mockResolvedValueOnce({
+      scene: linkedScene,
+      generated_text: GENERATED,
+      assignments: [],
+      scenes: [],
+    });
+    apiMock.story.getContent.mockResolvedValueOnce({
+      ok: true,
+      content: PERSISTED,
+    });
+
+    await renderAndOpenDialog([scene], {
+      currentChapter: STORY_UNIT,
+      editorRef: makeEditorRef('Lead paragraph.').ref,
+    });
+
+    await act(async () => {
+      await dlg().onWriteScene!();
+    });
+
+    expect(applyLastSetStoryUpdater().draft?.content).toBe(PERSISTED);
+  });
+
+  it('still adopts the backend content when the write stream fails after persisting', async () => {
+    const { scene, linkedScene } = makeWriteScene();
+    storyState.draft = { content: 'Lead paragraph.' };
+    // The backend persisted the prose, then the client stream ended without a
+    // usable result (parse/transport error).  The store must not stay stale:
+    // otherwise the page and the Scene Editor silently lose written prose.
+    apiMock.scenes.streamWriteScene.mockRejectedValueOnce(
+      new Error('stream ended without a result')
+    );
+    apiMock.story.getContent.mockResolvedValueOnce({
+      ok: true,
+      content: PERSISTED,
+    });
+    // The scene link is only known by the backend in that case, so the
+    // container has to fetch it instead of keeping the stale "unlinked" scene.
+    apiMock.scenes.get.mockResolvedValueOnce(linkedScene);
+
+    await renderAndOpenDialog([scene], {
+      currentChapter: STORY_UNIT,
+      editorRef: makeEditorRef('Lead paragraph.').ref,
+    });
+
+    await act(async () => {
+      await expect(dlg().onWriteScene!()).rejects.toThrow(
+        'stream ended without a result'
+      );
+    });
+
+    expect(applyLastSetStoryUpdater().draft?.content).toBe(PERSISTED);
+    expect(apiMock.scenes.get).toHaveBeenCalledWith('story-2');
+    expect(patchSceneMock).toHaveBeenCalledWith(linkedScene);
+  });
+
+  it('reports a failed content refresh instead of silently leaving the store stale', async () => {
+    const { scene, linkedScene } = makeWriteScene();
+    storyState.draft = { content: 'Lead paragraph.' };
+    apiMock.scenes.streamWriteScene.mockResolvedValueOnce({
+      scene: linkedScene,
+      generated_text: GENERATED,
+      assignments: [],
+      scenes: [],
+    });
+    apiMock.story.getContent.mockRejectedValueOnce(new Error('network down'));
+
+    const { notifyError } = await import('../../services/errorNotifier');
+
+    await renderAndOpenDialog([scene], {
+      currentChapter: STORY_UNIT,
+      editorRef: makeEditorRef('Lead paragraph.').ref,
+    });
+
+    await act(async () => {
+      await dlg().onWriteScene!();
+    });
+
+    expect(notifyError).toHaveBeenCalled();
   });
 });

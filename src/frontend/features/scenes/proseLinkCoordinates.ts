@@ -340,3 +340,62 @@ export function getSceneProseFromContent(
   if (boundedFrom >= boundedEnd) return '';
   return stripInlineInternalMarkers(fullContent.slice(boundedFrom, boundedEnd));
 }
+
+/**
+ * Canonical, fail-closed resolver for a scene's range **in the document that is
+ * actually being rendered** (the marker-free editor document).
+ *
+ * Scene ranges are rendered as CodeMirror decorations, drive cursor→card
+ * selection and seed the boundary-drag handles.  A range that was computed
+ * against a different version of the text than the one on screen highlights the
+ * wrong prose (e.g. "the highlight ends before the real text") and can write
+ * wrong offsets back.  This is the exact off-by-N class of bug we must make
+ * impossible, so the resolver only answers when every layer agrees:
+ *
+ *   1. the live document is exactly the marker-free projection of
+ *      *fullContent* (same version — no streaming/lagging document);
+ *   2. *fullContent* actually contains this scene's markers (offsets are never
+ *      guessed from stale `prose_link` values);
+ *   3. the resolved range slices exactly the text between those markers.
+ *
+ * Returns ``null`` otherwise: callers must render *no* highlight rather than a
+ * wrong one.  All range-rendering callers must use this instead of
+ * `toVisibleRange`.
+ */
+export function resolveVerifiedSceneRange(
+  docText: string,
+  unit: WritingUnit,
+  scenes: readonly Scene[],
+  fullContent: string,
+  scene: Scene
+): { from: number; to: number } | null {
+  if (!isLinkedProseLink(scene.prose_link)) return null;
+
+  // 1. Version check: the rendered document must be the same text the offsets
+  //    were derived from.  Any extra/missing character means we cannot trust
+  //    any range derived from *fullContent*.
+  const strippedFull = stripInlineInternalMarkers(fullContent);
+  if (docText !== strippedFull) return null;
+
+  // 2. Authoritative source: the scene's own markers.  Never fall back to
+  //    `prose_link` offsets here — they are a snapshot of a past version.
+  if (!hasInlineSceneMarkers(fullContent)) return null;
+  const markerSpan = getSceneMarkerSpanRange(fullContent, scene.id);
+  if (!markerSpan) return null;
+
+  const range = toVisibleRange(
+    scene,
+    { ...unit, content: strippedFull },
+    scenes,
+    fullContent
+  );
+  if (!range) return null;
+
+  // 3. Post-condition: the range must correspond exactly to the marker span.
+  const expected = stripInlineInternalMarkers(
+    fullContent.slice(markerSpan.from, markerSpan.to)
+  );
+  if (docText.slice(range.from, range.to) !== expected) return null;
+
+  return range;
+}

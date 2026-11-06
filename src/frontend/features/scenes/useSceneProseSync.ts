@@ -23,7 +23,7 @@ import type { Scene, SceneId } from '../../types';
 import type { WritingUnit } from '../../types/domain';
 import type { EditorHandle } from '../editor/Editor';
 import type { ProseHighlightRange } from '../editor/CodeMirrorEditor';
-import { toVisibleRange } from './proseLinkCoordinates';
+import { resolveVerifiedSceneRange, toVisibleRange } from './proseLinkCoordinates';
 import { stripInlineInternalMarkers } from '../editor/internalTags';
 
 /** Returns true when two sets contain exactly the same SceneId members. */
@@ -33,6 +33,38 @@ function setsEqual(a: ReadonlySet<SceneId>, b: ReadonlySet<SceneId>): boolean {
     if (!b.has(item)) return false;
   }
   return true;
+}
+
+/**
+ * Resolve the visible range of *scene* for the document that is on screen.
+ *
+ * When an editor view is attached the range is verified against the live
+ * document (`resolveVerifiedSceneRange`): a stale/guessed range is never
+ * rendered. Without a view there is nothing to render into (unit tests,
+ * detached hooks), so the coordinate helper answers directly.
+ */
+function computeSceneRange(
+  scene: Scene,
+  chapter: WritingUnit,
+  scenes: readonly Scene[],
+  editor: EditorHandle | null | undefined
+): { from: number; to: number } | null {
+  const fullContent = chapter.content ?? '';
+  const strippedChapter: WritingUnit = {
+    ...chapter,
+    content: stripInlineInternalMarkers(fullContent),
+  };
+  const view = editor?.getEditorView?.() ?? null;
+  if (!view) {
+    return toVisibleRange(scene, strippedChapter, scenes, fullContent);
+  }
+  return resolveVerifiedSceneRange(
+    view.state.doc.toString(),
+    strippedChapter,
+    scenes,
+    fullContent,
+    scene
+  );
 }
 
 export interface SceneProseSyncResult {
@@ -79,8 +111,9 @@ export function useSceneProseSync(
   // Moving out deselects the card and removes the highlight.
   //
   // Editor content has stripInlineInternalMarkers applied (markers are never
-  // in the visible document).  We strip the chapter's stored content so
-  // toVisibleRange computes offsets that match the editor's positions.
+  // in the visible document).  computeSceneRange derives the range from the
+  // scene's markers in the stored content and verifies it against the live
+  // document, so a stale range is never used for hit-testing.
   useEffect((): (() => void) => {
     const editor = editorRef?.current;
     if (!editor) return (): void => {};
@@ -100,19 +133,13 @@ export function useSceneProseSync(
         );
       }
 
-      const strippedChapter: WritingUnit = {
-        ...chapter,
-        content: stripInlineInternalMarkers(chapter.content),
-      };
-
       const cursor = head;
-      const fullContent = chapter.content;
       const found = scenesRef.current.find((s: Scene): boolean => {
-        const visibleRange = toVisibleRange(
+        const visibleRange = computeSceneRange(
           s,
-          strippedChapter,
+          chapter,
           scenesRef.current,
-          fullContent
+          editorRef?.current
         );
         if (!visibleRange) return false;
         return cursor >= visibleRange.from && cursor < visibleRange.to;
@@ -121,11 +148,11 @@ export function useSceneProseSync(
       setSelectedSceneId(foundId);
 
       if (found) {
-        const visibleRange = toVisibleRange(
+        const visibleRange = computeSceneRange(
           found,
-          strippedChapter,
+          chapter,
           scenesRef.current,
-          fullContent
+          editorRef?.current
         );
         if (visibleRange) {
           editor.setProseHighlights([{ sceneId: found.id, ...visibleRange }]);
@@ -163,21 +190,15 @@ export function useSceneProseSync(
       );
     }
 
-    const strippedChapter: WritingUnit = {
-      ...currentChapter,
-      content: stripInlineInternalMarkers(currentChapter.content),
-    };
-    const fullContent = currentChapter.content;
-
     const entries: ProseHighlightRange[] = [];
     for (const sceneId of highlightSceneIds) {
       const scene = scenesRef.current.find((s: Scene): boolean => s.id === sceneId);
       if (!scene) continue;
-      const visibleRange = toVisibleRange(
+      const visibleRange = computeSceneRange(
         scene,
-        strippedChapter,
+        currentChapter,
         scenesRef.current,
-        fullContent
+        editorRef?.current
       );
       if (!visibleRange) continue;
       entries.push({ sceneId, from: visibleRange.from, to: visibleRange.to });
@@ -186,8 +207,6 @@ export function useSceneProseSync(
     if (typeof window !== 'undefined' && window.__AQ_DEBUG_RANGES) {
       console.log('[AQ:useSceneProseSync] setting highlights:', entries);
       console.log('  highlightSceneIds:', [...highlightSceneIds]);
-      console.log('  fullContent length:', fullContent.length);
-      console.log('  strippedContent length:', strippedChapter.content.length);
       console.log('  scenes count:', scenesRef.current.length);
     }
 
@@ -196,7 +215,7 @@ export function useSceneProseSync(
     } else {
       editor.setProseHighlights(entries);
     }
-  }, [highlightSceneIds, currentChapter, editorRef]);
+  }, [highlightSceneIds, currentChapter, scenes, editorRef]);
 
   const handleSelectScene = useCallback((id: SceneId | null): void => {
     setSelectedSceneId(id);

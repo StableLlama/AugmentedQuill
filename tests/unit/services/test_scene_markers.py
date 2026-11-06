@@ -13,6 +13,7 @@ from augmentedquill.services.scenes.scene_markers import (
     find_scene_marker_span,
     inject_annotation_markers,
     inject_markers,
+    internal_marker_spans,
     parse_annotation_spans,
     parse_scene_spans,
     remap_offset_after_marker_removal,
@@ -21,12 +22,14 @@ from augmentedquill.services.scenes.scene_markers import (
     scene_block_bounds,
     snap_offset_outside_markers,
     snap_range_outside_markers,
+    strip_internal_markers,
     transfer_scene_markers,
     validate_internal_marker_only_edit,
     validate_internal_marker_tokens,
     validate_marker_integrity,
     validate_marker_only_edit,
     validate_scene_marker_tokens,
+    visible_offset_map,
 )
 from augmentedquill.updates.migrate_story_v9 import migrate_project_v9
 
@@ -57,6 +60,36 @@ def test_scene_block_bounds_returns_marker_inclusive_range() -> None:
     assert bounds is not None
     start, end = bounds
     assert text[start:end] == "<!--scene:12:start-->alpha<!--scene:12:end-->"
+
+
+def test_internal_marker_spans_cover_scene_and_annotation_tokens() -> None:
+    text = (
+        "a <!--scene:1:start-->b<!--annotation:x:start-->c"
+        "<!--annotation:x:end-->d<!--scene:1:end-->"
+    )
+    spans = internal_marker_spans(text)
+    assert len(spans) == 4
+    removed = sum(end - start for start, end in spans)
+    assert len(text) - removed == len(strip_internal_markers(text))
+
+
+def test_visible_offset_map_maps_every_visible_char_to_its_raw_offset() -> None:
+    text = (
+        "A <!--scene:1:start-->B<!--annotation:x:start-->C"
+        "<!--annotation:x:end-->D<!--scene:1:end--> E"
+    )
+    visible = strip_internal_markers(text)
+    offsets = visible_offset_map(text)
+    assert len(offsets) == len(visible) + 1
+    assert offsets[-1] == len(text)
+    for index, char in enumerate(visible):
+        assert text[offsets[index]] == char
+
+
+def test_visible_offset_map_collapses_empty_marker_only_content() -> None:
+    text = "<!--scene:1:start--><!--scene:1:end-->"
+    assert strip_internal_markers(text) == ""
+    assert visible_offset_map(text) == [len(text)]
 
 
 def test_parse_annotation_spans_extracts_start_end() -> None:
