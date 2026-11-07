@@ -152,8 +152,9 @@ describe('useAiActions', () => {
       wrapper: strictWrapper,
     });
 
+    let actionPromise: Promise<void> = Promise.resolve();
     await act(async () => {
-      void result.current.handleAiAction('chapter', 'extend');
+      actionPromise = result.current.handleAiAction('chapter', 'extend');
     });
 
     await waitFor(() => {
@@ -165,6 +166,11 @@ describe('useAiActions', () => {
     });
 
     streamDeferred.resolve('ignored completion');
+
+    // Await the in-flight action so no React work survives the test teardown.
+    await act(async () => {
+      await actionPromise;
+    });
 
     await waitFor(() => {
       expect(result.current.isAiActionLoading).toBe(false);
@@ -212,8 +218,9 @@ describe('useAiActions', () => {
 
     const { result } = renderHook(() => useAiActions(makeParams(updateChapter)));
 
+    let actionPromise: Promise<void> = Promise.resolve();
     await act(async () => {
-      void result.current.handleAiAction('chapter', 'extend');
+      actionPromise = result.current.handleAiAction('chapter', 'extend');
     });
 
     await waitFor(() => expect(result.current.isAiActionLoading).toBe(true));
@@ -229,6 +236,11 @@ describe('useAiActions', () => {
 
     act(() => {
       result.current.cancelAiAction();
+    });
+
+    // Await the in-flight action so no React work survives the test teardown.
+    await act(async () => {
+      await actionPromise;
     });
 
     await waitFor(() => {
@@ -417,8 +429,9 @@ describe('useAiActions', () => {
 
     const { result } = renderHook(() => useAiActions(makeParams(updateChapter)));
 
+    let actionPromise: Promise<void> = Promise.resolve();
     await act(async () => {
-      void result.current.handleAiAction('chapter', 'extend');
+      actionPromise = result.current.handleAiAction('chapter', 'extend');
     });
 
     await waitFor(() => expect(result.current.isAiActionLoading).toBe(true));
@@ -436,6 +449,11 @@ describe('useAiActions', () => {
 
     // isProseStreamingFrozen must be true before setIsAiActionLoading(false) propagates.
     expect(useChatStore.getState().isProseStreamingFrozen).toBe(true);
+
+    // Await the in-flight action so no React work survives the test teardown.
+    await act(async () => {
+      await actionPromise;
+    });
 
     await waitFor(() => {
       expect(result.current.isAiActionLoading).toBe(false);
@@ -480,14 +498,20 @@ describe('useAiActions', () => {
 
     const { result } = renderHook(() => useAiActions(makeParams(updateChapter)));
 
+    let actionPromise: Promise<void> = Promise.resolve();
     await act(async () => {
-      void result.current.handleAiAction('chapter', 'extend');
+      actionPromise = result.current.handleAiAction('chapter', 'extend');
     });
 
     await waitFor(() => expect(result.current.isAiActionLoading).toBe(true));
 
     act(() => {
       result.current.cancelAiAction();
+    });
+
+    // Await the in-flight action so no React work survives the test teardown.
+    await act(async () => {
+      await actionPromise;
     });
 
     await waitFor(() => {
