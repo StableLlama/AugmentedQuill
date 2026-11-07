@@ -12,6 +12,7 @@
 
 import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import {
   X,
@@ -161,7 +162,7 @@ interface SearchDialogContentProps {
   theme: SearchDialogTheme;
   themeClasses: ReturnType<typeof useThemeClasses>;
   isLight: boolean;
-  t: (key: string, opts?: Record<string, unknown>) => string;
+  t: TFunction;
   close: (keepOpen?: boolean) => void;
   setQuery: (v: string) => void;
   setReplacement: (v: string) => void;

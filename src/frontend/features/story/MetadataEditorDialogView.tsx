@@ -11,6 +11,7 @@
 
 import React from 'react';
 import { createPortal } from 'react-dom';
+import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import {
   Maximize2,
@@ -100,7 +101,7 @@ interface MetadataEditorDialogViewProps {
 }
 
 interface DialogHeaderProps {
-  t: (key: string, options?: Record<string, unknown>) => string;
+  t: TFunction;
   title: string;
   saveStatus: 'saved' | 'saving' | 'error';
   historyIndex: number;
@@ -209,7 +210,7 @@ const DialogHeader: React.FC<DialogHeaderProps> = ({
 };
 
 interface TitleFormSectionProps {
-  t: (key: string, options?: Record<string, unknown>) => string;
+  t: TFunction;
   type: 'story' | 'book' | 'chapter';
   data: MetadataParams;
   languages?: string[];
@@ -298,7 +299,7 @@ const TitleFormSection: React.FC<TitleFormSectionProps> = ({
 };
 
 interface TabBarProps {
-  t: (key: string, options?: Record<string, unknown>) => string;
+  t: TFunction;
   activeTab: MetadataTab;
   type: 'story' | 'book' | 'chapter';
   allowConflicts: boolean;
@@ -372,7 +373,7 @@ const TabBar: React.FC<TabBarProps> = ({
 };
 
 interface AiWriteButtonGroupProps {
-  t: (key: string, options?: Record<string, unknown>) => string;
+  t: TFunction;
   theme: AppTheme;
   aiWriteSource: MetadataAiSource;
   isAiGenerating: boolean;
@@ -473,7 +474,7 @@ const AiWriteButtonGroup: React.FC<AiWriteButtonGroupProps> = ({
 };
 
 interface AiUpdateButtonGroupProps {
-  t: (key: string, options?: Record<string, unknown>) => string;
+  t: TFunction;
   theme: AppTheme;
   aiWriteSource: MetadataAiSource;
   isAiGenerating: boolean;
@@ -651,7 +652,7 @@ const AiUpdateButtonGroup: React.FC<AiUpdateButtonGroupProps> = ({
 };
 
 interface AiSummaryControlsProps {
-  t: (key: string, options?: Record<string, unknown>) => string;
+  t: TFunction;
   theme: AppTheme;
   data: MetadataParams;
   aiThinking: string | null;
@@ -758,7 +759,7 @@ const AiSummaryControls: React.FC<AiSummaryControlsProps> = ({
 };
 
 interface SummaryTabContentProps {
-  t: (key: string, options?: Record<string, unknown>) => string;
+  t: TFunction;
   theme: AppTheme;
   data: MetadataParams;
   baselineData: MetadataParams;
@@ -884,7 +885,7 @@ const SummaryTabContent: React.FC<SummaryTabContentProps> = ({
 };
 
 interface NotesTabContentProps {
-  t: (key: string, options?: Record<string, unknown>) => string;
+  t: TFunction;
   data: MetadataParams;
   baselineData: MetadataParams;
   effectiveLanguage: string;
@@ -938,7 +939,7 @@ const NotesTabContent: React.FC<NotesTabContentProps> = ({
 };
 
 interface PrivateNotesTabContentProps {
-  t: (key: string, options?: Record<string, unknown>) => string;
+  t: TFunction;
   data: MetadataParams;
   baselineData: MetadataParams;
   effectiveLanguage: string;
@@ -995,7 +996,7 @@ const PrivateNotesTabContent: React.FC<PrivateNotesTabContentProps> = ({
 };
 
 interface ConflictsTabContentProps {
-  t: (key: string, options?: Record<string, unknown>) => string;
+  t: TFunction;
   theme: AppTheme;
   conflicts: Conflict[];
   baselineData: MetadataParams;
@@ -1166,7 +1167,7 @@ const ConflictsTabContent: React.FC<ConflictsTabContentProps> = ({
 };
 
 interface ScenesTabContentProps {
-  t: (key: string, options?: Record<string, unknown>) => string;
+  t: TFunction;
   chapterScenes: Array<{ id: string; summary: string }>;
 }
 

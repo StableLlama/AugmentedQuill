@@ -10,6 +10,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
+import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { useConfirm } from '../layout/ConfirmDialogContext';
 import {
@@ -79,7 +80,7 @@ interface ImageCardProps {
   cardBg: string;
   imageActionsAvailable: boolean;
   projectLanguage: string;
-  t: (key: string, opts?: Record<string, unknown>) => string;
+  t: TFunction;
   onUploadClick: (filename?: string) => void;
   onDelete: (filename: string) => Promise<void>;
   onMetadataChange: (
@@ -287,7 +288,7 @@ const ImageCard: React.FC<ImageCardProps> = ({
 interface ImagePreviewOverlayProps {
   selectedImage: ImageEntry;
   selectedImageRef: React.RefObject<HTMLDivElement | null>;
-  t: (key: string, opts?: Record<string, unknown>) => string;
+  t: TFunction;
   onClose: () => void;
 }
 
@@ -355,7 +356,7 @@ interface ImageSettingsPanelProps {
   imageStyle: string;
   imageAdditionalInfo: string;
   projectLanguage: string;
-  t: (key: string, opts?: Record<string, unknown>) => string;
+  t: TFunction;
   onUpdateSettings?: (style: string, info: string) => void;
 }
 
@@ -431,7 +432,7 @@ interface PromptPopupDialogProps {
   borderClass: string;
   projectLanguage: string;
   copied: boolean;
-  t: (key: string, opts?: Record<string, unknown>) => string;
+  t: TFunction;
   onClose: () => void;
   onCopy: () => void;
 }
@@ -529,7 +530,7 @@ interface ProjectImagesInnerProps {
   projectLanguage: string;
   imageStyle: string;
   imageAdditionalInfo: string;
-  t: (key: string, opts?: Record<string, unknown>) => string;
+  t: TFunction;
   onClose: () => void;
   handleUploadClick: (filename?: string) => void;
   handleDelete: (filename: string) => Promise<void>;
