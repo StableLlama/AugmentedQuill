@@ -11,6 +11,7 @@
 
 import React, { useEffect, useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { X, Search, ArrowRightLeft } from 'lucide-react';
 import { AppTheme, SourcebookRelation } from '../../types';
@@ -39,7 +40,7 @@ interface TargetEntrySectionProps {
   filteredEntries: Array<{ id: string; name: string; description?: string }>;
   onFilterChange: (value: string) => void;
   onTargetSelect: (id: string) => void;
-  t: (key: string, options?: Record<string, string>) => string;
+  t: TFunction;
 }
 
 const TargetEntrySection: React.FC<TargetEntrySectionProps> = ({

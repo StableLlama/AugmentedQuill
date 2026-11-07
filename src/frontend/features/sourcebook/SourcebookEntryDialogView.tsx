@@ -12,6 +12,7 @@
 
 import React from 'react';
 import { createPortal } from 'react-dom';
+import type { TFunction } from 'i18next';
 import { AppTheme, SourcebookEntry, SourcebookRelation, SceneId } from '../../types';
 import { ProjectImage } from '../../services/apiTypes';
 import { SourcebookRelationDialog } from './SourcebookRelationDialog';
@@ -73,7 +74,7 @@ interface SourcebookEntryDialogViewProps {
   canAppRedo: boolean;
   isSaving: boolean;
   canDelete: boolean;
-  t: (key: string, options?: Record<string, unknown>) => string;
+  t: TFunction;
   onUndo: () => void;
   onRedo: () => void;
   onToggleDiff: () => void;

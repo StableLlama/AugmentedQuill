@@ -23,7 +23,7 @@ jobs:
     - name: Run ruff
       run: ruff check .
     - name: Run black
-      uses: psf/black@26.3.1
+      uses: psf/black@26.10.1
       with:
         options: "--check --diff"
         src: "."

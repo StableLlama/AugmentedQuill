@@ -11,6 +11,7 @@
  */
 
 import React from 'react';
+import type { TFunction } from 'i18next';
 import {
   Book,
   Calendar,
@@ -851,7 +852,7 @@ interface ImagePickerProps {
   borderClass: string;
   theme: AppTheme;
   imagePickerRef: React.RefObject<HTMLDivElement | null>;
-  t: (key: string, options?: Record<string, unknown>) => string;
+  t: TFunction;
   onClose: () => void;
   onToggleImage: (filename: string) => void;
 }
