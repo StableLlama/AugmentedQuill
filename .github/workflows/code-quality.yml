@@ -2,130 +2,130 @@ name: Code Quality Checks
 
 on:
   pull_request:
-    branches: [ main, develop ]
+    branches: [main, develop]
   push:
-    branches: [ main, develop ]
+    branches: [main, develop]
 
 jobs:
   backend-checks:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
-    - name: Set up Python
-      uses: actions/setup-python@v6
-      with:
-        python-version: '3.12'
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -e .[dev]
-        pip install pip-audit
-    - name: Run ruff
-      run: ruff check .
-    - name: Run black
-      uses: psf/black@26.10.1
-      with:
-        options: "--check --diff"
-        src: "."
-    - name: Run tests
-      run: pytest
+      - uses: actions/checkout@v6
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[dev]
+          pip install pip-audit
+      - name: Run ruff
+        run: ruff check .
+      - name: Run black
+        uses: psf/black@26.10.1
+        with:
+          options: '--check --diff'
+          src: '.'
+      - name: Run tests
+        run: pytest
 
-    - name: Run pip-audit
-      run: pip-audit --ignore-vuln CVE-2026-4539 --ignore-vuln CVE-2026-3219
+      - name: Run pip-audit
+        run: pip-audit --ignore-vuln CVE-2026-4539 --ignore-vuln CVE-2026-3219
 
   frontend-checks:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
-    - name: Set up Node.js
-      uses: actions/setup-node@v6
-      with:
-        node-version: '24'
-        cache: 'npm'
-        cache-dependency-path: src/frontend/package-lock.json
-    - name: Install dependencies
-      run: |
-        cd src/frontend
-        npm ci --legacy-peer-deps
-    - name: Run ESLint
-      run: |
-        cd src/frontend
-        npm run lint
-    - name: Run TypeScript Check
-      run: |
-        cd src/frontend
-        npm run typecheck
-    - name: Check generated API types are up-to-date
-      run: |
-        cd src/frontend
-        npm run check:generated-types
-    - name: Run Prettier
-      run: |
-        src/frontend/node_modules/.bin/prettier --check '**/*.{ts,tsx,js,jsx,mjs,cjs,json,css,scss,md,html}'
-    - name: Run Tests
-      run: |
-        cd src/frontend
-        npm run test
-    - name: Run Build
-      run: |
-        cd src/frontend
-        npm run build
+      - uses: actions/checkout@v6
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: src/frontend/package-lock.json
+      - name: Install dependencies
+        run: |
+          cd src/frontend
+          npm ci --legacy-peer-deps
+      - name: Run ESLint
+        run: |
+          cd src/frontend
+          npm run lint
+      - name: Run TypeScript Check
+        run: |
+          cd src/frontend
+          npm run typecheck
+      - name: Check generated API types are up-to-date
+        run: |
+          cd src/frontend
+          npm run check:generated-types
+      - name: Run Prettier
+        run: |
+          src/frontend/node_modules/.bin/prettier --check '**/*.{ts,tsx,js,jsx,mjs,cjs,json,css,scss,md,html}'
+      - name: Run Tests
+        run: |
+          cd src/frontend
+          npm run test
+      - name: Run Build
+        run: |
+          cd src/frontend
+          npm run build
 
-    - name: Check if frontend dependencies changed
-      if: github.event_name == 'pull_request'
-      id: deps-changed
-      uses: dorny/paths-filter@v3
-      with:
-        filters: |
-          frontend-deps:
-            - 'src/frontend/package.json'
-            - 'src/frontend/package-lock.json'
+      - name: Check if frontend dependencies changed
+        if: github.event_name == 'pull_request'
+        id: deps-changed
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            frontend-deps:
+              - 'src/frontend/package.json'
+              - 'src/frontend/package-lock.json'
 
-    - name: Run npm audit
-      # Skip auditing for PRs that do not touch frontend dependencies; pushes
-      # to main/develop always audit to guard the merged tree.
-      if: github.event_name != 'pull_request' || steps.deps-changed.outputs.frontend-deps == 'true'
-      run: |
-        cd src/frontend
-        npm audit --audit-level=high
+      - name: Run npm audit
+        # Skip auditing for PRs that do not touch frontend dependencies; pushes
+        # to main/develop always audit to guard the merged tree.
+        if: github.event_name != 'pull_request' || steps.deps-changed.outputs.frontend-deps == 'true'
+        run: |
+          cd src/frontend
+          npm audit --audit-level=high
 
   frontend-e2e-checks:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
-    - name: Set up Python
-      uses: actions/setup-python@v6
-      with:
-        python-version: '3.12'
-    - name: Set up Node.js
-      uses: actions/setup-node@v6
-      with:
-        node-version: '24'
-        cache: 'npm'
-        cache-dependency-path: src/frontend/package-lock.json
-    - name: Install backend dependencies
-      run: |
-        python -m venv venv
-        source venv/bin/activate
-        python -m pip install --upgrade pip
-        pip install -e .
-    - name: Install frontend dependencies
-      run: |
-        cd src/frontend
-        npm ci --legacy-peer-deps
-    - name: Install Playwright browsers
-      run: |
-        cd src/frontend
-        npx playwright install --with-deps chromium
-    - name: Run E2E cursor/caret regression tests (fixture)
-      run: |
-        cd src/frontend
-        npx playwright test --config=playwright.config.ts
-    - name: Run E2E docs/user_manual tests
-      run: |
-        cd src/frontend
-        npx playwright test --config=playwright.docs.config.ts
-    - name: Run E2E fullstack tests
-      run: |
-        cd src/frontend
-        npx playwright test --config=playwright.fullstack.config.ts
+      - uses: actions/checkout@v6
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: src/frontend/package-lock.json
+      - name: Install backend dependencies
+        run: |
+          python -m venv venv
+          source venv/bin/activate
+          python -m pip install --upgrade pip
+          pip install -e .
+      - name: Install frontend dependencies
+        run: |
+          cd src/frontend
+          npm ci --legacy-peer-deps
+      - name: Install Playwright browsers
+        run: |
+          cd src/frontend
+          npx playwright install --with-deps chromium
+      - name: Run E2E cursor/caret regression tests (fixture)
+        run: |
+          cd src/frontend
+          npx playwright test --config=playwright.config.ts
+      - name: Run E2E docs/user_manual tests
+        run: |
+          cd src/frontend
+          npx playwright test --config=playwright.docs.config.ts
+      - name: Run E2E fullstack tests
+        run: |
+          cd src/frontend
+          npx playwright test --config=playwright.fullstack.config.ts
