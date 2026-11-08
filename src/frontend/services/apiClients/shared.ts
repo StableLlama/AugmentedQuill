@@ -163,17 +163,22 @@ interface SseHandlers<TResult> {
  * surface errors identically.  Resolves with the value returned by
  * ``selectResult`` for the terminal event and rejects with the error returned
  * by ``selectError`` (or ``fallbackError`` when the stream ends without one).
+ *
+ * *signal* aborts the request and the response body read; callers use it to
+ * offer a "stop generation" control.
  */
 export async function postSse<TResult>(
   path: string,
   body: unknown,
   handlers: SseHandlers<TResult>,
-  fallbackError: string
+  fallbackError: string,
+  signal?: AbortSignal
 ): Promise<TResult> {
   const response = await fetch(endpoint(path), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    signal,
   });
 
   if (!response.ok) {

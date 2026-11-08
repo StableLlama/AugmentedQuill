@@ -1619,8 +1619,11 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
   );
 
   const handleWriteScene = useCallback(
-    // eslint-disable-next-line complexity
-    async (onProse?: (text: string) => void): Promise<string | null> => {
+    async (
+      onProse?: (text: string) => void,
+      onThinking?: (text: string) => void,
+      signal?: AbortSignal
+    ): Promise<string | null> => {
       if (!editingSceneId) return null;
 
       const sceneBeforeWrite = scenes.find((s: Scene) => s.id === editingSceneId);
@@ -1664,7 +1667,11 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
           payload,
           (accumulated: string): void => {
             onProse?.(accumulated);
-          }
+          },
+          (accumulated: string): void => {
+            onThinking?.(accumulated);
+          },
+          signal
         );
         result = written;
         // Capture whether the scene was previously unlinked before patching the
@@ -1847,7 +1854,9 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
           })),
           prose: request.prose,
         },
-        (accumulated: string): void => request.onChunk?.(accumulated)
+        (accumulated: string): void => request.onChunk?.(accumulated),
+        (accumulated: string): void => request.onThinking?.(accumulated),
+        request.signal
       );
       return {
         target: result.target,

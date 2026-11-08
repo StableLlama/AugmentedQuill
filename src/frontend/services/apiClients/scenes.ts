@@ -179,24 +179,36 @@ export interface ScenesApi {
     sceneId: SceneId,
     payload: SceneWritePayload
   ) => Promise<SceneWriteResponse>;
-  /** Stream scene prose generation; onProse receives accumulated text live. */
+  /**
+   * Stream scene prose generation.
+   *
+   * *onProse* receives the accumulated prose live and *onThinking* receives the
+   * accumulated reasoning, which keeps the UI responsive while a thinking
+   * model works before its first prose token arrives.
+   */
   streamWriteScene: (
     sceneId: SceneId,
     payload: SceneWritePayload,
-    onProse?: (accumulated: string) => void
+    onProse?: (accumulated: string) => void,
+    onThinking?: (accumulated: string) => void,
+    signal?: AbortSignal
   ) => Promise<SceneWriteResponse>;
   /**
    * Stream regeneration of a derived scene field (summary or beats) from
-   * another field; onChunk receives the accumulated text live.
+   * another field; onChunk receives the accumulated text live and onThinking
+   * receives the accumulated reasoning.
    */
   streamGenerateField: (
     sceneId: SceneId,
     payload: SceneFieldGeneratePayload,
-    onChunk?: (accumulated: string) => void
+    onChunk?: (accumulated: string) => void,
+    onThinking?: (accumulated: string) => void,
+    signal?: AbortSignal
   ) => Promise<SceneFieldGenerateResponse>;
 }
 
 type WriteSceneStreamEvent =
+  | { type: 'thinking'; accumulated?: string }
   | { type: 'prose_chunk'; accumulated?: string }
   | {
       type: 'result';
@@ -208,6 +220,7 @@ type WriteSceneStreamEvent =
   | { type: 'error'; error?: string };
 
 type FieldGenerateStreamEvent =
+  | { type: 'thinking'; accumulated?: string }
   | { type: 'chunk'; accumulated?: string }
   | {
       type: 'result';
@@ -225,7 +238,9 @@ async function streamWriteSceneProse(
   projectName: string,
   sceneId: SceneId,
   payload: SceneWritePayload,
-  onProse?: (accumulated: string) => void
+  onProse?: (accumulated: string) => void,
+  onThinking?: (accumulated: string) => void,
+  signal?: AbortSignal
 ): Promise<SceneWriteResponse> {
   return postSse<SceneWriteResponse>(
     projectEndpoint(projectName, `/scenes/${sceneId}/write/stream`),
@@ -233,7 +248,9 @@ async function streamWriteSceneProse(
     {
       onEvent: (event: SseEvent): void => {
         const typed = event as WriteSceneStreamEvent;
-        if (typed.type === 'prose_chunk') {
+        if (typed.type === 'thinking') {
+          onThinking?.(typed.accumulated ?? '');
+        } else if (typed.type === 'prose_chunk') {
           onProse?.(typed.accumulated ?? '');
         }
       },
@@ -254,7 +271,8 @@ async function streamWriteSceneProse(
           : undefined;
       },
     },
-    'Write scene stream failed'
+    'Write scene stream failed',
+    signal
   );
 }
 
@@ -266,7 +284,9 @@ async function streamGenerateFieldRequest(
   projectName: string,
   sceneId: SceneId,
   payload: SceneFieldGeneratePayload,
-  onChunk?: (accumulated: string) => void
+  onChunk?: (accumulated: string) => void,
+  onThinking?: (accumulated: string) => void,
+  signal?: AbortSignal
 ): Promise<SceneFieldGenerateResponse> {
   return postSse<SceneFieldGenerateResponse>(
     projectEndpoint(projectName, `/scenes/${sceneId}/generate/stream`),
@@ -274,7 +294,9 @@ async function streamGenerateFieldRequest(
     {
       onEvent: (event: SseEvent): void => {
         const typed = event as FieldGenerateStreamEvent;
-        if (typed.type === 'chunk') {
+        if (typed.type === 'thinking') {
+          onThinking?.(typed.accumulated ?? '');
+        } else if (typed.type === 'chunk') {
           onChunk?.(typed.accumulated ?? '');
         }
       },
@@ -290,7 +312,8 @@ async function streamGenerateFieldRequest(
           : undefined;
       },
     },
-    'Field generation stream failed'
+    'Field generation stream failed',
+    signal
   );
 }
 
@@ -377,15 +400,26 @@ export const createScenesApi = (projectName: string): ScenesApi => {
     streamWriteScene: (
       sceneId: SceneId,
       payload: SceneWritePayload,
-      onProse?: (accumulated: string) => void
+      onProse?: (accumulated: string) => void,
+      onThinking?: (accumulated: string) => void,
+      signal?: AbortSignal
     ): Promise<SceneWriteResponse> =>
-      streamWriteSceneProse(projectName, sceneId, payload, onProse),
+      streamWriteSceneProse(projectName, sceneId, payload, onProse, onThinking, signal),
 
     streamGenerateField: (
       sceneId: SceneId,
       payload: SceneFieldGeneratePayload,
-      onChunk?: (accumulated: string) => void
+      onChunk?: (accumulated: string) => void,
+      onThinking?: (accumulated: string) => void,
+      signal?: AbortSignal
     ): Promise<SceneFieldGenerateResponse> =>
-      streamGenerateFieldRequest(projectName, sceneId, payload, onChunk),
+      streamGenerateFieldRequest(
+        projectName,
+        sceneId,
+        payload,
+        onChunk,
+        onThinking,
+        signal
+      ),
   };
 };

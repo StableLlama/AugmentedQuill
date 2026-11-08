@@ -13,7 +13,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import { ChevronLeft, ChevronRight, Clock, MessageSquareDiff } from 'lucide-react';
+import {
+  Brain,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  Loader2,
+  MessageSquareDiff,
+} from 'lucide-react';
 import { FloatingDiffToolbar } from '../editor/FloatingDiffToolbar';
 import type {
   Scene,
@@ -150,15 +158,22 @@ function getScopedBaselineContent(
 /**
  * Baseline prose shown in the scene editor's diff view for a scene.
  *
- * Returns ``undefined`` when there is nothing to diff against (content not
- * loaded / unknown scope), ``''`` when the scene had no prose at baseline time,
- * otherwise the visible prose the scene owned in the baseline snapshot.
+ * Returns ``''`` when the scene had no prose at baseline time, otherwise the
+ * visible prose the scene owned in the baseline snapshot.  It never returns
+ * ``undefined``: without a baseline the diff decorations silently disappear
+ * (the editor had nothing to diff against), so a change made in the dialog
+ * looked unhighlighted even though the diff view was active.
  *
  * The slice is derived from the scene's **markers inside the baseline content**
  * (via ``getSceneProseFromContent``), not from the stored ``prose_link``
  * offsets: those go stale as soon as the document shrinks (for example after
  * the user deletes all text), and slicing with them leaked marker tokens into
  * the diff — which silently disabled the "freshly generated" highlight.
+ *
+ * When the baseline content is not loaded in memory (lazily loaded chapter /
+ * story or an unsynced baseline), fall back to ``atOpenText``: the prose the
+ * scene had when the dialog opened is exactly the pre-write baseline a
+ * freshly generated passage must be diffed against.
  */
 function resolveSceneProseBaseline(params: {
   baselineScene: Scene | null;
@@ -166,7 +181,7 @@ function resolveSceneProseBaseline(params: {
   sceneId: SceneId;
   openedViaTrigger: boolean;
   atOpenText: string;
-}): string | undefined {
+}): string {
   const { baselineScene, baselineStoryState, sceneId, openedViaTrigger, atOpenText } =
     params;
   if (!baselineScene) {
@@ -183,7 +198,7 @@ function resolveSceneProseBaseline(params: {
   }
   const scoped = getScopedBaselineContent(baselineStoryState, baselineLink);
   if (scoped === null) {
-    return openedViaTrigger ? '' : undefined;
+    return openedViaTrigger ? '' : atOpenText;
   }
   return getSceneProseFromContent(scoped, sceneId, baselineLink) ?? '';
 }
@@ -217,6 +232,15 @@ const addUnits = (
 const isAgeAtLeastTenDays = (parts: AgeParts): boolean => {
   return parts.years > 0 || parts.months > 0 || parts.days >= 10;
 };
+
+/** True when an error is the user cancelling an in-flight request. */
+function isAbortError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { name?: string }).name === 'AbortError'
+  );
+}
 
 const isAgeMoreThanTwentyFourHours = (parts: AgeParts): boolean => {
   if (parts.years > 0 || parts.months > 0) return true;
@@ -380,8 +404,18 @@ interface SceneEditorDialogProps {
   getLinkedProseText?: (link: SceneProseLink) => string | null;
   /** Saves new prose content back to the file at the link range. */
   onSaveProseContent?: (text: string) => Promise<void>;
-  /** Generates prose for this scene and links the result. Pass an onProse callback to receive streamed prose live. */
-  onWriteScene?: (onProse?: (text: string) => void) => Promise<string | null | void>;
+  /**
+   * Generates prose for this scene and links the result.
+   *
+   * *onProse* receives streamed prose live and *onThinking* receives the
+   * accumulated reasoning so the dialog shows progress while a thinking model
+   * is still working.
+   */
+  onWriteScene?: (
+    onProse?: (text: string) => void,
+    onThinking?: (text: string) => void,
+    signal?: AbortSignal
+  ) => Promise<string | null | void>;
   /**
    * Streams regeneration of a derived scene field (summary or beats) from
    * another field. ``onChunk`` receives the accumulated text live.
@@ -420,6 +454,10 @@ export interface SceneFieldGenerateRequest {
   prose: string;
   /** Receives the accumulated generated text while streaming. */
   onChunk?: (accumulated: string) => void;
+  /** Receives the accumulated reasoning while a thinking model runs. */
+  onThinking?: (accumulated: string) => void;
+  /** Aborts the in-flight generation when the user presses Stop. */
+  signal?: AbortSignal;
 }
 
 export interface SceneFieldGenerateResult {
@@ -540,7 +578,7 @@ function sceneFieldsDiffer(params: {
     openedViaTrigger,
     atOpenText: atOpenProse,
   });
-  return proseBaseline !== undefined && proseBaseline !== atOpenProse;
+  return proseBaseline !== atOpenProse;
 }
 
 /* eslint-disable complexity, max-lines-per-function */
@@ -1074,6 +1112,18 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
   // Live streaming text for beat generation (beats cannot be streamed into the
   // list of textareas, so a preview is shown until generation completes).
   const [streamingBeatsText, setStreamingBeatsText] = useState('');
+  // Accumulated model reasoning for the running write/field generation.  Long
+  // thinking phases used to be invisible: the dialog looked frozen for minutes
+  // before the first prose token arrived.
+  const [streamingThinkingText, setStreamingThinkingText] = useState('');
+  const [isThinkingExpanded, setIsThinkingExpanded] = useState(true);
+  // Section that owns the running generation: the reasoning preview is shown
+  // next to the control the user pressed, never at the top of the dialog (which
+  // was off-screen and shifted the section the user was working in).
+  const [thinkingLocation, setThinkingLocation] = useState<
+    'summary' | 'beats' | 'prose' | null
+  >(null);
+  const thinkingScrollRef = useRef<HTMLDivElement>(null);
   const [linkedProseBaselineAtOpen, setLinkedProseBaselineAtOpen] = useState<
     string | undefined
   >(undefined);
@@ -1087,6 +1137,9 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
   // True while write-scene prose is being streamed live into the dialog, so the
   // linked-prose polling effect does not clobber the in-flight text.
   const streamedProseRef = useRef(false);
+  // Controller for the running write/field generation.  Aborting it cancels the
+  // HTTP request (and with it the upstream LLM call).
+  const generationAbortRef = useRef<AbortController | null>(null);
   // Last text observed from the linked prose source.  Used to react only to
   // genuinely external prose changes (e.g. the chat writing this scene) and
   // never to a stale poll that would undo in-dialog generation.
@@ -1183,6 +1236,9 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
     setLinkedProseTab('diff');
     setGeneratingKey(null);
     setStreamingBeatsText('');
+    setStreamingThinkingText('');
+    setIsThinkingExpanded(true);
+    setThinkingLocation(null);
 
     initialSnapshotRef.current = {
       summary: scene.summary,
@@ -1272,6 +1328,12 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
       });
     }
   }, [hoveredEntry, availableImages.length]);
+
+  // Keep the latest reasoning line in view while the model is thinking.
+  useEffect((): void => {
+    const el = thinkingScrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [streamingThinkingText]);
 
   if (!isOpen) return null;
 
@@ -1415,7 +1477,7 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
       : summary.length > 0) ||
       hasFieldHint('summary', 'summary_patch'));
   const baselineProseLink = baselineScene?.prose_link ?? null;
-  const linkedProseBaseline = useMemo((): string | undefined => {
+  const linkedProseBaseline = useMemo((): string => {
     // Computed regardless of `showDiff`: `linkedProseChanged` and the Old tab
     // need the baseline even while diff decorations are toggled off, and
     // `showDiff` itself is now seeded from this comparison.
@@ -1502,7 +1564,7 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
   const linkedProseChanged =
     showDiff &&
     !('linkedProse' in acceptedBaseline) &&
-    (localProseText !== (linkedProseBaseline ?? localProseText) ||
+    (localProseText !== linkedProseBaseline ||
       JSON.stringify(proseLink ?? null) !== JSON.stringify(baselineProseLink ?? null) ||
       hasFieldHint('prose_link'));
   const causesChanged =
@@ -1857,18 +1919,32 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
     onClose();
   };
 
+  /** Cancel the running write / derived-field generation. */
+  const stopGeneration = (): void => {
+    generationAbortRef.current?.abort();
+  };
+
   const handleWriteScene = async (): Promise<void> => {
     if (!onWriteScene) return;
     setShowDiff(true);
     setIsWritingScene(true);
+    setStreamingThinkingText('');
+    setIsThinkingExpanded(true);
+    setThinkingLocation('prose');
     streamedProseRef.current = false;
+    const controller = new AbortController();
+    generationAbortRef.current = controller;
     try {
-      const generatedText = await onWriteScene((text: string): void => {
-        if (text) {
-          streamedProseRef.current = true;
-          setLocalProseText(text);
-        }
-      });
+      const generatedText = await onWriteScene(
+        (text: string): void => {
+          if (text) {
+            streamedProseRef.current = true;
+            setLocalProseText(text);
+          }
+        },
+        (thinking: string): void => setStreamingThinkingText(thinking),
+        controller.signal
+      );
       const generated = typeof generatedText === 'string' ? generatedText : '';
       if (streamedProseRef.current) {
         // Text was already streamed live; reconcile to the exact final value.
@@ -1891,8 +1967,23 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
         setLocalProseText(generated);
       }
     } catch (err) {
+      if (isAbortError(err)) {
+        // The user stopped the generation: discard the partial preview and
+        // show the prose that is actually persisted for this scene.
+        streamedProseRef.current = false;
+        const storedProse = isLinkedProseLink(proseLink)
+          ? getLinkedProseText?.(proseLink)
+          : null;
+        setLocalProseText(storedProse ?? linkedProseBaselineAtOpen ?? '');
+        setStreamingThinkingText('');
+        setThinkingLocation(null);
+        return;
+      }
       notifyError(t('Write Scene'), err);
     } finally {
+      if (generationAbortRef.current === controller) {
+        generationAbortRef.current = null;
+      }
       setIsWritingScene(false);
     }
   };
@@ -1909,6 +2000,8 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
     (beat: SceneBeat): boolean => beat.text.trim().length > 0
   );
   const isGeneratingField = generatingKey !== null;
+  // True while a write/generation call is running and may still push thinking.
+  const thinkingActive = isWritingScene || isGeneratingField;
   const buttonTheme = tc.isLight ? 'light' : 'dark';
   const summaryHasContent = summary.trim().length > 0;
   const proseHasContent = localProseText.trim().length > 0;
@@ -1945,7 +2038,14 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
     const errorLabel = fieldActionLabel(target, source, targetHasContent(target));
     setShowDiff(true);
     setGeneratingKey(`${target}:${source}`);
+    setStreamingThinkingText('');
+    setIsThinkingExpanded(true);
+    setThinkingLocation(target);
     if (target === 'beats') setStreamingBeatsText('');
+    const controller = new AbortController();
+    generationAbortRef.current = controller;
+    const previousSummary = summary;
+    const previousBeats = beats;
     try {
       const result = await onGenerateSceneField({
         target,
@@ -1960,6 +2060,8 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
             setStreamingBeatsText(text);
           }
         },
+        onThinking: (text: string): void => setStreamingThinkingText(text),
+        signal: controller.signal,
       });
       if (!result) return;
       if (result.target === 'summary') {
@@ -1968,8 +2070,19 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
         setBeats(result.beats);
       }
     } catch (err) {
+      if (isAbortError(err)) {
+        // Revert the live-previewed field to its pre-generation value.
+        if (target === 'summary') setSummary(previousSummary);
+        else setBeats(previousBeats);
+        setStreamingThinkingText('');
+        setThinkingLocation(null);
+        return;
+      }
       notifyError(errorLabel, err);
     } finally {
+      if (generationAbortRef.current === controller) {
+        generationAbortRef.current = null;
+      }
       setGeneratingKey(null);
       setStreamingBeatsText('');
     }
@@ -2125,6 +2238,64 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
     });
   };
 
+  /**
+   * Live reasoning preview for the generation running in the current section.
+   * Rendered next to the triggering control (never at the dialog top) so the
+   * user sees it without scrolling away from the field being generated.
+   */
+  const renderThinkingPanel = (): React.ReactElement | null => {
+    if (streamingThinkingText.length === 0) return null;
+    return (
+      <div
+        data-testid="scene-writing-thinking"
+        className={`mt-1 rounded-md border ${tc.border} ${tc.bg} px-3 py-2`}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <button
+            type="button"
+            aria-expanded={isThinkingExpanded}
+            onClick={(): void =>
+              setIsThinkingExpanded((value: boolean): boolean => !value)
+            }
+            title={isThinkingExpanded ? t('Hide thinking') : t('Show thinking')}
+            className={`flex items-center gap-1.5 text-xs font-medium ${tc.text}`}
+          >
+            <Brain size={14} className={thinkingActive ? 'animate-pulse' : undefined} />
+            <span>{t('Thinking')}</span>
+            {isThinkingExpanded ? (
+              <ChevronDown size={14} />
+            ) : (
+              <ChevronRight size={14} />
+            )}
+          </button>
+          {thinkingActive && (
+            <div className="flex items-center gap-2">
+              <Loader2 size={12} className="animate-spin" aria-hidden />
+              <button
+                type="button"
+                onClick={stopGeneration}
+                className="text-xs font-medium text-brand-500 hover:text-brand-600"
+              >
+                {t('Stop generation')}
+              </button>
+            </div>
+          )}
+        </div>
+        {isThinkingExpanded && (
+          <div
+            ref={thinkingScrollRef}
+            className={`mt-1 text-xs whitespace-pre-wrap max-h-40 overflow-y-auto ${tc.muted}`}
+          >
+            {streamingThinkingText}
+            {thinkingActive && (
+              <span className="inline-block w-1.5 h-3 ml-1 align-middle bg-brand-500/50 animate-pulse" />
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 pt-14"
@@ -2266,6 +2437,7 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
                 )}
               </div>
             </div>
+            {thinkingLocation === 'summary' && renderThinkingPanel()}
             {summaryTab === 'old' ? (
               <div
                 className={`rounded-md border ${tc.border} px-3 py-2 text-sm whitespace-pre-wrap overflow-hidden`}
@@ -2357,6 +2529,7 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
                 </button>
               </div>
             </div>
+            {thinkingLocation === 'beats' && renderThinkingPanel()}
             {generatingKey === 'beats:summary' || generatingKey === 'beats:prose' ? (
               <div
                 className={`rounded-md border ${tc.border} px-3 py-2 text-sm whitespace-pre-wrap overflow-hidden`}
@@ -2956,25 +3129,35 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
             <div className="flex items-center justify-between gap-2">
               <label className={labelCls}>{t('Linked Prose')}</label>
               <div className="flex items-center gap-3">
-                {onWriteScene && (
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    theme={buttonTheme}
-                    onClick={(): void => void handleWriteScene()}
-                    disabled={isWritingScene || isSaving || !hasBeatText}
-                  >
-                    {isWritingScene
-                      ? t('Writing Scene...')
-                      : fieldActionLabel('prose', 'beats', proseHasContent)}
-                  </Button>
-                )}
+                {onWriteScene &&
+                  (isWritingScene ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      theme={buttonTheme}
+                      onClick={stopGeneration}
+                    >
+                      {t('Stop generation')}
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      theme={buttonTheme}
+                      onClick={(): void => void handleWriteScene()}
+                      disabled={isSaving || !hasBeatText}
+                    >
+                      {fieldActionLabel('prose', 'beats', proseHasContent)}
+                    </Button>
+                  ))}
                 {showDiff && linkedProseChanged && (
                   <DiffViewTabs tab={linkedProseTab} onChange={setLinkedProseTab} />
                 )}
               </div>
             </div>
+            {thinkingLocation === 'prose' && renderThinkingPanel()}
             {isLinkedProseLink(proseLink) ? (
               <>
                 {linkedProseTab === 'old' ? (
@@ -3042,6 +3225,19 @@ export const SceneEditorDialog: React.FC<SceneEditorDialogProps> = ({
                   </>
                 )}
               </>
+            ) : isWritingScene || localProseText.length > 0 ? (
+              // A brand-new scene is only linked once the backend has written
+              // the prose.  Show the in-flight text anyway so writing always
+              // streams visibly instead of looking frozen until the link lands.
+              <div
+                data-testid="scene-writing-prose-preview"
+                className={`rounded-md border ${tc.border} px-3 py-2 text-sm whitespace-pre-wrap max-h-40 overflow-y-auto ${tc.text}`}
+                style={contentSurface}
+              >
+                {localProseText || (
+                  <span className="italic opacity-60">{t('Writing Scene...')}</span>
+                )}
+              </div>
             ) : (
               <p className={`text-xs italic ${tc.muted}`}>
                 {t('Drag prose from the editor to link this scene')}

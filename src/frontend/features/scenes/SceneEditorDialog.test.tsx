@@ -1745,6 +1745,203 @@ describe('SceneEditorDialog save flow', () => {
     }
   });
 
+  it('shows the streamed thinking process during write-scene', async () => {
+    // Regression: thinking models can reason for minutes before the first prose
+    // token.  Without surfacing that reasoning the dialog looked frozen, which
+    // is what "not streaming in and shown as it is written" reported.
+    const proseLink: SceneProseLink = {
+      scope_type: 'story',
+      start_offset: 0,
+      end_offset: 5,
+      content_hash: 'abc',
+      chapter_id: null,
+      book_id: null,
+      is_stale: false,
+    };
+
+    const getLinkedProseText = vi.fn(() => 'initial prose');
+    const onWriteScene = vi.fn(
+      async (
+        onProse?: (text: string) => void,
+        onThinking?: (text: string) => void
+      ): Promise<string> => {
+        onThinking?.('Considering the beat order');
+        onProse?.('Draft prose');
+        return 'Draft prose';
+      }
+    );
+
+    wrap(
+      <SceneEditorDialog
+        scene={makeScene({ prose_link: proseLink, beats: WRITE_BEATS })}
+        isOpen
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+        getLinkedProseText={getLinkedProseText}
+        onWriteScene={onWriteScene}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Recreate Prose from Beats/i }));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.getByTestId('scene-writing-thinking')).toBeTruthy();
+    expect(screen.getByText('Considering the beat order')).toBeTruthy();
+  });
+
+  it('highlights written prose as new even when the baseline content is not loaded', async () => {
+    // Regression: with no baseline content in memory the resolved baseline was
+    // `undefined`, so CodeMirror had nothing to diff against and the freshly
+    // written prose appeared unhighlighted although diff mode was active.
+    const proseLink: SceneProseLink = {
+      scope_type: 'story',
+      start_offset: 0,
+      end_offset: 11,
+      content_hash: 'abc',
+      chapter_id: null,
+      book_id: null,
+      is_stale: false,
+    };
+    baselineScenesState.push(makeScene({ id: 'scene-1', prose_link: proseLink }));
+
+    let linkedProse = 'Old story prose';
+    const getLinkedProseText = vi.fn(() => linkedProse);
+    const onWriteScene = vi.fn(
+      async (onProse?: (text: string) => void): Promise<string> => {
+        linkedProse = 'Brand new generated prose';
+        onProse?.(linkedProse);
+        return linkedProse;
+      }
+    );
+
+    wrap(
+      <SceneEditorDialog
+        scene={makeScene({
+          id: 'scene-1',
+          prose_link: proseLink,
+          beats: WRITE_BEATS,
+        })}
+        isOpen
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+        getLinkedProseText={getLinkedProseText}
+        onWriteScene={onWriteScene}
+      />
+    );
+
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole('button', { name: /Recreate Prose from Beats/i })
+      );
+      await Promise.resolve();
+    });
+
+    const editor = screen.getByRole('textbox', { name: /Linked Prose/i });
+    expect(editor.textContent).toContain('Brand new generated prose');
+    expect(editor.querySelector('.cm-diff-inserted')).toBeTruthy();
+  });
+
+  it('stops write-scene generation and restores the stored prose', async () => {
+    const proseLink: SceneProseLink = {
+      scope_type: 'story',
+      start_offset: 0,
+      end_offset: 5,
+      content_hash: 'abc',
+      chapter_id: null,
+      book_id: null,
+      is_stale: false,
+    };
+
+    let capturedSignal: AbortSignal | undefined;
+    const getLinkedProseText = vi.fn(() => 'Old stored prose');
+    const onWriteScene = vi.fn(
+      (
+        onProse?: (text: string) => void,
+        _onThinking?: (text: string) => void,
+        signal?: AbortSignal
+      ): Promise<string> => {
+        capturedSignal = signal;
+        onProse?.('Partially streamed prose');
+        return new Promise<string>(
+          (_resolve: (value: string) => void, reject: (reason?: unknown) => void) => {
+            signal?.addEventListener('abort', () =>
+              reject(new DOMException('Aborted', 'AbortError'))
+            );
+          }
+        );
+      }
+    );
+
+    wrap(
+      <SceneEditorDialog
+        scene={makeScene({ prose_link: proseLink, beats: WRITE_BEATS })}
+        isOpen
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+        getLinkedProseText={getLinkedProseText}
+        onWriteScene={onWriteScene}
+      />
+    );
+
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole('button', { name: /Recreate Prose from Beats/i })
+      );
+      await Promise.resolve();
+    });
+    expect(readLinkedProseEditorText()).toContain('Partially streamed prose');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Stop generation/i }));
+      await Promise.resolve();
+    });
+
+    expect(capturedSignal?.aborted).toBe(true);
+    expect(readLinkedProseEditorText()).toContain('Old stored prose');
+    expect(screen.queryByRole('button', { name: /Stop generation/i })).toBeNull();
+    // The write button is available again.
+    expect(
+      screen.getByRole('button', { name: /Recreate Prose from Beats/i })
+    ).toBeTruthy();
+  });
+
+  it('shows streamed prose for an unlinked scene while writing', async () => {
+    // A brand-new scene only gets its prose_link after the backend links the
+    // generated text.  The streamed prose must still be visible right away.
+    const onWriteScene = vi.fn(
+      async (onProse?: (text: string) => void): Promise<string> => {
+        onProse?.('Freshly written prose');
+        return 'Freshly written prose';
+      }
+    );
+
+    wrap(
+      <SceneEditorDialog
+        scene={makeScene({ prose_link: null, beats: WRITE_BEATS })}
+        isOpen
+        onClose={NOOP_CLOSE}
+        onSave={NOOP_SAVE}
+        onDelete={NOOP_DELETE}
+        onWriteScene={onWriteScene}
+      />
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Create Prose from Beats/i }));
+      await Promise.resolve();
+    });
+
+    expect(screen.getByTestId('scene-writing-prose-preview').textContent).toContain(
+      'Freshly written prose'
+    );
+  });
+
   it('enables diff view after write-scene without rendering a separate prose preview block', async () => {
     const proseLink: SceneProseLink = {
       scope_type: 'story',
@@ -2726,6 +2923,7 @@ describe('SceneEditorDialog derived field regeneration', () => {
     const onGenerateSceneField = vi.fn(async (request: SceneFieldGenerateRequest) => {
       expect(request.target).toBe('summary');
       expect(request.source).toBe('beats');
+      request.onThinking?.('Weighing the beats');
       request.onChunk?.('Streamed summary');
       return { target: 'summary' as const, text: 'Final summary', beats: [] };
     });
@@ -2754,6 +2952,8 @@ describe('SceneEditorDialog derived field regeneration', () => {
     expect(
       screen.getByRole('textbox', { name: /Scene summary/i }).textContent
     ).toContain('Final summary');
+    // The reasoning stream stays visible so long generations never look frozen.
+    expect(screen.getByText('Weighing the beats')).toBeTruthy();
   });
 
   it('creates beats from the summary and replaces the beat list', async () => {

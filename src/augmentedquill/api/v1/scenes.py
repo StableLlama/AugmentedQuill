@@ -271,6 +271,7 @@ async def write_scene_prose_stream(
     """Stream generated prose for one scene and auto-link generated boundaries.
 
     Emits SSE events:
+    - ``{"type": "thinking", "accumulated": str}`` as the model reasons
     - ``{"type": "prose_chunk", "accumulated": str}`` as tokens are generated
     - ``{"type": "result", "scene": ..., "generated_text": ..., "assignments": ..., "scenes": ...}``
       once generation and linking complete
@@ -334,6 +335,7 @@ async def generate_scene_field_stream_route(
     """Stream a derived scene-field regeneration (summary or beats).
 
     Emits SSE events:
+    - ``{"type": "thinking", "accumulated": str}`` as the model reasons
     - ``{"type": "chunk", "accumulated": str}`` as text is generated
     - ``{"type": "result", "target": ..., "text": ..., "beats": [...]}``
       once generation completes

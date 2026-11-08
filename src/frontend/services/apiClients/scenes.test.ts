@@ -168,7 +168,10 @@ describe('createScenesApi streamWriteScene', () => {
 
   it('posts to the stream endpoint and forwards prose chunks live', async () => {
     const onProse = vi.fn();
+    const onThinking = vi.fn();
+    const controller = new AbortController();
     const sse =
+      'data: {"type":"thinking","accumulated":"Planning"}\n\n' +
       'data: {"type":"prose_chunk","accumulated":"The"}\n\n' +
       'data: {"type":"prose_chunk","accumulated":"The night"}\n\n' +
       'data: {"type":"result","scene":' +
@@ -182,7 +185,9 @@ describe('createScenesApi streamWriteScene', () => {
       const result = await api.streamWriteScene(
         1,
         { scope_type: 'story', detect_boundaries: true },
-        onProse
+        onProse,
+        onThinking,
+        controller.signal
       );
 
       expect(fetchMock).toHaveBeenCalledWith(
@@ -190,8 +195,11 @@ describe('createScenesApi streamWriteScene', () => {
         expect.objectContaining({
           method: 'POST',
           body: JSON.stringify({ scope_type: 'story', detect_boundaries: true }),
+          signal: controller.signal,
         })
       );
+      expect(onThinking).toHaveBeenCalledWith('Planning');
+      expect(onThinking).toHaveBeenCalledTimes(1);
       expect(onProse).toHaveBeenNthCalledWith(1, 'The');
       expect(onProse).toHaveBeenLastCalledWith('The night');
       expect(result.generated_text).toBe('The night is dark');
@@ -237,7 +245,9 @@ describe('createScenesApi streamGenerateField', () => {
 
   it('posts to the generate stream endpoint and parses the result', async () => {
     const onChunk = vi.fn();
+    const onThinking = vi.fn();
     const sse =
+      'data: {"type":"thinking","accumulated":"Weigh beats"}\n\n' +
       'data: {"type":"chunk","accumulated":"Beat A"}\n\n' +
       'data: {"type":"result","target":"beats","text":"Beat A\\nBeat B",' +
       '"beats":[{"id":"1","text":"Beat A"},{"id":"2","text":"Beat B"}]}\n\n' +
@@ -251,7 +261,7 @@ describe('createScenesApi streamGenerateField', () => {
         source: 'summary' as const,
         summary: 'S',
       };
-      const result = await api.streamGenerateField(1, payload, onChunk);
+      const result = await api.streamGenerateField(1, payload, onChunk, onThinking);
 
       expect(fetchMock).toHaveBeenCalledWith(
         `/api/v1${BASE}/1/generate/stream`,
@@ -260,6 +270,7 @@ describe('createScenesApi streamGenerateField', () => {
           body: JSON.stringify(payload),
         })
       );
+      expect(onThinking).toHaveBeenCalledWith('Weigh beats');
       expect(onChunk).toHaveBeenCalledWith('Beat A');
       expect(result.target).toBe('beats');
       expect(result.beats.map((b: { text: string }): string => b.text)).toEqual([

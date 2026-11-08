@@ -86,22 +86,6 @@ def _read_scope_text(project_dir: Path, scope_link: dict[str, Any]) -> tuple[Pat
     return content_path, text
 
 
-def _extract_scene_ids(scene_list: list[dict[str, Any]]) -> list[int]:
-    result: list[int] = []
-    for scene in scene_list:
-        scene_id = _safe_int(scene.get("id"))
-        if scene_id is None:
-            continue
-        if scene_id not in result:
-            result.append(scene_id)
-    return result
-
-
-def _has_persisted_runtime_link(project_dir: Path, scene_id: int) -> bool:
-    """Return whether *scene_id* currently has a non-unlinked prose marker span."""
-    return scene_prose_is_linked(get_scene(project_dir, scene_id))
-
-
 def _is_same_write_scope(
     link: dict[str, Any] | None,
     *,
@@ -564,7 +548,6 @@ def _prepare_write_scene_generation(
         "book_id": book_id,
         "content_path": content_path,
         "existing_text": existing_text,
-        "selected_scenes": context["selected_scenes"],
         "base_url": context["base_url"],
         "api_key": context["api_key"],
         "model_id": context["model_id"],
@@ -587,9 +570,6 @@ async def _finalize_write_scene_and_link(
     scope_type = prepared["scope_type"]
     chapter_id = prepared["chapter_id"]
     book_id = prepared["book_id"]
-    request = prepared["request"]
-    payload = prepared["payload"]
-    selected_scenes = prepared["selected_scenes"]
 
     assignments: list[SceneBoundaryAssignment] = []
     updated_scenes: list[dict[str, Any]] = []
@@ -637,6 +617,12 @@ async def _finalize_write_scene_and_link(
         # The scene is still unlinked (planning-only zero-width markers).
         # Append the prose to the resolved scope and link the written range so
         # every generation entry point produces identical marker behaviour.
+        #
+        # The WHOLE generated passage belongs to the scene being written: the
+        # prompt marks following scenes as "preview only, do not include them in
+        # the generated output".  Distributing the paragraphs onto neighbouring
+        # unlinked scenes left the tail of the written prose outside this
+        # scene's range (it showed up unlinked in the editor).
         scope_link = {
             "scope_type": scope_type,
             "chapter_id": chapter_id,
@@ -649,59 +635,31 @@ async def _finalize_write_scene_and_link(
             insertion_end,
         ) = append_text_to_scope(project_dir, scope_link, generated_text)
 
-        scene_ids = [scene_id]
-        for candidate_scene_id in _extract_scene_ids(selected_scenes):
-            if candidate_scene_id == scene_id:
-                continue
-            # Do not relink already-linked neighbour scenes when writing one
-            # scene; otherwise marker ownership can shift and corrupt chapter
-            # marker layout.
-            if _has_persisted_runtime_link(project_dir, candidate_scene_id):
-                continue
-            scene_ids.append(candidate_scene_id)
-
-        if request.detect_boundaries:
-            detect_result = await detect_scene_boundaries_and_link(
-                project_dir=project_dir,
-                request=SceneDetectBoundariesRequest(
-                    scope_type=scope_type,
-                    chapter_id=chapter_id,
-                    book_id=book_id,
-                    scene_ids=scene_ids,
-                    start_offset=insertion_start,
-                    end_offset=insertion_end,
-                    prose_text=generated_text,
-                ),
-                payload=payload,
-            )
-            assignments = detect_result["assignments"]
-            updated_scenes = detect_result["scenes"]
-        else:
-            link_range_to_scene(
-                project_dir,
-                scene_id,
-                scope_link,
-                new_content,
-                insertion_start,
-                insertion_end,
-            )
-            updated_scenes = _list_other_scenes_in_scope(
-                project_dir,
+        link_range_to_scene(
+            project_dir,
+            scene_id,
+            scope_link,
+            new_content,
+            insertion_start,
+            insertion_end,
+        )
+        updated_scenes = _list_other_scenes_in_scope(
+            project_dir,
+            scene_id=scene_id,
+            scope_type=scope_type,
+            chapter_id=chapter_id,
+            book_id=book_id,
+        )
+        latest = get_scene(project_dir, scene_id)
+        if latest is not None:
+            updated_scenes = [latest, *updated_scenes]
+        assignments = [
+            SceneBoundaryAssignment(
                 scene_id=scene_id,
-                scope_type=scope_type,
-                chapter_id=chapter_id,
-                book_id=book_id,
+                start_offset=insertion_start,
+                end_offset=insertion_end,
             )
-            latest = get_scene(project_dir, scene_id)
-            if latest is not None:
-                updated_scenes = [latest, *updated_scenes]
-            assignments = [
-                SceneBoundaryAssignment(
-                    scene_id=scene_id,
-                    start_offset=insertion_start,
-                    end_offset=insertion_end,
-                )
-            ]
+        ]
 
     latest_scene = get_scene(project_dir, scene_id)
     if latest_scene is None:
@@ -759,6 +717,8 @@ async def stream_write_scene_and_link(
     """Stream prose generation for one scene and link the final text.
 
     Yields SSE-compatible event dicts:
+    - ``{"type": "thinking", "accumulated": str}`` for every reasoning delta,
+      so the client can show progress while a thinking model reasons
     - ``{"type": "prose_chunk", "accumulated": str}`` for every content delta
     - ``{"type": "result", "scene": ..., "generated_text": ..., "assignments": ..., "scenes": ...}``
       once the text is generated and linked.
@@ -770,6 +730,7 @@ async def stream_write_scene_and_link(
         payload=payload,
     )
     accumulated = ""
+    thinking = ""
     async for chunk_dict in llm.unified_chat_stream(
         caller_id="scene_generation.stream_write_scene_and_link",
         model_type=WRITING_ROLE,
@@ -780,6 +741,14 @@ async def stream_write_scene_and_link(
         timeout_s=prepared["timeout_s"],
         model_name=prepared["model_name"],
     ):
+        reasoning = chunk_dict.get("thinking") or ""
+        if reasoning:
+            # Thinking models can reason for minutes before emitting the first
+            # content token.  Forward the reasoning so the UI never looks
+            # frozen while prose generation is still in flight.
+            thinking += reasoning
+            yield {"type": "thinking", "accumulated": thinking}
+
         content = chunk_dict.get("content") or ""
         if content:
             accumulated += content

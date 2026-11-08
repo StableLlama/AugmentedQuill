@@ -204,6 +204,8 @@ async def stream_scene_field_generation(
     """Stream a derived scene-field regeneration.
 
     Yields:
+    - ``{"type": "thinking", "accumulated": str}`` for every reasoning delta,
+      so the client can show progress during long reasoning phases
     - ``{"type": "chunk", "accumulated": str}`` for every content delta
     - ``{"type": "result", "target": ..., "text": ..., "beats": [...]}`` once
       the full text has been generated
@@ -215,6 +217,7 @@ async def stream_scene_field_generation(
         payload=payload,
     )
     accumulated = ""
+    thinking = ""
     async for chunk_dict in llm.unified_chat_stream(
         caller_id="scene_field_generation.stream_scene_field_generation",
         model_type=EDITING_ROLE,
@@ -225,6 +228,11 @@ async def stream_scene_field_generation(
         timeout_s=prepared["timeout_s"],
         model_name=prepared["model_name"],
     ):
+        reasoning = chunk_dict.get("thinking") or ""
+        if reasoning:
+            thinking += reasoning
+            yield {"type": "thinking", "accumulated": thinking}
+
         content = chunk_dict.get("content") or ""
         if content:
             accumulated += content

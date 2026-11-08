@@ -794,10 +794,11 @@ class ScenesApiTest(ApiTestCase):
         )
 
     def test_write_scene_streams_prose_chunks_and_final_result(self) -> None:
-        """The streaming write-scene route emits prose_chunk then result events."""
+        """The streaming write-scene route emits thinking, prose_chunk then result events."""
         scene = self._create(summary="Write scene stream")
 
         async def fake_stream(**kwargs):
+            yield {"thinking": "Plan the scene"}
             yield {"content": "Generated"}
             yield {"content": " scene prose."}
 
@@ -818,6 +819,12 @@ class ScenesApiTest(ApiTestCase):
         self.assertTrue(
             resp.headers.get("content-type", "").startswith("text/event-stream"),
             resp.headers.get("content-type"),
+        )
+        # Reasoning is forwarded so the UI can show progress before the first
+        # prose token arrives.
+        self.assertIn(
+            'data: {"type": "thinking", "accumulated": "Plan the scene"}',
+            resp.text,
         )
         # Both prose chunks are streamed with accumulated text.
         self.assertIn(
@@ -844,6 +851,7 @@ class ScenesApiTest(ApiTestCase):
         )
 
         async def fake_stream(**kwargs):
+            yield {"thinking": "Consider the beats"}
             yield {"content": "Fresh "}
             yield {"content": "summary."}
 
@@ -863,6 +871,10 @@ class ScenesApiTest(ApiTestCase):
         self.assertEqual(resp.status_code, 200, resp.text)
         self.assertTrue(
             resp.headers.get("content-type", "").startswith("text/event-stream")
+        )
+        self.assertIn(
+            'data: {"type": "thinking", "accumulated": "Consider the beats"}',
+            resp.text,
         )
         self.assertIn('"type": "chunk"', resp.text)
         self.assertIn('"accumulated": "Fresh summary."', resp.text)
@@ -1534,6 +1546,50 @@ class ScenesApiTest(ApiTestCase):
             fetched = self.client.get(self._url(f"/{scene['id']}"))
             self.assertEqual(fetched.status_code, 200, fetched.text)
             self.assertIsNotNone(fetched.json().get("prose_link"))
+
+    def test_write_scene_unlinked_links_whole_passage_to_the_written_scene(
+        self,
+    ) -> None:
+        """The written scene owns every generated paragraph.
+
+        Following unlinked scenes are context/preview only (the prompt explicitly
+        forbids including them).  Boundary detection used to distribute the
+        generated paragraphs onto those scenes, so the tail of the written prose
+        ended up outside the scene and showed up unlinked in the editor.
+        """
+        scope_payload, content_path = self._configure_scope(project_case="short-story")
+        target = self._create(summary="Target scene")
+        following = self._create(summary="Preview-only scene")
+        generated = "First paragraph.\n\nSecond paragraph.\n\nThird paragraph."
+
+        with patch(
+            "augmentedquill.services.scenes.scene_generation_service.llm.unified_chat_complete",
+            new=AsyncMock(return_value={"content": generated}),
+        ):
+            write_resp = self.client.post(
+                self._url(f"/{target['id']}/write"),
+                json={
+                    **scope_payload,
+                    "include_following_scenes": 1,
+                    "detect_boundaries": True,
+                },
+            )
+
+        self.assertEqual(write_resp.status_code, 200, write_resp.text)
+        write_payload = write_resp.json()
+        self.assertEqual(
+            {assignment["scene_id"] for assignment in write_payload["assignments"]},
+            {target["id"]},
+        )
+
+        content = content_path.read_text(encoding="utf-8")
+        self.assertEqual(self._extract_scene_payload(content, target["id"]), generated)
+        self.assertNotIn(f"<!--scene:{following['id']}:start-->", content)
+
+        following_scene = self.client.get(self._url(f"/{following['id']}"))
+        self.assertEqual(following_scene.status_code, 200, following_scene.text)
+        following_link = following_scene.json().get("prose_link") or {}
+        self.assertIn(following_link.get("scope_type"), (None, "unlinked"))
 
     def test_write_scene_linked_middle_empty_neighbors_preserves_order_and_returns_shifted_neighbors(
         self,
