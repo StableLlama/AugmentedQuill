@@ -1806,6 +1806,7 @@ export interface paths {
      * @description Stream generated prose for one scene and auto-link generated boundaries.
      *
      *     Emits SSE events:
+     *     - ``{"type": "thinking", "accumulated": str}`` as the model reasons
      *     - ``{"type": "prose_chunk", "accumulated": str}`` as tokens are generated
      *     - ``{"type": "result", "scene": ..., "generated_text": ..., "assignments": ..., "scenes": ...}``
      *       once generation and linking complete
@@ -1852,6 +1853,7 @@ export interface paths {
      * @description Stream a derived scene-field regeneration (summary or beats).
      *
      *     Emits SSE events:
+     *     - ``{"type": "thinking", "accumulated": str}`` as the model reasons
      *     - ``{"type": "chunk", "accumulated": str}`` as text is generated
      *     - ``{"type": "result", "target": ..., "text": ..., "beats": [...]}``
      *       once generation completes
@@ -3143,6 +3145,11 @@ export interface components {
       /** Color Tag */
       color_tag?: string | null;
       prose_link?: components['schemas']['SceneProseLink'] | null;
+      /**
+       * Order Index
+       * @description Creation-order rank computed at read time (not persisted). Scenes without prose use it so they keep their narrative position instead of always sorting after written scenes.
+       */
+      order_index?: number | null;
       /**
        * Causes
        * @default []

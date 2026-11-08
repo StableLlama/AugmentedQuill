@@ -24,11 +24,14 @@ from augmentedquill.models.scene import (
 )
 from augmentedquill.services.chat.chat_tool_decorator import WRITING_ROLE
 from augmentedquill.services.llm import llm
-from augmentedquill.services.scenes.scene_markers import strip_internal_markers
+from augmentedquill.services.scenes.scene_markers import (
+    scene_block_bounds,
+    strip_internal_markers,
+)
 from augmentedquill.services.scenes.scene_service import (
     _scene_content_path,
-    append_text_to_scope,
     get_scene,
+    insert_text_into_scope,
     link_prose,
     link_range_to_scene,
     list_scenes,
@@ -560,6 +563,59 @@ def _prepare_write_scene_generation(
     }
 
 
+def _next_scene_block_start(
+    *,
+    project_dir: Path,
+    scene_id: int,
+    scope_type: str,
+    chapter_id: str | None,
+    book_id: str | None,
+    content: str,
+) -> int | None:
+    """Return where prose for *scene_id* must be inserted to keep its position.
+
+    Scenes without prose keep their narrative position through their creation
+    order (``order_index``).  When a later-created scene already owns prose in
+    the same scope, the new block is inserted before that scene's marker block;
+    otherwise it is appended at the end.  This is what stops filling an empty
+    scene from moving it behind already written scenes.
+    """
+    scenes = list_scenes(project_dir)
+    target_rank: int | None = None
+    for scene in scenes:
+        if _safe_int(scene.get("id")) == scene_id:
+            target_rank = _safe_int(scene.get("order_index"))
+            break
+    if target_rank is None:
+        return None
+
+    next_rank: int | None = None
+    next_scene_id: int | None = None
+    for scene in scenes:
+        candidate_id = _safe_int(scene.get("id"))
+        if candidate_id is None or candidate_id == scene_id:
+            continue
+        rank = _safe_int(scene.get("order_index"))
+        if rank is None or rank <= target_rank:
+            continue
+        link = scene.get("prose_link")
+        if not _is_same_write_scope(
+            link if isinstance(link, dict) else None,
+            scope_type=scope_type,
+            chapter_id=chapter_id,
+            book_id=book_id,
+        ):
+            continue
+        if next_rank is None or rank < next_rank:
+            next_rank = rank
+            next_scene_id = candidate_id
+
+    if next_scene_id is None:
+        return None
+    bounds = scene_block_bounds(content, next_scene_id)
+    return bounds[0] if bounds is not None else None
+
+
 async def _finalize_write_scene_and_link(
     prepared: dict[str, Any], generated_text: str
 ) -> dict[str, Any]:
@@ -628,12 +684,26 @@ async def _finalize_write_scene_and_link(
             "chapter_id": chapter_id,
             "book_id": book_id,
         }
+        _, existing_text = _read_scope_text(project_dir, scope_link)
+        insertion_offset = _next_scene_block_start(
+            project_dir=project_dir,
+            scene_id=scene_id,
+            scope_type=scope_type,
+            chapter_id=chapter_id,
+            book_id=book_id,
+            content=existing_text,
+        )
         (
             _content_path,
             new_content,
             insertion_start,
             insertion_end,
-        ) = append_text_to_scope(project_dir, scope_link, generated_text)
+        ) = insert_text_into_scope(
+            project_dir,
+            scope_link,
+            generated_text,
+            insertion_offset,
+        )
 
         link_range_to_scene(
             project_dir,

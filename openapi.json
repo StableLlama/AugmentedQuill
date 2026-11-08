@@ -4273,7 +4273,7 @@
       "post": {
         "tags": ["Scenes"],
         "summary": "Write Scene Prose Stream",
-        "description": "Stream generated prose for one scene and auto-link generated boundaries.\n\nEmits SSE events:\n- ``{\"type\": \"prose_chunk\", \"accumulated\": str}`` as tokens are generated\n- ``{\"type\": \"result\", \"scene\": ..., \"generated_text\": ..., \"assignments\": ..., \"scenes\": ...}``\n  once generation and linking complete\n- ``{\"type\": \"error\", \"error\": str}`` on failure",
+        "description": "Stream generated prose for one scene and auto-link generated boundaries.\n\nEmits SSE events:\n- ``{\"type\": \"thinking\", \"accumulated\": str}`` as the model reasons\n- ``{\"type\": \"prose_chunk\", \"accumulated\": str}`` as tokens are generated\n- ``{\"type\": \"result\", \"scene\": ..., \"generated_text\": ..., \"assignments\": ..., \"scenes\": ...}``\n  once generation and linking complete\n- ``{\"type\": \"error\", \"error\": str}`` on failure",
         "operationId": "write_scene_prose_stream_api_v1_projects__project_name__scenes__scene_id__write_stream_post",
         "parameters": [
           {
@@ -4395,7 +4395,7 @@
       "post": {
         "tags": ["Scenes"],
         "summary": "Generate Scene Field Stream Route",
-        "description": "Stream a derived scene-field regeneration (summary or beats).\n\nEmits SSE events:\n- ``{\"type\": \"chunk\", \"accumulated\": str}`` as text is generated\n- ``{\"type\": \"result\", \"target\": ..., \"text\": ..., \"beats\": [...]}``\n  once generation completes\n- ``{\"type\": \"error\", \"error\": str}`` on failure",
+        "description": "Stream a derived scene-field regeneration (summary or beats).\n\nEmits SSE events:\n- ``{\"type\": \"thinking\", \"accumulated\": str}`` as the model reasons\n- ``{\"type\": \"chunk\", \"accumulated\": str}`` as text is generated\n- ``{\"type\": \"result\", \"target\": ..., \"text\": ..., \"beats\": [...]}``\n  once generation completes\n- ``{\"type\": \"error\", \"error\": str}`` on failure",
         "operationId": "generate_scene_field_stream_route_api_v1_projects__project_name__scenes__scene_id__generate_stream_post",
         "parameters": [
           {
@@ -7702,6 +7702,18 @@
                 "type": "null"
               }
             ]
+          },
+          "order_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order Index",
+            "description": "Creation-order rank computed at read time (not persisted). Scenes without prose use it so they keep their narrative position instead of always sorting after written scenes."
           },
           "causes": {
             "items": {

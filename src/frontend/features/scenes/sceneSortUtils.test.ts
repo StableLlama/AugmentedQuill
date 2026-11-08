@@ -14,6 +14,7 @@ import {
   computeCauseOrderViolations,
   computeTemporalCauseViolations,
   getSceneEpochNanoseconds,
+  proseSort,
 } from './sceneSortUtils';
 import type { Scene } from '../../types';
 
@@ -40,6 +41,46 @@ function makeScene(overrides: Partial<Scene> = {}): Scene {
     ...overrides,
   } as Scene;
 }
+
+describe('proseSort narrative order', () => {
+  const chapterLink = (start: number, end: number): Scene['prose_link'] =>
+    ({
+      scope_type: 'chapter',
+      chapter_id: '1',
+      book_id: null,
+      start_offset: start,
+      end_offset: end,
+      content_hash: 'hash',
+      is_stale: false,
+    }) as Scene['prose_link'];
+
+  it('keeps an unwritten scene between its written neighbours by creation order', () => {
+    // Regression: scenes without prose used to sort after every written scene,
+    // so creating scene 9 between written scenes 8 and 10 showed it at the end.
+    const chapterOrderMap = new Map<string, number>([['1', 0]]);
+    const before = makeScene({
+      id: '8',
+      order_index: 0,
+      prose_link: chapterLink(0, 10),
+    });
+    const empty = makeScene({ id: '9', order_index: 1, prose_link: null });
+    const after = makeScene({
+      id: '10',
+      order_index: 2,
+      prose_link: chapterLink(20, 30),
+    });
+
+    const sorted = [after, empty, before].sort((a: Scene, b: Scene): number =>
+      proseSort(a, b, chapterOrderMap)
+    );
+
+    expect(sorted.map((scene: Scene): string => String(scene.id))).toEqual([
+      '8',
+      '9',
+      '10',
+    ]);
+  });
+});
 
 describe('sceneSortUtils cause violation helpers', () => {
   it('marks both scenes when a chronological order violates a cause', () => {

@@ -269,6 +269,14 @@ class Scene(BaseModel):
     timeline_id: str = "main"
     color_tag: str | None = None  # hex color, e.g. "#a855f7"
     prose_link: SceneProseLink | None = None  # used when beats is empty
+    order_index: int | None = Field(
+        default=None,
+        description=(
+            "Creation-order rank computed at read time (not persisted). Scenes "
+            "without prose use it so they keep their narrative position instead "
+            "of always sorting after written scenes."
+        ),
+    )
     causes: list[SceneId] = []  # scene IDs this scene causally precedes
     pinboard_x: float = 100.0
     pinboard_y: float = 100.0

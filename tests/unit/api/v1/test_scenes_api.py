@@ -1591,6 +1591,91 @@ class ScenesApiTest(ApiTestCase):
         following_link = following_scene.json().get("prose_link") or {}
         self.assertIn(following_link.get("scope_type"), (None, "unlinked"))
 
+    def test_list_scenes_exposes_creation_order_index(self) -> None:
+        """Scenes carry a creation-order rank so unlinked scenes can be
+        interleaved with linked ones instead of always sorting last."""
+        first = self._create(summary="First")
+        second = self._create(summary="Second")
+        third = self._create(summary="Third")
+
+        resp = self.client.get(self._url())
+        self.assertEqual(resp.status_code, 200, resp.text)
+        by_id = {int(scene["id"]): scene for scene in resp.json()}
+        self.assertEqual(by_id[first["id"]]["order_index"], 0)
+        self.assertEqual(by_id[second["id"]]["order_index"], 1)
+        self.assertEqual(by_id[third["id"]]["order_index"], 2)
+
+        single = self.client.get(self._url(f"/{second['id']}"))
+        self.assertEqual(single.status_code, 200, single.text)
+        self.assertEqual(single.json()["order_index"], 1)
+
+    def test_write_scene_unlinked_inserts_prose_before_the_next_scene(self) -> None:
+        """Filling an empty scene must not move it in the narrative order.
+
+        Scene 2 sits between the already written scenes 1 and 3.  Appending its
+        generated prose at the end of the scope put it behind scene 3, so the
+        narrative order changed just by writing prose.  The generated block must
+        be inserted before the next scene's marker block instead.
+        """
+        scope_payload, content_path = self._configure_scope(project_case="short-story")
+        before = self._create(summary="Before")
+        target = self._create(summary="Target")
+        after = self._create(summary="After")
+
+        original = "Before prose.\n\nAfter prose."
+        content_path.write_text(original, encoding="utf-8")
+        after_start = original.index("After prose.")
+
+        for scene, start_offset, end_offset in (
+            (after, after_start, len(original)),
+            (before, 0, len("Before prose.")),
+        ):
+            link_resp = self.client.post(
+                self._url(f"/{scene['id']}/link-prose"),
+                json={
+                    **scope_payload,
+                    "start_offset": start_offset,
+                    "end_offset": end_offset,
+                },
+            )
+            self.assertEqual(link_resp.status_code, 200, link_resp.text)
+
+        generated = "Target prose."
+        with patch(
+            "augmentedquill.services.scenes.scene_generation_service.llm.unified_chat_complete",
+            new=AsyncMock(return_value={"content": generated}),
+        ):
+            write_resp = self.client.post(
+                self._url(f"/{target['id']}/write"),
+                json={
+                    **scope_payload,
+                    "include_following_scenes": 1,
+                    "detect_boundaries": True,
+                },
+            )
+
+        self.assertEqual(write_resp.status_code, 200, write_resp.text)
+        content = content_path.read_text(encoding="utf-8")
+
+        import re as _re
+
+        marker_order = [
+            int(match.group(1))
+            for match in _re.finditer(r"<!--scene:(\d+):start-->", content)
+        ]
+        self.assertEqual(
+            marker_order,
+            [before["id"], target["id"], after["id"]],
+            f"Filling prose reordered the scenes: {content}",
+        )
+        self.assertEqual(self._extract_scene_payload(content, target["id"]), generated)
+
+        target_link = self.client.get(self._url(f"/{target['id']}")).json()[
+            "prose_link"
+        ]
+        after_link = self.client.get(self._url(f"/{after['id']}")).json()["prose_link"]
+        self.assertLess(target_link["start_offset"], after_link["start_offset"])
+
     def test_write_scene_linked_middle_empty_neighbors_preserves_order_and_returns_shifted_neighbors(
         self,
     ) -> None:

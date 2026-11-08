@@ -920,9 +920,7 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
         );
 
         if (reorderResult.scenes.length === 0) return;
-
-        const view: EditorView | null = editorRef?.current?.getEditorView() ?? null;
-        if (!view || !currentChapter) return;
+        if (!currentChapter) return;
 
         const scopeMatchesCurrentChapter =
           reorderResult.scope_type === 'story'
@@ -932,12 +930,29 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
 
         if (!scopeMatchesCurrentChapter) return;
 
+        // Adopt the authoritative content after the reorder.  The response's
+        // rebuilt_text covers only the edited scope, so using it as the chapter
+        // content would truncate the document; refetching is the same path the
+        // write flow uses.  The store content is the editor's marker baseline:
+        // keeping the pre-reorder content made the next debounced save run
+        // `transferInternalMarkers(oldContent, reorderedDoc)`, which cannot
+        // represent a block move — it pushed the moved scene's markers to the
+        // end and silently unlinked its prose.
+        await refreshScopeContentFromBackend(
+          reorderResult.scope_type,
+          reorderResult.chapter_id
+        );
+
+        const view: EditorView | null = editorRef?.current?.getEditorView() ?? null;
+        if (!view) return;
+
         // The backend returns scope_start / scope_end / rebuilt_text in the
         // marker-inclusive (original) coordinate space.  The editor document
         // is marker-stripped (hideSceneMarkers=true), so we must convert
         // offsets to visible space and strip markers from the rebuilt text
-        // before dispatching.  Failing to do this corrupts linked prose by
-        // inserting markers into the visible document at wrong positions.
+        // before dispatching.  The dispatch is annotated as an external value
+        // sync so CodeMirror does not report it as a user edit (which would
+        // schedule a save before the store adoption above has rendered).
         const fullContent = currentChapter.content ?? '';
         const visibleStart = toVisibleOffset(fullContent, reorderResult.scope_start);
         const visibleEnd = toVisibleOffset(fullContent, reorderResult.scope_end);
@@ -950,12 +965,21 @@ export const ScenesPanelContainer: React.FC<ScenesPanelContainerProps> = ({
             to: safeEnd,
             insert: strippedText,
           },
+          annotations: [externalValueSyncAnnotation.of(true)],
         });
       } catch (err) {
         notifyError(t('Save'), err);
       }
     },
-    [currentChapter, editorRef, patchScene, recordSceneHistory, scenes, t]
+    [
+      currentChapter,
+      editorRef,
+      patchScene,
+      recordSceneHistory,
+      refreshScopeContentFromBackend,
+      scenes,
+      t,
+    ]
   );
 
   const handleNarrativeReorder = useCallback(

@@ -4831,6 +4831,84 @@ describe('handleNarrativeReorder (drag-reorder user interaction)', () => {
     }
   );
 
+  it('adopts the authoritative reordered content so the marker baseline cannot go stale', async () => {
+    // Regression: the reorder only dispatched the reordered text into the editor
+    // document.  The store (and with it the editor marker baseline) kept the
+    // pre-reorder content, so the next debounced save ran
+    // transferInternalMarkers(oldContent, reorderedDoc), could not represent the
+    // block move, and silently unlinked the moved scene's prose.
+    const sceneA = makeScene({
+      id: 'a',
+      prose_link: makeProseLink({ start_offset: 0, end_offset: 8, is_stale: false }),
+    });
+    const sceneB = makeScene({
+      id: 'b',
+      prose_link: makeProseLink({ start_offset: 9, end_offset: 17, is_stale: false }),
+    });
+    const reorderedContent =
+      '<!--scene:b:start-->Scene B.<!--scene:b:end-->\n\n' +
+      '<!--scene:a:start-->Scene A.<!--scene:a:end-->';
+
+    apiMock.scenes.reorderProse.mockResolvedValueOnce({
+      scenes: [
+        makeScene({
+          id: 'b',
+          prose_link: makeProseLink({ start_offset: 0, end_offset: 8 }),
+        }),
+        makeScene({
+          id: 'a',
+          prose_link: makeProseLink({ start_offset: 9, end_offset: 17 }),
+        }),
+      ],
+      scope_type: 'story',
+      chapter_id: null,
+      book_id: null,
+      scope_start: 0,
+      scope_end: 17,
+      rebuilt_text: reorderedContent,
+    });
+
+    const beforeContent = 'Scene A. Scene B.';
+    const fullContentAfter = 'Scene B.\n\nScene A.';
+    apiMock.story.getContent.mockResolvedValueOnce({
+      ok: true,
+      content: fullContentAfter,
+    });
+    storyState.draft = { content: beforeContent };
+    const { ref, dispatch } = makeEditorRef(beforeContent);
+    await renderNarrative([sceneA, sceneB], {
+      editorRef: ref,
+      currentChapter: STORY_UNIT,
+    });
+
+    await act(async () => {
+      await nv().onReorderScene?.('b', 'a', true);
+    });
+
+    const appliedStates = setStoryMock.mock.calls
+      .map(([arg]: [unknown]) =>
+        typeof arg === 'function'
+          ? (arg as (prev: unknown) => { draft?: { content?: string } })({
+              ...storyState,
+              draft: { content: beforeContent },
+            })
+          : (arg as { draft?: { content?: string } })
+      )
+      .filter(Boolean);
+    expect(
+      appliedStates.some(
+        (state: { draft?: { content?: string } }) =>
+          state.draft?.content === fullContentAfter
+      )
+    ).toBe(true);
+
+    // The programmatic document edit must be annotated as an external sync so
+    // the editor does not schedule a user-edit save with the stale baseline.
+    const firstDispatch = dispatch.mock.calls[0]?.[0] as
+      { annotations?: unknown[] } | undefined;
+    expect(firstDispatch?.annotations?.length ?? 0).toBeGreaterThan(0);
+  });
+
   it('[INVALID] no-op when source and target are same', async () => {
     const sceneA = makeScene({ id: 'a', prose_link: makeProseLink() });
     await renderNarrative([sceneA]);
